@@ -50,14 +50,14 @@ This project uses a **local-first, two-branch** workflow. There are no feature b
 2. On GitHub.com, open **Actions → Promote to Production → Run workflow**
 3. Set **Use workflow from** to **`staging`**
 4. Type `promote` in the confirmation field and run the workflow
-5. The workflow runs tests on `staging`, opens a promotion PR (`staging` → `main`), merges it automatically (required by branch protection on `main`), then syncs `staging` with `main`
+5. The workflow runs tests on `staging`, merges `staging` into `main`, pushes `main`, then syncs `staging` with `main`
 6. The **Deploy Pages** workflow runs automatically and production updates
 
 You do not need to switch to or merge `main` locally, and you do not need to open or merge a PR yourself.
 
-**Note:** `main` is protected — changes must go through a pull request. The promote workflow creates and merges that PR for you.
+**If promotion fails with a merge conflict:** merge `main` into `staging` in GitHub Desktop, resolve conflicts, commit, push `staging`, then run **Promote to Production** again.
 
-**If promotion fails with a merge conflict:** merge `main` into `staging` locally in GitHub Desktop, resolve conflicts, commit, push `staging`, then run **Promote to Production** again.
+**If you re-enable branch protection on `main`:** direct pushes from Actions will be blocked again. Either keep protection off for this two-branch workflow, or merge `staging` → `main` manually in GitHub Desktop instead of using the button.
 
 ## AI agents (Cursor)
 
@@ -91,7 +91,7 @@ Workflows:
 |----------|---------|--------|
 | `deploy-pages.yml` | Push to `staging` | Staging preview built and deployed |
 | `deploy-pages.yml` | Push to `main` | Production site built and deployed |
-| `promote-staging.yml` | Manual (Actions button) | Tests `staging`, auto-merges promotion PR into `main`, syncs `staging` |
+| `promote-staging.yml` | Manual (Actions button) | Tests `staging`, merges into `main`, syncs `staging` |
 
 No manual deploy step is required.
 
