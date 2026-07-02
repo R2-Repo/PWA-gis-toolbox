@@ -573,6 +573,7 @@ class MapManager {
             });
             this._layerNames.set(dataset.id, dataset.name);
             logger.info('Map', 'No geometries to display', { layer: dataset.name });
+            this._applyDatasetVisibility(dataset);
             bus.emit('map:layerAdded', { id: dataset.id, name: dataset.name });
             return;
         }
@@ -745,6 +746,7 @@ class MapManager {
             featureCount: dataset.geojson.features.length,
             renderParts: taggedFeatures.length
         });
+        this._applyDatasetVisibility(dataset);
         bus.emit('map:layerAdded', { id: dataset.id, name: dataset.name });
     }
 
@@ -842,6 +844,7 @@ class MapManager {
             name: dataset.name,
             rasters: coverageRasters.length
         });
+        this._applyDatasetVisibility(dataset);
         bus.emit('map:layerAdded', { id: dataset.id, name: dataset.name });
     }
 
@@ -897,6 +900,7 @@ class MapManager {
             }
         }
 
+        this._applyDatasetVisibility(dataset);
         bus.emit('map:layerAdded', { id: dataset.id, name: dataset.name });
     }
 
@@ -1354,6 +1358,12 @@ class MapManager {
         this._workspaceDatasets?.delete(id);
         this._layerNames.delete(id);
         this.clearSelection(id);
+    }
+
+    _applyDatasetVisibility(dataset) {
+        if (dataset?.visible === false) {
+            this.toggleLayer(dataset.id, false);
+        }
     }
 
     toggleLayer(id, visible) {

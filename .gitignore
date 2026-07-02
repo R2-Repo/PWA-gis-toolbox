@@ -5,6 +5,7 @@ desktop.ini
 
 # Editor
 .vscode/
+.cursor/debug*.log
 *.swp
 *.swo
 
