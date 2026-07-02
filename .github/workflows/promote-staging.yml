@@ -10,7 +10,6 @@ on:
 
 permissions:
   contents: write
-  pull-requests: write
 
 jobs:
   validate:
@@ -26,10 +25,15 @@ jobs:
     needs: validate
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout staging
+      - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          ref: staging
+          fetch-depth: 0
+
+      - name: Fetch branches
+        run: |
+          git fetch origin main staging
+          git checkout staging
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -44,40 +48,27 @@ jobs:
 
       - name: Check if promotion is needed
         id: diff
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          AHEAD=$(gh api "repos/${{ github.repository }}/compare/main...staging" --jq '.ahead_by')
+          AHEAD=$(git rev-list --count origin/main..origin/staging)
           echo "ahead_by=$AHEAD" >> "$GITHUB_OUTPUT"
           if [ "$AHEAD" -eq 0 ]; then
-            echo "staging is already up to date with main. Nothing to promote."
+            echo "staging has no new commits for main. Nothing to promote."
           else
             echo "staging is $AHEAD commit(s) ahead of main."
           fi
 
-      - name: Create or find promotion pull request
+      - name: Merge staging into main
         if: steps.diff.outputs.ahead_by != '0'
-        id: pr
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          EXISTING=$(gh pr list --base main --head staging --state open --json number --jq '.[0].number // empty')
-          if [ -n "$EXISTING" ]; then
-            echo "Using existing PR #$EXISTING"
-            echo "number=$EXISTING" >> "$GITHUB_OUTPUT"
-          else
-            gh pr create \
-              --base main \
-              --head staging \
-              --title "Promote staging to production" \
-              --body "Automated promotion from the Promote to Production workflow (run ${{ github.run_id }})."
-            NUMBER=$(gh pr list --base main --head staging --state open --json number --jq '.[0].number')
-            echo "Created PR #$NUMBER"
-            echo "number=$NUMBER" >> "$GITHUB_OUTPUT"
-          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout main
+          git merge origin/staging --no-edit -m "Promote staging to production (run ${{ github.run_id }})"
+          git push origin main
 
-      - name: Merge promotion pull request
+      - name: Sync staging with main
         if: steps.diff.outputs.ahead_by != '0'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh pr merge "${{ steps.pr.outputs.number }}" --merge
+        run: |
+          git checkout staging
+          git merge origin/main --no-edit -m "Sync staging with main after promotion (run ${{ github.run_id }})"
+          git push origin staging
