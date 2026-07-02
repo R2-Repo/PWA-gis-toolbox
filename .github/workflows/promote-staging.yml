@@ -26,21 +26,18 @@ jobs:
     needs: validate
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout staging for tests
+      - name: Checkout staging
         uses: actions/checkout@v4
         with:
           ref: staging
-          path: staging-src
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version-file: staging-src/.node-version
+          node-version-file: .node-version
           cache: npm
-          cache-dependency-path: staging-src/package-lock.json
 
       - name: Run tests on staging
-        working-directory: staging-src
         run: |
           npm ci
           npm test
