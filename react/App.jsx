@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import logger from '../js/core/logger.js';
 import mapService from '../js/map/map-service.js';
+import bus from '../js/core/event-bus.js';
 import { setExportMapManager } from '../js/export/exporter.js';
 import sessionStore from '../js/core/session-store.js';
 import { getState, setUIState } from '../js/core/state.js';
@@ -155,6 +156,26 @@ function AppShell() {
     const onDimensionChange = useCallback((value) => {
         setDimension(value);
         applyDimensionHeaderSelection(value);
+    }, []);
+
+    useEffect(() => {
+        return bus.on('map:chrome', (payload) => {
+            if (payload?.is3d !== undefined) {
+                setDimension(payload.is3d ? '3d' : '2d');
+            }
+            if (payload?.basemap) {
+                setBasemap(payload.basemap);
+            }
+        });
+    }, []);
+
+    useEffect(() => {
+        return dualScreenCoordinator.onStateChange((active) => {
+            if (!active) {
+                setDimension(mapService.is3DEnabled() ? '3d' : '2d');
+                setBasemap(mapService.getCurrentBasemap() || 'voyager');
+            }
+        });
     }, []);
 
     const onToggleAgol = useCallback(() => {

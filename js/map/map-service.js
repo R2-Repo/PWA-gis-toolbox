@@ -100,6 +100,9 @@ export function createMapService({ mapAdapter = mapManager } = {}) {
         disable3D() {
             return mapAdapter.disable3D();
         },
+        reconcile3DState(options) {
+            return mapAdapter.reconcile3DState(options);
+        },
         fitToAll() {
             return mapAdapter.fitToAll();
         },
