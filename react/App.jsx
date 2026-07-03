@@ -21,11 +21,11 @@ import {
     toggleLogs,
     showToolInfo,
     setActiveLayerAndRefresh,
-    moveLayerUp,
-    moveLayerDown,
+    moveLayerToIndex,
     toggleLayerVisibilityAndRender,
     zoomToLayer,
     removeLayerWithConfirm,
+    removeLayersWithConfirm,
     toggleField,
     selectAllFields,
     addField,
@@ -42,7 +42,8 @@ import {
     exportProjectKit,
     exportMapView,
     buildMapContextMenuItems,
-    setPanelCollapsed
+    setPanelCollapsed,
+    openPresentationLinkBuilderWidget
 } from '../js/tools/tool-handlers.js';
 import { getActiveLayer } from '../js/core/state.js';
 import { isLayerVisibleAtScale } from '../js/map/scale-range.js';
@@ -57,6 +58,8 @@ import { RightPanel } from './panels/RightPanel.jsx';
 import { mountModalHost } from './ui/mountModalHost.jsx';
 import { mountToastHost } from './ui/mountToastHost.jsx';
 import { CollapsibleSection } from './ui/CollapsibleSection.jsx';
+import { isPresentationMode } from '../js/presentation/presentation-mode-detector.js';
+import { PresentationApp } from './presentation/PresentationApp.jsx';
 
 function SaveIndicator() {
     const [status, setStatus] = useState(null);
@@ -120,11 +123,11 @@ function AppShell() {
         setActiveLayer: setActiveLayerAndRefresh,
         renameLayer: (id) => renameLayer(id),
         renameLayerInline: (id, el) => renameLayer(id, el),
-        moveLayerUp,
-        moveLayerDown,
+        moveLayerToIndex,
         toggleVisibility: toggleLayerVisibilityAndRender,
         zoomToLayer,
         removeLayer: removeLayerWithConfirm,
+        removeLayers: removeLayersWithConfirm,
         openFilterBuilder: (id) => openFilterBuilder(id),
         toggleField,
         selectAllFields,
@@ -196,6 +199,7 @@ function AppShell() {
                     onLogs={toggleLogs}
                     onInfo={showToolInfo}
                     onExportMapView={exportMapView}
+                    onPresentationLink={openPresentationLinkBuilderWidget}
                     getActiveLayer={getActiveLayer}
                     getSelectionCount={(layerId) => mapService.getSelectionCount(layerId)}
                     onDeleteSelected={deleteSelectedFeatures}
@@ -348,6 +352,10 @@ function AppShell() {
 }
 
 export function App() {
+    if (isPresentationMode()) {
+        return <PresentationApp />;
+    }
+
     const store = useMemo(() => createAppStore(), []);
     const modalHostRef = useRef(null);
     const toastHostRef = useRef(null);

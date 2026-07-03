@@ -90,6 +90,15 @@ class DrawManager {
     /** Get the target layer ID */
     get targetLayerId() { return this._targetLayerId; }
 
+    /** Snapshot of the feature currently selected in draw/select mode. */
+    getSelectedFeatureSnapshot() {
+        if (this._selectedFeatureIndex === null || !this._editFeatureRef) return null;
+        return {
+            layerId: this._targetLayerId,
+            feature: JSON.parse(JSON.stringify(this._editFeatureRef))
+        };
+    }
+
     // ============================
     // Toolbar UI
     // ============================

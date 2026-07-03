@@ -7,7 +7,7 @@ import bus from '../core/event-bus.js';
 import { handleError } from '../core/error-handler.js';
 import {
     getState, getLayers, getActiveLayer, addLayer, removeLayer, updateLayer,
-    setActiveLayer, toggleLayerVisibility, reorderLayer, setUIState, toggleAGOLCompat
+    setActiveLayer, toggleLayerVisibility, reorderLayer, reorderLayerToIndex, setUIState, toggleAGOLCompat
 } from '../core/state.js';
 import { mergeDatasets, getSelectedFields, tableToSpatial, createSpatialDataset, createTableDataset, analyzeSchema, analyzeTableSchema, isSpatialLayer } from '../core/data-model.js';
 import { isLayerDisplayReady, layerCrsWarning, getLayerCrs, resolveReprojectFromCrs } from '../crs/layer-crs.js';
@@ -80,6 +80,7 @@ import { loadPaletteFavorites, savePaletteFavorites } from '../map/palette-store
 import { getWorkspaceLayer, exportWorkspaceLayerBundle } from '../workspace/workspace-store.js';
 import { WorkflowStore } from '../workflow/workflow-store.js';
 import { buildWidgetActions } from '../widgets/registry.js';
+import { openPresentationLinkBuilder } from '../widgets/presentation-link-builder/controller.js';
 import {
     loadWidgetStore,
     remapWidgetLayerIds,
@@ -1641,6 +1642,12 @@ export function moveLayerDown(id) {
     refreshUI();
 }
 
+export function moveLayerToIndex(id, toIndex) {
+    reorderLayerToIndex(id, toIndex);
+    mapService.syncLayerOrder(getLayers().map(l => l.id));
+    refreshUI();
+}
+
 export function setActiveLayerAndRefresh(id) {
     setActiveLayer(id);
     refreshUI();
@@ -1663,14 +1670,31 @@ export function zoomToLayer(id) {
 }
 
 export async function removeLayerWithConfirm(id) {
-    const ok = await confirm('Remove Layer', 'Remove this layer?');
-    if (ok) {
-        const layer = getLayers().find(l => l.id === id);
-        if (layer) revokeKmzBlobUrls(layer);
-        removeLayer(id);
+    const removed = await removeLayersWithConfirm([id]);
+    return removed;
+}
+
+export async function removeLayersWithConfirm(ids) {
+    const uniqueIds = [...new Set(ids)].filter(Boolean);
+    if (!uniqueIds.length) return false;
+    const message = uniqueIds.length === 1
+        ? 'Remove this layer?'
+        : `Remove ${uniqueIds.length} selected layers?`;
+    const ok = await confirm('Remove Layers', message);
+    if (!ok) return false;
+    for (const id of uniqueIds) {
+        const layer = getLayers().find((l) => l.id === id);
+        if (layer) {
+            revokeKmzBlobUrls(layer);
+            if (isWorkspaceLayer(layer)) {
+                await removeWorkspaceLayer(layer.workspaceLayerId || id);
+            }
+        }
         mapService.removeLayer(id);
-        refreshUI();
+        removeLayer(id);
     }
+    refreshUI();
+    return true;
 }
 
 // ============================
@@ -3630,6 +3654,7 @@ export function getWidgetContext() {
     return createWidgetContext({
         getLayers,
         getLayerById: (id) => getLayers().find((layer) => layer.id === id),
+        getActiveLayer,
         mapService,
         addLayer,
         createSpatialDataset,
@@ -3639,6 +3664,10 @@ export function getWidgetContext() {
         analyzeSchema,
         turf: globalThis.turf
     });
+}
+
+export function openPresentationLinkBuilderWidget() {
+    return openPresentationLinkBuilder(getWidgetContext());
 }
 
 // ============================
@@ -4681,8 +4710,10 @@ const APP_ACTIONS = {
     toggleVisibility: toggleLayerVisibilityAndRender,
     zoomToLayer,
     removeLayer: removeLayerWithConfirm,
+    removeLayers: removeLayersWithConfirm,
     moveLayerUp,
     moveLayerDown,
+    moveLayerToIndex,
     toggleField, selectAllFields, filterFields,
     renameLayer, renameField,
     addField,
@@ -4732,6 +4763,7 @@ const APP_ACTIONS = {
     openArcGISImporter: openArcGISImporter,
     startImportFence,
     ...buildWidgetActions(getWidgetContext),
+    openPresentationLinkBuilder: openPresentationLinkBuilderWidget,
     openCoordConverter,
     mergeLayers: handleMergeLayers,
     showToolInfo,
