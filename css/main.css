@@ -3121,3 +3121,111 @@ textarea { resize: vertical; min-height: 60px; }
     border-top: 1px solid var(--border);
     margin: 12px 0 10px;
 }
+
+/* Presentation mode */
+.presentation-root {
+    position: fixed;
+    inset: 0;
+    background: var(--bg);
+    z-index: 5000;
+}
+.presentation-root .map-view-root {
+    width: 100%;
+    height: 100%;
+}
+.presentation-overlay {
+    position: absolute;
+    top: 16px;
+    left: 16px;
+    z-index: 2;
+    pointer-events: none;
+}
+.presentation-overlay__brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    pointer-events: auto;
+}
+.presentation-overlay__home {
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    background: rgba(28, 28, 30, 0.88);
+    color: var(--text);
+    font-size: 20px;
+    cursor: pointer;
+}
+.presentation-overlay__logo img {
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+    display: block;
+    box-shadow: var(--shadow);
+}
+.presentation-title-overlay {
+    position: absolute;
+    left: 50%;
+    top: 24px;
+    transform: translateX(-50%);
+    z-index: 2;
+    text-align: center;
+    padding: 8px 16px;
+    border-radius: var(--radius-sm);
+    background: rgba(28, 28, 30, 0.72);
+    color: var(--text);
+    pointer-events: none;
+}
+.presentation-root--error,
+.presentation-error {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    padding: 24px;
+}
+.presentation-error {
+    flex-direction: column;
+    gap: 12px;
+    text-align: center;
+    max-width: 480px;
+}
+.presentation-link-builder__section {
+    margin-bottom: 16px;
+}
+.presentation-link-builder__heading {
+    font-size: 13px;
+    font-weight: 700;
+    margin: 0 0 8px;
+    color: var(--primary);
+}
+.presentation-link-builder__summary {
+    display: grid;
+    gap: 4px;
+    margin-top: 8px;
+}
+.presentation-link-builder__grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+}
+.presentation-link-builder__check {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 6px 0;
+    font-size: 13px;
+}
+.presentation-link-builder__url {
+    word-break: break-all;
+    padding: 8px;
+    border-radius: var(--radius-sm);
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    max-height: 96px;
+    overflow: auto;
+}
+.presentation-link-builder__footer {
+    flex-wrap: wrap;
+    gap: 8px;
+}

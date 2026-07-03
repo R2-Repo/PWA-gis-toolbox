@@ -8,6 +8,7 @@ import { openFiberSlackOtdrHelper } from './fiber-slack-otdr-helper/controller.j
 import { openCrsManager } from './crs-manager/controller.js';
 import { openQuery } from './query/controller.js';
 import { openWirelessSitePlanning } from './wireless-site-planning/controller.js';
+import { openPresentationLinkBuilder } from './presentation-link-builder/controller.js';
 import logger from '../core/logger.js';
 
 /** @typedef {import('./widget-types.js').WidgetContext} WidgetContext */
@@ -103,6 +104,14 @@ export const GIS_WIDGETS_HIDDEN = [
         icon: '🔌',
         tip: 'Estimate OTDR distance, fiber slack, and map distance along line routes.',
         open: openFiberSlackOtdrHelper
+    },
+    {
+        type: 'presentation-link-builder',
+        action: 'openPresentationLinkBuilder',
+        label: 'Presentation Link',
+        icon: '🔗',
+        tip: 'Build a fullscreen presentation URL from selected map features.',
+        open: openPresentationLinkBuilder
     }
 ];
 

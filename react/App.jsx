@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import logger from '../js/core/logger.js';
 import mapService from '../js/map/map-service.js';
+import bus from '../js/core/event-bus.js';
 import { setExportMapManager } from '../js/export/exporter.js';
 import sessionStore from '../js/core/session-store.js';
 import { getState, setUIState } from '../js/core/state.js';
@@ -41,7 +42,8 @@ import {
     exportProjectKit,
     exportMapView,
     buildMapContextMenuItems,
-    setPanelCollapsed
+    setPanelCollapsed,
+    openPresentationLinkBuilderWidget
 } from '../js/tools/tool-handlers.js';
 import { getActiveLayer } from '../js/core/state.js';
 import { isLayerVisibleAtScale } from '../js/map/scale-range.js';
@@ -56,6 +58,8 @@ import { RightPanel } from './panels/RightPanel.jsx';
 import { mountModalHost } from './ui/mountModalHost.jsx';
 import { mountToastHost } from './ui/mountToastHost.jsx';
 import { CollapsibleSection } from './ui/CollapsibleSection.jsx';
+import { isPresentationMode } from '../js/presentation/presentation-mode-detector.js';
+import { PresentationApp } from './presentation/PresentationApp.jsx';
 
 function SaveIndicator() {
     const [status, setStatus] = useState(null);
@@ -157,6 +161,26 @@ function AppShell() {
         applyDimensionHeaderSelection(value);
     }, []);
 
+    useEffect(() => {
+        return bus.on('map:chrome', (payload) => {
+            if (payload?.is3d !== undefined) {
+                setDimension(payload.is3d ? '3d' : '2d');
+            }
+            if (payload?.basemap) {
+                setBasemap(payload.basemap);
+            }
+        });
+    }, []);
+
+    useEffect(() => {
+        return dualScreenCoordinator.onStateChange((active) => {
+            if (!active) {
+                setDimension(mapService.is3DEnabled() ? '3d' : '2d');
+                setBasemap(mapService.getCurrentBasemap() || 'voyager');
+            }
+        });
+    }, []);
+
     const onToggleAgol = useCallback(() => {
         toggleAgolCompat();
     }, [toggleAgolCompat]);
@@ -175,6 +199,7 @@ function AppShell() {
                     onLogs={toggleLogs}
                     onInfo={showToolInfo}
                     onExportMapView={exportMapView}
+                    onPresentationLink={openPresentationLinkBuilderWidget}
                     getActiveLayer={getActiveLayer}
                     getSelectionCount={(layerId) => mapService.getSelectionCount(layerId)}
                     onDeleteSelected={deleteSelectedFeatures}
@@ -327,6 +352,10 @@ function AppShell() {
 }
 
 export function App() {
+    if (isPresentationMode()) {
+        return <PresentationApp />;
+    }
+
     const store = useMemo(() => createAppStore(), []);
     const modalHostRef = useRef(null);
     const toastHostRef = useRef(null);

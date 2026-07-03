@@ -107,24 +107,28 @@ function applySnapshot(payload) {
         }
     });
 
-    if (is3d) mapService.enable3D();
-    else mapService.disable3D();
+    mapService.set3DEnabled(!!is3d);
     syncDimensionToggle(!!is3d);
-
-    if (payload.activeLayerId) {
-        mapService.setActiveLayerId(payload.activeLayerId);
-    }
 
     const map = mapService.getMap();
     if (viewport && map) {
         suppressViewportBroadcast = true;
-        map.jumpTo({
-            center: viewport.center,
-            zoom: viewport.zoom,
-            bearing: viewport.bearing ?? 0,
-            pitch: viewport.pitch ?? 0
+        mapService.reconcile3DState({
+            camera: {
+                center: viewport.center,
+                zoom: viewport.zoom,
+                bearing: viewport.bearing ?? 0,
+                pitch: is3d ? (viewport.pitch ?? 30) : 0
+            },
+            emitEvent: true
         });
         suppressViewportBroadcast = false;
+    } else {
+        mapService.reconcile3DState({ emitEvent: true });
+    }
+
+    if (payload.activeLayerId) {
+        mapService.setActiveLayerId(payload.activeLayerId);
     }
 }
 

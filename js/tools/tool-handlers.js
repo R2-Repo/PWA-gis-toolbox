@@ -80,6 +80,7 @@ import { loadPaletteFavorites, savePaletteFavorites } from '../map/palette-store
 import { getWorkspaceLayer, exportWorkspaceLayerBundle } from '../workspace/workspace-store.js';
 import { WorkflowStore } from '../workflow/workflow-store.js';
 import { buildWidgetActions } from '../widgets/registry.js';
+import { openPresentationLinkBuilder } from '../widgets/presentation-link-builder/controller.js';
 import {
     loadWidgetStore,
     remapWidgetLayerIds,
@@ -299,10 +300,22 @@ async function applyProjectKitSnapshot(snapshot, { sections, mode = 'replace' })
 
         if (selected.includes('map') && snapshot.map) {
             if (snapshot.map.basemap) applyBasemapHeaderSelection(snapshot.map.basemap);
-            applyDimensionHeaderSelection(snapshot.map.is3d ? '3d' : '2d');
-            const map = mapService.getMap();
-            if (snapshot.map.viewport && map) {
-                map.jumpTo(snapshot.map.viewport);
+            mapService.set3DEnabled(!!snapshot.map.is3d);
+            setDimensionToggleActive(snapshot.map.is3d ? '3d' : '2d');
+            const vp = snapshot.map.viewport;
+            if (vp && mapService.getMap()) {
+                mapService.reconcile3DState({
+                    camera: {
+                        center: vp.center,
+                        zoom: vp.zoom,
+                        bearing: vp.bearing ?? 0,
+                        pitch: snapshot.map.is3d ? (vp.pitch ?? 30) : 0
+                    }
+                });
+            } else if (snapshot.map.is3d) {
+                mapService.enable3D();
+            } else {
+                mapService.disable3D();
             }
         }
 
@@ -3599,6 +3612,7 @@ export function getWidgetContext() {
     return createWidgetContext({
         getLayers,
         getLayerById: (id) => getLayers().find((layer) => layer.id === id),
+        getActiveLayer,
         mapService,
         addLayer,
         createSpatialDataset,
@@ -3608,6 +3622,10 @@ export function getWidgetContext() {
         analyzeSchema,
         turf: globalThis.turf
     });
+}
+
+export function openPresentationLinkBuilderWidget() {
+    return openPresentationLinkBuilder(getWidgetContext());
 }
 
 // ============================
@@ -4701,6 +4719,7 @@ const APP_ACTIONS = {
     openArcGISImporter: openArcGISImporter,
     startImportFence,
     ...buildWidgetActions(getWidgetContext),
+    openPresentationLinkBuilder: openPresentationLinkBuilderWidget,
     openCoordConverter,
     mergeLayers: handleMergeLayers,
     showToolInfo,

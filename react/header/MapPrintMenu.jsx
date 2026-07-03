@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 
-export function MapPrintMenu({ onExportMapView, disabled = false }) {
+export function MapPrintMenu({ onExportMapView, onPresentationLink, disabled = false }) {
     const [open, setOpen] = useState(false);
     const [busy, setBusy] = useState(false);
     const wrapperRef = useRef(null);
@@ -63,6 +63,16 @@ export function MapPrintMenu({ onExportMapView, disabled = false }) {
                     onClick={() => { void handleExport('gif'); }}
                 >
                     Download Orbit GIF
+                </button>
+                <button
+                    type="button"
+                    className="header-print-item"
+                    onClick={() => {
+                        setOpen(false);
+                        onPresentationLink?.();
+                    }}
+                >
+                    Presentation Link
                 </button>
             </div>
         </div>
