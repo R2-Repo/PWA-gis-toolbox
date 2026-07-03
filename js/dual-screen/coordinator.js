@@ -24,6 +24,7 @@ import {
     isSecondaryMapWindowOpen,
     openSecondaryMapWindow
 } from './window-open.js';
+import bus from '../core/event-bus.js';
 
 const POLL_MS = 500;
 const ACTIVATE_HANDSHAKE_MS = 5000;
@@ -283,15 +284,28 @@ class DualScreenCoordinator {
 
             const map = mapService.getMap();
             if (this._lastViewport && map) {
-                map.jumpTo({
-                    center: this._lastViewport.center,
-                    zoom: this._lastViewport.zoom,
-                    bearing: this._lastViewport.bearing,
-                    pitch: this._lastViewport.pitch
+                mapService.reconcile3DState({
+                    camera: {
+                        center: this._lastViewport.center,
+                        zoom: this._lastViewport.zoom,
+                        bearing: this._lastViewport.bearing ?? 0,
+                        pitch: mapService.is3DEnabled()
+                            ? (this._lastViewport.pitch ?? 0)
+                            : 0
+                    },
+                    emitEvent: true
                 });
             } else if (restoredIds.length) {
                 mapService.fitToAll();
+                mapService.reconcile3DState({ emitEvent: true });
+            } else {
+                mapService.reconcile3DState({ emitEvent: true });
             }
+
+            bus.emit('map:chrome', {
+                basemap: mapService.getCurrentBasemap(),
+                is3d: mapService.is3DEnabled()
+            });
 
             scheduleMapResizeAfterLayout(mapService);
         };
@@ -322,6 +336,10 @@ class DualScreenCoordinator {
                 btn.classList.toggle('active', btn.dataset.value === (payload.is3d ? '3d' : '2d'));
             });
         }
+        bus.emit('map:chrome', {
+            basemap: payload.basemap,
+            is3d: payload.is3d
+        });
     }
 
     _handleMessage(msg) {
@@ -414,6 +432,7 @@ class DualScreenCoordinator {
                 workspaceLayerId: dataset.workspaceLayerId ?? null,
                 visible: dataset.visible !== false,
                 geojson: dataset.geojson ? JSON.parse(JSON.stringify(dataset.geojson)) : null,
+                source: dataset.source ? JSON.parse(JSON.stringify(dataset.source)) : null,
                 mapLabels: dataset._mapLabels ?? null,
                 kmlExport: dataset._kmlExport ?? null,
                 scaleRangeEnabled: !!dataset.scaleRangeEnabled,

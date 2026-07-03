@@ -389,6 +389,8 @@ class MapManager {
             this.map.remove();
             this.map = null;
         }
+        // Map instance is gone — asset flags must reset; _3dEnabled keeps user intent.
+        this._reset3DAssetFlags();
         this.dataLayers.clear();
         this._layerNames?.clear();
         this.clusterGroups?.clear();
@@ -1790,6 +1792,100 @@ class MapManager {
         this._3dEnabled ? this.disable3D() : this.enable3D();
     }
 
+    _reset3DAssetFlags() {
+        this._terrainEnabled = false;
+        this._buildingsEnabled = false;
+    }
+
+    _isMapTerrainActive() {
+        return !!this.map?.getTerrain?.();
+    }
+
+    _sync3DAnnotations(is3D) {
+        this._setAllAnnotationMapLibreVisibility(!is3D);
+        this._annotationOverlay?.setActive(!!is3D);
+    }
+
+    _buildCameraOptions(overrides = {}) {
+        const center = overrides.center ?? this.map.getCenter();
+        return {
+            center: Array.isArray(center) ? center : [center.lng, center.lat],
+            zoom: overrides.zoom ?? this.map.getZoom(),
+            bearing: overrides.bearing ?? this.map.getBearing(),
+            pitch: overrides.pitch ?? this.map.getPitch(),
+            freezeElevation: true
+        };
+    }
+
+    _applyCamera(overrides = {}, { animate = false, duration = 800 } = {}) {
+        const opts = this._buildCameraOptions(overrides);
+        if (animate) {
+            this.map.easeTo({ ...opts, duration });
+        } else {
+            this.map.jumpTo(opts);
+        }
+    }
+
+    _ensure3DAssets() {
+        if (!this._isMapTerrainActive()) {
+            this._reset3DAssetFlags();
+            this._apply3D();
+        }
+    }
+
+    _teardown3DAssetsSync() {
+        this.map.setTerrain(null);
+        this._terrainEnabled = false;
+        if (this.map.getLayer('hillshade')) this.map.removeLayer('hillshade');
+        if (this.map.getLayer('sky')) this.map.removeLayer('sky');
+        this._removeBuildingsLayer();
+        if (this.map.getSource('terrain-source')) this.map.removeSource('terrain-source');
+    }
+
+    /**
+     * Apply _3dEnabled intent to the live map (after init, snapshot, or dual-screen restore).
+     * @param {{ camera?: object, emitEvent?: boolean }} [options]
+     */
+    reconcile3DState({ camera, emitEvent = true } = {}) {
+        if (!this.map) return;
+
+        if (this._3dEnabled) {
+            this.map.dragRotate.enable();
+            this.map.touchZoomRotate.enableRotation();
+            this._ensure3DAssets();
+            this._sync3DAnnotations(true);
+
+            if (camera) {
+                this._applyCamera(camera, {
+                    animate: camera.animate === true,
+                    duration: camera.duration ?? 800
+                });
+            }
+
+            if (emitEvent) bus.emit('map:3dChanged', true);
+            return;
+        }
+
+        this._sync3DAnnotations(false);
+        this.map.dragRotate.disable();
+        this.map.touchZoomRotate.disableRotation();
+
+        const hadTerrain = this._isMapTerrainActive();
+        const needsFlatten = this.map.getPitch() !== 0 || this.map.getBearing() !== 0;
+
+        if (hadTerrain) {
+            if (needsFlatten || camera) {
+                this._applyCamera({ pitch: 0, bearing: 0, ...camera }, { animate: false });
+            }
+            this._teardown3DAssetsSync();
+        } else if (needsFlatten || camera) {
+            this._applyCamera({ pitch: 0, bearing: 0, ...camera }, { animate: false });
+            this._reset3DAssetFlags();
+        }
+
+        if (emitEvent) bus.emit('map:3dChanged', false);
+    }
+
     /** Internal helper — adds terrain, sky, buildings without changing _3dEnabled flag */
     _apply3D() {
         if (!this.map.getSource('terrain-source')) {
@@ -1840,67 +1936,91 @@ class MapManager {
         this._addBuildingsLayer();
     }
 
-    enable3D() {
-        if (this._3dEnabled) return;
+    enable3D(options = {}) {
+        if (!this.map) return;
+
+        const fullyEnabled = this._3dEnabled && this._isMapTerrainActive();
         this._3dEnabled = true;
 
-        // Snapshot current view so the tilt doesn't shift position
-        const center = this.map.getCenter();
-        const zoom = this.map.getZoom();
-
-        // Unlock pitch / rotation for 3D
         this.map.dragRotate.enable();
         this.map.touchZoomRotate.enableRotation();
 
-        this._apply3D();
+        if (!this._isMapTerrainActive()) {
+            this._reset3DAssetFlags();
+            this._apply3D();
+        }
 
-        // Wait for terrain tiles to start loading before tilting
-        // (prevents black flash when DEM tiles haven't arrived yet)
-        let tilted = false;
-        const doTilt = () => {
-            if (tilted) return;
-            tilted = true;
-            this.map.easeTo({ pitch: 30, center, zoom, duration: 800 });
-        };
-        const onSourceData = (e) => {
-            if (e.sourceId === 'terrain-source' && e.isSourceLoaded) {
-                this.map.off('sourcedata', onSourceData);
-                doTilt();
-            }
-        };
-        this.map.on('sourcedata', onSourceData);
-        // Fallback: tilt after short delay even if tiles are slow
-        setTimeout(() => { this.map.off('sourcedata', onSourceData); doTilt(); }, 600);
+        this._sync3DAnnotations(true);
 
-        logger.info('Map', '3D terrain and buildings enabled');
-        bus.emit('map:3dChanged', true);
+        if (options.skipCamera) {
+            // Caller applies camera separately (e.g. snapshot restore).
+        } else if (options.pitch != null || options.center || options.zoom != null) {
+            this._applyCamera({
+                pitch: options.pitch ?? this.map.getPitch(),
+                bearing: options.bearing,
+                center: options.center,
+                zoom: options.zoom
+            }, { animate: options.animate === true, duration: options.duration ?? 800 });
+        } else if (!fullyEnabled) {
+            const center = this.map.getCenter();
+            const zoom = this.map.getZoom();
+            let tilted = false;
+            const doTilt = () => {
+                if (tilted) return;
+                tilted = true;
+                this._applyCamera({ pitch: 30, center, zoom }, { animate: true, duration: 800 });
+            };
+            const onSourceData = (e) => {
+                if (e.sourceId === 'terrain-source' && e.isSourceLoaded) {
+                    this.map.off('sourcedata', onSourceData);
+                    doTilt();
+                }
+            };
+            this.map.on('sourcedata', onSourceData);
+            setTimeout(() => { this.map.off('sourcedata', onSourceData); doTilt(); }, 600);
+        }
+
+        if (!fullyEnabled) {
+            logger.info('Map', '3D terrain and buildings enabled');
+            bus.emit('map:3dChanged', true);
+        }
     }
 
-    disable3D() {
-        if (!this._3dEnabled) return;
-        this._3dEnabled = false;
+    disable3D(options = {}) {
+        if (!this.map) return;
 
-        // Snapshot center so the un-tilt doesn't shift position
+        if (!this._3dEnabled && !this._isMapTerrainActive()
+            && this.map.getPitch() === 0 && this.map.getBearing() === 0) {
+            return;
+        }
+
+        this._3dEnabled = false;
+        this._sync3DAnnotations(false);
+
+        if (!this._isMapTerrainActive()) {
+            this._reset3DAssetFlags();
+            this._applyCamera({ pitch: 0, bearing: 0 }, {
+                animate: options.animate !== false,
+                duration: options.duration ?? 500
+            });
+            this.map.dragRotate.disable();
+            this.map.touchZoomRotate.disableRotation();
+            logger.info('Map', '3D terrain and buildings disabled');
+            bus.emit('map:3dChanged', false);
+            return;
+        }
+
         const center = this.map.getCenter();
         const zoom = this.map.getZoom();
 
-        // Flatten camera FIRST while terrain is still loaded
-        // (removing terrain at a tilted pitch causes the black-screen flash)
-        this.map.easeTo({ pitch: 0, bearing: 0, center, zoom, duration: 500 });
+        this._applyCamera({ pitch: 0, bearing: 0, center, zoom }, {
+            animate: options.animate !== false,
+            duration: options.duration ?? 500
+        });
 
-        // After the camera is flat, tear down 3D assets safely
         const cleanup = () => {
-            // Guard: if 3D was re-enabled while animating, skip teardown
             if (this._3dEnabled) return;
-
-            this.map.setTerrain(null);
-            this._terrainEnabled = false;
-
-            if (this.map.getLayer('hillshade')) this.map.removeLayer('hillshade');
-            if (this.map.getLayer('sky')) this.map.removeLayer('sky');
-            this._removeBuildingsLayer();
-            if (this.map.getSource('terrain-source')) this.map.removeSource('terrain-source');
-
+            this._teardown3DAssetsSync();
             this.map.dragRotate.disable();
             this.map.touchZoomRotate.disableRotation();
         };
@@ -1939,7 +2059,7 @@ class MapManager {
                     ],
                     'fill-extrusion-base': [
                         'case',
-                        ['>=', ['get', 'zoom'], 16],
+                        ['>=', ['zoom'], 16],
                         ['get', 'render_min_height'], 0
                     ]
                 }
@@ -1995,7 +2115,8 @@ class MapManager {
             center: [center.lng, center.lat],
             zoom,
             pitch: MapManager.ORBIT_PITCH,
-            duration: 1500
+            duration: 1500,
+            freezeElevation: true
         });
 
         // Auto-stop orbit on any user interaction
@@ -2080,7 +2201,8 @@ class MapManager {
                 center: [center.lng, center.lat],
                 zoom,
                 pitch,
-                duration: options.duration ?? 1500
+                duration: options.duration ?? 1500,
+                freezeElevation: true
             });
         });
 
@@ -4097,5 +4219,6 @@ class MapManager {
     }
 }
 
+export { MapManager };
 export const mapManager = new MapManager();
 export default mapManager;
