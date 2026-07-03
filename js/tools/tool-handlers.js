@@ -36,7 +36,7 @@ import { assessImportRoute, shouldConvertToWorkspace, arcgisShouldUseWorkspace }
 import { ErrorCategory } from '../core/error-handler.js';
 import { getAvailableFormats, exportDataset, exportMultiLayerKMZFile, exportMultiLayerKMLFile, setExportMapManager } from '../export/exporter.js';
 import { isCoverageRasterLayer } from '../core/coverage-raster-layer.js';
-import mapService from '../map/map-service.js';
+import mapService, { formatElevationLabel } from '../map/map-service.js';
 import { isSmartStyleActive } from '../map/style-engine.js';
 import dualScreenCoordinator from '../dual-screen/coordinator.js';
 import { installDualScreenPrimaryHandlers } from '../dual-screen/primary-handlers.js';
@@ -514,6 +514,25 @@ export function buildMapContextMenuItems(payload) {
             navigator.clipboard.writeText(text).catch(() => showToast(text, 'info'));
         }
     });
+
+    if (mapService.is3DEnabled()) {
+        items.push({
+            icon: '⛰️',
+            label: 'Get elevation',
+            action: () => {
+                const meters = mapService.queryElevationAt(latlng.lat, latlng.lng);
+                if (meters == null) {
+                    showToast('Elevation unavailable — terrain tiles may still be loading', 'warning');
+                    return;
+                }
+                const text = formatElevationLabel(meters);
+                const message = `Elevation: ${text}`;
+                navigator.clipboard.writeText(text)
+                    .then(() => showToast(message, 'success'))
+                    .catch(() => showToast(message, 'info'));
+            }
+        });
+    }
 
     if (mapService.isOrbiting()) {
         items.push({

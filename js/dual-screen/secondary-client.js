@@ -2,7 +2,7 @@
  * Dual Screen Mode — secondary window interactions (draw, fence, popups, drop, context menu)
  */
 import bus from '../core/event-bus.js';
-import mapService from '../map/map-service.js';
+import mapService, { formatElevationLabel } from '../map/map-service.js';
 import drawManager from '../map/draw-manager.js';
 import { MessageType, createMessage, buildViewportPayload } from './protocol.js';
 import {
@@ -160,6 +160,21 @@ function showSecondaryContextMenu({ latlng, originalEvent, layerId, featureIndex
         navigator.clipboard.writeText(text).then(() => showMapToast(`Copied: ${text}`, 'success'))
             .catch(() => showMapToast(text, 'info'));
     }});
+
+    if (mapService.is3DEnabled()) {
+        items.push({ icon: '⛰️', label: 'Get elevation', action: () => {
+            const meters = mapService.queryElevationAt(latlng.lat, latlng.lng);
+            if (meters == null) {
+                showMapToast('Elevation unavailable — terrain tiles may still be loading', 'warning');
+                return;
+            }
+            const text = formatElevationLabel(meters);
+            const message = `Elevation: ${text}`;
+            navigator.clipboard.writeText(text)
+                .then(() => showMapToast(message, 'success'))
+                .catch(() => showMapToast(message, 'info'));
+        }});
+    }
 
     if (mapService.isOrbiting()) {
         items.push({ icon: '⏹️', label: 'Stop camera orbit', action: () => {
