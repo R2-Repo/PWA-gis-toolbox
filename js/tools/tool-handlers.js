@@ -80,6 +80,7 @@ import { loadPaletteFavorites, savePaletteFavorites } from '../map/palette-store
 import { getWorkspaceLayer, exportWorkspaceLayerBundle } from '../workspace/workspace-store.js';
 import { WorkflowStore } from '../workflow/workflow-store.js';
 import { buildWidgetActions } from '../widgets/registry.js';
+import { openPresentationLinkBuilder } from '../widgets/presentation-link-builder/controller.js';
 import {
     loadWidgetStore,
     remapWidgetLayerIds,
@@ -3611,6 +3612,7 @@ export function getWidgetContext() {
     return createWidgetContext({
         getLayers,
         getLayerById: (id) => getLayers().find((layer) => layer.id === id),
+        getActiveLayer,
         mapService,
         addLayer,
         createSpatialDataset,
@@ -3620,6 +3622,10 @@ export function getWidgetContext() {
         analyzeSchema,
         turf: globalThis.turf
     });
+}
+
+export function openPresentationLinkBuilderWidget() {
+    return openPresentationLinkBuilder(getWidgetContext());
 }
 
 // ============================
@@ -4713,6 +4719,7 @@ const APP_ACTIONS = {
     openArcGISImporter: openArcGISImporter,
     startImportFence,
     ...buildWidgetActions(getWidgetContext),
+    openPresentationLinkBuilder: openPresentationLinkBuilderWidget,
     openCoordConverter,
     mergeLayers: handleMergeLayers,
     showToolInfo,
