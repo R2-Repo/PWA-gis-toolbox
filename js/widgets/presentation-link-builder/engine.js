@@ -3,24 +3,17 @@ import { buildPresentationUrl, estimateEncodedSceneLength } from '../../presenta
 import { summarizeFeatures, validatePresentationFeatures } from '../../presentation/scene-validation.js';
 import { createAnimationStep, getAnimationPreset, isPresetCompatible } from '../../presentation/animation-presets.js';
 
-export const SOURCE_MODES = [
-    { id: 'selection', label: 'Current selected feature(s)' },
-    { id: 'highlighted', label: 'Clicked / highlighted feature' },
-    { id: 'drawn', label: 'Current drawn feature' },
-    { id: 'active-layer-selection', label: 'Active layer selected feature(s)' }
-];
-
-/**
- * @param {import('geojson').Feature} feature
- */
 export { cloneFeature, toFeatureCollection } from './source-features.js';
-
-// Source feature resolution lives in source-features.js (async, map-aware).
 export {
-    collectSourceFeaturesAsync as collectSourceFeatures,
-    summarizeResolvedSource,
-    summarizeSourceContext
+    collectSourceFeatures,
+    summarizeResolvedSource
 } from './source-features.js';
+
+export const SIMPLE_ANIMATION_OPTIONS = [
+    { id: 'none', label: 'None — open on feature' },
+    { id: 'flyToFeature', label: 'Fly to feature' },
+    { id: 'rotateAroundFeature', label: 'Orbit around feature' }
+];
 
 /**
  * @param {import('geojson').FeatureCollection} features
@@ -35,74 +28,57 @@ export function summarizeSourceFeatures(features) {
 
 /**
  * @param {object} config
- * @param {import('geojson').FeatureCollection} config.features
- * @param {import('maplibre-gl').Map} [config.map]
  */
 export function buildSceneFromConfig(config) {
     const {
         features,
         map,
-        layout = {},
-        camera = {},
-        style = {},
-        animation = {},
-        metadata = {}
+        animation = {}
     } = config;
 
     const mapCenter = map?.getCenter?.();
     const cameraConfig = {
-        useCurrent: camera.useCurrent !== false,
-        fitToFeatures: !!camera.fitToFeatures,
-        center: camera.center || (mapCenter ? [mapCenter.lng, mapCenter.lat] : [0, 0]),
-        zoom: camera.zoom ?? map?.getZoom?.() ?? 14,
-        pitch: camera.pitch ?? map?.getPitch?.() ?? 0,
-        bearing: camera.bearing ?? map?.getBearing?.() ?? 0,
-        padding: camera.padding ?? 80,
-        resetNorth: !!camera.resetNorth,
-        startDelayMs: camera.startDelayMs ?? 0
+        useCurrent: false,
+        fitToFeatures: true,
+        center: mapCenter ? [mapCenter.lng, mapCenter.lat] : [0, 0],
+        zoom: map?.getZoom?.() ?? 14,
+        pitch: map?.getPitch?.() ?? 45,
+        bearing: map?.getBearing?.() ?? 0,
+        padding: 80,
+        resetNorth: false,
+        startDelayMs: 0
     };
 
     const animations = [];
-    const presetId = animation.presetId || 'none';
+    const presetId = animation.presetId || 'flyToFeature';
     if (presetId !== 'none') {
         animations.push(createAnimationStep(presetId, {
             durationMs: animation.durationMs ?? 3000,
-            delayMs: animation.delayMs ?? 0,
-            easing: animation.easing || 'easeInOut',
-            loop: !!animation.loop,
+            delayMs: 0,
+            easing: 'easeInOut',
+            loop: false,
             stepOptions: {
                 pitch: cameraConfig.pitch,
                 bearing: cameraConfig.bearing,
-                padding: cameraConfig.padding,
-                followCamera: animation.followCamera !== false
+                padding: cameraConfig.padding
             }
         }));
     }
 
     return createDefaultScene({
-        layout,
         camera: cameraConfig,
         features,
-        style,
         animations,
         metadata: {
-            title: metadata.title || '',
-            subtitle: metadata.subtitle || '',
             generatedAt: new Date().toISOString()
         }
     });
 }
 
-/**
- * @param {import('../../presentation/presentation-scene-schema.js').PresentationScene} scene
- */
 export function validateSceneForUrl(scene) {
     return validatePresentationFeatures(scene.features, { sceneDraft: scene });
 }
 
-/**
- * @param {import('../../presentation/presentation-scene-schema.js').PresentationScene} scene
- */
 export function getPresentationUrl(scene) {
     return buildPresentationUrl(scene);
 }
@@ -112,9 +88,9 @@ export function getEstimatedUrlLength(scene) {
 }
 
 export function getCompatiblePresets(features) {
-    return ['none', 'flyToFeature', 'rotateAroundFeature', 'flyAlongPath', 'animatePointAlongLine', 'animatePoint', 'animateLinePath']
-        .map((id) => ({
-            ...getAnimationPreset(id),
-            compatible: isPresetCompatible(features, id)
-        }));
+    return SIMPLE_ANIMATION_OPTIONS.map((option) => ({
+        ...getAnimationPreset(option.id),
+        ...option,
+        compatible: isPresetCompatible(features, option.id)
+    }));
 }

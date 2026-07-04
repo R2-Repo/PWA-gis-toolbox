@@ -1,0 +1,13 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": { "name": "Demo Site" },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [-111.891, 40.7608]
+      }
+    }
+  ]
+}
