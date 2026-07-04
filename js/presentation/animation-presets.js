@@ -20,6 +20,12 @@ export const ANIMATION_PRESETS = [
         requires: ['any']
     },
     {
+        id: 'flyToFeatureThenOrbit',
+        label: 'Fly in, then orbit',
+        description: 'Cinematic fly to the feature, then orbit around it.',
+        requires: ['any']
+    },
+    {
         id: 'flyAlongPath',
         label: 'Fly along feature/path',
         description: 'Move the camera along a line path.',

@@ -8,6 +8,7 @@ import {
     collectSourceFeatures,
     getCompatiblePresets,
     getPresentationUrl,
+    ORBIT_PACE_MS,
     summarizeResolvedSource,
     summarizeSourceFeatures,
     validateSceneForUrl
@@ -38,6 +39,57 @@ function stopPreview(ctx) {
     previewRuntime?.engine?.cleanup();
     previewRuntime = null;
     ctx.mapService?.clearTempFeatures?.();
+    const map = ctx.mapService?.getMap?.();
+    try {
+        map?.stop();
+    } catch {
+        // ignore
+    }
+}
+
+function syncMapChrome(mapService) {
+    syncDimensionChrome(mapService?.is3DEnabled?.() ?? false);
+    const basemap = mapService?.getCurrentBasemap?.();
+    if (basemap) bus.emit('map:chrome', { basemap });
+}
+
+function restoreMapDimensionAfterWidget(ctx, { was3d }) {
+    const mapService = ctx.mapService;
+    const map = mapService?.getMap?.();
+    if (!map || !mapService) return;
+
+    if (!was3d) {
+        mapService.set3DEnabled(false);
+        const center = map.getCenter();
+        mapService.reconcile3DState({
+            camera: {
+                center: [center.lng, center.lat],
+                zoom: map.getZoom(),
+                pitch: 0,
+                bearing: 0
+            },
+            emitEvent: false
+        });
+        return;
+    }
+
+    mapService.reconcile3DState({ emitEvent: false });
+}
+
+function teardownPresentationWidget(ctx, { was3d }) {
+    stopPreview(ctx);
+    ctx.mapService?.cancelInteraction?.();
+
+    const map = ctx.mapService?.getMap?.();
+    const canvas = map?.getCanvas?.();
+    if (canvas) canvas.style.cursor = '';
+
+    restoreMapDimensionAfterWidget(ctx, { was3d });
+
+    syncMapChrome(ctx.mapService);
+    window.requestAnimationFrame(() => {
+        ctx.mapService?.resize?.();
+    });
 }
 
 async function resolveSourceBundle(ctx) {
@@ -56,7 +108,8 @@ function buildDefaultFormState(sourceSummary) {
     return {
         animation: {
             presetId: 'none',
-            durationMs: 3000
+            durationMs: ORBIT_PACE_MS.normal,
+            orbitPace: 'normal'
         },
         sourceSummary
     };
@@ -64,12 +117,12 @@ function buildDefaultFormState(sourceSummary) {
 
 export async function openPresentationLinkBuilder(ctx) {
     const was3d = ctx.mapService?.is3DEnabled?.() ?? false;
-    let restored3d = false;
+    let tornDown = false;
 
-    const restore3dIfNeeded = () => {
-        if (restored3d || was3d) return;
-        restored3d = true;
-        apply3DSelection(ctx.mapService, false);
+    const teardown = () => {
+        if (tornDown) return;
+        tornDown = true;
+        teardownPresentationWidget(ctx, { was3d });
     };
 
     if (!was3d) {
@@ -164,10 +217,9 @@ export async function openPresentationLinkBuilder(ctx) {
                 };
             },
             onResetPreview: () => stopPreview(ctx),
-            onWidgetClose: restore3dIfNeeded,
+            onWidgetClose: teardown,
             onCancel: () => {
-                stopPreview(ctx);
-                restore3dIfNeeded();
+                teardown();
                 close();
             }
         })

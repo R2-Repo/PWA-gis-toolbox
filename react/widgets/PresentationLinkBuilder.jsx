@@ -1,5 +1,11 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { WidgetPanelShell } from './shared/WidgetPanelShell.jsx';
+import {
+    listLinkAnimations,
+    getLinkAnimation,
+    getDurationMsForPace,
+    ORBIT_PACE_MS
+} from '../../js/presentation/presentation-link-animations.js';
 
 const EMPTY_SUMMARY = {
     featureCount: 0,
@@ -8,6 +14,17 @@ const EMPTY_SUMMARY = {
     sourceLabel: 'Click Pick on map or select a feature first',
     isEmpty: true
 };
+
+const DURATION_MIN = 1;
+const DURATION_MAX = 60;
+
+function clampDurationSec(value) {
+    return Math.min(DURATION_MAX, Math.max(DURATION_MIN, value));
+}
+
+function formatDurationSec(durationMs, fallbackMs = ORBIT_PACE_MS.normal) {
+    return String(Math.round((durationMs ?? fallbackMs) / 1000));
+}
 
 export function PresentationLinkBuilder({
     loadInitialState,
@@ -30,6 +47,8 @@ export function PresentationLinkBuilder({
     const [loading, setLoading] = useState(true);
     const [status, setStatus] = useState('');
     const [refreshTick, setRefreshTick] = useState(0);
+    const [durationSec, setDurationSec] = useState(formatDurationSec(ORBIT_PACE_MS.normal));
+    const durationEditingRef = useRef(false);
 
     const applyBundle = useCallback((bundle) => {
         if (bundle?.sourceSummary) setSourceSummary(bundle.sourceSummary);
@@ -44,10 +63,20 @@ export function PresentationLinkBuilder({
             if (cancelled || !initial) return;
             setFormState(initial);
             setSourceSummary(initial.sourceSummary || EMPTY_SUMMARY);
+            setDurationSec(formatDurationSec(initial.animation?.durationMs));
             setLoading(false);
         })();
         return () => { cancelled = true; };
     }, [loadInitialState]);
+
+    useEffect(() => {
+        if (!formState || durationEditingRef.current) return;
+        const definition = getLinkAnimation(formState.animation?.presetId || 'none');
+        setDurationSec(formatDurationSec(
+            formState.animation?.durationMs,
+            definition.ui.defaultDurationMs
+        ));
+    }, [formState?.animation?.durationMs, formState?.animation?.orbitPace, formState?.animation?.presetId]);
 
     useEffect(() => {
         if (!formState) return undefined;
@@ -73,13 +102,24 @@ export function PresentationLinkBuilder({
         );
     }, [formState, onSubscribeSourceRefresh, onRefreshSource, applyBundle]);
 
-    useEffect(() => () => { onWidgetClose?.(); }, [onWidgetClose]);
+    useEffect(() => () => {
+        onResetPreview?.();
+        onWidgetClose?.();
+    }, [onWidgetClose, onResetPreview]);
 
     const updateAnimation = (patch) => {
         setFormState((prev) => (prev ? {
             ...prev,
             animation: { ...prev.animation, ...patch }
         } : prev));
+    };
+
+    const commitDurationSec = (rawValue) => {
+        durationEditingRef.current = false;
+        const parsed = Number.parseInt(rawValue, 10);
+        const clamped = clampDurationSec(Number.isFinite(parsed) ? parsed : DURATION_MIN);
+        setDurationSec(String(clamped));
+        updateAnimation({ durationMs: clamped * 1000, orbitPace: 'custom' });
     };
 
     const handlePick = async () => {
@@ -129,6 +169,11 @@ export function PresentationLinkBuilder({
             </WidgetPanelShell>
         );
     }
+
+    const presetId = formState.animation?.presetId || 'none';
+    const selectedDefinition = getLinkAnimation(presetId);
+    const { ui } = selectedDefinition;
+    const pacePresets = ui.pacePresetsMs ?? {};
 
     return (
         <WidgetPanelShell
@@ -187,27 +232,86 @@ export function PresentationLinkBuilder({
                 <select
                     id="presentation-animation"
                     className="input-sm w-full"
-                    value={formState.animation?.presetId || 'none'}
-                    onChange={(e) => updateAnimation({ presetId: e.target.value })}
+                    value={presetId}
+                    onChange={(e) => {
+                        const nextPreset = e.target.value;
+                        const nextDefinition = getLinkAnimation(nextPreset);
+                        const patch = { presetId: nextPreset };
+                        if (nextDefinition.ui.showPace && formState.animation?.orbitPace !== 'custom') {
+                            const pace = formState.animation?.orbitPace || 'normal';
+                            patch.orbitPace = pace;
+                            patch.durationMs = getDurationMsForPace(nextDefinition, pace);
+                        }
+                        updateAnimation(patch);
+                    }}
                 >
-                    <option value="none">None</option>
-                    <option value="flyToFeature">Fly to feature</option>
-                    <option value="rotateAroundFeature">Orbit around feature</option>
+                    {listLinkAnimations().map((option) => (
+                        <option key={option.id} value={option.id}>{option.label}</option>
+                    ))}
                 </select>
+                {selectedDefinition.usageHint ? (
+                    <p className="presentation-link-builder__hint text-xs text-muted">{selectedDefinition.usageHint}</p>
+                ) : null}
             </div>
 
-            <div className="presentation-link-builder__row">
-                <label className="field-label" htmlFor="presentation-duration">Duration (seconds)</label>
-                <input
-                    id="presentation-duration"
-                    type="number"
-                    className="input-sm w-full"
-                    min="1"
-                    max="30"
-                    value={Math.max(1, Math.round((formState.animation?.durationMs ?? 3000) / 1000))}
-                    onChange={(e) => updateAnimation({ durationMs: Number(e.target.value) * 1000 })}
-                />
-            </div>
+            {ui.showPace ? (
+                <div className="presentation-link-builder__row">
+                    <label className="field-label" htmlFor="presentation-orbit-pace">
+                        {ui.paceLabel}
+                    </label>
+                    <select
+                        id="presentation-orbit-pace"
+                        className="input-sm w-full"
+                        value={formState.animation?.orbitPace || 'normal'}
+                        onChange={(e) => {
+                            const pace = e.target.value;
+                            if (pace === 'custom') {
+                                updateAnimation({ orbitPace: 'custom' });
+                                return;
+                            }
+                            updateAnimation({
+                                orbitPace: pace,
+                                durationMs: pacePresets[pace] ?? ui.defaultDurationMs
+                            });
+                        }}
+                    >
+                        {(['slow', 'normal', 'fast']).map((pace) => (
+                            <option key={pace} value={pace}>
+                                {ui.paceOptionLabels?.[pace] ?? pace}
+                            </option>
+                        ))}
+                        <option value="custom">Custom</option>
+                    </select>
+                </div>
+            ) : null}
+
+            {ui.showDuration ? (
+                <div className="presentation-link-builder__row">
+                    <label className="field-label" htmlFor="presentation-duration">
+                        {ui.durationLabel ?? 'Duration (seconds)'}
+                    </label>
+                    <input
+                        id="presentation-duration"
+                        type="number"
+                        className="input-sm w-full"
+                        min={DURATION_MIN}
+                        max={DURATION_MAX}
+                        value={durationSec}
+                        onChange={(e) => {
+                            durationEditingRef.current = true;
+                            setDurationSec(e.target.value);
+                        }}
+                        onBlur={(e) => commitDurationSec(e.target.value)}
+                        onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                                e.preventDefault();
+                                commitDurationSec(e.currentTarget.value);
+                                e.currentTarget.blur();
+                            }
+                        }}
+                    />
+                </div>
+            ) : null}
 
             <div className="presentation-link-builder__url text-xs mt-12" title={url}>
                 {validation.ok ? url : 'Your presentation link will appear here after a feature is picked.'}

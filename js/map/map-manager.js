@@ -2195,34 +2195,41 @@ class MapManager {
         this._3dEnabled = false;
         this._sync3DAnnotations(false);
 
-        if (!this._isMapTerrainActive()) {
-            this._reset3DAssetFlags();
-            this._applyCamera({ pitch: 0, bearing: 0 }, {
-                animate: options.animate !== false,
-                duration: options.duration ?? 500
-            });
-            this.map.dragRotate.disable();
-            this.map.touchZoomRotate.disableRotation();
-            logger.info('Map', '3D terrain and buildings disabled');
-            bus.emit('map:3dChanged', false);
-            return;
-        }
-
         const center = this.map.getCenter();
         const zoom = this.map.getZoom();
+        const animate = options.animate !== false;
+        const duration = options.duration ?? 500;
 
-        this._applyCamera({ pitch: 0, bearing: 0, center, zoom }, {
-            animate: options.animate !== false,
-            duration: options.duration ?? 500
-        });
-
-        const cleanup = () => {
+        const finalizeDisable = () => {
             if (this._3dEnabled) return;
-            this._teardown3DAssetsSync();
+            if (this._isMapTerrainActive()) {
+                this._teardown3DAssetsSync();
+            }
+            this._reset3DAssetFlags();
             this.map.dragRotate.disable();
             this.map.touchZoomRotate.disableRotation();
         };
-        this.map.once('moveend', cleanup);
+
+        const needsCameraReset = this.map.getPitch() !== 0 || this.map.getBearing() !== 0
+            || this._isMapTerrainActive();
+
+        if (needsCameraReset) {
+            this._applyCamera({ pitch: 0, bearing: 0, center, zoom }, { animate, duration });
+        }
+
+        if (!animate) {
+            finalizeDisable();
+        } else {
+            let finalized = false;
+            const done = () => {
+                if (finalized) return;
+                finalized = true;
+                this.map.off('moveend', done);
+                finalizeDisable();
+            };
+            this.map.once('moveend', done);
+            window.setTimeout(done, duration + 150);
+        }
 
         logger.info('Map', '3D terrain and buildings disabled');
         bus.emit('map:3dChanged', false);

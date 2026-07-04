@@ -2,12 +2,19 @@
  * Reusable presentation animation engine for MapLibre maps.
  */
 
+import { runPresentationAnimationStep } from './presentation-animation-handlers.js';
+
 const PRESENTATION_SOURCE_PREFIX = 'presentation-scene';
 const ANIMATED_POINT_SOURCE = 'presentation-animated-point';
 const ANIMATED_LINE_SOURCE = 'presentation-animated-line';
 
 function sleep(ms) {
     return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function cinematicEase(t) {
+    const c = Math.min(1, Math.max(0, t));
+    return c * c * (3 - 2 * c);
 }
 
 function easeValue(t, easing) {
@@ -18,9 +25,8 @@ function easeValue(t, easing) {
         case 'easeOut':
             return 1 - (1 - clamped) * (1 - clamped);
         case 'easeInOut':
-            return clamped < 0.5
-                ? 2 * clamped * clamped
-                : 1 - Math.pow(-2 * clamped + 2, 2) / 2;
+        case 'cinematic':
+            return cinematicEase(clamped);
         default:
             return clamped;
     }
@@ -144,6 +150,162 @@ function setAnimatedLine(map, coordinates) {
 
 const PRESENTATION_FIT_MAX_ZOOM = 16;
 const PRESENTATION_POINT_MIN_ZOOM = 14;
+const OVERVIEW_EXPAND_FACTOR = 3.5;
+const OVERVIEW_MAX_ZOOM = 11;
+const OVERVIEW_ZOOM_GAP = 2.5;
+
+/**
+ * @param {[[number, number], [number, number]]} bounds
+ * @param {number} [factor]
+ */
+function expandBounds(bounds, factor = OVERVIEW_EXPAND_FACTOR) {
+    const [[west, south], [east, north]] = bounds;
+    const centerLng = (west + east) / 2;
+    const centerLat = (south + north) / 2;
+    const halfWidth = Math.max(Math.abs(east - west) / 2, 0.0005) * factor;
+    const halfHeight = Math.max(Math.abs(north - south) / 2, 0.0005) * factor;
+    return [[centerLng - halfWidth, centerLat - halfHeight], [centerLng + halfWidth, centerLat + halfHeight]];
+}
+
+/**
+ * Estimate overview zoom from geographic span (fallback when no map is available).
+ * @param {[[number, number], [number, number]]} bounds
+ */
+function estimateZoomFromBounds(bounds) {
+    const [[west, south], [east, north]] = bounds;
+    const centerLat = (south + north) / 2;
+    const latRad = (centerLat * Math.PI) / 180;
+    const widthDeg = Math.max(Math.abs(east - west), 0.001);
+    const heightDeg = Math.max(Math.abs(north - south), 0.001);
+    const maxSpan = Math.max(widthDeg * Math.cos(latRad), heightDeg);
+    const zoom = Math.log2(360 / maxSpan) - 0.5;
+    return Math.max(1, Math.min(OVERVIEW_MAX_ZOOM, zoom));
+}
+
+/**
+ * Compute a wide overview camera for fly-to presentations.
+ * @param {import('geojson').FeatureCollection} featureCollection
+ * @param {object} [options]
+ * @param {import('maplibre-gl').Map} [options.map]
+ * @param {number} [options.padding]
+ * @param {number} [options.bearing]
+ * @param {number} [options.targetZoom] — ensure overview is at least this many levels wider
+ */
+export function computeOverviewCamera(featureCollection, options = {}) {
+    const bounds = getFeatureBounds(featureCollection);
+    if (!bounds) return null;
+
+    const expanded = expandBounds(bounds, options.expandFactor ?? OVERVIEW_EXPAND_FACTOR);
+    const centerCoords = getFeatureCenter(featureCollection) || [
+        (expanded[0][0] + expanded[1][0]) / 2,
+        (expanded[0][1] + expanded[1][1]) / 2
+    ];
+    const padding = options.padding ?? 120;
+    const bearing = options.bearing ?? 0;
+
+    const map = options.map;
+    let overviewZoom = estimateZoomFromBounds(expanded);
+
+    if (map?.fitBounds) {
+        const saved = {
+            center: map.getCenter(),
+            zoom: map.getZoom(),
+            pitch: map.getPitch(),
+            bearing: map.getBearing()
+        };
+        try {
+            map.fitBounds(expanded, {
+                padding,
+                duration: 0,
+                maxZoom: OVERVIEW_MAX_ZOOM,
+                essential: true
+            });
+            overviewZoom = map.getZoom();
+            map.jumpTo({
+                center: saved.center,
+                zoom: saved.zoom,
+                pitch: saved.pitch,
+                bearing: saved.bearing,
+                essential: true
+            });
+        } catch {
+            // use estimate
+        }
+    }
+
+    if (options.targetZoom != null) {
+        overviewZoom = Math.min(overviewZoom, options.targetZoom - OVERVIEW_ZOOM_GAP);
+    }
+    overviewZoom = Math.max(1, Math.min(OVERVIEW_MAX_ZOOM, overviewZoom));
+
+    return {
+        center: centerCoords,
+        zoom: overviewZoom,
+        pitch: 0,
+        bearing
+    };
+}
+
+/**
+ * Measure the camera that tightly frames features without leaving the map changed.
+ * @param {import('maplibre-gl').Map} map
+ * @param {import('geojson').FeatureCollection} featureCollection
+ * @param {object} [options]
+ */
+export function computeFeatureFitCamera(map, featureCollection, options = {}) {
+    if (!map) return null;
+    const bounds = getFeatureBounds(featureCollection);
+    if (!bounds) return null;
+
+    const padding = options.padding ?? 80;
+    const maxZoom = options.maxZoom ?? PRESENTATION_FIT_MAX_ZOOM;
+    const pitch = options.pitch ?? map.getPitch();
+    const bearing = options.bearing ?? map.getBearing();
+
+    if (isDegenerateBounds(bounds)) {
+        const centerLng = (bounds[0][0] + bounds[1][0]) / 2;
+        const centerLat = (bounds[0][1] + bounds[1][1]) / 2;
+        return {
+            center: [centerLng, centerLat],
+            zoom: Math.min(maxZoom, PRESENTATION_POINT_MIN_ZOOM),
+            pitch,
+            bearing
+        };
+    }
+
+    const saved = {
+        center: map.getCenter(),
+        zoom: map.getZoom(),
+        pitch: map.getPitch(),
+        bearing: map.getBearing()
+    };
+
+    try {
+        map.fitBounds(bounds, {
+            padding,
+            maxZoom,
+            pitch,
+            duration: 0,
+            essential: true
+        });
+        const result = {
+            center: [map.getCenter().lng, map.getCenter().lat],
+            zoom: map.getZoom(),
+            pitch,
+            bearing
+        };
+        map.jumpTo({
+            center: saved.center,
+            zoom: saved.zoom,
+            pitch: saved.pitch,
+            bearing: saved.bearing,
+            essential: true
+        });
+        return result;
+    } catch {
+        return null;
+    }
+}
 
 function waitForMoveEnd(map, timeoutMs = 15000) {
     return new Promise((resolve) => {
@@ -170,6 +332,72 @@ function runFlyTo(map, options) {
         map.once('moveend', resolve);
         map.flyTo({ ...options, essential: true });
         setTimeout(resolve, (options.duration || 0) + 200);
+    });
+}
+
+function lerp(a, b, t) {
+    return a + (b - a) * t;
+}
+
+function lerpBearing(from, to, t) {
+    const delta = ((to - from + 540) % 360) - 180;
+    return from + delta * t;
+}
+
+/**
+ * Smooth camera fly with pitch, zoom, center, and bearing animated in sync from frame one.
+ * @param {import('maplibre-gl').Map} map
+ * @param {object} from
+ * @param {object} to
+ * @param {object} [options]
+ */
+function runCinematicCameraFly(map, from, to, options = {}) {
+    const duration = options.duration ?? 3000;
+    const easing = options.easing ?? 'easeInOut';
+    const shouldStop = options.shouldStop ?? (() => false);
+    const setRafId = options.setRafId;
+
+    if (duration === 0) {
+        map.jumpTo({
+            center: to.center,
+            zoom: to.zoom,
+            pitch: to.pitch,
+            bearing: to.bearing,
+            essential: true
+        });
+        return Promise.resolve();
+    }
+
+    return new Promise((resolve) => {
+        const startTime = performance.now();
+        const frame = (now) => {
+            if (shouldStop()) {
+                resolve();
+                return;
+            }
+            const progress = Math.min(1, (now - startTime) / duration);
+            const eased = easeValue(progress, easing);
+
+            map.jumpTo({
+                center: [
+                    lerp(from.center[0], to.center[0], eased),
+                    lerp(from.center[1], to.center[1], eased)
+                ],
+                zoom: lerp(from.zoom, to.zoom, eased),
+                pitch: lerp(from.pitch, to.pitch, eased),
+                bearing: lerpBearing(from.bearing, to.bearing, eased),
+                essential: true
+            });
+
+            if (progress >= 1) {
+                resolve();
+                return;
+            }
+            const id = requestAnimationFrame(frame);
+            setRafId?.(id);
+        };
+        const id = requestAnimationFrame(frame);
+        setRafId?.(id);
     });
 }
 
@@ -368,58 +596,222 @@ export class PresentationAnimationEngine {
      * @param {import('./presentation-scene-schema.js').PresentationAnimationStep} step
      */
     async playStep(step) {
-        switch (step.type) {
-            case 'none':
-                return;
-            case 'flyToFeature':
-                return this._flyToFeature(step);
-            case 'rotateAroundFeature':
-                return this._rotateAroundFeature(step);
-            case 'flyAlongPath':
-                return this._flyAlongPath(step);
-            case 'animatePointAlongLine':
-                return this._animatePointAlongLine(step);
-            case 'animatePoint':
-                return this._animatePoint(step);
-            case 'animateLinePath':
-                return this._animateLinePath(step);
-            default:
-                return;
-        }
+        return runPresentationAnimationStep(this, step);
     }
 
     async _flyToFeature(step) {
+        await this._runCinematicFlyTo(step);
+    }
+
+    async _flyToFeatureThenOrbit(step) {
+        const flyDurationMs = step.options?.flyDurationMs
+            ?? Math.round((step.durationMs ?? 10000) * 0.4);
+        const orbitDurationMs = step.options?.orbitDurationMs
+            ?? ((step.durationMs ?? 10000) - flyDurationMs);
+        await this._runFlyThenOrbitCombined(step, flyDurationMs, orbitDurationMs);
+    }
+
+    async _runFlyThenOrbitCombined(step, flyDurationMs, orbitDurationMs) {
+        const map = this.map;
+        const bounds = getFeatureBounds(this.features);
+        const centerCoords = getFeatureCenter(this.features);
+        if (!bounds || !centerCoords) return;
+
+        const padding = step.options?.padding ?? 80;
+        const requestedPitch = step.options?.pitch;
+        const targetPitch = (requestedPitch != null && requestedPitch > 5) ? requestedPitch : 55;
+        const targetBearing = step.options?.bearing ?? map.getBearing();
+        const easing = step.easing || 'cinematic';
+
+        const fit = computeFeatureFitCamera(map, this.features, {
+            padding,
+            pitch: targetPitch,
+            bearing: targetBearing
+        });
+        if (!fit) return;
+
+        const startCenter = map.getCenter();
+        const startZoom = map.getZoom();
+        const startBearing = map.getBearing();
+        const endZoom = Math.max(fit.zoom, startZoom + 0.5);
+        const orbitCenter = [centerCoords[0], centerCoords[1]];
+        const orbitDegrees = step.options?.degrees ?? 360;
+
+        const crossfadeMs = Math.min(1800, Math.round(flyDurationMs * 0.24));
+        const approachDuration = flyDurationMs + crossfadeMs;
+        const orbitStartMs = Math.max(0, flyDurationMs - Math.round(crossfadeMs * 0.6));
+        const totalDuration = flyDurationMs + orbitDurationMs;
+        const orbitSpan = Math.max(1, totalDuration - orbitStartMs);
+
+        map.jumpTo({
+            center: startCenter,
+            zoom: startZoom,
+            pitch: 0,
+            bearing: startBearing,
+            essential: true
+        });
+
+        const from = {
+            center: [startCenter.lng, startCenter.lat],
+            zoom: startZoom,
+            pitch: 0,
+            bearing: startBearing
+        };
+        const to = {
+            center: orbitCenter,
+            zoom: endZoom,
+            pitch: targetPitch,
+            bearing: targetBearing
+        };
+
+        await new Promise((resolve) => {
+            const startTime = performance.now();
+            const frame = (now) => {
+                if (this._stopped) {
+                    resolve();
+                    return;
+                }
+
+                const elapsed = now - startTime;
+                const approachT = Math.min(1, elapsed / approachDuration);
+                const approachE = easeValue(approachT, easing);
+
+                const center = [
+                    lerp(from.center[0], to.center[0], approachE),
+                    lerp(from.center[1], to.center[1], approachE)
+                ];
+                const zoom = lerp(from.zoom, to.zoom, approachE);
+                const pitch = lerp(from.pitch, to.pitch, approachE);
+                const approachBearing = lerpBearing(from.bearing, to.bearing, approachE);
+
+                let orbitAngle = 0;
+                if (elapsed >= orbitStartMs) {
+                    const orbitT = Math.min(1, (elapsed - orbitStartMs) / orbitSpan);
+                    const orbitE = easeValue(orbitT, easing);
+                    orbitAngle = orbitE * orbitDegrees;
+                }
+
+                map.jumpTo({
+                    center,
+                    zoom,
+                    pitch,
+                    bearing: approachBearing + orbitAngle,
+                    essential: true
+                });
+
+                if (elapsed >= totalDuration) {
+                    resolve();
+                    return;
+                }
+                this._rafId = requestAnimationFrame(frame);
+            };
+            this._rafId = requestAnimationFrame(frame);
+        });
+    }
+
+    async _runCinematicFlyTo(step, overrides = {}) {
         const map = this.map;
         const bounds = getFeatureBounds(this.features);
         if (!bounds) return;
-        await runFitToBounds(map, bounds, {
-            padding: step.options?.padding ?? 80,
-            pitch: step.options?.pitch ?? map.getPitch(),
-            bearing: step.options?.bearing ?? map.getBearing(),
-            duration: step.durationMs
+
+        const padding = step.options?.padding ?? 80;
+        const requestedPitch = step.options?.pitch;
+        const targetPitch = (requestedPitch != null && requestedPitch > 5) ? requestedPitch : 55;
+        const targetBearing = step.options?.bearing ?? map.getBearing();
+
+        const target = computeFeatureFitCamera(map, this.features, {
+            padding,
+            pitch: targetPitch,
+            bearing: targetBearing
+        });
+        if (!target) return;
+
+        const featureCenter = getFeatureCenter(this.features);
+        if (featureCenter) {
+            target.center = featureCenter;
+        }
+
+        const startCenter = map.getCenter();
+        const startZoom = map.getZoom();
+        const startBearing = map.getBearing();
+        const endZoom = Math.max(target.zoom, startZoom + 0.5);
+        const duration = overrides.durationMs ?? step.durationMs ?? 3000;
+
+        map.jumpTo({
+            center: startCenter,
+            zoom: startZoom,
+            pitch: 0,
+            bearing: startBearing,
+            essential: true
+        });
+
+        await runCinematicCameraFly(map, {
+            center: [startCenter.lng, startCenter.lat],
+            zoom: startZoom,
+            pitch: 0,
+            bearing: startBearing
+        }, {
+            center: target.center,
+            zoom: endZoom,
+            pitch: targetPitch,
+            bearing: targetBearing
+        }, {
+            duration,
+            easing: step.easing || 'cinematic',
+            shouldStop: () => this._stopped,
+            setRafId: (id) => { this._rafId = id; }
         });
     }
 
     async _rotateAroundFeature(step) {
+        await this._runOrbitRotation(step, { skipSetup: true });
+    }
+
+    async _runOrbitRotation(step, { durationMs, skipSetup = false } = {}) {
         const map = this.map;
         const centerCoords = getFeatureCenter(this.features);
         if (!centerCoords) return;
 
-        const center = { lng: centerCoords[0], lat: centerCoords[1] };
-        const pitch = step.options?.pitch ?? 55;
-        const startBearing = step.options?.bearing ?? map.getBearing();
+        const orbitDuration = durationMs ?? step.durationMs ?? 6000;
+        let startBearing = map.getBearing();
+
+        if (!skipSetup) {
+            const pitch = step.options?.pitch ?? 55;
+            startBearing = step.options?.bearing ?? startBearing;
+            const bounds = getFeatureBounds(this.features);
+
+            if (bounds) {
+                await runFitToBounds(map, bounds, {
+                    padding: step.options?.padding ?? 80,
+                    pitch,
+                    bearing: startBearing,
+                    duration: 0
+                });
+            }
+
+            const center = { lng: centerCoords[0], lat: centerCoords[1] };
+            const settleFrom = map.getCenter();
+            await runCinematicCameraFly(map, {
+                center: [settleFrom.lng, settleFrom.lat],
+                zoom: map.getZoom(),
+                pitch: map.getPitch(),
+                bearing: startBearing
+            }, {
+                center: [center.lng, center.lat],
+                zoom: map.getZoom(),
+                pitch,
+                bearing: startBearing
+            }, {
+                duration: 700,
+                easing: 'cinematic',
+                shouldStop: () => this._stopped,
+                setRafId: (id) => { this._rafId = id; }
+            });
+            startBearing = map.getBearing();
+        }
+
         const startTime = performance.now();
-
-        map.easeTo({
-            center,
-            zoom: map.getZoom(),
-            pitch,
-            bearing: startBearing,
-            duration: 500,
-            essential: true
-        });
-        await waitForMoveEnd(map);
-
+        const orbitEasing = step.easing || 'cinematic';
         await new Promise((resolve) => {
             const frame = (now) => {
                 if (this._stopped) {
@@ -427,8 +819,8 @@ export class PresentationAnimationEngine {
                     return;
                 }
                 const elapsed = now - startTime;
-                const progress = Math.min(1, elapsed / step.durationMs);
-                const eased = easeValue(progress, step.easing);
+                const progress = Math.min(1, elapsed / orbitDuration);
+                const eased = easeValue(progress, orbitEasing);
                 const bearing = startBearing + eased * (step.options?.degrees ?? 360);
                 map.setBearing(bearing);
                 if (progress >= 1) {

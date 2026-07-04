@@ -106,6 +106,27 @@ describe('MapManager 3D reconcile', () => {
         expect(manager.map.dragRotate.disable).toHaveBeenCalled();
     });
 
+    it('sync teardowns terrain immediately when disabling without animation', () => {
+        const manager = new MapManager();
+        manager._3dEnabled = true;
+        manager._terrainEnabled = true;
+        manager.map = createMockMap({ pitch: 45, bearing: 20, terrain: { source: 'terrain-source' } });
+        manager._setAllAnnotationMapLibreVisibility = vi.fn();
+        manager._annotationOverlay = { setActive: vi.fn() };
+        manager._teardown3DAssetsSync = vi.fn(() => {
+            manager.map.setTerrain(null);
+        });
+
+        manager.disable3D({ animate: false });
+
+        expect(manager._teardown3DAssetsSync).toHaveBeenCalled();
+        expect(manager.map.jumpTo).toHaveBeenCalledWith(expect.objectContaining({
+            pitch: 0,
+            bearing: 0
+        }));
+        expect(manager._3dEnabled).toBe(false);
+    });
+
     it('enable3D applies assets when flag is already true but terrain is missing', () => {
         const manager = new MapManager();
         manager._3dEnabled = true;

@@ -105,8 +105,8 @@ export function createMapService({ mapAdapter = mapManager } = {}) {
         enable3D() {
             return mapAdapter.enable3D();
         },
-        disable3D() {
-            return mapAdapter.disable3D();
+        disable3D(options = {}) {
+            return mapAdapter.disable3D(options);
         },
         reconcile3DState(options) {
             return mapAdapter.reconcile3DState(options);

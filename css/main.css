@@ -3317,3 +3317,7 @@ textarea { resize: vertical; min-height: 60px; }
 .presentation-link-builder__row {
     margin-bottom: 10px;
 }
+.presentation-link-builder__hint {
+    margin: 6px 0 0;
+    line-height: 1.45;
+}
