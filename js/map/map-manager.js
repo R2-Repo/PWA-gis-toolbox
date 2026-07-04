@@ -17,6 +17,7 @@ import {
     MAPLIBRE_MAX_ZOOM
 } from './scale-range.js';
 import { resetMapPopupScroll } from './map-popup-utils.js';
+import { isPresentationMode } from '../presentation/presentation-mode-detector.js';
 
 const POINT_CLUSTER_THRESHOLD = 10000;
 
@@ -298,7 +299,9 @@ class MapManager {
         this.map.scrollZoom.setZoomRate(1 / 48);
         this.map.scrollZoom.setWheelZoomRate(1 / 110);
 
-        this.map.addControl(new maplibregl.FullscreenControl(), 'top-right');
+        if (!isPresentationMode()) {
+            this.map.addControl(new maplibregl.FullscreenControl(), 'top-right');
+        }
         this._bindPopupDelegation();
 
         this.map.on('error', (e) => {
@@ -365,8 +368,10 @@ class MapManager {
         this.map.on('load', () => {
             logger.info('Map', 'Map initialized');
             bus.emit('map:ready', this.map);
-            this._initCoordSearch();
-            this._initMeasureTool();
+            if (!isPresentationMode()) {
+                this._initCoordSearch();
+                this._initMeasureTool();
+            }
             if (!this._rectSelectCleanup) {
                 this._rectSelectCleanup = this._setupRectangleSelect();
             }

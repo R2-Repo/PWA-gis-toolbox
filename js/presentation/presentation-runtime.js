@@ -95,13 +95,28 @@ export function addPresentationFeatureLayers(map, geojson, style = {}) {
  * @param {import('./presentation-scene-schema.js').PresentationLayout} layout
  */
 export function createPresentationOverlay(container, layout) {
+    const faviconUrl = `${import.meta.env.BASE_URL}icons/favicon.png`;
     const overlay = document.createElement('div');
     overlay.className = 'presentation-overlay';
+
+    const brandHtml = layout.showLogo ? `
+        <a class="presentation-overlay__brand-link" href="#" aria-label="GIS-Toolbox.com">
+            <span class="presentation-overlay__logo-icon">
+                <img src="${faviconUrl}" alt="GIS-Toolbox.com" width="36" height="36" />
+            </span>
+            <span class="presentation-overlay__title">
+                GIS-Toolbox<span class="title-com">.com</span>
+            </span>
+        </a>
+    ` : '';
+
+    const homeHtml = layout.showHomeButton ? `
+        <button type="button" class="presentation-overlay__home" aria-label="Home">⌂</button>
+    ` : '';
+
     overlay.innerHTML = `
-        <div class="presentation-overlay__brand">
-            ${layout.showHomeButton ? '<button type="button" class="presentation-overlay__home" aria-label="Home">⌂</button>' : ''}
-            ${layout.showLogo ? '<a class="presentation-overlay__logo" href="#" aria-label="GIS Toolbox"><img alt="GIS Toolbox" /></a>' : ''}
-        </div>
+        <div class="presentation-overlay__brand">${brandHtml}</div>
+        ${homeHtml}
     `;
 
     const homeUrl = layout.homeUrl || PRESENTATION_HOME_URL;
@@ -111,14 +126,10 @@ export function createPresentationOverlay(container, layout) {
     };
 
     const homeBtn = overlay.querySelector('.presentation-overlay__home');
-    const logoLink = overlay.querySelector('.presentation-overlay__logo');
-    const logoImg = overlay.querySelector('.presentation-overlay__logo img');
+    const brandLink = overlay.querySelector('.presentation-overlay__brand-link');
 
-    if (logoImg) {
-        logoImg.src = `${import.meta.env.BASE_URL}icons/favicon.png`;
-    }
     homeBtn?.addEventListener('click', goHome);
-    logoLink?.addEventListener('click', goHome);
+    brandLink?.addEventListener('click', goHome);
 
     container.appendChild(overlay);
     return overlay;

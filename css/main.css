@@ -3177,18 +3177,49 @@ textarea { resize: vertical; min-height: 60px; }
 }
 .presentation-overlay {
     position: absolute;
-    top: 16px;
-    left: 16px;
+    inset: 0;
     z-index: 2;
     pointer-events: none;
 }
 .presentation-overlay__brand {
-    display: flex;
-    align-items: center;
-    gap: 10px;
+    position: absolute;
+    top: 16px;
+    left: 16px;
     pointer-events: auto;
 }
+.presentation-overlay__brand-link {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    text-decoration: none;
+    background: transparent;
+    cursor: pointer;
+}
+.presentation-overlay__logo-icon {
+    display: flex;
+    align-items: center;
+}
+.presentation-overlay__logo-icon img {
+    display: block;
+    border-radius: 4px;
+}
+.presentation-overlay__title {
+    font-weight: 600;
+    font-size: 16px;
+    letter-spacing: -0.3px;
+    white-space: nowrap;
+    color: var(--gold-light);
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.45);
+}
+.presentation-overlay__title .title-com {
+    font-size: 0.65em;
+    font-weight: 400;
+    opacity: 0.7;
+}
 .presentation-overlay__home {
+    position: absolute;
+    top: 16px;
+    right: 16px;
     width: 40px;
     height: 40px;
     border-radius: 10px;
@@ -3197,13 +3228,7 @@ textarea { resize: vertical; min-height: 60px; }
     color: var(--text);
     font-size: 20px;
     cursor: pointer;
-}
-.presentation-overlay__logo img {
-    width: 40px;
-    height: 40px;
-    border-radius: 10px;
-    display: block;
-    box-shadow: var(--shadow);
+    pointer-events: auto;
 }
 .presentation-title-overlay {
     position: absolute;

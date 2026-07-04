@@ -142,6 +142,9 @@ function setAnimatedLine(map, coordinates) {
     });
 }
 
+const PRESENTATION_FIT_MAX_ZOOM = 16;
+const PRESENTATION_POINT_MIN_ZOOM = 14;
+
 function waitForMoveEnd(map, timeoutMs = 15000) {
     return new Promise((resolve) => {
         let done = false;
@@ -162,6 +165,75 @@ function runFlyTo(map, options) {
         map.once('moveend', resolve);
         map.flyTo({ ...options, essential: true });
         setTimeout(resolve, (options.duration || 0) + 200);
+    });
+}
+
+/**
+ * @param {[[number, number], [number, number]]} bounds
+ */
+function isDegenerateBounds(bounds) {
+    const [[west, south], [east, north]] = bounds;
+    return Math.abs(west - east) < 1e-9 && Math.abs(south - north) < 1e-9;
+}
+
+/**
+ * Fit the map to feature bounds. MapLibre flyTo does not accept bounds — use fitBounds.
+ * @param {import('maplibre-gl').Map} map
+ * @param {[[number, number], [number, number]]} bounds
+ * @param {object} [options]
+ */
+function runFitToBounds(map, bounds, options = {}) {
+    const {
+        padding = 80,
+        maxZoom = PRESENTATION_FIT_MAX_ZOOM,
+        pitch,
+        bearing,
+        duration = 0
+    } = options;
+
+    const resolvedPitch = pitch ?? map.getPitch();
+    const resolvedBearing = bearing ?? map.getBearing();
+
+    return new Promise((resolve) => {
+        let done = false;
+        const finish = () => {
+            if (done) return;
+            done = true;
+            map.off('moveend', finish);
+            if (resolvedBearing !== 0 && !isDegenerateBounds(bounds)) {
+                map.setBearing(resolvedBearing);
+            }
+            resolve();
+        };
+
+        map.once('moveend', finish);
+        setTimeout(finish, duration + 200);
+
+        if (isDegenerateBounds(bounds)) {
+            const centerLng = (bounds[0][0] + bounds[1][0]) / 2;
+            const centerLat = (bounds[0][1] + bounds[1][1]) / 2;
+            const targetZoom = Math.min(
+                maxZoom,
+                Math.max(map.getZoom?.() ?? 10, PRESENTATION_POINT_MIN_ZOOM)
+            );
+            map.flyTo({
+                center: [centerLng, centerLat],
+                zoom: targetZoom,
+                pitch: resolvedPitch,
+                bearing: resolvedBearing,
+                duration,
+                essential: true
+            });
+            return;
+        }
+
+        map.fitBounds(bounds, {
+            padding,
+            maxZoom,
+            pitch: resolvedPitch,
+            duration,
+            essential: true
+        });
     });
 }
 
@@ -247,8 +319,7 @@ export class PresentationAnimationEngine {
         if (camera.fitToFeatures) {
             const bounds = getFeatureBounds(this.features);
             if (bounds) {
-                await runFlyTo(map, {
-                    bounds,
+                await runFitToBounds(map, bounds, {
                     padding: camera.padding ?? 80,
                     pitch: camera.pitch ?? map.getPitch(),
                     bearing: camera.bearing ?? map.getBearing(),
@@ -316,13 +387,11 @@ export class PresentationAnimationEngine {
         const map = this.map;
         const bounds = getFeatureBounds(this.features);
         if (!bounds) return;
-        await runFlyTo(map, {
-            bounds,
+        await runFitToBounds(map, bounds, {
             padding: step.options?.padding ?? 80,
             pitch: step.options?.pitch ?? map.getPitch(),
             bearing: step.options?.bearing ?? map.getBearing(),
-            duration: step.durationMs,
-            essential: true
+            duration: step.durationMs
         });
     }
 
@@ -334,12 +403,13 @@ export class PresentationAnimationEngine {
         const center = { lng: centerCoords[0], lat: centerCoords[1] };
         const pitch = step.options?.pitch ?? 55;
         const startBearing = step.options?.bearing ?? map.getBearing();
-        const degreesPerMs = (step.options?.degrees ?? 360) / Math.max(step.durationMs, 1);
         const startTime = performance.now();
 
         map.easeTo({
             center,
+            zoom: map.getZoom(),
             pitch,
+            bearing: startBearing,
             duration: 500,
             essential: true
         });
