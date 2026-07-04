@@ -8,14 +8,21 @@ import {
 } from '../../js/presentation/presentation-runtime.js';
 import { MapView } from '../map/MapView.jsx';
 
+function waitForMapStyleLoad(map) {
+    if (map.isStyleLoaded()) return Promise.resolve();
+    return new Promise((resolve) => {
+        map.once('load', resolve);
+    });
+}
+
 export function PresentationApp() {
     const modeState = getPresentationModeState();
     const containerRef = useRef(null);
     const runtimeRef = useRef(null);
 
     const onReady = useCallback(async () => {
-        const container = containerRef.current;
         const map = mapService.getMap();
+        const container = containerRef.current ?? map?.getContainer()?.parentElement ?? null;
         if (!container || !map) return;
 
         if (!modeState.scene) {
@@ -24,6 +31,7 @@ export function PresentationApp() {
         }
 
         createPresentationOverlay(container, modeState.scene.layout);
+        await waitForMapStyleLoad(map);
         runtimeRef.current = await startPresentationRuntime({
             map,
             scene: modeState.scene,

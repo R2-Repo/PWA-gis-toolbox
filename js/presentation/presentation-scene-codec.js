@@ -53,12 +53,29 @@ export function estimateEncodedSceneLength(scene) {
 }
 
 /**
+ * @param {string} [baseUrl]
+ * @returns {URL}
+ */
+function resolvePresentationBaseUrl(baseUrl) {
+    if (baseUrl) {
+        return new URL(baseUrl, typeof window !== 'undefined' ? window.location.origin : 'https://gis-toolbox.com');
+    }
+    if (typeof window !== 'undefined') {
+        const url = new URL(window.location.href);
+        url.search = '';
+        url.hash = '';
+        return url;
+    }
+    return new URL(PRESENTATION_BASE_URL);
+}
+
+/**
  * @param {import('./presentation-scene-schema.js').PresentationScene} scene
  * @param {string} [baseUrl]
  */
-export function buildPresentationUrl(scene, baseUrl = PRESENTATION_BASE_URL) {
+export function buildPresentationUrl(scene, baseUrl) {
     const encoded = encodeScene(scene);
-    const url = new URL(baseUrl, typeof window !== 'undefined' ? window.location.origin : 'https://gis-toolbox.com');
+    const url = resolvePresentationBaseUrl(baseUrl);
     url.search = '';
     url.searchParams.set('mode', 'present');
     url.searchParams.set('scene', encoded);
