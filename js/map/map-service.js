@@ -234,6 +234,9 @@ export function createMapService({ mapAdapter = mapManager } = {}) {
         clearHighlight() {
             return mapAdapter.clearHighlight?.();
         },
+        getHighlightedFeature() {
+            return mapAdapter.getHighlightedFeature?.();
+        },
         showTempFeature(geojson, duration) {
             return mapAdapter.showTempFeature(geojson, duration);
         },
