@@ -42,11 +42,16 @@ describe('presentation scene codec', () => {
     });
 
     it('expands compact keys into a full scene object', () => {
-        const scene = createDefaultScene({ features: sampleFeatures });
+        const scene = createDefaultScene({
+            features: sampleFeatures,
+            mapView: { basemap: 'satellite', enable3D: true }
+        });
         const compact = compactScene(scene);
         const expanded = expandScene(compact);
         expect(expanded.layout.showLogo).toBe(true);
         expect(expanded.features.features[0].geometry.type).toBe('Point');
+        expect(expanded.mapView.basemap).toBe('satellite');
+        expect(expanded.mapView.enable3D).toBe(true);
     });
 });
 

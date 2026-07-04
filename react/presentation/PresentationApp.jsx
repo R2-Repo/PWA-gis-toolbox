@@ -15,6 +15,26 @@ function waitForMapStyleLoad(map) {
     });
 }
 
+async function applyPresentationMapView(mapService, scene) {
+    const mapView = scene.mapView || {};
+    const basemap = mapView.basemap || 'voyager';
+    const enable3D = mapView.enable3D !== false;
+
+    if (enable3D) {
+        mapService.set3DEnabled(true);
+    }
+
+    if (basemap && basemap !== mapService.getCurrentBasemap()) {
+        mapService.setBasemap(basemap);
+        const map = mapService.getMap();
+        if (map) await waitForMapStyleLoad(map);
+    }
+
+    if (enable3D) {
+        mapService.reconcile3DState({ emitEvent: false });
+    }
+}
+
 export function PresentationApp() {
     const modeState = getPresentationModeState();
     const containerRef = useRef(null);
@@ -30,6 +50,7 @@ export function PresentationApp() {
             return;
         }
 
+        await applyPresentationMapView(mapService, modeState.scene);
         createPresentationOverlay(container, modeState.scene.layout);
         await waitForMapStyleLoad(map);
         runtimeRef.current = await startPresentationRuntime({

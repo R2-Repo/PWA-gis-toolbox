@@ -58,12 +58,19 @@
  */
 
 /**
+ * @typedef {object} PresentationMapView
+ * @property {string} [basemap]
+ * @property {boolean} [enable3D]
+ */
+
+/**
  * @typedef {object} PresentationScene
  * @property {number} version
  * @property {PresentationMode} mode
  * @property {string} createdBy
  * @property {PresentationLayout} layout
  * @property {PresentationCamera} camera
+ * @property {PresentationMapView} mapView
  * @property {import('geojson').FeatureCollection} features
  * @property {PresentationStyle} style
  * @property {PresentationAnimationStep[]} animations
@@ -85,6 +92,12 @@ export const DEFAULT_PRESENTATION_LAYOUT = {
     showLogo: true,
     showHomeButton: true,
     homeUrl: PRESENTATION_HOME_URL
+};
+
+/** @type {PresentationMapView} */
+export const DEFAULT_PRESENTATION_MAP_VIEW = {
+    basemap: 'voyager',
+    enable3D: true
 };
 
 /** @type {PresentationStyle} */
@@ -117,6 +130,7 @@ export function createDefaultScene(overrides = {}) {
             startDelayMs: 0,
             ...(overrides.camera || {})
         },
+        mapView: { ...DEFAULT_PRESENTATION_MAP_VIEW, ...(overrides.mapView || {}) },
         features: overrides.features || { type: 'FeatureCollection', features: [] },
         style: { ...DEFAULT_PRESENTATION_STYLE, ...(overrides.style || {}) },
         animations: overrides.animations || [],
@@ -140,6 +154,7 @@ export function compactScene(scene) {
         m: scene.mode,
         l: scene.layout,
         c: scene.camera,
+        mv: scene.mapView,
         f: scene.features,
         s: scene.style,
         a: scene.animations,
@@ -161,6 +176,7 @@ export function expandScene(compact) {
         mode: compact.m ?? compact.mode ?? 'present',
         layout: compact.l ?? compact.layout,
         camera: compact.c ?? compact.camera,
+        mapView: compact.mv ?? compact.mapView,
         features: compact.f ?? compact.features,
         style: compact.s ?? compact.style,
         animations: compact.a ?? compact.animations,

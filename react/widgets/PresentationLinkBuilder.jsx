@@ -18,6 +18,7 @@ export function PresentationLinkBuilder({
     onCopyUrl,
     onResetPreview,
     onSubscribeSourceRefresh,
+    onWidgetClose,
     onCancel
 }) {
     const [formState, setFormState] = useState(null);
@@ -63,11 +64,16 @@ export function PresentationLinkBuilder({
 
     useEffect(() => {
         if (!formState || !onSubscribeSourceRefresh) return undefined;
-        return onSubscribeSourceRefresh(async () => {
-            const bundle = await onRefreshSource?.();
-            applyBundle(bundle);
-        });
+        return onSubscribeSourceRefresh(
+            async () => {
+                const bundle = await onRefreshSource?.();
+                applyBundle(bundle);
+            },
+            () => setRefreshTick((tick) => tick + 1)
+        );
     }, [formState, onSubscribeSourceRefresh, onRefreshSource, applyBundle]);
+
+    useEffect(() => () => { onWidgetClose?.(); }, [onWidgetClose]);
 
     const updateAnimation = (patch) => {
         setFormState((prev) => (prev ? {

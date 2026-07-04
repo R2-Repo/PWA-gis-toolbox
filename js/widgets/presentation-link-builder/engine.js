@@ -33,13 +33,14 @@ export function buildSceneFromConfig(config) {
     const {
         features,
         map,
+        mapService,
         animation = {}
     } = config;
 
     const mapCenter = map?.getCenter?.();
     const cameraConfig = {
         useCurrent: false,
-        fitToFeatures: true,
+        fitToFeatures: false,
         center: mapCenter ? [mapCenter.lng, mapCenter.lat] : [0, 0],
         zoom: map?.getZoom?.() ?? 14,
         pitch: map?.getPitch?.() ?? 45,
@@ -47,6 +48,11 @@ export function buildSceneFromConfig(config) {
         padding: 80,
         resetNorth: false,
         startDelayMs: 0
+    };
+
+    const mapView = {
+        basemap: mapService?.getCurrentBasemap?.() || 'voyager',
+        enable3D: true
     };
 
     const animations = [];
@@ -67,6 +73,7 @@ export function buildSceneFromConfig(config) {
 
     return createDefaultScene({
         camera: cameraConfig,
+        mapView,
         features,
         animations,
         metadata: {

@@ -15,6 +15,16 @@ import {
 
 let previewRuntime = null;
 
+function syncDimensionChrome(is3d) {
+    bus.emit('map:chrome', { is3d: !!is3d });
+}
+
+function apply3DSelection(mapService, enabled) {
+    if (enabled) mapService.enable3D();
+    else mapService.disable3D();
+    syncDimensionChrome(enabled);
+}
+
 function buildPresentationContext(ctx) {
     return {
         ...ctx,
@@ -53,6 +63,19 @@ function buildDefaultFormState(sourceSummary) {
 }
 
 export async function openPresentationLinkBuilder(ctx) {
+    const was3d = ctx.mapService?.is3DEnabled?.() ?? false;
+    let restored3d = false;
+
+    const restore3dIfNeeded = () => {
+        if (restored3d || was3d) return;
+        restored3d = true;
+        apply3DSelection(ctx.mapService, false);
+    };
+
+    if (!was3d) {
+        apply3DSelection(ctx.mapService, true);
+    }
+
     await openReactIsland({
         title: 'Presentation Link',
         width: '420px',
@@ -69,6 +92,7 @@ export async function openPresentationLinkBuilder(ctx) {
                 const scene = buildSceneFromConfig({
                     features,
                     map: ctx.mapService.getMap(),
+                    mapService: ctx.mapService,
                     animation: formState.animation
                 });
                 const validation = validateSceneForUrl(scene);
@@ -94,6 +118,7 @@ export async function openPresentationLinkBuilder(ctx) {
                 const scene = buildSceneFromConfig({
                     features,
                     map: ctx.mapService.getMap(),
+                    mapService: ctx.mapService,
                     animation: formState.animation
                 });
                 const validation = validateSceneForUrl(scene);
@@ -121,15 +146,28 @@ export async function openPresentationLinkBuilder(ctx) {
                 await navigator.clipboard.writeText(url);
                 ctx.showToast('Presentation URL copied', 'success');
             },
-            onSubscribeSourceRefresh: (callback) => {
-                const refresh = () => { void callback(); };
+            onSubscribeSourceRefresh: (onSourceChange, onMapViewChange) => {
+                const map = ctx.mapService?.getMap?.();
+                let moveTimer = null;
+                const refreshSource = () => { void onSourceChange?.(); };
+                const refreshMapView = () => {
+                    window.clearTimeout(moveTimer);
+                    moveTimer = window.setTimeout(() => { onMapViewChange?.(); }, 200);
+                };
                 const events = ['selection:changed', 'layers:changed', 'layer:active', 'layer:updated'];
-                events.forEach((event) => bus.on(event, refresh));
-                return () => events.forEach((event) => bus.off(event, refresh));
+                events.forEach((event) => bus.on(event, refreshSource));
+                map?.on('moveend', refreshMapView);
+                return () => {
+                    window.clearTimeout(moveTimer);
+                    events.forEach((event) => bus.off(event, refreshSource));
+                    map?.off('moveend', refreshMapView);
+                };
             },
             onResetPreview: () => stopPreview(ctx),
+            onWidgetClose: restore3dIfNeeded,
             onCancel: () => {
                 stopPreview(ctx);
+                restore3dIfNeeded();
                 close();
             }
         })
