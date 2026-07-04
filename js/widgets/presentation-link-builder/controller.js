@@ -1,3 +1,4 @@
+import bus from '../../core/event-bus.js';
 import { openReactIsland } from '../../ui/open-react-island.js';
 import { getActiveLayer } from '../../core/state.js';
 import drawManager from '../../map/draw-manager.js';
@@ -7,17 +8,38 @@ import {
     collectSourceFeatures,
     getCompatiblePresets,
     getPresentationUrl,
+    summarizeResolvedSource,
     summarizeSourceFeatures,
     validateSceneForUrl
 } from './engine.js';
 
 let previewRuntime = null;
 
+function buildPresentationContext(ctx) {
+    return {
+        ...ctx,
+        getDrawnFeature: () => drawManager.getSelectedFeatureSnapshot(),
+        getActiveLayer
+    };
+}
+
 function stopPreview(ctx) {
     previewRuntime?.engine?.stop();
     previewRuntime?.engine?.cleanup();
     previewRuntime = null;
     ctx.mapService?.clearTempFeatures?.();
+}
+
+async function resolveSourceBundle(ctx, sourceMode) {
+    const presentationCtx = buildPresentationContext(ctx);
+    const features = await collectSourceFeatures(presentationCtx, sourceMode);
+    const geometrySummary = summarizeSourceFeatures(features);
+    const sourceSummary = {
+        ...summarizeResolvedSource(presentationCtx, features),
+        geometryTypes: geometrySummary.geometryTypes,
+        vertexCount: geometrySummary.vertexCount
+    };
+    return { features, sourceSummary };
 }
 
 export async function openPresentationLinkBuilder(ctx, options = {}) {
@@ -27,18 +49,12 @@ export async function openPresentationLinkBuilder(ctx, options = {}) {
         mountPath: '../../../react/widgets/mountPresentationLinkBuilder.jsx',
         mountExport: 'mountPresentationLinkBuilder',
         getProps: (close) => ({
-            getDrawnFeature: () => drawManager.getSelectedFeatureSnapshot(),
-            getActiveLayer,
-            getInitialState: () => {
+            loadInitialState: async () => {
                 const sourceMode = 'selection';
-                const features = collectSourceFeatures({
-                    ...ctx,
-                    getDrawnFeature: () => drawManager.getSelectedFeatureSnapshot(),
-                    getActiveLayer
-                }, sourceMode);
+                const { sourceSummary } = await resolveSourceBundle(ctx, sourceMode);
                 return {
                     sourceMode,
-                    sourceSummary: summarizeSourceFeatures(features),
+                    sourceSummary,
                     layout: {
                         showLogo: true,
                         showHomeButton: true
@@ -65,23 +81,9 @@ export async function openPresentationLinkBuilder(ctx, options = {}) {
                     }
                 };
             },
-            onSourceModeChange: (sourceMode) => {
-                const features = collectSourceFeatures({
-                    ...ctx,
-                    getDrawnFeature: () => drawManager.getSelectedFeatureSnapshot(),
-                    getActiveLayer
-                }, sourceMode);
-                return {
-                    features,
-                    sourceSummary: summarizeSourceFeatures(features)
-                };
-            },
-            onBuildScene: (formState) => {
-                const features = collectSourceFeatures({
-                    ...ctx,
-                    getDrawnFeature: () => drawManager.getSelectedFeatureSnapshot(),
-                    getActiveLayer
-                }, formState.sourceMode);
+            onSourceModeChange: async (sourceMode) => resolveSourceBundle(ctx, sourceMode),
+            onBuildScene: async (formState) => {
+                const { features } = await resolveSourceBundle(ctx, formState.sourceMode);
                 const scene = buildSceneFromConfig({
                     features,
                     map: ctx.mapService.getMap(),
@@ -104,11 +106,7 @@ export async function openPresentationLinkBuilder(ctx, options = {}) {
             },
             onPreview: async (formState) => {
                 stopPreview(ctx);
-                const features = collectSourceFeatures({
-                    ...ctx,
-                    getDrawnFeature: () => drawManager.getSelectedFeatureSnapshot(),
-                    getActiveLayer
-                }, formState.sourceMode);
+                const { features } = await resolveSourceBundle(ctx, formState.sourceMode);
                 const scene = buildSceneFromConfig({
                     features,
                     map: ctx.mapService.getMap(),
@@ -141,6 +139,12 @@ export async function openPresentationLinkBuilder(ctx, options = {}) {
             onCopyUrl: async (url) => {
                 await navigator.clipboard.writeText(url);
                 ctx.showToast('Presentation URL copied', 'success');
+            },
+            onSubscribeSourceRefresh: (callback) => {
+                const refresh = () => { void callback(); };
+                const events = ['selection:changed', 'layers:changed', 'layer:active', 'layer:updated'];
+                events.forEach((event) => bus.on(event, refresh));
+                return () => events.forEach((event) => bus.off(event, refresh));
             },
             onResetPreview: () => stopPreview(ctx),
             onCancel: () => {
