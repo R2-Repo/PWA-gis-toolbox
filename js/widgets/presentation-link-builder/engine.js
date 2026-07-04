@@ -3,6 +3,12 @@ import { buildPresentationUrl, estimateEncodedSceneLength } from '../../presenta
 import { summarizeFeatures, validatePresentationFeatures } from '../../presentation/scene-validation.js';
 import { getAnimationPreset, isPresetCompatible } from '../../presentation/animation-presets.js';
 import {
+    applyPresentationStyles,
+    applyPresentationStylesPerLayer,
+    deriveSceneStyleFallback,
+    resolveLayerStyle
+} from '../../presentation/presentation-style-capture.js';
+import {
     listLinkAnimations,
     getLinkAnimation,
     applyLinkAnimationCameraStrategy,
@@ -18,6 +24,9 @@ export {
     buildLimitSummary,
     collectSourceFeatures,
     collectSourceFeaturesForLayer,
+    collectSourceFeaturesForLayers,
+    collectAllSelectedPresentationFeatures,
+    listLayerIdsWithSelections,
     SCENE_LIMITS,
     summarizeResolvedSource
 } from './source-features.js';
@@ -66,8 +75,22 @@ export function buildSceneFromConfig(config) {
         features,
         map,
         mapService,
+        layerId,
+        layerIds,
         animation = {}
     } = config;
+
+    const resolvedLayerIds = layerIds?.length
+        ? layerIds
+        : (layerId ? [layerId] : []);
+    const hasPerLayerTags = (features?.features || []).some((f) => f?.properties?._plLayer);
+    const styledFeatures = hasPerLayerTags
+        ? applyPresentationStylesPerLayer(features, mapService)
+        : applyPresentationStyles(features, resolveLayerStyle(mapService, resolvedLayerIds[0]));
+    const primaryLayerStyle = resolvedLayerIds.length === 1
+        ? resolveLayerStyle(mapService, resolvedLayerIds[0])
+        : null;
+    const presentationStyle = deriveSceneStyleFallback(primaryLayerStyle, styledFeatures);
 
     const mapCenter = map?.getCenter?.();
     const cameraConfig = {
@@ -88,7 +111,7 @@ export function buildSceneFromConfig(config) {
     };
 
     const presetId = animation.presetId || 'none';
-    applyLinkAnimationCameraStrategy(cameraConfig, presetId, { features, map });
+    applyLinkAnimationCameraStrategy(cameraConfig, presetId, { features: styledFeatures, map });
 
     const animations = [];
     const step = buildLinkAnimationStep(presetId, animation, { map, cameraConfig });
@@ -97,7 +120,8 @@ export function buildSceneFromConfig(config) {
     return createDefaultScene({
         camera: cameraConfig,
         mapView,
-        features,
+        features: styledFeatures,
+        style: presentationStyle,
         animations,
         metadata: {
             generatedAt: new Date().toISOString()

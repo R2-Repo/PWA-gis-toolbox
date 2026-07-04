@@ -3,13 +3,18 @@ import { openReactIsland } from '../../ui/open-react-island.js';
 import { getActiveLayer } from '../../core/state.js';
 import drawManager from '../../map/draw-manager.js';
 import { PresentationAnimationEngine } from '../../presentation/animation-engine.js';
+import {
+    addPresentationFeatureLayers,
+    removePresentationFeatureLayers
+} from '../../presentation/presentation-runtime.js';
 import { getSpatialLayerOptions } from '../widget-context.js';
 import {
     buildLimitSummary,
     buildSceneFromConfig,
-    collectSourceFeaturesForLayer,
+    collectAllSelectedPresentationFeatures,
     getCompatiblePresets,
     getPresentationUrl,
+    listLayerIdsWithSelections,
     ORBIT_PACE_MS,
     SCENE_LIMITS,
     summarizeResolvedSource,
@@ -18,6 +23,8 @@ import {
 } from './engine.js';
 
 let previewRuntime = null;
+/** @type {Map<string, boolean>} */
+let previewHiddenLayers = new Map();
 
 function syncDimensionChrome(is3d) {
     bus.emit('map:chrome', { is3d: !!is3d });
@@ -37,11 +44,34 @@ function buildPresentationContext(ctx) {
     };
 }
 
-function resolveLayerMeta(ctx, layerId) {
-    const layer = (ctx.getLayers?.() || []).find((entry) => entry.id === layerId);
+function selectAllLayerFeatures(mapService, layer) {
+    if (!layer?.id) return;
+    const mapGeojson = mapService.dataLayers?.get?.(layer.id)?.geojson;
+    const features = mapGeojson?.features || layer.geojson?.features || [];
+    const indices = features
+        .map((feature) => feature.properties?._featureIndex)
+        .filter((index) => index !== undefined && index !== null);
+    if (indices.length) {
+        mapService.selectFeatures(layer.id, indices);
+        return;
+    }
+    if (layer.geojson) {
+        mapService.selectAll(layer.id, layer.geojson);
+    }
+}
+
+function resolveFocusedLayerId(formState) {
+    return formState?.focusedLayerId || getActiveLayer()?.id || '';
+}
+
+function resolveLayerMeta(ctx, layerIds) {
+    const layers = ctx.getLayers?.() || [];
+    const names = layerIds.map((id) => layers.find((entry) => entry.id === id)?.name).filter(Boolean);
     return {
-        layerId: layer?.id || layerId || '',
-        layerName: layer?.name || ''
+        layerIds,
+        layerNames: names,
+        layerId: layerIds[0] || '',
+        layerName: names[0] || ''
     };
 }
 
@@ -49,8 +79,18 @@ function stopPreview(ctx) {
     previewRuntime?.engine?.stop();
     previewRuntime?.engine?.cleanup();
     previewRuntime = null;
-    ctx.mapService?.clearTempFeatures?.();
+
     const map = ctx.mapService?.getMap?.();
+    if (map) removePresentationFeatureLayers(map);
+    ctx.mapService?.clearTempFeatures?.();
+
+    if (previewHiddenLayers.size && ctx.mapService) {
+        for (const [layerId, wasVisible] of previewHiddenLayers.entries()) {
+            ctx.mapService.toggleLayer(layerId, wasVisible);
+        }
+    }
+    previewHiddenLayers = new Map();
+
     try {
         map?.stop();
     } catch {
@@ -89,6 +129,7 @@ function restoreMapDimensionAfterWidget(ctx, { was3d }) {
 
 function teardownPresentationWidget(ctx, { was3d }) {
     stopPreview(ctx);
+    ctx.mapService?.disablePresentationMultiSelect?.();
     ctx.mapService?.cancelInteraction?.();
 
     const map = ctx.mapService?.getMap?.();
@@ -103,11 +144,12 @@ function teardownPresentationWidget(ctx, { was3d }) {
     });
 }
 
-async function resolveSourceBundle(ctx, layerId) {
+async function resolveSourceBundle(ctx, formState) {
     const presentationCtx = buildPresentationContext(ctx);
-    const features = await collectSourceFeaturesForLayer(presentationCtx, layerId);
+    const features = await collectAllSelectedPresentationFeatures(presentationCtx);
+    const layerIds = listLayerIdsWithSelections(presentationCtx);
     const geometrySummary = summarizeSourceFeatures(features);
-    const layerMeta = resolveLayerMeta(ctx, layerId);
+    const layerMeta = resolveLayerMeta(ctx, layerIds);
     const sourceSummary = {
         ...summarizeResolvedSource(presentationCtx, features, layerMeta),
         geometryTypes: geometrySummary.geometryTypes,
@@ -116,9 +158,9 @@ async function resolveSourceBundle(ctx, layerId) {
     return { features, sourceSummary, layerMeta };
 }
 
-function buildDefaultFormState(sourceSummary, layerId) {
+function buildDefaultFormState(sourceSummary, initialLayerId) {
     return {
-        layerId: layerId || sourceSummary.layerId || '',
+        focusedLayerId: initialLayerId || sourceSummary.layerId || '',
         animation: {
             presetId: 'none',
             durationMs: ORBIT_PACE_MS.normal,
@@ -129,12 +171,12 @@ function buildDefaultFormState(sourceSummary, layerId) {
 }
 
 async function buildSceneBundle(ctx, formState) {
-    const layerId = formState.layerId || getActiveLayer()?.id || '';
-    const { features, sourceSummary } = await resolveSourceBundle(ctx, layerId);
+    const { features, sourceSummary, layerMeta } = await resolveSourceBundle(ctx, formState);
     const scene = buildSceneFromConfig({
         features,
         map: ctx.mapService.getMap(),
         mapService: ctx.mapService,
+        layerIds: layerMeta.layerIds,
         animation: formState.animation
     });
     const validation = validateSceneForUrl(scene);
@@ -144,7 +186,8 @@ async function buildSceneBundle(ctx, formState) {
         limits: buildLimitSummary(validation),
         url: validation.ok ? getPresentationUrl(scene) : null,
         compatiblePresets: getCompatiblePresets(features),
-        sourceSummary
+        sourceSummary,
+        layerMeta
     };
 }
 
@@ -162,6 +205,7 @@ export async function openPresentationLinkBuilder(ctx) {
     if (!was3d) {
         apply3DSelection(ctx.mapService, true);
     }
+    ctx.mapService.enablePresentationMultiSelect?.();
 
     await openReactIsland({
         title: 'Presentation Link',
@@ -170,12 +214,14 @@ export async function openPresentationLinkBuilder(ctx) {
         mountExport: 'mountPresentationLinkBuilder',
         getProps: (close) => ({
             layers: getSpatialLayerOptions(ctx, { includeSelectionCount: true }),
+            getLayerOptions: () => getSpatialLayerOptions(ctx, { includeSelectionCount: true }),
             initialLayerId,
             loadInitialState: async () => {
-                const { sourceSummary } = await resolveSourceBundle(ctx, initialLayerId);
+                const formState = buildDefaultFormState({}, initialLayerId);
+                const { sourceSummary } = await resolveSourceBundle(ctx, formState);
                 return buildDefaultFormState(sourceSummary, initialLayerId);
             },
-            onRefreshSource: (layerId) => resolveSourceBundle(ctx, layerId),
+            onRefreshSource: (formState) => resolveSourceBundle(ctx, formState),
             onBuildScene: (formState) => buildSceneBundle(ctx, formState),
             onLayerFocus: (layerId) => {
                 if (!layerId) return;
@@ -183,37 +229,43 @@ export async function openPresentationLinkBuilder(ctx) {
                 ctx.mapService.setActiveLayerId?.(layerId);
                 ctx.refreshUI?.();
             },
-            onSelectAll: (layerId) => {
+            onSelectAll: (formState) => {
+                const layerId = resolveFocusedLayerId(formState);
                 const layer = ctx.getLayers().find((entry) => entry.id === layerId);
-                if (!layer?.geojson) return;
-                ctx.mapService.selectAll(layer.id, layer.geojson);
-                if ((layer.geojson.features?.length || 0) > SCENE_LIMITS.maxFeatures) {
+                if (!layer) return;
+                selectAllLayerFeatures(ctx.mapService, layer);
+                const selectedCount = ctx.mapService.getSelectionCount(layer.id) || 0;
+                if (selectedCount > SCENE_LIMITS.maxFeatures) {
                     ctx.showToast(
-                        `Selected all ${layer.geojson.features.length} features — presentation links allow up to ${SCENE_LIMITS.maxFeatures}.`,
+                        `Selected all ${selectedCount} features — presentation links allow up to ${SCENE_LIMITS.maxFeatures}.`,
                         'warning'
                     );
                 }
             },
-            onClearSelection: (layerId) => {
-                ctx.mapService.clearSelection(layerId || null);
+            onClearSelection: (formState) => {
+                ctx.mapService.clearSelection(resolveFocusedLayerId(formState) || null);
             },
-            onAddFeaturesOnMap: async (layerId) => {
-                const result = await ctx.mapService.startPresentationFeaturePick?.(
-                    'Click features to add · Esc when done',
-                    { additive: true, layerId }
-                );
-                if (!result) return null;
-                if (result.mode === 'additive' && result.selectionCount > 0) {
-                    ctx.showToast(
-                        `${result.selectionCount} feature${result.selectionCount === 1 ? '' : 's'} selected`,
-                        'success'
-                    );
-                }
-                return resolveSourceBundle(ctx, layerId);
+            onClearAllSelections: () => {
+                ctx.mapService.clearSelection(null);
+            },
+            onSubscribeLayerSelection: (_formState, callback) => {
+                const refresh = (payload) => {
+                    callback({
+                        count: ctx.mapService.getTotalSelectionCount?.() || 0,
+                        activeLayerId: payload?.layerId
+                            || ctx.mapService.getActiveLayerId?.()
+                            || getActiveLayer()?.id
+                            || ''
+                    });
+                };
+                refresh();
+                const handler = (payload) => refresh(payload);
+                bus.on('selection:changed', handler);
+                return () => bus.off('selection:changed', handler);
             },
             onPreview: async (formState) => {
                 stopPreview(ctx);
-                const { scene, validation } = await buildSceneBundle(ctx, formState);
+                const { scene, validation, layerMeta } = await buildSceneBundle(ctx, formState);
                 if (!validation.ok) {
                     throw new Error(validation.tooLargeMessage || validation.errors[0]);
                 }
@@ -221,7 +273,14 @@ export async function openPresentationLinkBuilder(ctx) {
                 const map = ctx.mapService.getMap();
                 if (!map) throw new Error('Map is not ready');
 
-                ctx.mapService.showTempFeature(scene.features, 0);
+                previewHiddenLayers = new Map();
+                for (const layerId of layerMeta.layerIds) {
+                    const layer = (ctx.getLayers?.() || []).find((entry) => entry.id === layerId);
+                    previewHiddenLayers.set(layerId, layer?.visible !== false);
+                    ctx.mapService.toggleLayer(layerId, false);
+                }
+
+                addPresentationFeatureLayers(map, scene.features, scene.style);
                 const engine = new PresentationAnimationEngine({
                     map,
                     features: scene.features,
@@ -237,13 +296,6 @@ export async function openPresentationLinkBuilder(ctx) {
             onCopyUrl: async (url) => {
                 await navigator.clipboard.writeText(url);
                 ctx.showToast('Presentation URL copied', 'success');
-            },
-            onSubscribeLayerSelection: (layerId, callback) => {
-                const refresh = () => callback(ctx.mapService.getSelectionCount(layerId) || 0);
-                refresh();
-                const handler = () => refresh();
-                bus.on('selection:changed', handler);
-                return () => bus.off('selection:changed', handler);
             },
             onSubscribeSourceRefresh: (onSourceChange, onMapViewChange) => {
                 const map = ctx.mapService?.getMap?.();

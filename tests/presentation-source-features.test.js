@@ -57,19 +57,21 @@ describe('presentation source features', () => {
     });
 
     it('collects selected features for a target layer', async () => {
+        const layerGeojson = { type: 'FeatureCollection', features: [pointFeature, lineFeature] };
         const ctx = {
             getLayers: () => [{
                 id: 'layer-1',
                 type: 'spatial',
                 name: 'Fiber Route',
-                geojson: { type: 'FeatureCollection', features: [pointFeature, lineFeature] }
+                geojson: layerGeojson
             }],
             getDrawnFeature: () => null,
             mapService: {
+                dataLayers: new Map([['layer-1', { geojson: layerGeojson }]]),
                 getSelectionCount: vi.fn(() => 2),
-                getSelectedFeatures: vi.fn(() => ({
+                getSelectedFeatures: vi.fn((_layerId, geojson) => ({
                     type: 'FeatureCollection',
-                    features: [pointFeature, lineFeature]
+                    features: geojson.features
                 })),
                 getPresentationSourceFeatures: vi.fn(async () => ({ type: 'FeatureCollection', features: [] }))
             }
@@ -79,8 +81,128 @@ describe('presentation source features', () => {
         expect(features.features).toHaveLength(2);
         expect(ctx.mapService.getSelectedFeatures).toHaveBeenCalledWith(
             'layer-1',
-            ctx.getLayers()[0].geojson
+            layerGeojson
         );
+    });
+
+    it('prefers map dataLayers geojson when resolving selected features', async () => {
+        const stateGeojson = {
+            type: 'FeatureCollection',
+            features: [{ type: 'Feature', properties: {}, geometry: pointFeature.geometry }]
+        };
+        const mapGeojson = {
+            type: 'FeatureCollection',
+            features: [{ ...pointFeature, properties: { ...pointFeature.properties, _featureIndex: 0 } }]
+        };
+        const ctx = {
+            getLayers: () => [{
+                id: 'layer-1',
+                type: 'spatial',
+                name: 'Sites',
+                geojson: stateGeojson
+            }],
+            getDrawnFeature: () => null,
+            mapService: {
+                dataLayers: new Map([['layer-1', { geojson: mapGeojson }]]),
+                getSelectionCount: vi.fn(() => 1),
+                getSelectedFeatures: vi.fn((_layerId, geojson) => ({
+                    type: 'FeatureCollection',
+                    features: geojson.features.filter((f) => f.properties?._featureIndex === 0)
+                })),
+                getPresentationSourceFeatures: vi.fn(async () => ({ type: 'FeatureCollection', features: [] }))
+            }
+        };
+
+        const features = await collectSourceFeaturesForLayer(ctx, 'layer-1');
+        expect(features.features).toHaveLength(1);
+        expect(ctx.mapService.getSelectedFeatures).toHaveBeenCalledWith('layer-1', mapGeojson);
+    });
+
+    it('collects all selected features across layers', async () => {
+        const layerOneGeojson = { type: 'FeatureCollection', features: [pointFeature] };
+        const layerTwoGeojson = { type: 'FeatureCollection', features: [lineFeature] };
+        const ctx = {
+            getLayers: () => [
+                { id: 'layer-1', type: 'spatial', name: 'Sites', geojson: layerOneGeojson },
+                { id: 'layer-2', type: 'spatial', name: 'Routes', geojson: layerTwoGeojson },
+                { id: 'layer-3', type: 'spatial', name: 'Empty', geojson: { type: 'FeatureCollection', features: [] } }
+            ],
+            getDrawnFeature: () => null,
+            mapService: {
+                dataLayers: new Map([
+                    ['layer-1', { geojson: layerOneGeojson }],
+                    ['layer-2', { geojson: layerTwoGeojson }]
+                ]),
+                getSelectionCount: vi.fn((layerId) => (layerId === 'layer-3' ? 0 : 1)),
+                getSelectedFeatures: vi.fn((_layerId, geojson) => ({
+                    type: 'FeatureCollection',
+                    features: geojson.features
+                })),
+                getPresentationSourceFeatures: vi.fn(async () => ({ type: 'FeatureCollection', features: [] }))
+            }
+        };
+
+        const { collectAllSelectedPresentationFeatures } = await import('../js/widgets/presentation-link-builder/source-features.js');
+        const features = await collectAllSelectedPresentationFeatures(ctx);
+        expect(features.features).toHaveLength(2);
+    });
+
+    it('collects selected features from multiple layers', async () => {
+        const layerOneGeojson = { type: 'FeatureCollection', features: [pointFeature] };
+        const layerTwoGeojson = { type: 'FeatureCollection', features: [lineFeature] };
+        const ctx = {
+            getLayers: () => [
+                {
+                    id: 'layer-1',
+                    type: 'spatial',
+                    name: 'Sites',
+                    geojson: layerOneGeojson
+                },
+                {
+                    id: 'layer-2',
+                    type: 'spatial',
+                    name: 'Routes',
+                    geojson: layerTwoGeojson
+                }
+            ],
+            getDrawnFeature: () => null,
+            mapService: {
+                dataLayers: new Map([
+                    ['layer-1', { geojson: layerOneGeojson }],
+                    ['layer-2', { geojson: layerTwoGeojson }]
+                ]),
+                getSelectionCount: vi.fn((layerId) => (layerId === 'layer-1' ? 1 : 1)),
+                getSelectedFeatures: vi.fn((layerId, geojson) => ({
+                    type: 'FeatureCollection',
+                    features: geojson.features
+                })),
+                getPresentationSourceFeatures: vi.fn(async () => ({ type: 'FeatureCollection', features: [] }))
+            }
+        };
+
+        const { collectSourceFeaturesForLayers } = await import('../js/widgets/presentation-link-builder/source-features.js');
+        const features = await collectSourceFeaturesForLayers(ctx, ['layer-1', 'layer-2']);
+        expect(features.features).toHaveLength(2);
+        expect(features.features[0].properties._plLayer).toBe('layer-1');
+        expect(features.features[1].properties._plLayer).toBe('layer-2');
+    });
+
+    it('describes multi-layer sources', () => {
+        const summary = describePresentationSource({
+            getLayers: () => [
+                { id: 'layer-1', type: 'spatial', name: 'Sites' },
+                { id: 'layer-2', type: 'spatial', name: 'Routes' }
+            ],
+            mapService: {
+                getSelectionCount: (id) => (id === 'layer-1' ? 1 : 1),
+                getTotalSelectionCount: () => 2
+            }
+        }, { type: 'FeatureCollection', features: [pointFeature, lineFeature] }, {
+            layerIds: ['layer-1', 'layer-2']
+        });
+
+        expect(summary.featureCount).toBe(2);
+        expect(summary.sourceLabel).toBe('2 features from 2 layers');
     });
 
     it('describes multi-feature sources with layer name', () => {

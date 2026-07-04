@@ -9,6 +9,19 @@ export function cloneFeature(feature) {
     return JSON.parse(JSON.stringify(feature));
 }
 
+function resolveLayerGeojson(ctx, layerId, layer) {
+    return ctx.mapService?.dataLayers?.get?.(layerId)?.geojson
+        || layer?.geojson
+        || null;
+}
+
+function collectSelectedFeaturesForLayer(ctx, layerId, layer) {
+    const geojson = resolveLayerGeojson(ctx, layerId, layer);
+    if (!geojson) return [];
+    const selected = ctx.mapService.getSelectedFeatures(layerId, geojson);
+    return selected?.features || [];
+}
+
 export function toFeatureCollection(features = []) {
     return {
         type: 'FeatureCollection',
@@ -41,16 +54,82 @@ export async function collectSourceFeaturesForLayer(ctx, layerId) {
     if (layerId) {
         const layer = (ctx.getLayers?.() || []).find((entry) => entry.id === layerId);
         const selectionCount = ctx.mapService?.getSelectionCount?.(layerId) || 0;
-        if (layer?.geojson && selectionCount > 0) {
-            const selected = ctx.mapService.getSelectedFeatures(layerId, layer.geojson);
-            if (selected?.features?.length) {
-                return toFeatureCollection(selected.features);
+        if (selectionCount > 0) {
+            const selectedFeatures = collectSelectedFeaturesForLayer(ctx, layerId, layer);
+            if (selectedFeatures.length) {
+                return toFeatureCollection(selectedFeatures);
             }
         }
     }
 
     return collectSourceFeaturesAsync(ctx);
 }
+
+const PRESENTATION_LAYER_TAG = '_plLayer';
+
+/**
+ * Layer ids that currently have one or more map selections.
+ * @param {object} ctx
+ */
+export function listLayerIdsWithSelections(ctx) {
+    return (ctx.getLayers?.() || [])
+        .filter((layer) => layer.type === 'spatial')
+        .map((layer) => layer.id)
+        .filter((layerId) => (ctx.mapService?.getSelectionCount?.(layerId) || 0) > 0);
+}
+
+/**
+ * Collect selected features from every spatial layer that has a selection.
+ * @param {object} ctx
+ */
+export async function collectAllSelectedPresentationFeatures(ctx) {
+    const layerIds = listLayerIdsWithSelections(ctx);
+    if (!layerIds.length) {
+        return collectSourceFeaturesAsync(ctx);
+    }
+    return collectSourceFeaturesForLayers(ctx, layerIds);
+}
+
+/**
+ * @param {object} ctx
+ * @param {string[]} layerIds
+ */
+export async function collectSourceFeaturesForLayers(ctx, layerIds = []) {
+    const ids = [...new Set((layerIds || []).filter(Boolean))];
+    if (!ids.length) {
+        return collectSourceFeaturesAsync(ctx);
+    }
+
+    const merged = [];
+    for (const layerId of ids) {
+        const layer = (ctx.getLayers?.() || []).find((entry) => entry.id === layerId);
+        const selectionCount = ctx.mapService?.getSelectionCount?.(layerId) || 0;
+        if (selectionCount <= 0) continue;
+
+        const selectedFeatures = collectSelectedFeaturesForLayer(ctx, layerId, layer);
+        for (const feature of selectedFeatures) {
+            merged.push({
+                ...cloneFeature(feature),
+                properties: {
+                    ...(feature.properties || {}),
+                    [PRESENTATION_LAYER_TAG]: layerId
+                }
+            });
+        }
+    }
+
+    if (merged.length) {
+        return toFeatureCollection(merged);
+    }
+
+    if (ids.length === 1) {
+        return collectSourceFeaturesForLayer(ctx, ids[0]);
+    }
+
+    return toFeatureCollection([]);
+}
+
+export { PRESENTATION_LAYER_TAG };
 
 /**
  * @param {object} validation
@@ -81,25 +160,30 @@ export function describePresentationSource(ctx, features, options = {}) {
     const featureCount = features?.features?.length || 0;
     const geometrySummary = summarizeFeatures(features);
     const anchor = ctx.mapService?.getPresentationAnchor?.();
-    const layerId = options.layerId || anchor?.layerId || '';
-    const layerName = options.layerName
-        || (layerId ? (ctx.getLayers?.() || []).find((layer) => layer.id === layerId)?.name : '')
-        || anchor?.layerName
-        || '';
-    const selectedCount = layerId
-        ? (ctx.mapService?.getSelectionCount?.(layerId) || 0)
-        : (ctx.mapService?.getTotalSelectionCount?.() || 0);
-    const spatialLayerCount = (ctx.getLayers?.() || []).filter((layer) => layer.type === 'spatial').length;
+    const layerIds = options.layerIds?.length
+        ? options.layerIds
+        : listLayerIdsWithSelections(ctx);
+    const layers = ctx.getLayers?.() || [];
+    const layerNames = options.layerNames?.length
+        ? options.layerNames
+        : layerIds.map((id) => layers.find((layer) => layer.id === id)?.name).filter(Boolean);
+    const layerId = layerIds[0] || options.layerId || anchor?.layerId || '';
+    const layerName = layerNames[0] || '';
+    const selectedCount = ctx.mapService?.getTotalSelectionCount?.()
+        || layerIds.reduce((sum, id) => sum + (ctx.mapService?.getSelectionCount?.(id) || 0), 0);
+    const spatialLayerCount = layers.filter((layer) => layer.type === 'spatial').length;
 
     let sourceLabel = 'No features selected';
-    if (featureCount > 0 && layerName) {
+    if (featureCount > 0 && layerNames.length > 1) {
+        sourceLabel = `${featureCount} feature${featureCount === 1 ? '' : 's'} from ${layerNames.length} layers`;
+    } else if (featureCount > 0 && layerName) {
         sourceLabel = `${featureCount} feature${featureCount === 1 ? '' : 's'} from ${layerName}`;
     } else if (featureCount > 0) {
         sourceLabel = `${featureCount} feature${featureCount === 1 ? '' : 's'} ready`;
     } else if (selectedCount > 0) {
-        sourceLabel = `${selectedCount} selected on map — add more or choose an animation`;
+        sourceLabel = `${selectedCount} selected on map — choose an animation when ready`;
     } else {
-        sourceLabel = 'Select features on the map or use Add on map';
+        sourceLabel = 'Click features on the map or use the buttons below';
     }
 
     return {
@@ -111,6 +195,8 @@ export function describePresentationSource(ctx, features, options = {}) {
         sourceLabel,
         layerId,
         layerName,
+        layerIds,
+        layerNames,
         isEmpty: featureCount === 0
     };
 }

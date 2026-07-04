@@ -164,6 +164,7 @@ class MapManager {
         this._selections = new Map();
         this._selectionBlocked = 0;
         this._activeLayerId = null;
+        this._presentationMultiSelect = false;
         this._rectSelectCleanup = null;
 
         // 3D
@@ -541,6 +542,12 @@ class MapManager {
 
     getLayerStyle(layerId) {
         return this._layerStyles.get(layerId) || null;
+    }
+
+    getLayerDefaultColor(layerId) {
+        const entry = this.dataLayers.get(layerId);
+        const colorIndex = entry?.colorIndex ?? 0;
+        return LAYER_COLORS[colorIndex % LAYER_COLORS.length];
     }
 
     setLayerStyle(layerId, style) {
@@ -1852,6 +1859,8 @@ class MapManager {
 
     startPresentationFeaturePick(prompt = 'Click a map feature for your presentation', options = {}) {
         const { additive = false, layerId: targetLayerId = null } = options;
+        const multiLayer = this._presentationMultiSelect;
+        const effectiveAdditive = multiLayer || additive;
 
         return new Promise((resolve) => {
             this._cancelInteraction();
@@ -1859,7 +1868,7 @@ class MapManager {
             canvas.style.cursor = 'crosshair';
             const banner = this._showInteractionBanner(prompt, () => { cleanup(); resolve(null); });
 
-            if (additive && targetLayerId) {
+            if (!multiLayer && effectiveAdditive && targetLayerId) {
                 if (getActiveLayer()?.id !== targetLayerId) {
                     setActiveLayer(targetLayerId);
                 }
@@ -1872,7 +1881,7 @@ class MapManager {
                 void (async () => {
                     let hits = this._findFeaturesNearClick(latlng, undefined, undefined, e.point);
                     hits = await this._enrichPopupHitsWithWorkspaceAttrs(hits);
-                    if (targetLayerId) {
+                    if (targetLayerId && !multiLayer) {
                         hits = hits.filter((hit) => hit.layerId === targetLayerId);
                     }
                     if (!hits.length) return;
@@ -1883,8 +1892,8 @@ class MapManager {
                         properties: { ...(hit.feature.properties || {}), _featureIndex: hit.featureIndex }
                     };
                     this._rememberPresentationAnchor(hit.layerId, hit.featureIndex, feature, hit.layerName);
-                    this._syncSelectionContext(hit.layerId, hit.featureIndex, { toggle: additive });
-                    if (additive) return;
+                    this._syncSelectionContext(hit.layerId, hit.featureIndex, { toggle: effectiveAdditive });
+                    if (effectiveAdditive) return;
                     cleanup();
                     resolve({
                         layerId: hit.layerId,
@@ -1898,14 +1907,11 @@ class MapManager {
             const onKeyDown = (event) => {
                 if (event.key === 'Escape') {
                     cleanup();
-                    if (additive) {
-                        const resolvedLayerId = targetLayerId || getActiveLayer()?.id;
+                    if (effectiveAdditive) {
                         resolve({
                             mode: 'additive',
-                            layerId: resolvedLayerId,
-                            selectionCount: resolvedLayerId
-                                ? this.getSelectionCount(resolvedLayerId)
-                                : this.getTotalSelectionCount()
+                            layerId: targetLayerId || getActiveLayer()?.id,
+                            selectionCount: this.getTotalSelectionCount()
                         });
                         return;
                     }
@@ -3745,6 +3751,19 @@ class MapManager {
         this._activeLayerId = layerId ?? null;
     }
 
+    enablePresentationMultiSelect() {
+        this._presentationMultiSelect = true;
+        this.unblockSelection();
+    }
+
+    disablePresentationMultiSelect() {
+        this._presentationMultiSelect = false;
+    }
+
+    isPresentationMultiSelect() {
+        return !!this._presentationMultiSelect;
+    }
+
     blockSelection() {
         this._selectionBlocked++;
     }
@@ -3778,8 +3797,11 @@ class MapManager {
         if (!this._canSelect()) return;
         const previousId = getActiveLayer()?.id;
         if (layerId !== previousId) {
-            if (previousId) this.clearSelection(previousId);
+            if (!this._presentationMultiSelect && previousId) {
+                this.clearSelection(previousId);
+            }
             setActiveLayer(layerId);
+            this.setActiveLayerId(layerId);
         }
         this._handleSelectionClick(layerId, featureIndex, toggle);
     }
@@ -3791,7 +3813,7 @@ class MapManager {
     }
 
     _handleSelectionClick(layerId, featureIndex, toggleKey) {
-        if (!this._isActiveLayer(layerId)) return;
+        if (!this._presentationMultiSelect && !this._isActiveLayer(layerId)) return;
         if (!this._selections.has(layerId)) this._selections.set(layerId, new Set());
         const sel = this._selections.get(layerId);
 
@@ -3944,7 +3966,11 @@ class MapManager {
         this._renderSelectionHighlights(layerId);
 
         const count = sel.size;
-        bus.emit('selection:changed', { layerId, count, totalCount: count });
+        bus.emit('selection:changed', {
+            layerId,
+            count,
+            totalCount: this.getTotalSelectionCount()
+        });
         if (count > 0) logger.debug('Map', `Box selected ${count} feature(s) on ${layerId}`);
     }
 

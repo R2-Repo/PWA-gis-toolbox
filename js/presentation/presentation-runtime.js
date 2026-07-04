@@ -1,10 +1,98 @@
 import { PresentationAnimationEngine } from './animation-engine.js';
 import { PRESENTATION_HOME_URL } from './presentation-scene-schema.js';
+import { PRESENTATION_LAYER_SUFFIXES, PRESENTATION_SOURCE_ID } from './presentation-constants.js';
+import { hasBakedPresentationStyles } from './presentation-style-capture.js';
 
-const PRESENTATION_SOURCE_ID = 'presentation-scene-source';
+export { PRESENTATION_SOURCE_ID } from './presentation-constants.js';
 
 function geomTypesFilter(types) {
     return ['any', ...types.map((type) => ['==', ['geometry-type'], type])];
+}
+
+function psField(key) {
+    return ['get', key, ['get', '_ps']];
+}
+
+function coalescePs(key, fallback) {
+    return ['coalesce', psField(key), fallback];
+}
+
+/**
+ * @param {import('geojson').FeatureCollection} geojson
+ * @param {import('./presentation-scene-schema.js').PresentationStyle} style
+ */
+function buildPresentationPaint(geojson, style = {}) {
+    const lineColor = style.lineColor || '#007aff';
+    const lineWidth = style.lineWidth ?? 5;
+    const pointRadius = style.pointRadius ?? 7;
+    const polygonOpacity = style.polygonOpacity ?? 0.35;
+    const baked = hasBakedPresentationStyles(geojson);
+
+    if (!baked) {
+        return {
+            fill: {
+                'fill-color': lineColor,
+                'fill-opacity': polygonOpacity
+            },
+            outline: {
+                'line-color': lineColor,
+                'line-width': lineWidth
+            },
+            line: {
+                'line-color': lineColor,
+                'line-width': lineWidth
+            },
+            circle: {
+                'circle-radius': pointRadius,
+                'circle-color': lineColor,
+                'circle-stroke-color': '#ffffff',
+                'circle-stroke-width': 2
+            }
+        };
+    }
+
+    return {
+        fill: {
+            'fill-color': coalescePs('f', lineColor),
+            'fill-opacity': coalescePs('fo', polygonOpacity)
+        },
+        outline: {
+            'line-color': coalescePs('s', lineColor),
+            'line-width': coalescePs('sw', lineWidth),
+            'line-opacity': coalescePs('so', 1)
+        },
+        line: {
+            'line-color': coalescePs('s', lineColor),
+            'line-width': coalescePs('sw', lineWidth),
+            'line-opacity': coalescePs('so', 1)
+        },
+        circle: {
+            'circle-radius': coalescePs('r', pointRadius),
+            'circle-color': coalescePs('f', coalescePs('s', lineColor)),
+            'circle-stroke-color': coalescePs('s', '#ffffff'),
+            'circle-stroke-width': 2,
+            'circle-opacity': coalescePs('so', 1)
+        }
+    };
+}
+
+function applyPaintProperties(map, layerId, paint) {
+    if (!map.getLayer(layerId)) return;
+    for (const [key, value] of Object.entries(paint)) {
+        map.setPaintProperty(layerId, key, value);
+    }
+}
+
+/**
+ * @param {import('maplibre-gl').Map} map
+ */
+export function removePresentationFeatureLayers(map) {
+    if (!map) return;
+    for (const suffix of PRESENTATION_LAYER_SUFFIXES) {
+        const layerId = `${PRESENTATION_SOURCE_ID}${suffix}`;
+        if (map.getLayer(layerId)) map.removeLayer(layerId);
+    }
+    if (map.getSource(PRESENTATION_SOURCE_ID)) map.removeSource(PRESENTATION_SOURCE_ID);
 }
 
 /**
@@ -13,6 +101,8 @@ function geomTypesFilter(types) {
  * @param {import('./presentation-scene-schema.js').PresentationStyle} style
  */
 export function addPresentationFeatureLayers(map, geojson, style = {}) {
+    const paint = buildPresentationPaint(geojson, style);
+
     if (!map.getSource(PRESENTATION_SOURCE_ID)) {
         map.addSource(PRESENTATION_SOURCE_ID, { type: 'geojson', data: geojson });
     } else {
@@ -20,10 +110,6 @@ export function addPresentationFeatureLayers(map, geojson, style = {}) {
     }
 
     const layerIds = [];
-    const lineColor = style.lineColor || '#007aff';
-    const lineWidth = style.lineWidth ?? 5;
-    const pointRadius = style.pointRadius ?? 7;
-    const polygonOpacity = style.polygonOpacity ?? 0.35;
 
     const fillId = `${PRESENTATION_SOURCE_ID}-fill`;
     if (!map.getLayer(fillId)) {
@@ -32,11 +118,10 @@ export function addPresentationFeatureLayers(map, geojson, style = {}) {
             type: 'fill',
             source: PRESENTATION_SOURCE_ID,
             filter: geomTypesFilter(['Polygon', 'MultiPolygon']),
-            paint: {
-                'fill-color': lineColor,
-                'fill-opacity': polygonOpacity
-            }
+            paint: paint.fill
         });
+    } else {
+        applyPaintProperties(map, fillId, paint.fill);
     }
     layerIds.push(fillId);
 
@@ -47,11 +132,10 @@ export function addPresentationFeatureLayers(map, geojson, style = {}) {
             type: 'line',
             source: PRESENTATION_SOURCE_ID,
             filter: geomTypesFilter(['Polygon', 'MultiPolygon']),
-            paint: {
-                'line-color': lineColor,
-                'line-width': lineWidth
-            }
+            paint: paint.outline
         });
+    } else {
+        applyPaintProperties(map, outlineId, paint.outline);
     }
     layerIds.push(outlineId);
 
@@ -62,11 +146,10 @@ export function addPresentationFeatureLayers(map, geojson, style = {}) {
             type: 'line',
             source: PRESENTATION_SOURCE_ID,
             filter: geomTypesFilter(['LineString', 'MultiLineString']),
-            paint: {
-                'line-color': lineColor,
-                'line-width': lineWidth
-            }
+            paint: paint.line
         });
+    } else {
+        applyPaintProperties(map, lineId, paint.line);
     }
     layerIds.push(lineId);
 
@@ -77,13 +160,10 @@ export function addPresentationFeatureLayers(map, geojson, style = {}) {
             type: 'circle',
             source: PRESENTATION_SOURCE_ID,
             filter: geomTypesFilter(['Point', 'MultiPoint']),
-            paint: {
-                'circle-radius': pointRadius,
-                'circle-color': lineColor,
-                'circle-stroke-color': '#ffffff',
-                'circle-stroke-width': 2
-            }
+            paint: paint.circle
         });
+    } else {
+        applyPaintProperties(map, circleId, paint.circle);
     }
     layerIds.push(circleId);
 

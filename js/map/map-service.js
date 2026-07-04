@@ -64,6 +64,9 @@ export function createMapService({ mapAdapter = mapManager } = {}) {
         getLayerStyle(layerId) {
             return mapAdapter.getLayerStyle(layerId);
         },
+        getLayerDefaultColor(layerId) {
+            return mapAdapter.getLayerDefaultColor(layerId);
+        },
         setLayerStyle(layerId, style) {
             return mapAdapter.setLayerStyle(layerId, style);
         },
@@ -163,6 +166,15 @@ export function createMapService({ mapAdapter = mapManager } = {}) {
         },
         setActiveLayerId(layerId) {
             return mapAdapter.setActiveLayerId?.(layerId);
+        },
+        enablePresentationMultiSelect() {
+            return mapAdapter.enablePresentationMultiSelect?.();
+        },
+        disablePresentationMultiSelect() {
+            return mapAdapter.disablePresentationMultiSelect?.();
+        },
+        isPresentationMultiSelect() {
+            return !!mapAdapter.isPresentationMultiSelect?.();
         },
         getActiveLayerId() {
             return mapAdapter._activeLayerId ?? null;

@@ -3,8 +3,8 @@
  */
 
 import { runPresentationAnimationStep } from './presentation-animation-handlers.js';
+import { PRESENTATION_SOURCE_ID } from './presentation-constants.js';
 
-const PRESENTATION_SOURCE_PREFIX = 'presentation-scene';
 const ANIMATED_POINT_SOURCE = 'presentation-animated-point';
 const ANIMATED_LINE_SOURCE = 'presentation-animated-line';
 
@@ -527,7 +527,7 @@ export class PresentationAnimationEngine {
         for (const layerId of this._sceneLayers) {
             removeLayerIfExists(map, layerId);
         }
-        for (const sourceId of [`${PRESENTATION_SOURCE_PREFIX}-source`]) {
+        for (const sourceId of [PRESENTATION_SOURCE_ID]) {
             removeSourceIfExists(map, sourceId);
         }
         this._sceneLayers = [];
