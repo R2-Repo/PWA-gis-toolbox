@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { WidgetPanelShell } from './shared/WidgetPanelShell.jsx';
+import { LayerSelect } from './shared/LayerSelect.jsx';
 import {
     listLinkAnimations,
     getLinkAnimation,
@@ -11,8 +12,21 @@ const EMPTY_SUMMARY = {
     featureCount: 0,
     geometryTypes: [],
     vertexCount: 0,
-    sourceLabel: 'Click Pick on map or select a feature first',
-    isEmpty: true
+    sourceLabel: 'Select features on the map or use Add on map',
+    isEmpty: true,
+    selectedCount: 0
+};
+
+const EMPTY_LIMITS = {
+    featureCount: 0,
+    maxFeatures: 25,
+    vertexCount: 0,
+    maxVertices: 1000,
+    estimatedUrlLength: 0,
+    maxEncodedLength: 50000,
+    featuresOk: false,
+    verticesOk: true,
+    urlOk: true
 };
 
 const DURATION_MIN = 1;
@@ -26,20 +40,31 @@ function formatDurationSec(durationMs, fallbackMs = ORBIT_PACE_MS.normal) {
     return String(Math.round((durationMs ?? fallbackMs) / 1000));
 }
 
+function formatLimitNumber(value) {
+    return Number(value ?? 0).toLocaleString();
+}
+
 export function PresentationLinkBuilder({
+    layers = [],
+    initialLayerId = '',
     loadInitialState,
     onRefreshSource,
     onBuildScene,
-    onPickFeature,
+    onLayerFocus,
+    onSelectAll,
+    onClearSelection,
+    onAddFeaturesOnMap,
     onPreview,
     onCopyUrl,
     onResetPreview,
+    onSubscribeLayerSelection,
     onSubscribeSourceRefresh,
     onWidgetClose,
     onCancel
 }) {
     const [formState, setFormState] = useState(null);
     const [sourceSummary, setSourceSummary] = useState(EMPTY_SUMMARY);
+    const [limits, setLimits] = useState(EMPTY_LIMITS);
     const [validation, setValidation] = useState({ ok: false, errors: [], estimatedUrlLength: 0 });
     const [url, setUrl] = useState('');
     const [busy, setBusy] = useState(false);
@@ -47,8 +72,11 @@ export function PresentationLinkBuilder({
     const [loading, setLoading] = useState(true);
     const [status, setStatus] = useState('');
     const [refreshTick, setRefreshTick] = useState(0);
+    const [selectionCount, setSelectionCount] = useState(0);
     const [durationSec, setDurationSec] = useState(formatDurationSec(ORBIT_PACE_MS.normal));
     const durationEditingRef = useRef(false);
+
+    const layerId = formState?.layerId || initialLayerId || '';
 
     const applyBundle = useCallback((bundle) => {
         if (bundle?.sourceSummary) setSourceSummary(bundle.sourceSummary);
@@ -70,6 +98,18 @@ export function PresentationLinkBuilder({
     }, [loadInitialState]);
 
     useEffect(() => {
+        if (!layerId || !onSubscribeLayerSelection) {
+            setSelectionCount(0);
+            return undefined;
+        }
+        return onSubscribeLayerSelection(layerId, setSelectionCount);
+    }, [layerId, onSubscribeLayerSelection]);
+
+    useEffect(() => {
+        if (layerId) onLayerFocus?.(layerId);
+    }, [layerId, onLayerFocus]);
+
+    useEffect(() => {
         if (!formState || durationEditingRef.current) return;
         const definition = getLinkAnimation(formState.animation?.presetId || 'none');
         setDurationSec(formatDurationSec(
@@ -85,6 +125,7 @@ export function PresentationLinkBuilder({
             const result = await onBuildScene?.(formState);
             if (cancelled || !result) return;
             setValidation(result.validation || { ok: false, errors: [] });
+            setLimits(result.limits || EMPTY_LIMITS);
             setUrl(result.url || '');
             if (result.sourceSummary) setSourceSummary(result.sourceSummary);
         })();
@@ -95,12 +136,12 @@ export function PresentationLinkBuilder({
         if (!formState || !onSubscribeSourceRefresh) return undefined;
         return onSubscribeSourceRefresh(
             async () => {
-                const bundle = await onRefreshSource?.();
+                const bundle = await onRefreshSource?.(layerId);
                 applyBundle(bundle);
             },
             () => setRefreshTick((tick) => tick + 1)
         );
-    }, [formState, onSubscribeSourceRefresh, onRefreshSource, applyBundle]);
+    }, [formState, layerId, onSubscribeSourceRefresh, onRefreshSource, applyBundle]);
 
     useEffect(() => () => {
         onResetPreview?.();
@@ -114,6 +155,11 @@ export function PresentationLinkBuilder({
         } : prev));
     };
 
+    const updateLayerId = (nextLayerId) => {
+        setFormState((prev) => (prev ? { ...prev, layerId: nextLayerId } : prev));
+        setRefreshTick((tick) => tick + 1);
+    };
+
     const commitDurationSec = (rawValue) => {
         durationEditingRef.current = false;
         const parsed = Number.parseInt(rawValue, 10);
@@ -122,15 +168,19 @@ export function PresentationLinkBuilder({
         updateAnimation({ durationMs: clamped * 1000, orbitPace: 'custom' });
     };
 
-    const handlePick = async () => {
+    const handleAddOnMap = async () => {
+        if (!layerId) {
+            setStatus('Choose a target layer first.');
+            return;
+        }
         setPicking(true);
         setStatus('');
         try {
             onResetPreview?.();
-            const bundle = await onPickFeature?.();
+            const bundle = await onAddFeaturesOnMap?.(layerId);
             if (bundle) applyBundle(bundle);
         } catch (error) {
-            setStatus(error?.message || 'Could not pick a feature');
+            setStatus(error?.message || 'Could not add features from the map');
         } finally {
             setPicking(false);
         }
@@ -151,7 +201,7 @@ export function PresentationLinkBuilder({
 
     const handleCopy = async () => {
         if (!validation.ok || !url) {
-            setStatus(validation.tooLargeMessage || validation.errors?.[0] || 'Pick a small feature first.');
+            setStatus(validation.tooLargeMessage || validation.errors?.[0] || 'Select features within the limits first.');
             return;
         }
         try {
@@ -174,6 +224,10 @@ export function PresentationLinkBuilder({
     const selectedDefinition = getLinkAnimation(presetId);
     const { ui } = selectedDefinition;
     const pacePresets = ui.pacePresetsMs ?? {};
+    const geometryLabel = sourceSummary.geometryTypes?.join(', ') || 'Geometry';
+    const statusTitle = validation.ok
+        ? 'Ready to share'
+        : (sourceSummary.featureCount > 0 ? 'Over presentation limits' : 'Need features');
 
     return (
         <WidgetPanelShell
@@ -198,34 +252,70 @@ export function PresentationLinkBuilder({
             )}
         >
             <p className="text-sm text-muted presentation-link-builder__intro">
-                Create a clean fullscreen map link from one small feature. Pick the feature on the map, choose a simple animation, then copy the link.
+                Select one or more features on a layer, choose an animation, then copy the link.
             </p>
+
+            <LayerSelect
+                label="Target layer"
+                value={layerId}
+                layers={layers}
+                onChange={updateLayerId}
+            />
 
             <div className={`presentation-link-builder__status-card${validation.ok ? ' is-ready' : ''}`}>
                 <div className="presentation-link-builder__status-title">
-                    {validation.ok ? 'Ready to share' : 'Need a feature'}
+                    {statusTitle}
                 </div>
                 <div className="text-sm">{sourceSummary.sourceLabel}</div>
-                {sourceSummary.featureCount > 0 ? (
+                {sourceSummary.featureCount > 0 || selectionCount > 0 ? (
                     <div className="text-xs text-muted">
-                        {sourceSummary.geometryTypes?.join(', ') || 'Geometry'} · {sourceSummary.vertexCount ?? 0} vertices
+                        {geometryLabel}
+                        {selectionCount > 0 && sourceSummary.featureCount === 0
+                            ? ` · ${selectionCount} selected on map`
+                            : null}
                     </div>
                 ) : null}
+                <div className={`presentation-link-builder__limits text-xs${validation.ok ? '' : ' is-over-limit'}`}>
+                    {formatLimitNumber(limits.featureCount)} / {formatLimitNumber(limits.maxFeatures)} features
+                    {' · '}
+                    {formatLimitNumber(limits.vertexCount)} / {formatLimitNumber(limits.maxVertices)} vertices
+                </div>
                 {!validation.ok ? (
                     <div className="text-xs text-muted">
-                        {validation.errors?.[0] || 'Use Pick on map if you already selected a feature but the count is still zero.'}
+                        {validation.errors?.[0] || 'Select features on the map, or use Add on map.'}
                     </div>
                 ) : null}
             </div>
 
-            <button
-                type="button"
-                className="btn btn-secondary btn-sm w-full"
-                disabled={picking}
-                onClick={() => { void handlePick(); }}
-            >
-                {picking ? 'Click a feature on the map…' : 'Pick on map'}
-            </button>
+            <div className="presentation-link-builder__btn-row gis-widget__btn-row">
+                <button
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    disabled={picking || !layerId}
+                    onClick={() => { void handleAddOnMap(); }}
+                >
+                    {picking ? 'Click map features…' : 'Add on map'}
+                </button>
+                <button
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    disabled={!layerId}
+                    onClick={() => onSelectAll?.(layerId)}
+                >
+                    Select all
+                </button>
+                <button
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    disabled={!layerId}
+                    onClick={() => onClearSelection?.(layerId)}
+                >
+                    Clear
+                </button>
+            </div>
+            <p className="presentation-link-builder__hint text-xs text-muted">
+                Ctrl/Shift+click or drag a box on the map to add more.
+            </p>
 
             <div className="presentation-link-builder__row mt-12">
                 <label className="field-label" htmlFor="presentation-animation">Animation</label>
@@ -314,7 +404,9 @@ export function PresentationLinkBuilder({
             ) : null}
 
             <div className="presentation-link-builder__url text-xs mt-12" title={url}>
-                {validation.ok ? url : 'Your presentation link will appear here after a feature is picked.'}
+                {validation.ok
+                    ? url
+                    : (validation.errors?.[0] || 'Your presentation link will appear here after features are within limits.')}
             </div>
         </WidgetPanelShell>
     );

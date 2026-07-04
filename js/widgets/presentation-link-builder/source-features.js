@@ -1,7 +1,9 @@
 /**
  * Resolve presentation source features from the live map service.
  */
-import { summarizeFeatures } from '../../presentation/scene-validation.js';
+import { SCENE_LIMITS, summarizeFeatures } from '../../presentation/scene-validation.js';
+
+export { SCENE_LIMITS };
 
 export function cloneFeature(feature) {
     return JSON.parse(JSON.stringify(feature));
@@ -33,24 +35,71 @@ export async function collectSourceFeaturesAsync(ctx) {
 
 /**
  * @param {object} ctx
- * @param {import('geojson').FeatureCollection} features
+ * @param {string} [layerId]
  */
-export function describePresentationSource(ctx, features) {
+export async function collectSourceFeaturesForLayer(ctx, layerId) {
+    if (layerId) {
+        const layer = (ctx.getLayers?.() || []).find((entry) => entry.id === layerId);
+        const selectionCount = ctx.mapService?.getSelectionCount?.(layerId) || 0;
+        if (layer?.geojson && selectionCount > 0) {
+            const selected = ctx.mapService.getSelectedFeatures(layerId, layer.geojson);
+            if (selected?.features?.length) {
+                return toFeatureCollection(selected.features);
+            }
+        }
+    }
+
+    return collectSourceFeaturesAsync(ctx);
+}
+
+/**
+ * @param {object} validation
+ */
+export function buildLimitSummary(validation = {}) {
+    const summary = validation.summary || {};
+    return {
+        featureCount: summary.featureCount ?? 0,
+        maxFeatures: SCENE_LIMITS.maxFeatures,
+        vertexCount: summary.vertexCount ?? 0,
+        maxVertices: SCENE_LIMITS.maxVertices,
+        estimatedUrlLength: validation.estimatedUrlLength ?? 0,
+        maxEncodedLength: SCENE_LIMITS.maxEncodedLength,
+        featuresOk: (summary.featureCount ?? 0) <= SCENE_LIMITS.maxFeatures && (summary.featureCount ?? 0) > 0,
+        verticesOk: (summary.vertexCount ?? 0) <= SCENE_LIMITS.maxVertices,
+        urlOk: (validation.estimatedUrlLength ?? 0) <= SCENE_LIMITS.maxEncodedLength
+    };
+}
+
+/**
+ * @param {object} ctx
+ * @param {import('geojson').FeatureCollection} features
+ * @param {object} [options]
+ * @param {string} [options.layerId]
+ * @param {string} [options.layerName]
+ */
+export function describePresentationSource(ctx, features, options = {}) {
     const featureCount = features?.features?.length || 0;
     const geometrySummary = summarizeFeatures(features);
     const anchor = ctx.mapService?.getPresentationAnchor?.();
-    const selectedCount = ctx.mapService?.getTotalSelectionCount?.() || 0;
+    const layerId = options.layerId || anchor?.layerId || '';
+    const layerName = options.layerName
+        || (layerId ? (ctx.getLayers?.() || []).find((layer) => layer.id === layerId)?.name : '')
+        || anchor?.layerName
+        || '';
+    const selectedCount = layerId
+        ? (ctx.mapService?.getSelectionCount?.(layerId) || 0)
+        : (ctx.mapService?.getTotalSelectionCount?.() || 0);
     const spatialLayerCount = (ctx.getLayers?.() || []).filter((layer) => layer.type === 'spatial').length;
 
-    let sourceLabel = 'No feature yet';
-    if (featureCount > 0 && anchor?.layerName) {
-        sourceLabel = `${featureCount} feature${featureCount === 1 ? '' : 's'} from ${anchor.layerName}`;
+    let sourceLabel = 'No features selected';
+    if (featureCount > 0 && layerName) {
+        sourceLabel = `${featureCount} feature${featureCount === 1 ? '' : 's'} from ${layerName}`;
     } else if (featureCount > 0) {
         sourceLabel = `${featureCount} feature${featureCount === 1 ? '' : 's'} ready`;
     } else if (selectedCount > 0) {
-        sourceLabel = `${selectedCount} selected — click Pick on map if count stays zero`;
+        sourceLabel = `${selectedCount} selected on map — add more or choose an animation`;
     } else {
-        sourceLabel = 'Click Pick on map or select a feature first';
+        sourceLabel = 'Select features on the map or use Add on map';
     }
 
     return {
@@ -60,7 +109,8 @@ export function describePresentationSource(ctx, features) {
         spatialLayerCount,
         selectedCount,
         sourceLabel,
-        layerName: anchor?.layerName || '',
+        layerId,
+        layerName,
         isEmpty: featureCount === 0
     };
 }

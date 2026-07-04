@@ -1850,12 +1850,21 @@ class MapManager {
         return { type: 'FeatureCollection', features };
     }
 
-    startPresentationFeaturePick(prompt = 'Click a map feature for your presentation') {
+    startPresentationFeaturePick(prompt = 'Click a map feature for your presentation', options = {}) {
+        const { additive = false, layerId: targetLayerId = null } = options;
+
         return new Promise((resolve) => {
             this._cancelInteraction();
             const canvas = this.map.getCanvas();
             canvas.style.cursor = 'crosshair';
             const banner = this._showInteractionBanner(prompt, () => { cleanup(); resolve(null); });
+
+            if (additive && targetLayerId) {
+                if (getActiveLayer()?.id !== targetLayerId) {
+                    setActiveLayer(targetLayerId);
+                }
+                this.setActiveLayerId?.(targetLayerId);
+            }
 
             const onClick = (e) => {
                 markMapInteractionHandled(e);
@@ -1863,6 +1872,9 @@ class MapManager {
                 void (async () => {
                     let hits = this._findFeaturesNearClick(latlng, undefined, undefined, e.point);
                     hits = await this._enrichPopupHitsWithWorkspaceAttrs(hits);
+                    if (targetLayerId) {
+                        hits = hits.filter((hit) => hit.layerId === targetLayerId);
+                    }
                     if (!hits.length) return;
                     const hit = hits[0];
                     const feature = {
@@ -1871,7 +1883,8 @@ class MapManager {
                         properties: { ...(hit.feature.properties || {}), _featureIndex: hit.featureIndex }
                     };
                     this._rememberPresentationAnchor(hit.layerId, hit.featureIndex, feature, hit.layerName);
-                    this._syncSelectionContext(hit.layerId, hit.featureIndex, { toggle: false });
+                    this._syncSelectionContext(hit.layerId, hit.featureIndex, { toggle: additive });
+                    if (additive) return;
                     cleanup();
                     resolve({
                         layerId: hit.layerId,
@@ -1885,6 +1898,17 @@ class MapManager {
             const onKeyDown = (event) => {
                 if (event.key === 'Escape') {
                     cleanup();
+                    if (additive) {
+                        const resolvedLayerId = targetLayerId || getActiveLayer()?.id;
+                        resolve({
+                            mode: 'additive',
+                            layerId: resolvedLayerId,
+                            selectionCount: resolvedLayerId
+                                ? this.getSelectionCount(resolvedLayerId)
+                                : this.getTotalSelectionCount()
+                        });
+                        return;
+                    }
                     resolve(null);
                 }
             };

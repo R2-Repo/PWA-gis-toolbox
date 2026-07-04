@@ -3321,3 +3321,13 @@ textarea { resize: vertical; min-height: 60px; }
     margin: 6px 0 0;
     line-height: 1.45;
 }
+.presentation-link-builder__limits {
+    margin-top: 6px;
+    color: var(--text-muted);
+}
+.presentation-link-builder__limits.is-over-limit {
+    color: var(--danger, #ff453a);
+}
+.presentation-link-builder__btn-row {
+    margin-bottom: 4px;
+}

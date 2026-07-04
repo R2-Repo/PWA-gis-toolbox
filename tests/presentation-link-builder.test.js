@@ -1,6 +1,6 @@
 import { describe, expect, it, beforeAll } from 'vitest';
 import * as turf from '@turf/turf';
-import { buildSceneFromConfig, COMBO_PACE_MS, ORBIT_PACE_MS, splitComboDurations } from '../js/widgets/presentation-link-builder/engine.js';
+import { buildSceneFromConfig, buildLimitSummary, COMBO_PACE_MS, ORBIT_PACE_MS, splitComboDurations, validateSceneForUrl } from '../js/widgets/presentation-link-builder/engine.js';
 import {
     computeFeatureFitCamera,
     computeOverviewCamera
@@ -123,6 +123,34 @@ describe('buildSceneFromConfig camera strategy', () => {
         expect(scene.animations[0].durationMs).toBe(COMBO_PACE_MS.normal);
         expect(scene.animations[0].options.flyDurationMs).toBe(flyDurationMs);
         expect(scene.animations[0].options.orbitDurationMs).toBe(orbitDurationMs);
+    });
+});
+
+describe('presentation link validation summary', () => {
+    it('blocks scenes with too many vertices', () => {
+        const dense = {
+            type: 'FeatureCollection',
+            features: [{
+                type: 'Feature',
+                properties: {},
+                geometry: {
+                    type: 'LineString',
+                    coordinates: Array.from({ length: 1200 }, (_, i) => [-111.9 + i * 0.0001, 40.7])
+                }
+            }]
+        };
+        const scene = buildSceneFromConfig({
+            features: dense,
+            map: createMockMap(),
+            mapService: { getCurrentBasemap: () => 'voyager', is3DEnabled: () => true },
+            animation: { presetId: 'none' }
+        });
+        const validation = validateSceneForUrl(scene);
+        const limits = buildLimitSummary(validation);
+
+        expect(validation.ok).toBe(false);
+        expect(limits.verticesOk).toBe(false);
+        expect(limits.vertexCount).toBeGreaterThan(limits.maxVertices);
     });
 });
 

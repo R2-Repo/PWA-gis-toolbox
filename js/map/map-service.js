@@ -254,8 +254,8 @@ export function createMapService({ mapAdapter = mapManager } = {}) {
         resolveFeaturesByIndices(layerId, indices) {
             return mapAdapter.resolveFeaturesByIndices?.(layerId, indices);
         },
-        startPresentationFeaturePick(prompt) {
-            return mapAdapter.startPresentationFeaturePick?.(prompt);
+        startPresentationFeaturePick(prompt, options) {
+            return mapAdapter.startPresentationFeaturePick?.(prompt, options);
         },
         getActivePopupHit() {
             return mapAdapter.getActivePopupHit?.();

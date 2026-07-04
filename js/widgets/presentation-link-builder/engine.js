@@ -15,7 +15,10 @@ import {
 
 export { cloneFeature, toFeatureCollection } from './source-features.js';
 export {
+    buildLimitSummary,
     collectSourceFeatures,
+    collectSourceFeaturesForLayer,
+    SCENE_LIMITS,
     summarizeResolvedSource
 } from './source-features.js';
 
