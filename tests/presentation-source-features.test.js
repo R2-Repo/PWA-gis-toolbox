@@ -1,9 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
     collectSourceFeaturesAsync,
-    getLayerGeojson,
-    pickFeaturesByIndices,
-    summarizeSourceContext
+    describePresentationSource
 } from '../js/widgets/presentation-link-builder/source-features.js';
 
 const pointFeature = {
@@ -13,90 +11,49 @@ const pointFeature = {
 };
 
 describe('presentation source features', () => {
-    it('prefers map layer geojson over empty workspace state geojson', () => {
-        const layer = {
-            id: 'layer-1',
-            type: 'spatial',
-            storage: 'workspace',
-            geojson: { type: 'FeatureCollection', features: [] }
-        };
+    it('uses mapService presentation source features first', async () => {
         const ctx = {
-            getLayers: () => [layer],
+            getLayers: () => [{ id: 'layer-1', type: 'spatial' }],
+            getDrawnFeature: () => null,
             mapService: {
-                getLayerRecord: () => ({
-                    geojson: { type: 'FeatureCollection', features: [pointFeature] }
-                }),
-                getSelectedIndices: () => [3],
+                getPresentationSourceFeatures: vi.fn(async () => ({
+                    type: 'FeatureCollection',
+                    features: [pointFeature]
+                })),
+                getPresentationAnchor: () => ({ layerName: 'Sites' }),
                 getTotalSelectionCount: () => 1
             }
         };
 
-        const geojson = getLayerGeojson(ctx, layer);
-        expect(geojson.features).toHaveLength(1);
-        expect(pickFeaturesByIndices(geojson, [3])).toHaveLength(1);
-    });
-
-    it('collects selected features from map-backed layers', async () => {
-        const layer = {
-            id: 'layer-1',
-            type: 'spatial',
-            geojson: { type: 'FeatureCollection', features: [] }
-        };
-        const ctx = {
-            getLayers: () => [layer],
-            getActiveLayer: () => layer,
-            getDrawnFeature: () => null,
-            mapService: {
-                getLayerRecord: () => ({
-                    geojson: { type: 'FeatureCollection', features: [pointFeature] }
-                }),
-                getSelectedIndices: () => [3],
-                getTotalSelectionCount: () => 1,
-                getHighlightedFeature: () => null
-            }
-        };
-
-        const features = await collectSourceFeaturesAsync(ctx, 'selection');
+        const features = await collectSourceFeaturesAsync(ctx);
         expect(features.features).toHaveLength(1);
-        expect(features.features[0].properties.name).toBe('Tower');
+        expect(ctx.mapService.getPresentationSourceFeatures).toHaveBeenCalled();
     });
 
-    it('falls back to highlighted feature when nothing is selected', async () => {
+    it('falls back to drawn feature when map source is empty', async () => {
         const ctx = {
             getLayers: () => [],
-            getActiveLayer: () => null,
-            getDrawnFeature: () => null,
+            getDrawnFeature: () => ({ feature: pointFeature }),
             mapService: {
-                getTotalSelectionCount: () => 0,
-                getHighlightedFeature: () => ({ feature: pointFeature })
+                getPresentationSourceFeatures: vi.fn(async () => ({ type: 'FeatureCollection', features: [] }))
             }
         };
 
-        const features = await collectSourceFeaturesAsync(ctx, 'selection');
+        const features = await collectSourceFeaturesAsync(ctx);
         expect(features.features).toHaveLength(1);
     });
 
-    it('summarizes spatial layer counts from app state and map records', () => {
-        const ctx = {
-            getLayers: () => [
-                { id: 'a', type: 'spatial' },
-                { id: 'b', type: 'table' },
-                { id: 'c', type: 'spatial' }
-            ],
-            getDrawnFeature: () => null,
+    it('describes the resolved source for the simplified UI', () => {
+        const summary = describePresentationSource({
+            getLayers: () => [{ id: 'layer-1', type: 'spatial' }],
             mapService: {
-                getLayerRecord: (id) => (id === 'a' ? { geojson: { features: [pointFeature] } } : null),
-                getTotalSelectionCount: () => 2,
-                getHighlightedFeature: () => null
+                getPresentationAnchor: () => ({ layerName: 'Fiber Route' }),
+                getTotalSelectionCount: () => 1
             }
-        };
+        }, { type: 'FeatureCollection', features: [pointFeature] });
 
-        expect(summarizeSourceContext(ctx)).toEqual({
-            spatialLayerCount: 2,
-            mapLayerCount: 1,
-            selectedCount: 2,
-            hasHighlightedFeature: false,
-            hasDrawnFeature: false
-        });
+        expect(summary.featureCount).toBe(1);
+        expect(summary.sourceLabel).toContain('Fiber Route');
+        expect(summary.isEmpty).toBe(false);
     });
 });

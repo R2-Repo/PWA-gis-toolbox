@@ -3229,3 +3229,24 @@ textarea { resize: vertical; min-height: 60px; }
     flex-wrap: wrap;
     gap: 8px;
 }
+.presentation-link-builder--simple .presentation-link-builder__intro {
+    margin: 0 0 12px;
+}
+.presentation-link-builder__status-card {
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--bg-surface);
+    padding: 12px;
+    margin-bottom: 12px;
+}
+.presentation-link-builder__status-card.is-ready {
+    border-color: rgba(48, 209, 88, 0.35);
+}
+.presentation-link-builder__status-title {
+    font-size: 13px;
+    font-weight: 700;
+    margin-bottom: 4px;
+}
+.presentation-link-builder__row {
+    margin-bottom: 10px;
+}

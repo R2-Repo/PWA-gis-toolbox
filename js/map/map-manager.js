@@ -9,7 +9,7 @@ import { flattenFeatureGeometryCollections, isWorkspaceLayer } from '../core/dat
 import { getCoverageRasters, isCoverageRasterLayer } from '../core/coverage-raster-layer.js';
 import { MAP_CHUNK_BATCH_SIZE, RENDER_LIMITS } from './render-limits.js';
 import { buildViewportGeoJSON } from '../workspace/viewport-loader.js';
-import { getWorkspaceFeatureAttributes, getWorkspaceLayerBounds } from '../workspace/workspace-store.js';
+import { getWorkspaceFeatureAttributes, getWorkspaceLayerBounds, iterateWorkspaceFeatures } from '../workspace/workspace-store.js';
 import {
     resolveMapLibreZoomRange,
     normalizeScaleRange,
@@ -172,6 +172,7 @@ class MapManager {
         // Popup
         this._popup = null;
         this._popupDelegationBound = false;
+        this._presentationAnchor = null;
 
         // Camera orbit
         this._orbitAnimId = null;
@@ -1234,6 +1235,8 @@ class MapManager {
                     this._popupLatLng = latlng;
                     this._renderCyclePopup();
 
+                    this._rememberPresentationAnchor(dataset.id, featureIndex, feature, dataset.name);
+
                     if (this._canSelect()) {
                         const ev = e.originalEvent;
                         const toggle = !!(ev?.shiftKey || ev?.ctrlKey || ev?.metaKey);
@@ -1717,6 +1720,168 @@ class MapManager {
             featureIndex,
             feature: JSON.parse(JSON.stringify(feature))
         };
+    }
+
+    _rememberPresentationAnchor(layerId, featureIndex, feature, layerName) {
+        if (!feature?.geometry) return;
+        this._presentationAnchor = {
+            layerId,
+            featureIndex,
+            layerName: layerName || this._layerNames.get(layerId) || layerId,
+            feature: JSON.parse(JSON.stringify(feature)),
+            updatedAt: Date.now()
+        };
+    }
+
+    getPresentationAnchor() {
+        return this._presentationAnchor ? { ...this._presentationAnchor } : null;
+    }
+
+    getActivePopupHit() {
+        return this._getActivePopupHit();
+    }
+
+    async resolveFeaturesByIndices(layerId, indices = []) {
+        if (!indices.length) return [];
+        const wanted = new Set(indices.map((value) => Number(value)));
+        const found = new Map();
+        const info = this.dataLayers.get(layerId);
+
+        if (info?.geojson?.features?.length) {
+            for (const feature of info.geojson.features) {
+                const idx = Number(feature.properties?._featureIndex);
+                if (!wanted.has(idx)) continue;
+                found.set(idx, feature);
+                wanted.delete(idx);
+            }
+        }
+
+        if (wanted.size && info?.workspace) {
+            const wsId = this._workspaceDatasets?.get(layerId)?.workspaceLayerId || layerId;
+            let offset = 0;
+            const batchSize = 1000;
+            while (wanted.size > 0) {
+                const batch = await iterateWorkspaceFeatures(wsId, offset, batchSize);
+                if (!batch.length) break;
+                for (const feature of batch) {
+                    const idx = Number(feature.properties?._featureIndex);
+                    if (!wanted.has(idx)) continue;
+                    found.set(idx, feature);
+                    wanted.delete(idx);
+                }
+                offset += batch.length;
+                if (batch.length < batchSize) break;
+            }
+        }
+
+        return indices
+            .map((value) => found.get(Number(value)))
+            .filter(Boolean);
+    }
+
+    async _refreshPresentationAnchorFromSelection(layerId) {
+        const indices = this.getSelectedIndices(layerId);
+        if (!indices.length) return;
+        const lastIndex = indices[indices.length - 1];
+        const [feature] = await this.resolveFeaturesByIndices(layerId, [lastIndex]);
+        if (feature) {
+            this._rememberPresentationAnchor(layerId, lastIndex, feature);
+        }
+    }
+
+    async getPresentationSourceFeatures() {
+        const features = [];
+        const seen = new Set();
+
+        const pushFeature = (feature, layerId, layerName) => {
+            if (!feature?.geometry) return;
+            const key = `${layerId}:${feature.properties?._featureIndex ?? features.length}`;
+            if (seen.has(key)) return;
+            seen.add(key);
+            features.push(JSON.parse(JSON.stringify(feature)));
+        };
+
+        for (const [layerId, selection] of this._selections.entries()) {
+            if (!selection?.size) continue;
+            const indices = [...selection];
+            const resolved = await this.resolveFeaturesByIndices(layerId, indices);
+            const layerName = this._layerNames.get(layerId) || layerId;
+            for (const feature of resolved) pushFeature(feature, layerId, layerName);
+        }
+
+        if (!features.length && this._presentationAnchor?.feature) {
+            pushFeature(
+                this._presentationAnchor.feature,
+                this._presentationAnchor.layerId,
+                this._presentationAnchor.layerName
+            );
+        }
+
+        if (!features.length) {
+            const hit = this._getActivePopupHit();
+            if (hit?.feature?.geometry) {
+                pushFeature(
+                    { type: 'Feature', geometry: hit.feature.geometry, properties: { ...(hit.feature.properties || {}) } },
+                    hit.layerId,
+                    hit.layerName
+                );
+            }
+        }
+
+        return { type: 'FeatureCollection', features };
+    }
+
+    startPresentationFeaturePick(prompt = 'Click a map feature for your presentation') {
+        return new Promise((resolve) => {
+            this._cancelInteraction();
+            const canvas = this.map.getCanvas();
+            canvas.style.cursor = 'crosshair';
+            const banner = this._showInteractionBanner(prompt, () => { cleanup(); resolve(null); });
+
+            const onClick = (e) => {
+                markMapInteractionHandled(e);
+                const latlng = { lat: e.lngLat.lat, lng: e.lngLat.lng };
+                void (async () => {
+                    let hits = this._findFeaturesNearClick(latlng, undefined, undefined, e.point);
+                    hits = await this._enrichPopupHitsWithWorkspaceAttrs(hits);
+                    if (!hits.length) return;
+                    const hit = hits[0];
+                    const feature = {
+                        type: 'Feature',
+                        geometry: hit.feature.geometry,
+                        properties: { ...(hit.feature.properties || {}), _featureIndex: hit.featureIndex }
+                    };
+                    this._rememberPresentationAnchor(hit.layerId, hit.featureIndex, feature, hit.layerName);
+                    this._syncSelectionContext(hit.layerId, hit.featureIndex, { toggle: false });
+                    cleanup();
+                    resolve({
+                        layerId: hit.layerId,
+                        layerName: hit.layerName,
+                        featureIndex: hit.featureIndex,
+                        feature
+                    });
+                })();
+            };
+
+            const onKeyDown = (event) => {
+                if (event.key === 'Escape') {
+                    cleanup();
+                    resolve(null);
+                }
+            };
+
+            const cleanup = () => {
+                canvas.style.cursor = '';
+                this.map.off('click', onClick);
+                document.removeEventListener('keydown', onKeyDown);
+                if (banner) banner.remove();
+                this._interactionCleanup = null;
+            };
+
+            this._interactionCleanup = cleanup;
+            this.map.on('click', onClick);
+            document.addEventListener('keydown', onKeyDown);
+        });
     }
 
     clearHighlight() {
@@ -3578,6 +3743,7 @@ class MapManager {
 
         this._renderSelectionHighlights(layerId);
         bus.emit('selection:changed', { layerId, count: this.getSelectionCount(layerId), totalCount: this.getTotalSelectionCount() });
+        void this._refreshPresentationAnchorFromSelection(layerId);
     }
 
     _setupRectangleSelect() {
