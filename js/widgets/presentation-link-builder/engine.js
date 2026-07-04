@@ -5,6 +5,7 @@ import { createAnimationStep, getAnimationPreset, isPresetCompatible } from '../
 
 export const SOURCE_MODES = [
     { id: 'selection', label: 'Current selected feature(s)' },
+    { id: 'highlighted', label: 'Clicked / highlighted feature' },
     { id: 'drawn', label: 'Current drawn feature' },
     { id: 'active-layer-selection', label: 'Active layer selected feature(s)' }
 ];
@@ -12,52 +13,14 @@ export const SOURCE_MODES = [
 /**
  * @param {import('geojson').Feature} feature
  */
-export function cloneFeature(feature) {
-    return JSON.parse(JSON.stringify(feature));
-}
+export { cloneFeature, toFeatureCollection } from './source-features.js';
 
-/**
- * @param {import('geojson').Feature[]} features
- */
-export function toFeatureCollection(features = []) {
-    return {
-        type: 'FeatureCollection',
-        features: features.map(cloneFeature)
-    };
-}
-
-/**
- * @param {object} ctx
- * @param {'selection'|'drawn'|'active-layer-selection'} sourceMode
- */
-export function collectSourceFeatures(ctx, sourceMode) {
-    const features = [];
-
-    if (sourceMode === 'drawn') {
-        const drawn = ctx.getDrawnFeature?.();
-        if (drawn?.feature) features.push(drawn.feature);
-        return toFeatureCollection(features);
-    }
-
-    const layers = ctx.getLayers?.() || [];
-    const activeLayer = ctx.getActiveLayer?.() || layers.find((layer) => layer.id === ctx.mapService?.getActiveLayerId?.());
-
-    if (sourceMode === 'active-layer-selection' && activeLayer?.geojson) {
-        const selected = ctx.mapService?.getSelectedFeatures?.(activeLayer.id, activeLayer.geojson);
-        return selected || toFeatureCollection([]);
-    }
-
-    for (const layer of layers) {
-        if (!layer?.geojson) continue;
-        const selected = ctx.mapService?.getSelectedFeatures?.(layer.id, layer.geojson);
-        const count = selected?.features?.length || 0;
-        if (count > 0) {
-            features.push(...selected.features);
-        }
-    }
-
-    return toFeatureCollection(features);
-}
+// Source feature resolution lives in source-features.js (async, map-aware).
+export {
+    collectSourceFeaturesAsync as collectSourceFeatures,
+    summarizeResolvedSource,
+    summarizeSourceContext
+} from './source-features.js';
 
 /**
  * @param {import('geojson').FeatureCollection} features

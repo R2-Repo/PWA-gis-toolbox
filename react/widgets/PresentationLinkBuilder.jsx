@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { WidgetPanelShell } from './shared/WidgetPanelShell.jsx';
 import { SOURCE_MODES } from '../../js/widgets/presentation-link-builder/engine.js';
 import { listEasingOptions } from '../../js/presentation/animation-presets.js';
@@ -12,40 +12,93 @@ function FieldRow({ label, children }) {
     );
 }
 
+const EMPTY_SUMMARY = {
+    featureCount: 0,
+    geometryTypes: [],
+    vertexCount: 0,
+    spatialLayerCount: 0,
+    mapLayerCount: 0,
+    selectedCount: 0,
+    hasHighlightedFeature: false,
+    hasDrawnFeature: false
+};
+
 export function PresentationLinkBuilder({
-    getInitialState,
+    loadInitialState,
     onSourceModeChange,
     onBuildScene,
     onPreview,
     onCopyUrl,
     onResetPreview,
+    onSubscribeSourceRefresh,
     onCancel
 }) {
-    const [formState, setFormState] = useState(() => getInitialState());
-    const [sourceSummary, setSourceSummary] = useState(() => getInitialState().sourceSummary);
+    const [formState, setFormState] = useState(null);
+    const [sourceSummary, setSourceSummary] = useState(EMPTY_SUMMARY);
     const [validation, setValidation] = useState({ ok: false, errors: [], estimatedUrlLength: 0 });
     const [url, setUrl] = useState('');
     const [busy, setBusy] = useState(false);
+    const [loading, setLoading] = useState(true);
     const [status, setStatus] = useState('');
     const [compatiblePresets, setCompatiblePresets] = useState([]);
+    const [refreshTick, setRefreshTick] = useState(0);
+
+    const refreshSourceSummary = useCallback(async (state) => {
+        if (!state) return;
+        const next = await onSourceModeChange?.(state.sourceMode);
+        if (next?.sourceSummary) {
+            setSourceSummary(next.sourceSummary);
+        }
+        setRefreshTick((tick) => tick + 1);
+    }, [onSourceModeChange]);
 
     useEffect(() => {
-        const result = onBuildScene?.(formState);
-        if (!result) return;
-        setValidation(result.validation || { ok: false, errors: [] });
-        setUrl(result.url || '');
-        setCompatiblePresets(result.compatiblePresets || []);
-    }, [formState, onBuildScene]);
+        let cancelled = false;
+        void (async () => {
+            setLoading(true);
+            const initial = await loadInitialState?.();
+            if (cancelled || !initial) return;
+            setFormState(initial);
+            setSourceSummary(initial.sourceSummary || EMPTY_SUMMARY);
+            setLoading(false);
+        })();
+        return () => { cancelled = true; };
+    }, [loadInitialState]);
 
-    const update = (patch) => setFormState((prev) => ({ ...prev, ...patch }));
+    useEffect(() => {
+        if (!formState) return undefined;
+        let cancelled = false;
+        void (async () => {
+            const result = await onBuildScene?.(formState);
+            if (cancelled || !result) return;
+            setValidation(result.validation || { ok: false, errors: [] });
+            setUrl(result.url || '');
+            setCompatiblePresets(result.compatiblePresets || []);
+        })();
+        return () => { cancelled = true; };
+    }, [formState, onBuildScene, refreshTick]);
+
+    useEffect(() => {
+        if (!formState || !onSubscribeSourceRefresh) return undefined;
+        return onSubscribeSourceRefresh(() => {
+            void refreshSourceSummary(formState);
+        });
+    }, [formState, onSubscribeSourceRefresh, refreshSourceSummary]);
+
+    const update = (patch) => setFormState((prev) => (prev ? { ...prev, ...patch } : prev));
 
     const handleSourceModeChange = (sourceMode) => {
-        const next = onSourceModeChange?.(sourceMode);
-        setSourceSummary(next?.sourceSummary || sourceSummary);
         update({ sourceMode });
+        void (async () => {
+            const next = await onSourceModeChange?.(sourceMode);
+            if (next?.sourceSummary) {
+                setSourceSummary(next.sourceSummary);
+            }
+        })();
     };
 
     const handlePreview = async () => {
+        if (!formState) return;
         setBusy(true);
         setStatus('');
         try {
@@ -70,7 +123,24 @@ export function PresentationLinkBuilder({
         }
     };
 
+    const handleReset = async () => {
+        onResetPreview?.();
+        setStatus('');
+        const initial = await loadInitialState?.();
+        if (!initial) return;
+        setFormState(initial);
+        setSourceSummary(initial.sourceSummary || EMPTY_SUMMARY);
+    };
+
     const easingOptions = listEasingOptions();
+
+    if (loading || !formState) {
+        return (
+            <WidgetPanelShell className="presentation-link-builder" showRun={false} footer={null}>
+                <div className="text-sm text-muted">Loading map features…</div>
+            </WidgetPanelShell>
+        );
+    }
 
     return (
         <WidgetPanelShell
@@ -88,7 +158,7 @@ export function PresentationLinkBuilder({
                     <button type="button" className="btn btn-secondary" onClick={() => { onResetPreview?.(); onCancel?.(); }}>
                         Close
                     </button>
-                    <button type="button" className="btn btn-secondary" onClick={() => { onResetPreview?.(); setFormState(getInitialState()); setStatus(''); }}>
+                    <button type="button" className="btn btn-secondary" onClick={() => { void handleReset(); }}>
                         Reset
                     </button>
                     <button type="button" className="btn btn-secondary" disabled={busy || !validation.ok} onClick={() => { void handlePreview(); }}>
@@ -114,11 +184,15 @@ export function PresentationLinkBuilder({
                     </select>
                 </FieldRow>
                 <div className="presentation-link-builder__summary text-xs text-muted">
-                    <div>Features: {sourceSummary.featureCount}</div>
+                    <div>Layers on map: {sourceSummary.spatialLayerCount} ({sourceSummary.mapLayerCount} loaded)</div>
+                    <div>Selected on map: {sourceSummary.selectedCount}</div>
+                    <div>Highlighted feature: {sourceSummary.hasHighlightedFeature ? 'yes' : 'no'}</div>
+                    <div>Drawn feature: {sourceSummary.hasDrawnFeature ? 'yes' : 'no'}</div>
+                    <div>Presentation features: {sourceSummary.featureCount}</div>
                     <div>Geometry: {sourceSummary.geometryTypes?.join(', ') || '—'}</div>
-                    <div>Vertices: {sourceSummary.vertexCount}</div>
+                    <div>Vertices: {sourceSummary.vertexCount ?? 0}</div>
                     <div>Estimated URL size: {validation.estimatedUrlLength || 0} chars</div>
-                    <div>{validation.ok ? 'Safe for presentation URL' : (validation.tooLargeMessage || validation.errors?.[0] || 'Not ready')}</div>
+                    <div>{validation.ok ? 'Safe for presentation URL' : (validation.tooLargeMessage || validation.errors?.[0] || 'Select or click a feature on the map')}</div>
                 </div>
             </section>
 

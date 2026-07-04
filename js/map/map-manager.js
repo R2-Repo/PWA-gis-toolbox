@@ -1705,6 +1705,20 @@ class MapManager {
         }
     }
 
+    getHighlightedFeature() {
+        if (!this._highlightedInfo) return null;
+        const { layerId, featureIndex } = this._highlightedInfo;
+        const info = this.dataLayers.get(layerId);
+        if (!info?.geojson?.features?.length) return null;
+        const feature = info.geojson.features.find((entry) => entry.properties?._featureIndex === featureIndex);
+        if (!feature) return null;
+        return {
+            layerId,
+            featureIndex,
+            feature: JSON.parse(JSON.stringify(feature))
+        };
+    }
+
     clearHighlight() {
         for (const lid of ['highlight-fill', 'highlight-line', 'highlight-circle', 'highlight-outline']) {
             if (this.map?.getLayer(lid)) this.map.removeLayer(lid);
