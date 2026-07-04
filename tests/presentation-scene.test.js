@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createDefaultScene, compactScene, expandScene } from '../js/presentation/presentation-scene-schema.js';
+import { createDefaultScene, compactScene, expandScene, resolvePresentationMapInit, resolvePresentationCameraOverrides } from '../js/presentation/presentation-scene-schema.js';
 import { encodeScene, decodeScene, buildPresentationUrl } from '../js/presentation/presentation-scene-codec.js';
 import { validatePresentationScene, summarizeFeatures, countVertices } from '../js/presentation/scene-validation.js';
 import { detectPresentationMode } from '../js/presentation/presentation-mode-detector.js';
@@ -52,6 +52,35 @@ describe('presentation scene codec', () => {
         expect(expanded.features.features[0].geometry.type).toBe('Point');
         expect(expanded.mapView.basemap).toBe('satellite');
         expect(expanded.mapView.enable3D).toBe(true);
+    });
+
+    it('derives map init options from a saved camera', () => {
+        const scene = createDefaultScene({
+            camera: {
+                useCurrent: false,
+                fitToFeatures: false,
+                center: [-122.4, 37.8],
+                zoom: 16,
+                pitch: 60,
+                bearing: 45
+            },
+            mapView: { basemap: 'satellite', enable3D: true }
+        });
+        const init = resolvePresentationMapInit(scene);
+        expect(init).toEqual({
+            basemap: 'satellite',
+            center: [-122.4, 37.8],
+            zoom: 16,
+            pitch: 60,
+            bearing: 45,
+            enable3D: true
+        });
+        expect(resolvePresentationCameraOverrides(scene.camera)).toEqual({
+            center: [-122.4, 37.8],
+            zoom: 16,
+            pitch: 60,
+            bearing: 45
+        });
     });
 });
 

@@ -162,6 +162,11 @@ function waitForMoveEnd(map, timeoutMs = 15000) {
 
 function runFlyTo(map, options) {
     return new Promise((resolve) => {
+        if ((options.duration ?? 0) === 0) {
+            map.jumpTo({ ...options, essential: true });
+            resolve();
+            return;
+        }
         map.once('moveend', resolve);
         map.flyTo({ ...options, essential: true });
         setTimeout(resolve, (options.duration || 0) + 200);

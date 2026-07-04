@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef } from 'react';
 import mapService from '../../js/map/map-service.js';
 import { getPresentationModeState } from '../../js/presentation/presentation-mode-detector.js';
+import { resolvePresentationCameraOverrides } from '../../js/presentation/presentation-scene-schema.js';
 import {
     createPresentationOverlay,
     showPresentationError,
@@ -9,9 +10,26 @@ import {
 import { MapView } from '../map/MapView.jsx';
 
 function waitForMapStyleLoad(map) {
+    if (!map) return Promise.resolve();
     if (map.isStyleLoaded()) return Promise.resolve();
     return new Promise((resolve) => {
         map.once('load', resolve);
+    });
+}
+
+/** Wait until style/terrain changes from basemap or 3D setup have settled. */
+function waitForMapIdle(map, timeoutMs = 500) {
+    if (!map) return Promise.resolve();
+    return new Promise((resolve) => {
+        let settled = false;
+        const done = () => {
+            if (settled) return;
+            settled = true;
+            map.off('idle', done);
+            resolve();
+        };
+        map.once('idle', done);
+        window.setTimeout(done, timeoutMs);
     });
 }
 
@@ -19,6 +37,7 @@ async function applyPresentationMapView(mapService, scene) {
     const mapView = scene.mapView || {};
     const basemap = mapView.basemap || 'voyager';
     const enable3D = mapView.enable3D !== false;
+    const cameraOverrides = resolvePresentationCameraOverrides(scene.camera);
 
     if (enable3D) {
         mapService.set3DEnabled(true);
@@ -26,13 +45,21 @@ async function applyPresentationMapView(mapService, scene) {
 
     if (basemap && basemap !== mapService.getCurrentBasemap()) {
         mapService.setBasemap(basemap);
-        const map = mapService.getMap();
-        if (map) await waitForMapStyleLoad(map);
     }
 
     if (enable3D) {
-        mapService.reconcile3DState({ emitEvent: false });
+        mapService.reconcile3DState({ camera: cameraOverrides, emitEvent: false });
+    } else if (cameraOverrides) {
+        mapService.getMap()?.jumpTo({
+            center: cameraOverrides.center,
+            zoom: cameraOverrides.zoom,
+            pitch: cameraOverrides.pitch ?? 0,
+            bearing: cameraOverrides.bearing ?? 0
+        });
     }
+
+    const map = mapService.getMap();
+    if (map) await waitForMapIdle(map);
 }
 
 export function PresentationApp() {
@@ -50,9 +77,9 @@ export function PresentationApp() {
             return;
         }
 
+        await waitForMapStyleLoad(map);
         await applyPresentationMapView(mapService, modeState.scene);
         createPresentationOverlay(container, modeState.scene.layout);
-        await waitForMapStyleLoad(map);
         runtimeRef.current = await startPresentationRuntime({
             map,
             scene: modeState.scene,

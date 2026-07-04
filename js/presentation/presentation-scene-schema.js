@@ -81,6 +81,8 @@
 export const PRESENTATION_SCENE_VERSION = 1;
 export const PRESENTATION_HOME_URL = 'https://gis-toolbox.com';
 export const PRESENTATION_BASE_URL = 'https://gis-toolbox.com/';
+export const DEFAULT_MAP_CENTER = [-111.09, 39.32];
+export const DEFAULT_MAP_ZOOM = 7;
 
 /** @type {PresentationLayout} */
 export const DEFAULT_PRESENTATION_LAYOUT = {
@@ -183,4 +185,59 @@ export function expandScene(compact) {
         callouts: compact.co ?? compact.callouts,
         metadata: compact.md ?? compact.metadata
     });
+}
+
+/**
+ * MapLibre init options from a saved presentation scene.
+ * @param {PresentationScene | null | undefined} scene
+ */
+export function resolvePresentationMapInit(scene) {
+    if (!scene) {
+        return {
+            basemap: 'voyager',
+            center: DEFAULT_MAP_CENTER,
+            zoom: DEFAULT_MAP_ZOOM,
+            pitch: 0,
+            bearing: 0,
+            enable3D: false
+        };
+    }
+
+    const mapView = { ...DEFAULT_PRESENTATION_MAP_VIEW, ...(scene.mapView || {}) };
+    const camera = scene.camera || {};
+    const enable3D = mapView.enable3D !== false;
+
+    if (camera.useCurrent || camera.fitToFeatures) {
+        return {
+            basemap: mapView.basemap || 'voyager',
+            center: DEFAULT_MAP_CENTER,
+            zoom: DEFAULT_MAP_ZOOM,
+            pitch: 0,
+            bearing: 0,
+            enable3D
+        };
+    }
+
+    return {
+        basemap: mapView.basemap || 'voyager',
+        center: camera.center ?? DEFAULT_MAP_CENTER,
+        zoom: camera.zoom ?? 14,
+        pitch: camera.pitch ?? 0,
+        bearing: camera.bearing ?? 0,
+        enable3D
+    };
+}
+
+/**
+ * Camera overrides for map reconcile/jump from a saved scene.
+ * @param {PresentationCamera | null | undefined} camera
+ */
+export function resolvePresentationCameraOverrides(camera) {
+    if (!camera || camera.useCurrent || camera.fitToFeatures) return undefined;
+    return {
+        center: camera.center,
+        zoom: camera.zoom,
+        pitch: camera.pitch,
+        bearing: camera.bearing
+    };
 }

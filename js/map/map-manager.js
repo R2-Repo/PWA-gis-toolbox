@@ -17,7 +17,8 @@ import {
     MAPLIBRE_MAX_ZOOM
 } from './scale-range.js';
 import { resetMapPopupScroll } from './map-popup-utils.js';
-import { isPresentationMode } from '../presentation/presentation-mode-detector.js';
+import { isPresentationMode, getPresentationModeState } from '../presentation/presentation-mode-detector.js';
+import { resolvePresentationMapInit } from '../presentation/presentation-scene-schema.js';
 
 const POINT_CLUSTER_THRESHOLD = 10000;
 
@@ -275,14 +276,25 @@ class MapManager {
             return;
         }
 
+        const presentationInit = isPresentationMode()
+            ? resolvePresentationMapInit(getPresentationModeState().scene)
+            : null;
+        const basemapKey = presentationInit?.basemap ?? 'voyager';
+        this.currentBasemap = basemapKey;
+        if (presentationInit?.enable3D) {
+            this._3dEnabled = true;
+        }
+
         this.map = new maplibregl.Map({
             container: containerId,
-            style: this._buildStyle('voyager'),
-            center: [-111.09, 39.32],
-            zoom: 7,
+            style: this._buildStyle(basemapKey),
+            center: presentationInit?.center ?? [-111.09, 39.32],
+            zoom: presentationInit?.zoom ?? 7,
+            pitch: presentationInit?.pitch ?? 0,
+            bearing: presentationInit?.bearing ?? 0,
             attributionControl: true,
             maxPitch: 85,
-            dragRotate: false,
+            dragRotate: presentationInit?.enable3D ?? false,
             touchZoomRotate: true,
             preserveDrawingBuffer: true,
             // Keep parent-zoom tiles visible while zooming in so motion feels smooth
@@ -291,8 +303,10 @@ class MapManager {
         });
 
         // Disable right-click rotate and touch rotation (keeps zoom gestures)
-        this.map.dragRotate.disable();
-        this.map.touchZoomRotate.disableRotation();
+        if (!presentationInit?.enable3D) {
+            this.map.dragRotate.disable();
+            this.map.touchZoomRotate.disableRotation();
+        }
 
         // Scroll zoom: MapLibre uses setWheelZoomRate for mouse wheels and setZoomRate
         // for trackpads / small deltas — setting only the wheel rate leaves laptops unchanged.

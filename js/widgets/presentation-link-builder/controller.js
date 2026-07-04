@@ -55,7 +55,7 @@ async function resolveSourceBundle(ctx) {
 function buildDefaultFormState(sourceSummary) {
     return {
         animation: {
-            presetId: 'flyToFeature',
+            presetId: 'none',
             durationMs: 3000
         },
         sourceSummary

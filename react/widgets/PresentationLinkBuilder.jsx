@@ -187,7 +187,7 @@ export function PresentationLinkBuilder({
                 <select
                     id="presentation-animation"
                     className="input-sm w-full"
-                    value={formState.animation?.presetId || 'flyToFeature'}
+                    value={formState.animation?.presetId || 'none'}
                     onChange={(e) => updateAnimation({ presetId: e.target.value })}
                 >
                     <option value="none">None</option>

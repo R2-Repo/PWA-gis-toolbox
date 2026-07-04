@@ -52,11 +52,11 @@ export function buildSceneFromConfig(config) {
 
     const mapView = {
         basemap: mapService?.getCurrentBasemap?.() || 'voyager',
-        enable3D: true
+        enable3D: mapService?.is3DEnabled?.() ?? false
     };
 
     const animations = [];
-    const presetId = animation.presetId || 'flyToFeature';
+    const presetId = animation.presetId || 'none';
     if (presetId !== 'none') {
         animations.push(createAnimationStep(presetId, {
             durationMs: animation.durationMs ?? 3000,
