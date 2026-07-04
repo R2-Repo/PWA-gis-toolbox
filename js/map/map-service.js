@@ -242,6 +242,24 @@ export function createMapService({ mapAdapter = mapManager } = {}) {
         clearHighlight() {
             return mapAdapter.clearHighlight?.();
         },
+        getHighlightedFeature() {
+            return mapAdapter.getHighlightedFeature?.();
+        },
+        getPresentationAnchor() {
+            return mapAdapter.getPresentationAnchor?.();
+        },
+        getPresentationSourceFeatures() {
+            return mapAdapter.getPresentationSourceFeatures?.();
+        },
+        resolveFeaturesByIndices(layerId, indices) {
+            return mapAdapter.resolveFeaturesByIndices?.(layerId, indices);
+        },
+        startPresentationFeaturePick(prompt) {
+            return mapAdapter.startPresentationFeaturePick?.(prompt);
+        },
+        getActivePopupHit() {
+            return mapAdapter.getActivePopupHit?.();
+        },
         showTempFeature(geojson, duration) {
             return mapAdapter.showTempFeature(geojson, duration);
         },

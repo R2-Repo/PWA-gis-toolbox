@@ -1,51 +1,97 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { WidgetPanelShell } from './shared/WidgetPanelShell.jsx';
-import { SOURCE_MODES } from '../../js/widgets/presentation-link-builder/engine.js';
-import { listEasingOptions } from '../../js/presentation/animation-presets.js';
 
-function FieldRow({ label, children }) {
-    return (
-        <div className="gis-widget__row">
-            <label className="field-label">{label}</label>
-            {children}
-        </div>
-    );
-}
+const EMPTY_SUMMARY = {
+    featureCount: 0,
+    geometryTypes: [],
+    vertexCount: 0,
+    sourceLabel: 'Click Pick on map or select a feature first',
+    isEmpty: true
+};
 
 export function PresentationLinkBuilder({
-    getInitialState,
-    onSourceModeChange,
+    loadInitialState,
+    onRefreshSource,
     onBuildScene,
+    onPickFeature,
     onPreview,
     onCopyUrl,
     onResetPreview,
+    onSubscribeSourceRefresh,
     onCancel
 }) {
-    const [formState, setFormState] = useState(() => getInitialState());
-    const [sourceSummary, setSourceSummary] = useState(() => getInitialState().sourceSummary);
+    const [formState, setFormState] = useState(null);
+    const [sourceSummary, setSourceSummary] = useState(EMPTY_SUMMARY);
     const [validation, setValidation] = useState({ ok: false, errors: [], estimatedUrlLength: 0 });
     const [url, setUrl] = useState('');
     const [busy, setBusy] = useState(false);
+    const [picking, setPicking] = useState(false);
+    const [loading, setLoading] = useState(true);
     const [status, setStatus] = useState('');
-    const [compatiblePresets, setCompatiblePresets] = useState([]);
+    const [refreshTick, setRefreshTick] = useState(0);
+
+    const applyBundle = useCallback((bundle) => {
+        if (bundle?.sourceSummary) setSourceSummary(bundle.sourceSummary);
+        setRefreshTick((tick) => tick + 1);
+    }, []);
 
     useEffect(() => {
-        const result = onBuildScene?.(formState);
-        if (!result) return;
-        setValidation(result.validation || { ok: false, errors: [] });
-        setUrl(result.url || '');
-        setCompatiblePresets(result.compatiblePresets || []);
-    }, [formState, onBuildScene]);
+        let cancelled = false;
+        void (async () => {
+            setLoading(true);
+            const initial = await loadInitialState?.();
+            if (cancelled || !initial) return;
+            setFormState(initial);
+            setSourceSummary(initial.sourceSummary || EMPTY_SUMMARY);
+            setLoading(false);
+        })();
+        return () => { cancelled = true; };
+    }, [loadInitialState]);
 
-    const update = (patch) => setFormState((prev) => ({ ...prev, ...patch }));
+    useEffect(() => {
+        if (!formState) return undefined;
+        let cancelled = false;
+        void (async () => {
+            const result = await onBuildScene?.(formState);
+            if (cancelled || !result) return;
+            setValidation(result.validation || { ok: false, errors: [] });
+            setUrl(result.url || '');
+            if (result.sourceSummary) setSourceSummary(result.sourceSummary);
+        })();
+        return () => { cancelled = true; };
+    }, [formState, onBuildScene, refreshTick]);
 
-    const handleSourceModeChange = (sourceMode) => {
-        const next = onSourceModeChange?.(sourceMode);
-        setSourceSummary(next?.sourceSummary || sourceSummary);
-        update({ sourceMode });
+    useEffect(() => {
+        if (!formState || !onSubscribeSourceRefresh) return undefined;
+        return onSubscribeSourceRefresh(async () => {
+            const bundle = await onRefreshSource?.();
+            applyBundle(bundle);
+        });
+    }, [formState, onSubscribeSourceRefresh, onRefreshSource, applyBundle]);
+
+    const updateAnimation = (patch) => {
+        setFormState((prev) => (prev ? {
+            ...prev,
+            animation: { ...prev.animation, ...patch }
+        } : prev));
+    };
+
+    const handlePick = async () => {
+        setPicking(true);
+        setStatus('');
+        try {
+            onResetPreview?.();
+            const bundle = await onPickFeature?.();
+            if (bundle) applyBundle(bundle);
+        } catch (error) {
+            setStatus(error?.message || 'Could not pick a feature');
+        } finally {
+            setPicking(false);
+        }
     };
 
     const handlePreview = async () => {
+        if (!formState) return;
         setBusy(true);
         setStatus('');
         try {
@@ -59,28 +105,31 @@ export function PresentationLinkBuilder({
 
     const handleCopy = async () => {
         if (!validation.ok || !url) {
-            setStatus(validation.tooLargeMessage || validation.errors?.[0] || 'Scene is not valid for a presentation URL.');
+            setStatus(validation.tooLargeMessage || validation.errors?.[0] || 'Pick a small feature first.');
             return;
         }
         try {
             await onCopyUrl?.(url);
-            setStatus('Presentation URL copied to clipboard.');
+            setStatus('Link copied. Paste it in a new browser tab to test the presentation.');
         } catch (error) {
             setStatus(error?.message || 'Could not copy URL');
         }
     };
 
-    const easingOptions = listEasingOptions();
+    if (loading || !formState) {
+        return (
+            <WidgetPanelShell className="presentation-link-builder" showRun={false} footer={null}>
+                <div className="text-sm text-muted">Checking map for features…</div>
+            </WidgetPanelShell>
+        );
+    }
 
     return (
         <WidgetPanelShell
-            className="presentation-link-builder"
+            className="presentation-link-builder presentation-link-builder--simple"
             status={status}
             statusTone={validation.ok ? 'muted' : 'danger'}
-            onCancel={() => {
-                onResetPreview?.();
-                onCancel?.();
-            }}
+            onCancel={() => { onResetPreview?.(); onCancel?.(); }}
             cancelLabel="Close"
             showRun={false}
             footer={(
@@ -88,196 +137,75 @@ export function PresentationLinkBuilder({
                     <button type="button" className="btn btn-secondary" onClick={() => { onResetPreview?.(); onCancel?.(); }}>
                         Close
                     </button>
-                    <button type="button" className="btn btn-secondary" onClick={() => { onResetPreview?.(); setFormState(getInitialState()); setStatus(''); }}>
-                        Reset
-                    </button>
                     <button type="button" className="btn btn-secondary" disabled={busy || !validation.ok} onClick={() => { void handlePreview(); }}>
                         {busy ? 'Previewing…' : 'Preview'}
                     </button>
                     <button type="button" className="btn btn-primary" disabled={!validation.ok || !url} onClick={() => { void handleCopy(); }}>
-                        Copy URL
+                        Copy Link
                     </button>
                 </div>
             )}
         >
-            <section className="presentation-link-builder__section">
-                <h3 className="presentation-link-builder__heading">Source Features</h3>
-                <FieldRow label="Use">
-                    <select
-                        className="input-sm w-full"
-                        value={formState.sourceMode}
-                        onChange={(e) => handleSourceModeChange(e.target.value)}
-                    >
-                        {SOURCE_MODES.map((mode) => (
-                            <option key={mode.id} value={mode.id}>{mode.label}</option>
-                        ))}
-                    </select>
-                </FieldRow>
-                <div className="presentation-link-builder__summary text-xs text-muted">
-                    <div>Features: {sourceSummary.featureCount}</div>
-                    <div>Geometry: {sourceSummary.geometryTypes?.join(', ') || '—'}</div>
-                    <div>Vertices: {sourceSummary.vertexCount}</div>
-                    <div>Estimated URL size: {validation.estimatedUrlLength || 0} chars</div>
-                    <div>{validation.ok ? 'Safe for presentation URL' : (validation.tooLargeMessage || validation.errors?.[0] || 'Not ready')}</div>
-                </div>
-            </section>
+            <p className="text-sm text-muted presentation-link-builder__intro">
+                Create a clean fullscreen map link from one small feature. Pick the feature on the map, choose a simple animation, then copy the link.
+            </p>
 
-            <section className="presentation-link-builder__section">
-                <h3 className="presentation-link-builder__heading">Presentation Layout</h3>
-                <label className="presentation-link-builder__check">
-                    <input
-                        type="checkbox"
-                        checked={formState.layout?.showLogo !== false}
-                        onChange={(e) => update({ layout: { ...formState.layout, showLogo: e.target.checked } })}
-                    />
-                    Show GIS Toolbox logo
-                </label>
-                <label className="presentation-link-builder__check">
-                    <input
-                        type="checkbox"
-                        checked={formState.layout?.showHomeButton !== false}
-                        onChange={(e) => update({ layout: { ...formState.layout, showHomeButton: e.target.checked } })}
-                    />
-                    Show home button
-                </label>
-                <FieldRow label="Scene title (optional)">
-                    <input
-                        className="input-sm w-full"
-                        value={formState.metadata?.title || ''}
-                        onChange={(e) => update({ metadata: { ...formState.metadata, title: e.target.value } })}
-                    />
-                </FieldRow>
-            </section>
-
-            <section className="presentation-link-builder__section">
-                <h3 className="presentation-link-builder__heading">Camera</h3>
-                <label className="presentation-link-builder__check">
-                    <input
-                        type="checkbox"
-                        checked={formState.camera?.useCurrent !== false}
-                        onChange={(e) => update({ camera: { ...formState.camera, useCurrent: e.target.checked, fitToFeatures: !e.target.checked } })}
-                    />
-                    Use current map camera
-                </label>
-                <label className="presentation-link-builder__check">
-                    <input
-                        type="checkbox"
-                        checked={!!formState.camera?.fitToFeatures}
-                        onChange={(e) => update({ camera: { ...formState.camera, fitToFeatures: e.target.checked, useCurrent: !e.target.checked } })}
-                    />
-                    Fit to selected feature(s)
-                </label>
-                <div className="presentation-link-builder__grid">
-                    <FieldRow label="Pitch">
-                        <input
-                            type="number"
-                            className="input-sm w-full"
-                            min="0"
-                            max="85"
-                            value={formState.camera?.pitch ?? 0}
-                            onChange={(e) => update({ camera: { ...formState.camera, pitch: Number(e.target.value) } })}
-                        />
-                    </FieldRow>
-                    <FieldRow label="Bearing">
-                        <input
-                            type="number"
-                            className="input-sm w-full"
-                            value={formState.camera?.bearing ?? 0}
-                            onChange={(e) => update({ camera: { ...formState.camera, bearing: Number(e.target.value) } })}
-                        />
-                    </FieldRow>
-                    <FieldRow label="Padding">
-                        <input
-                            type="number"
-                            className="input-sm w-full"
-                            min="0"
-                            value={formState.camera?.padding ?? 80}
-                            onChange={(e) => update({ camera: { ...formState.camera, padding: Number(e.target.value) } })}
-                        />
-                    </FieldRow>
-                    <FieldRow label="Start delay (ms)">
-                        <input
-                            type="number"
-                            className="input-sm w-full"
-                            min="0"
-                            value={formState.camera?.startDelayMs ?? 0}
-                            onChange={(e) => update({ camera: { ...formState.camera, startDelayMs: Number(e.target.value) } })}
-                        />
-                    </FieldRow>
+            <div className={`presentation-link-builder__status-card${validation.ok ? ' is-ready' : ''}`}>
+                <div className="presentation-link-builder__status-title">
+                    {validation.ok ? 'Ready to share' : 'Need a feature'}
                 </div>
-                <label className="presentation-link-builder__check">
-                    <input
-                        type="checkbox"
-                        checked={!!formState.camera?.resetNorth}
-                        onChange={(e) => update({ camera: { ...formState.camera, resetNorth: e.target.checked } })}
-                    />
-                    Reset north before animation
-                </label>
-            </section>
+                <div className="text-sm">{sourceSummary.sourceLabel}</div>
+                {sourceSummary.featureCount > 0 ? (
+                    <div className="text-xs text-muted">
+                        {sourceSummary.geometryTypes?.join(', ') || 'Geometry'} · {sourceSummary.vertexCount ?? 0} vertices
+                    </div>
+                ) : null}
+                {!validation.ok ? (
+                    <div className="text-xs text-muted">
+                        {validation.errors?.[0] || 'Use Pick on map if you already selected a feature but the count is still zero.'}
+                    </div>
+                ) : null}
+            </div>
 
-            <section className="presentation-link-builder__section">
-                <h3 className="presentation-link-builder__heading">Animation</h3>
-                <FieldRow label="Preset">
-                    <select
-                        className="input-sm w-full"
-                        value={formState.animation?.presetId || 'none'}
-                        onChange={(e) => update({ animation: { ...formState.animation, presetId: e.target.value } })}
-                    >
-                        {compatiblePresets.map((preset) => (
-                            <option key={preset.id} value={preset.id} disabled={!preset.compatible}>
-                                {preset.label}
-                            </option>
-                        ))}
-                    </select>
-                </FieldRow>
-                <div className="presentation-link-builder__grid">
-                    <FieldRow label="Duration (ms)">
-                        <input
-                            type="number"
-                            className="input-sm w-full"
-                            min="0"
-                            value={formState.animation?.durationMs ?? 3000}
-                            onChange={(e) => update({ animation: { ...formState.animation, durationMs: Number(e.target.value) } })}
-                        />
-                    </FieldRow>
-                    <FieldRow label="Delay (ms)">
-                        <input
-                            type="number"
-                            className="input-sm w-full"
-                            min="0"
-                            value={formState.animation?.delayMs ?? 0}
-                            onChange={(e) => update({ animation: { ...formState.animation, delayMs: Number(e.target.value) } })}
-                        />
-                    </FieldRow>
-                </div>
-                <FieldRow label="Easing">
-                    <select
-                        className="input-sm w-full"
-                        value={formState.animation?.easing || 'easeInOut'}
-                        onChange={(e) => update({ animation: { ...formState.animation, easing: e.target.value } })}
-                    >
-                        {easingOptions.map((option) => (
-                            <option key={option.id} value={option.id}>{option.label}</option>
-                        ))}
-                    </select>
-                </FieldRow>
-                <label className="presentation-link-builder__check">
-                    <input
-                        type="checkbox"
-                        checked={!!formState.animation?.loop}
-                        onChange={(e) => update({ animation: { ...formState.animation, loop: e.target.checked } })}
-                    />
-                    Loop animation
-                </label>
-            </section>
+            <button
+                type="button"
+                className="btn btn-secondary btn-sm w-full"
+                disabled={picking}
+                onClick={() => { void handlePick(); }}
+            >
+                {picking ? 'Click a feature on the map…' : 'Pick on map'}
+            </button>
 
-            <section className="presentation-link-builder__section">
-                <h3 className="presentation-link-builder__heading">Output</h3>
-                <div className="presentation-link-builder__url text-xs" title={url}>
-                    {validation.ok ? url : 'URL will appear when the scene is valid.'}
-                </div>
-                <div className="text-xs text-muted mt-8">GIF/MP4 export — coming in a future release.</div>
-            </section>
+            <div className="presentation-link-builder__row mt-12">
+                <label className="field-label" htmlFor="presentation-animation">Animation</label>
+                <select
+                    id="presentation-animation"
+                    className="input-sm w-full"
+                    value={formState.animation?.presetId || 'flyToFeature'}
+                    onChange={(e) => updateAnimation({ presetId: e.target.value })}
+                >
+                    <option value="none">None</option>
+                    <option value="flyToFeature">Fly to feature</option>
+                    <option value="rotateAroundFeature">Orbit around feature</option>
+                </select>
+            </div>
+
+            <div className="presentation-link-builder__row">
+                <label className="field-label" htmlFor="presentation-duration">Duration (seconds)</label>
+                <input
+                    id="presentation-duration"
+                    type="number"
+                    className="input-sm w-full"
+                    min="1"
+                    max="30"
+                    value={Math.max(1, Math.round((formState.animation?.durationMs ?? 3000) / 1000))}
+                    onChange={(e) => updateAnimation({ durationMs: Number(e.target.value) * 1000 })}
+                />
+            </div>
+
+            <div className="presentation-link-builder__url text-xs mt-12" title={url}>
+                {validation.ok ? url : 'Your presentation link will appear here after a feature is picked.'}
+            </div>
         </WidgetPanelShell>
     );
 }

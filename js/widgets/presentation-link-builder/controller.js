@@ -1,3 +1,4 @@
+import bus from '../../core/event-bus.js';
 import { openReactIsland } from '../../ui/open-react-island.js';
 import { getActiveLayer } from '../../core/state.js';
 import drawManager from '../../map/draw-manager.js';
@@ -7,11 +8,20 @@ import {
     collectSourceFeatures,
     getCompatiblePresets,
     getPresentationUrl,
+    summarizeResolvedSource,
     summarizeSourceFeatures,
     validateSceneForUrl
 } from './engine.js';
 
 let previewRuntime = null;
+
+function buildPresentationContext(ctx) {
+    return {
+        ...ctx,
+        getDrawnFeature: () => drawManager.getSelectedFeatureSnapshot(),
+        getActiveLayer
+    };
+}
 
 function stopPreview(ctx) {
     previewRuntime?.engine?.stop();
@@ -20,102 +30,71 @@ function stopPreview(ctx) {
     ctx.mapService?.clearTempFeatures?.();
 }
 
-export async function openPresentationLinkBuilder(ctx, options = {}) {
+async function resolveSourceBundle(ctx) {
+    const presentationCtx = buildPresentationContext(ctx);
+    const features = await collectSourceFeatures(presentationCtx);
+    const geometrySummary = summarizeSourceFeatures(features);
+    const sourceSummary = {
+        ...summarizeResolvedSource(presentationCtx, features),
+        geometryTypes: geometrySummary.geometryTypes,
+        vertexCount: geometrySummary.vertexCount
+    };
+    return { features, sourceSummary };
+}
+
+function buildDefaultFormState(sourceSummary) {
+    return {
+        animation: {
+            presetId: 'flyToFeature',
+            durationMs: 3000
+        },
+        sourceSummary
+    };
+}
+
+export async function openPresentationLinkBuilder(ctx) {
     await openReactIsland({
         title: 'Presentation Link',
-        width: '480px',
+        width: '420px',
         mountPath: '../../../react/widgets/mountPresentationLinkBuilder.jsx',
         mountExport: 'mountPresentationLinkBuilder',
         getProps: (close) => ({
-            getDrawnFeature: () => drawManager.getSelectedFeatureSnapshot(),
-            getActiveLayer,
-            getInitialState: () => {
-                const sourceMode = 'selection';
-                const features = collectSourceFeatures({
-                    ...ctx,
-                    getDrawnFeature: () => drawManager.getSelectedFeatureSnapshot(),
-                    getActiveLayer
-                }, sourceMode);
-                return {
-                    sourceMode,
-                    sourceSummary: summarizeSourceFeatures(features),
-                    layout: {
-                        showLogo: true,
-                        showHomeButton: true
-                    },
-                    camera: {
-                        useCurrent: true,
-                        fitToFeatures: true,
-                        pitch: ctx.mapService.getMap()?.getPitch?.() ?? 45,
-                        bearing: ctx.mapService.getMap()?.getBearing?.() ?? 0,
-                        padding: 80,
-                        resetNorth: false,
-                        startDelayMs: 0
-                    },
-                    animation: {
-                        presetId: 'flyToFeature',
-                        durationMs: 3000,
-                        delayMs: 0,
-                        easing: 'easeInOut',
-                        loop: false
-                    },
-                    metadata: {
-                        title: '',
-                        subtitle: ''
-                    }
-                };
+            loadInitialState: async () => {
+                const { sourceSummary } = await resolveSourceBundle(ctx);
+                return buildDefaultFormState(sourceSummary);
             },
-            onSourceModeChange: (sourceMode) => {
-                const features = collectSourceFeatures({
-                    ...ctx,
-                    getDrawnFeature: () => drawManager.getSelectedFeatureSnapshot(),
-                    getActiveLayer
-                }, sourceMode);
-                return {
-                    features,
-                    sourceSummary: summarizeSourceFeatures(features)
-                };
-            },
-            onBuildScene: (formState) => {
-                const features = collectSourceFeatures({
-                    ...ctx,
-                    getDrawnFeature: () => drawManager.getSelectedFeatureSnapshot(),
-                    getActiveLayer
-                }, formState.sourceMode);
+            onRefreshSource: () => resolveSourceBundle(ctx),
+            onBuildScene: async (formState) => {
+                const { features } = await resolveSourceBundle(ctx);
                 const scene = buildSceneFromConfig({
                     features,
                     map: ctx.mapService.getMap(),
-                    layout: {
-                        showLogo: formState.layout?.showLogo !== false,
-                        showHomeButton: formState.layout?.showHomeButton !== false
-                    },
-                    camera: formState.camera,
-                    style: {},
-                    animation: formState.animation,
-                    metadata: formState.metadata
+                    animation: formState.animation
                 });
                 const validation = validateSceneForUrl(scene);
                 return {
                     scene,
                     validation,
                     url: validation.ok ? getPresentationUrl(scene) : null,
-                    compatiblePresets: getCompatiblePresets(features)
+                    compatiblePresets: getCompatiblePresets(features),
+                    sourceSummary: summarizeResolvedSource(buildPresentationContext(ctx), features)
                 };
+            },
+            onPickFeature: async () => {
+                const picked = await ctx.mapService.startPresentationFeaturePick?.(
+                    'Click the feature you want in the presentation'
+                );
+                if (!picked) return null;
+                ctx.showToast(`Using feature from ${picked.layerName || 'map'}`, 'success');
+                return resolveSourceBundle(ctx);
             },
             onPreview: async (formState) => {
                 stopPreview(ctx);
-                const features = collectSourceFeatures({
-                    ...ctx,
-                    getDrawnFeature: () => drawManager.getSelectedFeatureSnapshot(),
-                    getActiveLayer
-                }, formState.sourceMode);
+                const { features } = await resolveSourceBundle(ctx);
                 const scene = buildSceneFromConfig({
                     features,
                     map: ctx.mapService.getMap(),
-                    layout: formState.layout,
-                    camera: formState.camera,
-                    animation: formState.animation,
-                    metadata: formState.metadata
+                    animation: formState.animation
                 });
                 const validation = validateSceneForUrl(scene);
                 if (!validation.ok) {
@@ -136,11 +115,17 @@ export async function openPresentationLinkBuilder(ctx, options = {}) {
                 if (scene.animations?.length) {
                     await engine.playSequence(scene.animations);
                 }
-                ctx.showToast('Presentation preview finished', 'success');
+                ctx.showToast('Preview finished', 'success');
             },
             onCopyUrl: async (url) => {
                 await navigator.clipboard.writeText(url);
                 ctx.showToast('Presentation URL copied', 'success');
+            },
+            onSubscribeSourceRefresh: (callback) => {
+                const refresh = () => { void callback(); };
+                const events = ['selection:changed', 'layers:changed', 'layer:active', 'layer:updated'];
+                events.forEach((event) => bus.on(event, refresh));
+                return () => events.forEach((event) => bus.off(event, refresh));
             },
             onResetPreview: () => stopPreview(ctx),
             onCancel: () => {
