@@ -99,6 +99,17 @@ export function reorderLayer(id, direction) {
     bus.emit('layers:reordered', state.layers);
 }
 
+export function reorderLayerToIndex(id, toIndex) {
+    const idx = state.layers.findIndex(l => l.id === id);
+    if (idx === -1) return;
+    const clamped = Math.max(0, Math.min(toIndex, state.layers.length - 1));
+    if (idx === clamped) return;
+    const [item] = state.layers.splice(idx, 1);
+    state.layers.splice(clamped, 0, item);
+    bus.emit('layers:changed', state.layers);
+    bus.emit('layers:reordered', state.layers);
+}
+
 // UI state
 export function setUIState(key, value) {
     state.ui[key] = value;
@@ -122,6 +133,6 @@ window.addEventListener('resize', checkMobile);
 
 export default {
     getState, getLayers, getActiveLayer, addLayer, removeLayer, setActiveLayer,
-    updateLayer, updateLayerData, toggleLayerVisibility, reorderLayer,
+    updateLayer, updateLayerData, toggleLayerVisibility, reorderLayer, reorderLayerToIndex,
     setUIState, toggleAGOLCompat
 };

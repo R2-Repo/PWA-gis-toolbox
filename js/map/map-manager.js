@@ -2256,6 +2256,16 @@ class MapManager {
 
     get is3DEnabled() { return this._3dEnabled; }
 
+    /**
+     * Sample ground elevation (meters AMSL) from the active terrain DEM.
+     * @returns {number|null} Elevation in meters, or null if terrain is off or tiles are unavailable.
+     */
+    queryElevationAt(lat, lng) {
+        if (!this.map?.getTerrain?.()) return null;
+        const elev = this.map.queryTerrainElevation?.([lng, lat]);
+        return elev == null ? null : elev;
+    }
+
     // ==========================================
     // Camera Orbit Animation
     // ==========================================

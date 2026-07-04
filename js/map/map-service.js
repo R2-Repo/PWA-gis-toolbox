@@ -1,5 +1,13 @@
 import mapManager from './map-manager.js';
 
+const METERS_TO_FEET = 3.28084;
+
+export function formatElevationLabel(meters) {
+    const m = Math.round(meters);
+    const ft = Math.round(meters * METERS_TO_FEET);
+    return `${m.toLocaleString()} m (${ft.toLocaleString()} ft)`;
+}
+
 export function createMapService({ mapAdapter = mapManager } = {}) {
     return {
         get map() {
@@ -325,6 +333,9 @@ export function createMapService({ mapAdapter = mapManager } = {}) {
         },
         prepareOrbitView(center, options) {
             return mapAdapter.prepareOrbitView(center, options);
+        },
+        queryElevationAt(lat, lng) {
+            return mapAdapter.queryElevationAt?.(lat, lng) ?? null;
         },
     };
 }

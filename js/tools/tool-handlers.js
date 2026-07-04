@@ -7,7 +7,7 @@ import bus from '../core/event-bus.js';
 import { handleError } from '../core/error-handler.js';
 import {
     getState, getLayers, getActiveLayer, addLayer, removeLayer, updateLayer,
-    setActiveLayer, toggleLayerVisibility, reorderLayer, setUIState, toggleAGOLCompat
+    setActiveLayer, toggleLayerVisibility, reorderLayer, reorderLayerToIndex, setUIState, toggleAGOLCompat
 } from '../core/state.js';
 import { mergeDatasets, getSelectedFields, tableToSpatial, createSpatialDataset, createTableDataset, analyzeSchema, analyzeTableSchema, isSpatialLayer } from '../core/data-model.js';
 import { isLayerDisplayReady, layerCrsWarning, getLayerCrs, resolveReprojectFromCrs } from '../crs/layer-crs.js';
@@ -36,7 +36,7 @@ import { assessImportRoute, shouldConvertToWorkspace, arcgisShouldUseWorkspace }
 import { ErrorCategory } from '../core/error-handler.js';
 import { getAvailableFormats, exportDataset, exportMultiLayerKMZFile, exportMultiLayerKMLFile, setExportMapManager } from '../export/exporter.js';
 import { isCoverageRasterLayer } from '../core/coverage-raster-layer.js';
-import mapService from '../map/map-service.js';
+import mapService, { formatElevationLabel } from '../map/map-service.js';
 import { isSmartStyleActive } from '../map/style-engine.js';
 import dualScreenCoordinator from '../dual-screen/coordinator.js';
 import { installDualScreenPrimaryHandlers } from '../dual-screen/primary-handlers.js';
@@ -515,6 +515,25 @@ export function buildMapContextMenuItems(payload) {
             navigator.clipboard.writeText(text).catch(() => showToast(text, 'info'));
         }
     });
+
+    if (mapService.is3DEnabled()) {
+        items.push({
+            icon: '⛰️',
+            label: 'Get elevation',
+            action: () => {
+                const meters = mapService.queryElevationAt(latlng.lat, latlng.lng);
+                if (meters == null) {
+                    showToast('Elevation unavailable — terrain tiles may still be loading', 'warning');
+                    return;
+                }
+                const text = formatElevationLabel(meters);
+                const message = `Elevation: ${text}`;
+                navigator.clipboard.writeText(text)
+                    .then(() => showToast(message, 'success'))
+                    .catch(() => showToast(message, 'info'));
+            }
+        });
+    }
 
     if (mapService.isOrbiting()) {
         items.push({
@@ -1623,6 +1642,12 @@ export function moveLayerDown(id) {
     refreshUI();
 }
 
+export function moveLayerToIndex(id, toIndex) {
+    reorderLayerToIndex(id, toIndex);
+    mapService.syncLayerOrder(getLayers().map(l => l.id));
+    refreshUI();
+}
+
 export function setActiveLayerAndRefresh(id) {
     setActiveLayer(id);
     refreshUI();
@@ -1645,14 +1670,31 @@ export function zoomToLayer(id) {
 }
 
 export async function removeLayerWithConfirm(id) {
-    const ok = await confirm('Remove Layer', 'Remove this layer?');
-    if (ok) {
-        const layer = getLayers().find(l => l.id === id);
-        if (layer) revokeKmzBlobUrls(layer);
-        removeLayer(id);
+    const removed = await removeLayersWithConfirm([id]);
+    return removed;
+}
+
+export async function removeLayersWithConfirm(ids) {
+    const uniqueIds = [...new Set(ids)].filter(Boolean);
+    if (!uniqueIds.length) return false;
+    const message = uniqueIds.length === 1
+        ? 'Remove this layer?'
+        : `Remove ${uniqueIds.length} selected layers?`;
+    const ok = await confirm('Remove Layers', message);
+    if (!ok) return false;
+    for (const id of uniqueIds) {
+        const layer = getLayers().find((l) => l.id === id);
+        if (layer) {
+            revokeKmzBlobUrls(layer);
+            if (isWorkspaceLayer(layer)) {
+                await removeWorkspaceLayer(layer.workspaceLayerId || id);
+            }
+        }
         mapService.removeLayer(id);
-        refreshUI();
+        removeLayer(id);
     }
+    refreshUI();
+    return true;
 }
 
 // ============================
@@ -4668,8 +4710,10 @@ const APP_ACTIONS = {
     toggleVisibility: toggleLayerVisibilityAndRender,
     zoomToLayer,
     removeLayer: removeLayerWithConfirm,
+    removeLayers: removeLayersWithConfirm,
     moveLayerUp,
     moveLayerDown,
+    moveLayerToIndex,
     toggleField, selectAllFields, filterFields,
     renameLayer, renameField,
     addField,
