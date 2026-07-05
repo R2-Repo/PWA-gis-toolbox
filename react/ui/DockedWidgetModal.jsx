@@ -4,11 +4,13 @@ import dualScreenCoordinator from '../../js/dual-screen/coordinator.js';
 import { dismissModal } from '../../js/ui/modals.js';
 import {
     clampWidgetModalPosition,
+    computeWidgetDockHeights,
     computeWidgetModalPlacement,
+    getRightPanelBodyHeight,
     getRightPanelDockRect,
     getWidgetModalAnchorRect,
     isRightPanelDockAvailable,
-    syncWidgetPanelDockReserve,
+    refreshWidgetPanelDockReserve,
     WIDGET_PANEL_DOCK_SELECTOR
 } from '../../js/ui/widget-modal-placement.js';
 
@@ -93,6 +95,11 @@ export function DockedWidgetModal({ modal }) {
         () => isRightPanelDockAvailable()
     );
     const [position, setPosition] = useState(null);
+    const [heightMode, setHeightMode] = useState('expanded');
+    const [dockHeights, setDockHeights] = useState(() => {
+        const panelHeight = getRightPanelBodyHeight();
+        return computeWidgetDockHeights(panelHeight);
+    });
 
     const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
     const width = isMobile ? '96vw' : (modal.options?.width || '600px');
@@ -105,6 +112,15 @@ export function DockedWidgetModal({ modal }) {
         const modalEl = modalRef.current;
         if (!modalEl) return;
         setPosition(resolveFloatingPlacement(active, modalEl));
+    }, []);
+
+    const updateDockHeights = useCallback(() => {
+        const panelHeight = getRightPanelBodyHeight();
+        setDockHeights(computeWidgetDockHeights(panelHeight));
+    }, []);
+
+    const scheduleReserveRefresh = useCallback(() => {
+        requestAnimationFrame(() => refreshWidgetPanelDockReserve());
     }, []);
 
     useEffect(() => {
@@ -134,6 +150,7 @@ export function DockedWidgetModal({ modal }) {
         const refreshPanelDock = () => {
             setPanelDockAvailable(isRightPanelDockAvailable());
             setPortalTargets(queryPortalTargets());
+            updateDockHeights();
         };
 
         refreshPanelDock();
@@ -151,34 +168,29 @@ export function DockedWidgetModal({ modal }) {
             window.removeEventListener('resize', refreshPanelDock);
             observer?.disconnect();
         };
-    }, []);
+    }, [updateDockHeights]);
 
     useEffect(() => {
-        const panel = document.querySelector('.panel-right');
         if (!usePanelDock) {
-            syncWidgetPanelDockReserve(panel, 0);
+            refreshWidgetPanelDockReserve();
             return undefined;
         }
 
         const modalEl = modalRef.current;
         if (!modalEl) return undefined;
 
-        const updateReserve = () => {
-            syncWidgetPanelDockReserve(panel, modalEl.offsetHeight + 12);
-        };
-
-        updateReserve();
+        scheduleReserveRefresh();
 
         const observer = typeof ResizeObserver !== 'undefined'
-            ? new ResizeObserver(updateReserve)
+            ? new ResizeObserver(scheduleReserveRefresh)
             : null;
         observer?.observe(modalEl);
 
         return () => {
             observer?.disconnect();
-            syncWidgetPanelDockReserve(panel, 0);
+            requestAnimationFrame(() => refreshWidgetPanelDockReserve());
         };
-    }, [usePanelDock, modal.id]);
+    }, [usePanelDock, modal.id, heightMode, dockHeights, scheduleReserveRefresh]);
 
     useEffect(() => {
         const modalEl = modalRef.current;
@@ -231,8 +243,33 @@ export function DockedWidgetModal({ modal }) {
     }, [dualScreenActive, usePanelDock]);
 
     useEffect(() => () => {
-        syncWidgetPanelDockReserve(document.querySelector('.panel-right'), 0);
+        requestAnimationFrame(() => refreshWidgetPanelDockReserve());
     }, []);
+
+    const onHalfHeightClick = (event) => {
+        event.stopPropagation();
+        if (heightMode === 'minimized') {
+            setHeightMode('expanded');
+            return;
+        }
+        setHeightMode((prev) => (prev === 'half' ? 'expanded' : 'half'));
+    };
+
+    const onMinimizeClick = (event) => {
+        event.stopPropagation();
+        if (heightMode === 'minimized') {
+            setHeightMode('expanded');
+            return;
+        }
+        setHeightMode('minimized');
+        requestAnimationFrame(() => refreshWidgetPanelDockReserve());
+    };
+
+    const onHeaderClick = (event) => {
+        if (!usePanelDock || heightMode !== 'minimized') return;
+        if (event.target.closest('.close-modal')) return;
+        setHeightMode('expanded');
+    };
 
     const onHeaderPointerDown = (event) => {
         if (event.button !== 0) return;
@@ -300,8 +337,15 @@ export function DockedWidgetModal({ modal }) {
         window.addEventListener('pointercancel', onPointerUp);
     };
 
+    const panelDockStyle = usePanelDock
+        ? {
+            '--widget-panel-expanded-max': `${dockHeights.expandedMax}px`,
+            '--widget-panel-half-max': `${dockHeights.halfMax}px`
+        }
+        : undefined;
+
     const floatingStyle = usePanelDock
-        ? undefined
+        ? panelDockStyle
         : {
             width,
             ...(position
@@ -323,26 +367,49 @@ export function DockedWidgetModal({ modal }) {
                 ref={modalRef}
                 className={`modal modal--docked${usePanelDock ? ' modal--panel-dock' : ''}`}
                 style={floatingStyle}
+                data-height-mode={usePanelDock ? heightMode : undefined}
             >
                 <div
-                    className="modal-header modal-header--draggable"
+                    className={`modal-header modal-header--draggable${usePanelDock ? ' modal-header--panel-dock' : ''}`}
                     onPointerDown={onHeaderPointerDown}
+                    onClick={onHeaderClick}
                     title={usePanelDock ? 'Drag to undock' : 'Drag to move'}
                 >
-                    <span>{modal.title}</span>
-                    <button
-                        className="btn-icon close-modal"
-                        aria-label="Close"
-                        onClick={() => {
-                            if (typeof overlayRef.current?._interceptClose === 'function'
-                                && overlayRef.current._interceptClose() === true) {
-                                return;
-                            }
-                            close(null);
-                        }}
-                    >
-                        ✕
-                    </button>
+                    <span className="modal-header__title">{modal.title}</span>
+                    <div className="modal-header__actions">
+                        {usePanelDock ? (
+                            <>
+                                <button
+                                    type="button"
+                                    className="btn-icon widget-dock-btn widget-dock-btn--minimize"
+                                    aria-label="Minimize"
+                                    title="Minimize"
+                                    onClick={onMinimizeClick}
+                                />
+                                <button
+                                    type="button"
+                                    className="btn-icon widget-dock-btn widget-dock-btn--half"
+                                    aria-label={heightMode === 'half' ? 'Expand height' : 'Half height'}
+                                    title={heightMode === 'half' ? 'Expand height' : 'Half height'}
+                                    onClick={onHalfHeightClick}
+                                />
+                            </>
+                        ) : null}
+                        <button
+                            type="button"
+                            className="btn-icon close-modal"
+                            aria-label="Close"
+                            onClick={() => {
+                                if (typeof overlayRef.current?._interceptClose === 'function'
+                                    && overlayRef.current._interceptClose() === true) {
+                                    return;
+                                }
+                                close(null);
+                            }}
+                        >
+                            ✕
+                        </button>
+                    </div>
                 </div>
                 <WidgetModalBody modal={modal} close={close} />
                 {modal.options?.footer ? (

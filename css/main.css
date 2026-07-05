@@ -370,6 +370,9 @@ html, body {
     padding: var(--widget-panel-dock-pad, 8px);
 }
 .widget-panel-dock:not(:empty) {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
     pointer-events: none;
 }
 .panel.collapsed { width: 0 !important; min-width: 0 !important; overflow: hidden; border: none; }
@@ -990,14 +993,84 @@ textarea { resize: vertical; min-height: 60px; }
     width: 100%;
     min-width: 0;
     max-width: 100%;
-    max-height: min(440px, 54vh);
+    height: auto;
+    max-height: var(--widget-panel-expanded-max, 75vh);
     margin: 0;
     position: relative;
     pointer-events: auto;
     box-shadow: var(--shadow-lg);
 }
+.modal--panel-dock[data-height-mode="half"] {
+    max-height: var(--widget-panel-half-max, 45vh);
+}
+.modal--panel-dock[data-height-mode="minimized"] {
+    height: auto;
+    max-height: fit-content;
+    overflow: hidden;
+    flex: 0 0 auto;
+}
+.modal--panel-dock[data-height-mode="minimized"] .modal-body,
+.modal--panel-dock[data-height-mode="minimized"] .modal-footer {
+    display: none !important;
+    flex: 0 0 0 !important;
+    height: 0 !important;
+    min-height: 0 !important;
+    max-height: 0 !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    overflow: hidden !important;
+    border: none !important;
+}
 .modal--panel-dock .modal-body {
-    max-height: min(340px, 42vh);
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    max-height: none;
+}
+.modal-header--panel-dock {
+    padding: 6px 10px;
+    font-size: 12px;
+    min-height: 32px;
+    gap: 8px;
+}
+.modal-header--panel-dock .modal-header__title {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.modal-header--panel-dock .modal-header__actions {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    flex-shrink: 0;
+}
+.modal-header--panel-dock .btn-icon {
+    width: 24px;
+    height: 24px;
+    padding: 2px;
+    font-size: 12px;
+}
+.widget-dock-btn {
+    position: relative;
+}
+.widget-dock-btn--minimize::before {
+    content: '';
+    display: block;
+    width: 10px;
+    height: 1px;
+    background: currentColor;
+    border-radius: 1px;
+}
+.widget-dock-btn--half::before {
+    content: '';
+    display: block;
+    width: 9px;
+    height: 9px;
+    border: 1px solid currentColor;
+    border-radius: 1px;
+    box-sizing: border-box;
 }
 .modal-header--draggable {
     cursor: grab;
@@ -1008,21 +1081,7 @@ textarea { resize: vertical; min-height: 60px; }
     cursor: grabbing;
 }
 
-/* Project Stationing — taller panel, compact header */
-.modal--panel-dock:has(.project-stationing-widget) {
-    max-height: min(560px, 68vh);
-}
-.modal--panel-dock:has(.project-stationing-widget) .modal-body {
-    max-height: min(460px, 58vh);
-}
-.modal--panel-dock:has(.project-stationing-widget) .modal-header {
-    padding: 8px 12px;
-    font-size: 14px;
-}
-.modal--panel-dock:has(.project-stationing-widget) .modal-header .btn-icon {
-    width: 28px;
-    height: 28px;
-}
+/* Project Stationing — content styles */
 .project-stationing-widget .gis-widget__status {
     margin-bottom: 6px;
 }
@@ -1046,12 +1105,6 @@ textarea { resize: vertical; min-height: 60px; }
 .project-stationing-widget__tab.is-active {
     border-bottom-color: var(--accent);
     color: var(--text);
-}
-.modal--panel-dock:has(.project-stationing-widget--import-tab) {
-    max-height: min(680px, 78vh);
-}
-.modal--panel-dock:has(.project-stationing-widget--import-tab) .modal-body {
-    max-height: min(580px, 68vh);
 }
 
 .project-stationing-import-panel {
@@ -1154,7 +1207,7 @@ textarea { resize: vertical; min-height: 60px; }
 }
 
 /* GIS widgets — compact panel-dock layout */
-.modal--panel-dock .modal-body:has(.gis-widget),
+.modal--panel-dock:not([data-height-mode="minimized"]) .modal-body:has(.gis-widget),
 .modal--docked .modal-body:has(.gis-widget) {
     display: flex;
     flex-direction: column;

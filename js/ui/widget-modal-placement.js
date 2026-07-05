@@ -1,8 +1,11 @@
 export const WIDGET_MODAL_MARGIN = 8;
 export const WIDGET_PANEL_DOCK_MARGIN = 8;
-export const WIDGET_MODAL_HEADER_HEIGHT = 52;
+export const WIDGET_MODAL_HEADER_HEIGHT = 34;
 export const WIDGET_PANEL_DOCK_SELECTOR = '#widget-panel-dock';
 export const WIDGET_PANEL_DOCK_MIN_WIDTH = 180;
+export const WIDGET_PANEL_DOCK_GAP = 8;
+export const WIDGET_PANEL_EXPANDED_RATIO = 0.75;
+export const WIDGET_PANEL_HALF_RATIO = 0.45;
 
 /**
  * @param {boolean} dualScreenActive
@@ -110,6 +113,54 @@ export function clampWidgetModalPosition({
         left: Math.min(Math.max(margin, left), maxLeft),
         top: Math.min(Math.max(minTop, top), maxTop)
     };
+}
+
+/**
+ * @param {Document} [doc]
+ * @returns {number}
+ */
+export function getRightPanelBodyHeight(doc = document) {
+    const body = doc.querySelector('.panel-right-body');
+    if (!body) return 0;
+    return body.getBoundingClientRect().height;
+}
+
+/**
+ * @param {number} panelHeight
+ * @returns {{ expandedMax: number, halfMax: number }}
+ */
+export function computeWidgetDockHeights(panelHeight) {
+    const safeHeight = Math.max(0, panelHeight);
+    return {
+        expandedMax: Math.floor(safeHeight * WIDGET_PANEL_EXPANDED_RATIO),
+        halfMax: Math.floor(safeHeight * WIDGET_PANEL_HALF_RATIO)
+    };
+}
+
+/**
+ * @param {Document} [doc]
+ */
+export function refreshWidgetPanelDockReserve(doc = document) {
+    const panel = doc.querySelector('.panel-right');
+    const dock = doc.querySelector(WIDGET_PANEL_DOCK_SELECTOR);
+    if (!panel || !dock) {
+        syncWidgetPanelDockReserve(panel, 0);
+        return;
+    }
+
+    const modals = dock.querySelectorAll('.modal--panel-dock');
+    if (!modals.length) {
+        syncWidgetPanelDockReserve(panel, 0);
+        return;
+    }
+
+    let total = WIDGET_PANEL_DOCK_MARGIN * 2;
+    modals.forEach((modalEl, index) => {
+        total += modalEl.offsetHeight;
+        if (index > 0) total += WIDGET_PANEL_DOCK_GAP;
+    });
+
+    syncWidgetPanelDockReserve(panel, total);
 }
 
 /**

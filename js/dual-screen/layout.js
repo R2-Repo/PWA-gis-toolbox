@@ -1,7 +1,7 @@
 /**
  * Dual Screen Mode — primary layout helpers
  */
-import { syncWidgetPanelDockReserve } from '../ui/widget-modal-placement.js';
+import { refreshWidgetPanelDockReserve } from '../ui/widget-modal-placement.js';
 
 /** @returns {string} innerHTML for center-panel placeholder */
 export function buildDualScreenPlaceholderMarkup() {
@@ -93,6 +93,6 @@ export function syncDualScreenPrimaryUi(active, doc = document) {
         }
     });
     if (!active) {
-        syncWidgetPanelDockReserve(doc.querySelector('.panel-right'), 0);
+        refreshWidgetPanelDockReserve(doc);
     }
 }
