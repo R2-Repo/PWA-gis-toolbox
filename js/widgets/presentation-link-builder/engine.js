@@ -22,6 +22,7 @@ import {
     compileAuthoringSteps,
     applySequenceCameraStrategy
 } from '../../presentation/presentation-sequence-compiler.js';
+import { summarizeExportAvailability } from '../../presentation/presentation-export.js';
 
 export { cloneFeature, toFeatureCollection } from './source-features.js';
 export {
@@ -36,13 +37,20 @@ export {
 } from './source-features.js';
 
 export {
+    summarizeExportAvailability,
+    validateSceneForExport,
+    buildEmbedCode,
+    getEmbedCodeForScene
+} from '../../presentation/presentation-export.js';
+
+export {
     ORBIT_PACE_MS,
     COMBO_PACE_MS,
     COMBO_FLY_RATIO,
     splitComboDurations,
     listLinkAnimations,
     getLinkAnimation
-};
+} from '../../presentation/presentation-link-animations.js';
 
 /** @deprecated Use listLinkAnimations() — kept for existing imports */
 export const SIMPLE_ANIMATION_OPTIONS = listLinkAnimations().map(({ id, label, usageHint }) => ({

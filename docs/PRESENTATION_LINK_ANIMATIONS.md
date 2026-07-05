@@ -89,4 +89,17 @@ Users can switch to **Custom sequence** in the widget to build an ordered list (
 
 ## Orbit GIF removed
 
-The legacy print-menu orbit GIF was removed. Capture helpers remain in `js/map/map-export.js` for future presentation GIF export.
+The legacy print-menu orbit GIF was removed. Capture helpers remain in `js/map/map-export.js` for presentation export.
+
+## Share & export (widget)
+
+Export profiles live in `js/presentation/presentation-export-profiles.js`. Capture and file output in `presentation-capture.js` and `presentation-export.js`.
+
+| Export | Profile limits |
+|--------|----------------|
+| URL / Embed | Same as scene limits (interactive) |
+| GIF | ≤3 steps, ≤20s, 1280px wide |
+| Video (WebM/MP4) | ≤5 steps, ≤60s, 1920px wide |
+| Poster PNG | Final frame after playback |
+
+GIF and video record by playing `PresentationAnimationEngine` — same motion as Preview.

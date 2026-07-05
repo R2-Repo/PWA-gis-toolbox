@@ -3408,3 +3408,12 @@ textarea { resize: vertical; min-height: 60px; }
 .presentation-sequence-list__hint {
     margin: 0;
 }
+.presentation-link-builder__export-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    margin-top: 8px;
+}
+.presentation-link-builder__export-grid .btn {
+    width: 100%;
+}
