@@ -11,7 +11,8 @@ import {
     selectRouteFeatures,
     validateMilepostRange,
     validateMilepostValue,
-    buildOutputLayerName
+    buildOutputLayerName,
+    readRouteMileageDisplay
 } from './engine.js';
 import {
     searchRoutes,
@@ -228,7 +229,8 @@ export async function openRouteMilepostSegment(ctx) {
                 return {
                     routeId: previewState.routeContext.routeId,
                     routeAlias: selection.routeLabel || previewState.routeContext.routeAlias,
-                    warnings: previewState.routeContext.routeSelection.warnings
+                    warnings: previewState.routeContext.routeSelection.warnings,
+                    ...readRouteMileageDisplay(previewState.routeContext, activeConfig)
                 };
             },
             onMilepostPreview: async (input) => {

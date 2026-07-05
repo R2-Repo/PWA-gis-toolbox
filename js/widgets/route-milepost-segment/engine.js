@@ -402,6 +402,31 @@ export function readRouteMileageBounds(positiveLine, routeRecord, config) {
 }
 
 /**
+ * @param {number|string|null|undefined} value
+ */
+export function formatRouteMileage(value) {
+    if (value == null || value === '') return '—';
+    const num = Number(value);
+    if (!Number.isFinite(num)) return '—';
+    return num.toFixed(2);
+}
+
+/**
+ * @param {object} routeContext
+ * @param {import('./config.js').UDOT_ROUTE_SEGMENT_CONFIG} config
+ */
+export function readRouteMileageDisplay(routeContext, config) {
+    const record = routeContext?.routeRecord;
+    const posLine = routeContext?.routeSelection?.positiveLine;
+    const beg = Number(record?.[config.begMileageField] ?? posLine?.properties?.[config.begMileageField]);
+    const end = Number(record?.[config.endMileageField] ?? posLine?.properties?.[config.endMileageField]);
+    return {
+        begMileageFormatted: Number.isFinite(beg) ? formatRouteMileage(beg) : '—',
+        endMileageFormatted: Number.isFinite(end) ? formatRouteMileage(end) : '—'
+    };
+}
+
+/**
  * @param {number} targetMp
  * @param {number} begMp
  * @param {number} endMp
@@ -683,6 +708,43 @@ export function buildOutputLayerName(routeAlias, startMp, endMp, alignment) {
 }
 
 /**
+ * @param {number|null|undefined} value
+ * @param {number} [decimals]
+ */
+function roundLength(value, decimals = 2) {
+    const num = Number(value);
+    if (!Number.isFinite(num)) return null;
+    return Math.round(num * 10 ** decimals) / 10 ** decimals;
+}
+
+/**
+ * @param {object} input
+ * @param {string} input.routeAlias
+ * @param {number} input.startMp
+ * @param {number} input.endMp
+ * @param {import('geojson').Feature} input.outputGeometry
+ */
+export function buildRouteCenterlineOutputProperties({ routeAlias, startMp, endMp, outputGeometry }) {
+    const lengthMiles = typeof turf !== 'undefined'
+        ? turf.length(outputGeometry, { units: 'miles' })
+        : null;
+    const lengthFeet = typeof turf !== 'undefined'
+        ? turf.length(outputGeometry, { units: 'feet' })
+        : null;
+    return {
+        route_alias_common: routeAlias,
+        start_milepost: startMp,
+        end_milepost: endMp,
+        length_miles: roundLength(lengthMiles),
+        length_feet: roundLength(lengthFeet),
+        Name: '',
+        ID: '',
+        Future1: '',
+        Future2: ''
+    };
+}
+
+/**
  * @param {import('geojson').Feature} geometryFeature
  * @param {object} attrs
  */
@@ -753,7 +815,6 @@ export function computeSegmentResult(input) {
     const centerlineSegment = lineSliceAlong(positiveLine, lowDist, highDist, 'feet');
 
     let outputGeometry = centerlineSegment;
-    let method = METHOD_VALUES.POSITIVE_CENTERLINE;
     let medianSeparationFeet = null;
     let medianOffsetFeet = null;
     const dividedHighwayDetected = Boolean(negativeLine);
@@ -765,7 +826,6 @@ export function computeSegmentResult(input) {
         }
         const medianResult = buildApproximateMedianLine(centerlineSegment, negativeLine);
         outputGeometry = medianResult;
-        method = METHOD_VALUES.APPROXIMATE_MEDIAN;
         medianSeparationFeet = medianResult.medianSeparationFeet;
         medianOffsetFeet = medianResult.offsetFeet;
     }
@@ -774,37 +834,18 @@ export function computeSegmentResult(input) {
         ? turf.length(outputGeometry, { units: 'miles' })
         : null;
 
-    const milepostPrecision = isWholeMilepost(startMp) && isWholeMilepost(endMp)
-        ? 'whole'
-        : (Math.abs(startMp * 10 - Math.round(startMp * 10)) < 0.0001 && Math.abs(endMp * 10 - Math.round(endMp * 10)) < 0.0001)
-            ? 'tenth'
-            : 'hundredth';
     const routeAlias = routeMeta.routeAlias
         || positiveLine.properties?.[config.routeAliasField]
         || routeMeta.routeId
         || 'Route';
     const routeId = routeMeta.routeId || positiveLine.properties?.[config.routeIdField] || '';
 
-    const outputFeature = buildOutputFeature(outputGeometry, {
-        route_alias_common: routeAlias,
-        route_id: routeId,
-        route_name: positiveLine.properties?.ROUTE_ALIAS_STD_DIR || routeAlias,
-        start_milepost: startMp,
-        end_milepost: endMp,
-        milepost_precision: milepostPrecision,
-        milepost_layer_used: milepostLayerKey === 'whole' ? 'whole-mile' : 'tenth-mile',
-        output_alignment: alignment,
-        source_route_layer_url: config.routeLayerUrl,
-        source_milepost_layer_url: milepostLayerKey === 'whole'
-            ? config.milepostWholeLayerUrl
-            : config.milepostTenthLayerUrl,
-        length_miles: lengthMiles,
-        divided_highway_detected: dividedHighwayDetected,
-        median_separation_feet: medianSeparationFeet,
-        median_offset_feet: medianOffsetFeet,
-        created_at: new Date().toISOString(),
-        method
-    });
+    const outputFeature = buildOutputFeature(outputGeometry, buildRouteCenterlineOutputProperties({
+        routeAlias,
+        startMp,
+        endMp,
+        outputGeometry
+    }));
 
     const summary = {
         routeAlias,

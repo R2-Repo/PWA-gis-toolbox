@@ -32,6 +32,8 @@ export function RouteMilepostSegmentDialog({
     const [endMilepost, setEndMilepost] = useState('');
     const [preview, setPreview] = useState(null);
     const [routeWarnings, setRouteWarnings] = useState([]);
+    const [begMileageFormatted, setBegMileageFormatted] = useState('—');
+    const [endMileageFormatted, setEndMileageFormatted] = useState('—');
     const [running, setRunning] = useState(false);
     const [previewing, setPreviewing] = useState(false);
     const [error, setError] = useState('');
@@ -133,6 +135,8 @@ export function RouteMilepostSegmentDialog({
             const info = await onSelectRoute?.(routeOption);
             setSelectedRoute({ ...routeOption, ...info });
             setRouteWarnings(info?.warnings || []);
+            setBegMileageFormatted(info?.begMileageFormatted ?? '—');
+            setEndMileageFormatted(info?.endMileageFormatted ?? '—');
             setRoutePickerOpen(false);
             setSearchText('');
             setSearchResults([]);
@@ -160,6 +164,8 @@ export function RouteMilepostSegmentDialog({
         setSelectedRoute(null);
         setPreview(null);
         setRouteWarnings([]);
+        setBegMileageFormatted('—');
+        setEndMileageFormatted('—');
         setStartMilepost('');
         setEndMilepost('');
         setRoutePickerOpen(true);
@@ -222,13 +228,18 @@ export function RouteMilepostSegmentDialog({
                     />
                 </div>
             ) : (
-                <div className="route-mp-widget__route-chip mb-8">
-                    <span className="text-xs text-muted">Route:</span>{' '}
-                    <strong>{selectedRoute.routeAlias}</strong>
-                    <button type="button" className="btn btn-sm btn-secondary route-mp-widget__change-btn" onClick={changeRoute}>
-                        Change
-                    </button>
-                </div>
+                <>
+                    <div className="route-mp-widget__route-chip mb-8">
+                        <span className="text-xs text-muted">Route:</span>{' '}
+                        <strong>{selectedRoute.routeAlias}</strong>
+                        <button type="button" className="btn btn-sm btn-secondary route-mp-widget__change-btn" onClick={changeRoute}>
+                            Change
+                        </button>
+                    </div>
+                    <div className="text-xs text-muted mb-8">
+                        Route mileage: {begMileageFormatted} → {endMileageFormatted}
+                    </div>
+                </>
             )}
 
             <div className="route-mp-widget__mileposts">
