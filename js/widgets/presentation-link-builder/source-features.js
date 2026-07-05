@@ -15,10 +15,35 @@ function resolveLayerGeojson(ctx, layerId, layer) {
         || null;
 }
 
-function collectSelectedFeaturesForLayer(ctx, layerId, layer) {
+async function collectSelectedFeaturesForLayer(ctx, layerId, layer) {
+    const indices = ctx.mapService?.getSelectedIndices?.(layerId) || [];
+    if (!indices.length) return [];
+
+    let resolvedCount = 0;
+    let geojsonCount = 0;
+    if (ctx.mapService?.resolveFeaturesByIndices) {
+        const resolved = await ctx.mapService.resolveFeaturesByIndices(layerId, indices);
+        resolvedCount = resolved.length;
+        if (resolved.length) {
+            // #region agent log
+            fetch('http://127.0.0.1:7928/ingest/d3c9e78b-c7ff-4f7c-bb94-4a8dca6fee71',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'c8639f'},body:JSON.stringify({sessionId:'c8639f',runId:'pre-fix',hypothesisId:'H-A',location:'source-features.js:collectSelectedFeaturesForLayer',message:'resolved via indices',data:{layerId,indices,resolvedCount,path:'resolveFeaturesByIndices'},timestamp:Date.now()})}).catch(()=>{});
+            // #endregion
+            return resolved;
+        }
+    }
+
     const geojson = resolveLayerGeojson(ctx, layerId, layer);
-    if (!geojson) return [];
+    if (!geojson) {
+        // #region agent log
+        fetch('http://127.0.0.1:7928/ingest/d3c9e78b-c7ff-4f7c-bb94-4a8dca6fee71',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'c8639f'},body:JSON.stringify({sessionId:'c8639f',runId:'pre-fix',hypothesisId:'H-A',location:'source-features.js:collectSelectedFeaturesForLayer',message:'no geojson',data:{layerId,indices,resolvedCount,geojsonFeatureCount:0,path:'no-geojson'},timestamp:Date.now()})}).catch(()=>{});
+        // #endregion
+        return [];
+    }
     const selected = ctx.mapService.getSelectedFeatures(layerId, geojson);
+    geojsonCount = selected?.features?.length || 0;
+    // #region agent log
+    fetch('http://127.0.0.1:7928/ingest/d3c9e78b-c7ff-4f7c-bb94-4a8dca6fee71',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'c8639f'},body:JSON.stringify({sessionId:'c8639f',runId:'pre-fix',hypothesisId:'H-A',location:'source-features.js:collectSelectedFeaturesForLayer',message:'geojson fallback',data:{layerId,indices,resolvedCount,geojsonFeatureCount:geojson?.features?.length||0,geojsonCount,path:'getSelectedFeatures'},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion
     return selected?.features || [];
 }
 
@@ -55,7 +80,7 @@ export async function collectSourceFeaturesForLayer(ctx, layerId) {
         const layer = (ctx.getLayers?.() || []).find((entry) => entry.id === layerId);
         const selectionCount = ctx.mapService?.getSelectionCount?.(layerId) || 0;
         if (selectionCount > 0) {
-            const selectedFeatures = collectSelectedFeaturesForLayer(ctx, layerId, layer);
+            const selectedFeatures = await collectSelectedFeaturesForLayer(ctx, layerId, layer);
             if (selectedFeatures.length) {
                 return toFeatureCollection(selectedFeatures);
             }
@@ -84,6 +109,9 @@ export function listLayerIdsWithSelections(ctx) {
  */
 export async function collectAllSelectedPresentationFeatures(ctx) {
     const layerIds = listLayerIdsWithSelections(ctx);
+    // #region agent log
+    fetch('http://127.0.0.1:7928/ingest/d3c9e78b-c7ff-4f7c-bb94-4a8dca6fee71',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'c8639f'},body:JSON.stringify({sessionId:'c8639f',runId:'pre-fix',hypothesisId:'H-E',location:'source-features.js:collectAllSelectedPresentationFeatures',message:'layer ids with selections',data:{layerIds,spatialLayerIds:(ctx.getLayers?.()||[]).filter(l=>l.type==='spatial').map(l=>l.id),totalSelectionCount:ctx.mapService?.getTotalSelectionCount?.()},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion
     if (!layerIds.length) {
         return collectSourceFeaturesAsync(ctx);
     }
@@ -106,7 +134,7 @@ export async function collectSourceFeaturesForLayers(ctx, layerIds = []) {
         const selectionCount = ctx.mapService?.getSelectionCount?.(layerId) || 0;
         if (selectionCount <= 0) continue;
 
-        const selectedFeatures = collectSelectedFeaturesForLayer(ctx, layerId, layer);
+        const selectedFeatures = await collectSelectedFeaturesForLayer(ctx, layerId, layer);
         for (const feature of selectedFeatures) {
             merged.push({
                 ...cloneFeature(feature),

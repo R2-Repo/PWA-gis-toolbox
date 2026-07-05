@@ -333,7 +333,7 @@ class MapManager {
             if (features.length === 0) {
                 this.clearHighlight();
                 this._closePopup();
-                if (this._canSelect()) {
+                if (this._canSelect() && !this._presentationMultiSelect) {
                     if (this._activeLayerId) {
                         this.clearSelection(this._activeLayerId);
                     } else if (this.getTotalSelectionCount() > 0) {
@@ -3824,6 +3824,9 @@ class MapManager {
         }
 
         this._renderSelectionHighlights(layerId);
+        // #region agent log
+        fetch('http://127.0.0.1:7928/ingest/d3c9e78b-c7ff-4f7c-bb94-4a8dca6fee71',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'c8639f'},body:JSON.stringify({sessionId:'c8639f',runId:'pre-fix',hypothesisId:'H-D',location:'map-manager.js:_handleSelectionClick',message:'selection stored',data:{layerId,featureIndex,toggleKey,selectionCount:sel.size,totalCount:this.getTotalSelectionCount(),presentationMultiSelect:this._presentationMultiSelect,canSelect:this._canSelect()},timestamp:Date.now()})}).catch(()=>{});
+        // #endregion
         bus.emit('selection:changed', { layerId, count: this.getSelectionCount(layerId), totalCount: this.getTotalSelectionCount() });
         void this._refreshPresentationAnchorFromSelection(layerId);
     }
@@ -4001,9 +4004,10 @@ class MapManager {
     getSelectedFeatures(layerId, geojson) {
         const indices = this.getSelectedIndices(layerId);
         if (indices.length === 0) return null;
+        const wanted = new Set(indices.map((value) => Number(value)));
         return {
             type: 'FeatureCollection',
-            features: geojson.features.filter((f) => indices.includes(f.properties?._featureIndex))
+            features: geojson.features.filter((f) => wanted.has(Number(f.properties?._featureIndex)))
         };
     }
     getSelectionCount(layerId) { return this._selections.get(layerId)?.size || 0; }

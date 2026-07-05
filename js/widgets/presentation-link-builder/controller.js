@@ -27,10 +27,30 @@ import {
     exportPresentationVideo,
     exportPresentationPoster
 } from '../../presentation/presentation-export.js';
+import {
+    clearPresentationLinkSceneBundle,
+    getPresentationLinkSceneBundle,
+    setPresentationLinkSceneBundle
+} from './scene-store.js';
+
+const PRESENTATION_LINK_SCENE_BUNDLE = 'presentation-link:scene-bundle';
 
 let previewRuntime = null;
 /** @type {Map<string, boolean>} */
 let previewHiddenLayers = new Map();
+let presentationWidgetSessionActive = false;
+/** @type {((bundle: object) => void) | null} */
+let sceneApplier = null;
+
+function deliverSceneBundleToUi(bundle) {
+    if (!presentationWidgetSessionActive) return;
+    sceneApplier?.(bundle);
+    setPresentationLinkSceneBundle(bundle);
+    bus.emit(PRESENTATION_LINK_SCENE_BUNDLE, bundle);
+    // #region agent log
+    fetch('http://127.0.0.1:7928/ingest/d3c9e78b-c7ff-4f7c-bb94-4a8dca6fee71',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'c8639f'},body:JSON.stringify({sessionId:'c8639f',runId:'post-fix',hypothesisId:'H-C',location:'controller.js:deliverSceneBundleToUi',message:'scene bundle delivered',data:{limitsFeatureCount:bundle?.limits?.featureCount,validationOk:bundle?.validation?.ok,sourceSummaryFeatureCount:bundle?.sourceSummary?.featureCount,hasApplier:!!sceneApplier},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion
+}
 
 function syncDimensionChrome(is3d) {
     bus.emit('map:chrome', { is3d: !!is3d });
@@ -188,7 +208,10 @@ async function buildSceneBundle(ctx, formState) {
         animation: formState.animation
     });
     const validation = validateSceneForUrl(scene);
-    return {
+    // #region agent log
+    fetch('http://127.0.0.1:7928/ingest/d3c9e78b-c7ff-4f7c-bb94-4a8dca6fee71',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'c8639f'},body:JSON.stringify({sessionId:'c8639f',runId:'post-fix',hypothesisId:'H-B',location:'controller.js:buildSceneBundle',message:'scene bundle built',data:{resolvedFeatureCount:features?.features?.length||0,sceneFeatureCount:scene?.features?.features?.length||0,validationOk:validation.ok,validationErrors:validation.errors,sourceSummaryFeatureCount:sourceSummary?.featureCount,layerIds:layerMeta?.layerIds},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion
+    const bundle = {
         scene,
         validation,
         limits: buildLimitSummary(validation),
@@ -198,6 +221,8 @@ async function buildSceneBundle(ctx, formState) {
         sourceSummary,
         layerMeta
     };
+    deliverSceneBundleToUi(bundle);
+    return bundle;
 }
 
 async function preparePresentationPlayback(ctx, formState) {
@@ -233,10 +258,57 @@ export async function openPresentationLinkBuilder(ctx) {
     const was3d = ctx.mapService?.is3DEnabled?.() ?? false;
     const initialLayerId = getActiveLayer()?.id || '';
     let tornDown = false;
+    /** @type {object|null} */
+    let latestFormState = null;
+    let rebuildTimer = null;
+    let unsubscribeSceneRefresh = null;
 
-    const teardown = () => {
+    const scheduleSceneRebuild = () => {
+        if (tornDown) return;
+        window.clearTimeout(rebuildTimer);
+        rebuildTimer = window.setTimeout(() => {
+            void flushSceneRebuild();
+        }, 150);
+    };
+
+    async function flushSceneRebuild() {
+        const formState = latestFormState;
+        if (!formState || tornDown) {
+            // #region agent log
+            fetch('http://127.0.0.1:7928/ingest/d3c9e78b-c7ff-4f7c-bb94-4a8dca6fee71',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'c8639f'},body:JSON.stringify({sessionId:'c8639f',runId:'post-fix',hypothesisId:'H-C',location:'controller.js:flushSceneRebuild',message:'scene rebuild skipped pre-build',data:{hasFormState:!!formState,tornDown},timestamp:Date.now()})}).catch(()=>{});
+            // #endregion
+            return;
+        }
+        const bundle = await buildSceneBundle(ctx, formState);
+        if (tornDown) {
+            // #region agent log
+            fetch('http://127.0.0.1:7928/ingest/d3c9e78b-c7ff-4f7c-bb94-4a8dca6fee71',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'c8639f'},body:JSON.stringify({sessionId:'c8639f',runId:'post-fix',hypothesisId:'H-I',location:'controller.js:flushSceneRebuild',message:'scene rebuild dropped after async build',data:{limitsFeatureCount:bundle.limits?.featureCount,validationOk:bundle.validation?.ok},timestamp:Date.now()})}).catch(()=>{});
+            // #endregion
+        }
+    }
+
+    const subscribeSceneRebuild = () => {
+        const rebuild = () => scheduleSceneRebuild();
+        const events = ['selection:changed', 'layers:changed', 'layer:active', 'layer:updated'];
+        events.forEach((event) => bus.on(event, rebuild));
+        return () => {
+            events.forEach((event) => bus.off(event, rebuild));
+        };
+    };
+
+    const teardown = (reason = 'unknown') => {
         if (tornDown) return;
         tornDown = true;
+        presentationWidgetSessionActive = false;
+        sceneApplier = null;
+        // #region agent log
+        fetch('http://127.0.0.1:7928/ingest/d3c9e78b-c7ff-4f7c-bb94-4a8dca6fee71',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'c8639f'},body:JSON.stringify({sessionId:'c8639f',runId:'post-fix',hypothesisId:'H-G',location:'controller.js:teardown',message:'widget session torn down',data:{reason},timestamp:Date.now()})}).catch(()=>{});
+        // #endregion
+        window.clearTimeout(rebuildTimer);
+        unsubscribeSceneRefresh?.();
+        unsubscribeSceneRefresh = null;
+        latestFormState = null;
+        clearPresentationLinkSceneBundle();
         teardownPresentationWidget(ctx, { was3d });
     };
 
@@ -244,12 +316,15 @@ export async function openPresentationLinkBuilder(ctx) {
         apply3DSelection(ctx.mapService, true);
     }
     ctx.mapService.enablePresentationMultiSelect?.();
+    presentationWidgetSessionActive = true;
+    unsubscribeSceneRefresh = subscribeSceneRebuild();
 
     await openReactIsland({
         title: 'Presentation Link',
         width: '420px',
         mountPath: '../../../react/widgets/mountPresentationLinkBuilder.jsx',
         mountExport: 'mountPresentationLinkBuilder',
+        onOverlayDestroy: () => teardown('overlay-removed'),
         getProps: (close) => ({
             layers: getSpatialLayerOptions(ctx, { includeSelectionCount: true }),
             getLayerOptions: () => getSpatialLayerOptions(ctx, { includeSelectionCount: true }),
@@ -260,7 +335,18 @@ export async function openPresentationLinkBuilder(ctx) {
                 return buildDefaultFormState(sourceSummary, initialLayerId);
             },
             onRefreshSource: (formState) => resolveSourceBundle(ctx, formState),
-            onBuildScene: (formState) => buildSceneBundle(ctx, formState),
+            reportFormState: (state) => {
+                if (state) latestFormState = state;
+                if (state) scheduleSceneRebuild();
+            },
+            onRegisterSceneApplier: (applyFn) => {
+                sceneApplier = applyFn;
+                const current = getPresentationLinkSceneBundle();
+                if (current) applyFn(current);
+                return () => {
+                    if (sceneApplier === applyFn) sceneApplier = null;
+                };
+            },
             onLayerFocus: (layerId) => {
                 if (!layerId) return;
                 ctx.setActiveLayer?.(layerId);
@@ -367,27 +453,17 @@ export async function openPresentationLinkBuilder(ctx) {
                     stopPreview(ctx);
                 }
             },
-            onSubscribeSourceRefresh: (onSourceChange, onMapViewChange) => {
-                const map = ctx.mapService?.getMap?.();
-                let moveTimer = null;
-                const refreshSource = () => { void onSourceChange?.(); };
-                const refreshMapView = () => {
-                    window.clearTimeout(moveTimer);
-                    moveTimer = window.setTimeout(() => { onMapViewChange?.(); }, 200);
-                };
+            onSubscribeSourceRefresh: (onLayerListRefresh) => {
                 const events = ['selection:changed', 'layers:changed', 'layer:active', 'layer:updated'];
-                events.forEach((event) => bus.on(event, refreshSource));
-                map?.on('moveend', refreshMapView);
+                events.forEach((event) => bus.on(event, onLayerListRefresh));
+                onLayerListRefresh?.();
                 return () => {
-                    window.clearTimeout(moveTimer);
-                    events.forEach((event) => bus.off(event, refreshSource));
-                    map?.off('moveend', refreshMapView);
+                    events.forEach((event) => bus.off(event, onLayerListRefresh));
                 };
             },
             onResetPreview: () => stopPreview(ctx),
-            onWidgetClose: teardown,
             onCancel: () => {
-                teardown();
+                teardown('cancel');
                 close();
             }
         })

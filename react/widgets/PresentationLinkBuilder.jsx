@@ -1,4 +1,9 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import bus from '../../js/core/event-bus.js';
+import {
+    getPresentationLinkSceneBundle,
+    subscribePresentationLinkSceneBundle
+} from '../../js/widgets/presentation-link-builder/scene-store.js';
 import { WidgetPanelShell } from './shared/WidgetPanelShell.jsx';
 import {
     listLinkAnimations,
@@ -45,13 +50,16 @@ function formatLimitNumber(value) {
     return Number(value ?? 0).toLocaleString();
 }
 
+const PRESENTATION_LINK_SCENE_BUNDLE = 'presentation-link:scene-bundle';
+
 export function PresentationLinkBuilder({
     layers = [],
     getLayerOptions,
     initialLayerId = '',
     loadInitialState,
     onRefreshSource,
-    onBuildScene,
+    reportFormState,
+    onRegisterSceneApplier,
     onLayerFocus,
     onSelectAll,
     onClearSelection,
@@ -65,7 +73,6 @@ export function PresentationLinkBuilder({
     onResetPreview,
     onSubscribeLayerSelection,
     onSubscribeSourceRefresh,
-    onWidgetClose,
     onCancel
 }) {
     const [formState, setFormState] = useState(null);
@@ -76,7 +83,6 @@ export function PresentationLinkBuilder({
     const [busy, setBusy] = useState(false);
     const [loading, setLoading] = useState(true);
     const [status, setStatus] = useState('');
-    const [refreshTick, setRefreshTick] = useState(0);
     const [selectionCount, setSelectionCount] = useState(0);
     const [layerOptions, setLayerOptions] = useState(layers);
     const [compatiblePresets, setCompatiblePresets] = useState([]);
@@ -93,10 +99,32 @@ export function PresentationLinkBuilder({
         if (next?.length) setLayerOptions(next);
     }, [getLayerOptions, layers]);
 
-    const applyBundle = useCallback((bundle) => {
-        if (bundle?.sourceSummary) setSourceSummary(bundle.sourceSummary);
-        setRefreshTick((tick) => tick + 1);
+    const applySceneBundle = useCallback((bundle) => {
+        if (!bundle) return;
+        const selectedCount = bundle.sourceSummary?.selectedCount ?? 0;
+        const builtFeatureCount = bundle.limits?.featureCount ?? 0;
+        if (builtFeatureCount === 0 && selectedCount > 0) {
+            // #region agent log
+            fetch('http://127.0.0.1:7928/ingest/d3c9e78b-c7ff-4f7c-bb94-4a8dca6fee71',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'c8639f'},body:JSON.stringify({sessionId:'c8639f',runId:'post-fix',hypothesisId:'H-K',location:'PresentationLinkBuilder.jsx:applySceneBundle',message:'stale empty bundle skipped',data:{selectedCount,builtFeatureCount},timestamp:Date.now()})}).catch(()=>{});
+            // #endregion
+            return;
+        }
+        // #region agent log
+        fetch('http://127.0.0.1:7928/ingest/d3c9e78b-c7ff-4f7c-bb94-4a8dca6fee71',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'c8639f'},body:JSON.stringify({sessionId:'c8639f',runId:'post-fix',hypothesisId:'H-C',location:'PresentationLinkBuilder.jsx:applySceneBundle',message:'build result applied',data:{limitsFeatureCount:bundle.limits?.featureCount,validationOk:bundle.validation?.ok,sourceSummaryFeatureCount:bundle.sourceSummary?.featureCount,validationErrors:bundle.validation?.errors},timestamp:Date.now()})}).catch(()=>{});
+        // #endregion
+        setValidation(bundle.validation || { ok: false, errors: [] });
+        setLimits(bundle.limits || EMPTY_LIMITS);
+        setUrl(bundle.url || '');
+        if (bundle.compatiblePresets) setCompatiblePresets(bundle.compatiblePresets);
+        if (bundle.exportAvailability) setExportAvailability(bundle.exportAvailability);
+        if (bundle.sourceSummary) setSourceSummary(bundle.sourceSummary);
     }, []);
+
+    const sceneBundle = useSyncExternalStore(
+        subscribePresentationLinkSceneBundle,
+        getPresentationLinkSceneBundle,
+        () => null
+    );
 
     useEffect(() => {
         let cancelled = false;
@@ -132,7 +160,7 @@ export function PresentationLinkBuilder({
 
     useEffect(() => {
         refreshLayerOptions();
-    }, [refreshLayerOptions, refreshTick]);
+    }, [refreshLayerOptions]);
 
     useEffect(() => {
         if (focusedLayerId) onLayerFocus?.(focusedLayerId);
@@ -149,36 +177,28 @@ export function PresentationLinkBuilder({
     }, [formState?.animation?.durationMs, formState?.animation?.orbitPace, formState?.animation?.presetId, formState?.animation?.mode]);
 
     useEffect(() => {
-        if (!formState) return undefined;
-        let cancelled = false;
-        void (async () => {
-            const result = await onBuildScene?.(formState);
-            if (cancelled || !result) return;
-            setValidation(result.validation || { ok: false, errors: [] });
-            setLimits(result.limits || EMPTY_LIMITS);
-            setUrl(result.url || '');
-            if (result.compatiblePresets) setCompatiblePresets(result.compatiblePresets);
-            if (result.exportAvailability) setExportAvailability(result.exportAvailability);
-            if (result.sourceSummary) setSourceSummary(result.sourceSummary);
-        })();
-        return () => { cancelled = true; };
-    }, [formState, onBuildScene, refreshTick]);
+        reportFormState?.(formState);
+    }, [formState, reportFormState]);
+
+    useEffect(() => {
+        if (!onRegisterSceneApplier) return undefined;
+        return onRegisterSceneApplier(applySceneBundle);
+    }, [applySceneBundle, onRegisterSceneApplier]);
+
+    useEffect(() => {
+        if (sceneBundle) applySceneBundle(sceneBundle);
+    }, [sceneBundle, applySceneBundle]);
+
+    useEffect(() => {
+        const handler = (bundle) => applySceneBundle(bundle);
+        bus.on(PRESENTATION_LINK_SCENE_BUNDLE, handler);
+        return () => bus.off(PRESENTATION_LINK_SCENE_BUNDLE, handler);
+    }, [applySceneBundle]);
 
     useEffect(() => {
         if (!formState || !onSubscribeSourceRefresh) return undefined;
-        return onSubscribeSourceRefresh(
-            async () => {
-                const bundle = await onRefreshSource?.(formState);
-                applyBundle(bundle);
-            },
-            () => setRefreshTick((tick) => tick + 1)
-        );
-    }, [formState, onSubscribeSourceRefresh, onRefreshSource, applyBundle]);
-
-    useEffect(() => () => {
-        onResetPreview?.();
-        onWidgetClose?.();
-    }, [onWidgetClose, onResetPreview]);
+        return onSubscribeSourceRefresh(refreshLayerOptions);
+    }, [formState, onSubscribeSourceRefresh, refreshLayerOptions]);
 
     const updateAnimation = (patch) => {
         setFormState((prev) => (prev ? {
@@ -189,13 +209,12 @@ export function PresentationLinkBuilder({
 
     const focusLayer = (layerId) => {
         setFormState((prev) => (prev ? { ...prev, focusedLayerId: layerId } : prev));
-        setRefreshTick((tick) => tick + 1);
+        refreshLayerOptions();
     };
 
     const handleSelectAll = () => {
         if (!focusedLayerId || !formState) return;
         onSelectAll?.(formState);
-        setRefreshTick((tick) => tick + 1);
         refreshLayerOptions();
     };
 
@@ -304,7 +323,7 @@ export function PresentationLinkBuilder({
     const geometryLabel = sourceSummary.geometryTypes?.join(', ') || 'Geometry';
     const statusTitle = validation.ok
         ? 'Ready to share'
-        : (sourceSummary.featureCount > 0 ? 'Over presentation limits' : 'Need features');
+        : ((limits.featureCount ?? 0) > 0 ? 'Over presentation limits' : 'Need features');
 
     return (
         <WidgetPanelShell

@@ -69,6 +69,7 @@ describe('presentation source features', () => {
             mapService: {
                 dataLayers: new Map([['layer-1', { geojson: layerGeojson }]]),
                 getSelectionCount: vi.fn(() => 2),
+                getSelectedIndices: vi.fn(() => [3, 1]),
                 getSelectedFeatures: vi.fn((_layerId, geojson) => ({
                     type: 'FeatureCollection',
                     features: geojson.features
@@ -83,6 +84,32 @@ describe('presentation source features', () => {
             'layer-1',
             layerGeojson
         );
+    });
+
+    it('resolves selected features by index through mapService', async () => {
+        const layerGeojson = { type: 'FeatureCollection', features: [lineFeature] };
+        const ctx = {
+            getLayers: () => [{
+                id: 'layer-1',
+                type: 'spatial',
+                name: 'Centerline',
+                geojson: layerGeojson
+            }],
+            getDrawnFeature: () => null,
+            mapService: {
+                dataLayers: new Map([['layer-1', { geojson: { type: 'FeatureCollection', features: [] } }]]),
+                getSelectionCount: vi.fn(() => 1),
+                getSelectedIndices: vi.fn(() => [1]),
+                resolveFeaturesByIndices: vi.fn(async () => [lineFeature]),
+                getSelectedFeatures: vi.fn(() => null),
+                getPresentationSourceFeatures: vi.fn(async () => ({ type: 'FeatureCollection', features: [] }))
+            }
+        };
+
+        const features = await collectSourceFeaturesForLayer(ctx, 'layer-1');
+        expect(features.features).toHaveLength(1);
+        expect(ctx.mapService.resolveFeaturesByIndices).toHaveBeenCalledWith('layer-1', [1]);
+        expect(ctx.mapService.getSelectedFeatures).not.toHaveBeenCalled();
     });
 
     it('prefers map dataLayers geojson when resolving selected features', async () => {
@@ -105,6 +132,7 @@ describe('presentation source features', () => {
             mapService: {
                 dataLayers: new Map([['layer-1', { geojson: mapGeojson }]]),
                 getSelectionCount: vi.fn(() => 1),
+                getSelectedIndices: vi.fn(() => [0]),
                 getSelectedFeatures: vi.fn((_layerId, geojson) => ({
                     type: 'FeatureCollection',
                     features: geojson.features.filter((f) => f.properties?._featureIndex === 0)
@@ -134,6 +162,7 @@ describe('presentation source features', () => {
                     ['layer-2', { geojson: layerTwoGeojson }]
                 ]),
                 getSelectionCount: vi.fn((layerId) => (layerId === 'layer-3' ? 0 : 1)),
+                getSelectedIndices: vi.fn((layerId) => (layerId === 'layer-1' ? [3] : layerId === 'layer-2' ? [1] : [])),
                 getSelectedFeatures: vi.fn((_layerId, geojson) => ({
                     type: 'FeatureCollection',
                     features: geojson.features
@@ -172,6 +201,7 @@ describe('presentation source features', () => {
                     ['layer-2', { geojson: layerTwoGeojson }]
                 ]),
                 getSelectionCount: vi.fn((layerId) => (layerId === 'layer-1' ? 1 : 1)),
+                getSelectedIndices: vi.fn((layerId) => (layerId === 'layer-1' ? [3] : [1])),
                 getSelectedFeatures: vi.fn((layerId, geojson) => ({
                     type: 'FeatureCollection',
                     features: geojson.features

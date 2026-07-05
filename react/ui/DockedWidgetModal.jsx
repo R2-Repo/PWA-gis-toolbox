@@ -24,13 +24,13 @@ const WidgetModalBody = memo(function WidgetModalBody({ modal, close }) {
     const mountedRef = useRef(false);
 
     useEffect(() => {
-        if (mountedRef.current) return;
         const body = bodyRef.current;
         const overlay = body?.closest('.modal-overlay');
-        if (!body || !overlay) return;
+        if (!body || !overlay || overlay._gisReactIslandMounted) return;
 
         body.innerHTML = modal.contentHtml || '';
         mountedRef.current = true;
+        overlay._gisReactIslandMounted = true;
         overlay._close = close;
         overlay._resolve = () => {};
         modal.options?.onMount?.(overlay, close);
