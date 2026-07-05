@@ -84,7 +84,7 @@ Do not put widget logic inline in `js/tools/tool-handlers.js`. Copy the closest 
 | `css/` | Stylesheets |
 | `pipelines/` | Saved workflow pipeline JSON |
 | `public/` | Static assets |
-| `docs/` | Development guide, widget playbook, authoring checklist |
+| `docs/` | Development guide, widget playbook, authoring checklist, feature plans |
 
 ## Local development
 

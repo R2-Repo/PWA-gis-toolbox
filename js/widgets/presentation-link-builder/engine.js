@@ -89,7 +89,8 @@ export function buildSceneFromConfig(config) {
         mapService,
         layerId,
         layerIds,
-        animation = {}
+        animation = {},
+        probeLiveCamera = false
     } = config;
 
     const resolvedLayerIds = layerIds?.length
@@ -125,12 +126,18 @@ export function buildSceneFromConfig(config) {
     const animationMode = animation.mode || 'preset';
     const animations = [];
 
+    const cameraCtx = {
+        features: styledFeatures,
+        map: probeLiveCamera ? map : null,
+        cameraConfig
+    };
+
     if (animationMode === 'sequence' && animation.steps?.length) {
-        applySequenceCameraStrategy(cameraConfig, animation.steps, { features: styledFeatures, map });
+        applySequenceCameraStrategy(cameraConfig, animation.steps, cameraCtx);
         animations.push(...compileAuthoringSteps(animation.steps, { map, cameraConfig }));
     } else {
         const presetId = animation.presetId || 'none';
-        applyLinkAnimationCameraStrategy(cameraConfig, presetId, { features: styledFeatures, map });
+        applyLinkAnimationCameraStrategy(cameraConfig, presetId, cameraCtx);
         const step = buildLinkAnimationStep(presetId, animation, { map, cameraConfig });
         if (step) animations.push(step);
     }

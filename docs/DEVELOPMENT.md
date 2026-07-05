@@ -104,6 +104,12 @@ npm run build    # production build
 npm test         # run tests
 ```
 
+## Planned features
+
+| Document | Description |
+|----------|-------------|
+| [`docs/LIVE_MAP_FEATURE_PLAN.md`](LIVE_MAP_FEATURE_PLAN.md) | **Planned** — App URL config, live/service layers, Live Map widget (Import entry). Use when resuming this build. |
+
 ## Optional: Cursor User Rules note
 
 If you have global Cursor User Rules that mention pull requests or `gh pr create`, add this line to your **User Rules** in Cursor Settings so they do not conflict with this repo:

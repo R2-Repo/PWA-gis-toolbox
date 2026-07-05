@@ -87,3 +87,52 @@ export function bboxDiagonalMeetsMinDragPx(west, south, east, north, project, mi
     const d = Math.hypot(p2.x - p1.x, p2.y - p1.y);
     return d >= minPx;
 }
+
+/** Cancel in-flight MapLibre camera animations (fitBounds, flyTo, easeTo). */
+export function stopMapCamera(map) {
+    try {
+        map?.stop?.();
+    } catch {
+        // ignore
+    }
+}
+
+/**
+ * Wait until the map camera is idle, or until timeout.
+ * @param {import('maplibre-gl').Map | null | undefined} map
+ * @param {number} [timeoutMs]
+ */
+export function waitForMapIdle(map, timeoutMs = 8000) {
+    return new Promise((resolve) => {
+        if (!map) {
+            resolve();
+            return;
+        }
+        if (typeof map.isMoving === 'function' && !map.isMoving()) {
+            resolve();
+            return;
+        }
+        let done = false;
+        const finish = () => {
+            if (done) return;
+            done = true;
+            map.off('moveend', finish);
+            clearTimeout(timer);
+            resolve();
+        };
+        const timer = setTimeout(finish, timeoutMs);
+        map.once('moveend', finish);
+    });
+}
+
+/** Re-enable core map gestures if something left them disabled. */
+export function ensureMapInteractionHandlers(map) {
+    if (!map) return;
+    const names = ['dragPan', 'scrollZoom', 'boxZoom', 'doubleClickZoom', 'touchZoomRotate'];
+    for (const name of names) {
+        const handler = map[name];
+        if (handler?.enable && handler.isEnabled && !handler.isEnabled()) {
+            handler.enable();
+        }
+    }
+}

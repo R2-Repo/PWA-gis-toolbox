@@ -14,29 +14,37 @@ describe('MapManager.queryElevationAt', () => {
         const manager = new MapManager();
         manager.map = {
             getTerrain: () => null,
-            queryTerrainElevation: vi.fn()
+            terrain: { getElevationForLngLatZoom: vi.fn() }
         };
 
         expect(manager.queryElevationAt(40.5, -111.8)).toBeNull();
-        expect(manager.map.queryTerrainElevation).not.toHaveBeenCalled();
+        expect(manager.map.terrain.getElevationForLngLatZoom).not.toHaveBeenCalled();
     });
 
-    it('returns elevation in meters when terrain is active', () => {
+    it('returns AMSL elevation in meters when terrain is active', () => {
         const manager = new MapManager();
         manager.map = {
-            getTerrain: () => ({ source: 'terrain-source' }),
-            queryTerrainElevation: vi.fn(() => 2100.7)
+            getTerrain: () => ({ source: 'terrain-source', exaggeration: 1.5 }),
+            transform: { tileZoom: 12 },
+            terrain: {
+                exaggeration: 1.5,
+                getElevationForLngLatZoom: vi.fn(() => 3151.05)
+            }
         };
 
-        expect(manager.queryElevationAt(40.5, -111.8)).toBe(2100.7);
-        expect(manager.map.queryTerrainElevation).toHaveBeenCalledWith([-111.8, 40.5]);
+        expect(manager.queryElevationAt(40.5, -111.8)).toBeCloseTo(2100.7, 5);
+        expect(manager.map.terrain.getElevationForLngLatZoom).toHaveBeenCalled();
     });
 
-    it('returns null when MapLibre has no tile data yet', () => {
+    it('returns null when terrain tiles have no elevation sample', () => {
         const manager = new MapManager();
         manager.map = {
-            getTerrain: () => ({ source: 'terrain-source' }),
-            queryTerrainElevation: vi.fn(() => null)
+            getTerrain: () => ({ source: 'terrain-source', exaggeration: 1.5 }),
+            transform: { tileZoom: 12 },
+            terrain: {
+                exaggeration: 1.5,
+                getElevationForLngLatZoom: vi.fn(() => null)
+            }
         };
 
         expect(manager.queryElevationAt(0, 0)).toBeNull();

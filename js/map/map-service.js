@@ -105,8 +105,17 @@ export function createMapService({ mapAdapter = mapManager } = {}) {
                 mapAdapter._layerStyles.set(id, style);
             }
         },
-        enable3D() {
-            return mapAdapter.enable3D();
+        enable3D(options = {}) {
+            return mapAdapter.enable3D(options);
+        },
+        stopMapCamera() {
+            const map = mapAdapter.getMap?.();
+            if (!map) return;
+            try {
+                map.stop();
+            } catch {
+                // ignore
+            }
         },
         disable3D(options = {}) {
             return mapAdapter.disable3D(options);

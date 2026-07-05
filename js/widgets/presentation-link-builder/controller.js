@@ -32,6 +32,11 @@ import {
     getPresentationLinkSceneBundle,
     setPresentationLinkSceneBundle
 } from './scene-store.js';
+import {
+    ensureMapInteractionHandlers,
+    stopMapCamera,
+    waitForMapIdle
+} from '../../map/map-interaction-utils.js';
 
 const PRESENTATION_LINK_SCENE_BUNDLE = 'presentation-link:scene-bundle';
 
@@ -53,17 +58,21 @@ function syncDimensionChrome(is3d) {
 
 const PRESENTATION_MIN_PITCH = 10;
 
-function ensurePresentation3DView(mapService) {
+async function ensurePresentation3DView(mapService) {
     const map = mapService?.getMap?.();
     if (!map) return;
+
+    stopMapCamera(map);
+    await waitForMapIdle(map);
+    ensureMapInteractionHandlers(map);
 
     const pitch = map.getPitch?.() ?? 0;
     const enabled = mapService.is3DEnabled?.() ?? false;
 
     if (!enabled || pitch < PRESENTATION_MIN_PITCH) {
-        mapService.enable3D({ pitch: 30, animate: true });
+        mapService.enable3D({ pitch: 30, animate: false });
     }
-    syncDimensionChrome(true);
+    syncDimensionChrome(mapService.is3DEnabled?.() ?? true);
 }
 
 function buildPresentationContext(ctx) {
@@ -122,10 +131,11 @@ function stopPreview(ctx) {
     previewHiddenLayers = new Map();
 
     try {
-        map?.stop();
+        stopMapCamera(map);
     } catch {
         // ignore
     }
+    ensureMapInteractionHandlers(map);
 }
 
 function syncMapChrome(mapService) {
@@ -139,18 +149,11 @@ function restoreMapDimensionAfterWidget(ctx, { was3d }) {
     const map = mapService?.getMap?.();
     if (!map || !mapService) return;
 
+    stopMapCamera(map);
+    ensureMapInteractionHandlers(map);
+
     if (!was3d) {
-        mapService.set3DEnabled(false);
-        const center = map.getCenter();
-        mapService.reconcile3DState({
-            camera: {
-                center: [center.lng, center.lat],
-                zoom: map.getZoom(),
-                pitch: 0,
-                bearing: 0
-            },
-            emitEvent: false
-        });
+        mapService.disable3D({ animate: false });
         return;
     }
 
@@ -167,6 +170,7 @@ function teardownPresentationWidget(ctx, { was3d }) {
     if (canvas) canvas.style.cursor = '';
 
     restoreMapDimensionAfterWidget(ctx, { was3d });
+    ensureMapInteractionHandlers(map);
 
     syncMapChrome(ctx.mapService);
     window.requestAnimationFrame(() => {
@@ -209,7 +213,8 @@ async function buildSceneBundle(ctx, formState) {
         map: ctx.mapService.getMap(),
         mapService: ctx.mapService,
         layerIds: layerMeta.layerIds,
-        animation: formState.animation
+        animation: formState.animation,
+        probeLiveCamera: false
     });
     const validation = validateSceneForUrl(scene);
     const bundle = {
@@ -236,6 +241,8 @@ async function preparePresentationPlayback(ctx, formState) {
 
     const map = ctx.mapService.getMap();
     if (!map) throw new Error('Map is not ready');
+
+    await ensurePresentation3DView(ctx.mapService);
 
     previewHiddenLayers = new Map();
     for (const layerId of layerMeta.layerIds) {
@@ -299,7 +306,6 @@ export async function openPresentationLinkBuilder(ctx) {
         teardownPresentationWidget(ctx, { was3d });
     };
 
-    ensurePresentation3DView(ctx.mapService);
     ctx.mapService.enablePresentationMultiSelect?.();
     unsubscribeSceneRefresh = subscribeSceneRebuild();
 

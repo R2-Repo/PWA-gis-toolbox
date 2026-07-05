@@ -2318,8 +2318,18 @@ class MapManager {
      */
     queryElevationAt(lat, lng) {
         if (!this.map?.getTerrain?.()) return null;
-        const elev = this.map.queryTerrainElevation?.([lng, lat]);
-        return elev == null ? null : elev;
+        const terrain = this.map.terrain;
+        if (!terrain?.getElevationForLngLatZoom) return null;
+
+        const lngLat = typeof maplibregl !== 'undefined'
+            ? maplibregl.LngLat.convert([lng, lat])
+            : { lng, lat };
+        const zoom = this.map.transform?.tileZoom ?? this.map.getZoom();
+        const exaggerated = terrain.getElevationForLngLatZoom(lngLat, zoom);
+        if (exaggerated == null) return null;
+
+        const exaggeration = terrain.exaggeration ?? this.map.getTerrain()?.exaggeration ?? 1;
+        return exaggerated / exaggeration;
     }
 
     // ==========================================

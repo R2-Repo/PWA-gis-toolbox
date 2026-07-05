@@ -3244,13 +3244,19 @@ textarea { resize: vertical; min-height: 60px; }
     display: flex;
     align-items: center;
     gap: 6px;
+    padding: 6px 10px;
+    border-radius: 10px;
     text-decoration: none;
-    background: transparent;
+    background: rgba(0, 0, 0, 0.42);
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
     cursor: pointer;
 }
 .presentation-overlay__logo-icon {
     display: flex;
     align-items: center;
+    filter: drop-shadow(0 0 4px rgba(0, 0, 0, 0.65)) drop-shadow(0 2px 6px rgba(0, 0, 0, 0.45));
 }
 .presentation-overlay__logo-icon img {
     display: block;
@@ -3262,26 +3268,41 @@ textarea { resize: vertical; min-height: 60px; }
     letter-spacing: -0.3px;
     white-space: nowrap;
     color: var(--gold-light);
-    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.45);
+    text-shadow:
+        0 0 8px rgba(0, 0, 0, 0.75),
+        0 1px 3px rgba(0, 0, 0, 0.85),
+        0 2px 10px rgba(0, 0, 0, 0.55);
 }
 .presentation-overlay__title .title-com {
     font-size: 0.65em;
     font-weight: 400;
-    opacity: 0.7;
+    opacity: 0.85;
 }
 .presentation-overlay__home {
     position: absolute;
     top: 16px;
     right: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     width: 40px;
     height: 40px;
     border-radius: 10px;
-    border: 1px solid var(--border);
+    border: 1px solid rgba(255, 255, 255, 0.12);
     background: rgba(28, 28, 30, 0.88);
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
     color: var(--text);
-    font-size: 20px;
     cursor: pointer;
     pointer-events: auto;
+    transition: background 0.15s ease, border-color 0.15s ease;
+}
+.presentation-overlay__home:hover {
+    background: rgba(40, 40, 42, 0.95);
+    border-color: rgba(255, 255, 255, 0.2);
+}
+.presentation-overlay__home svg {
+    display: block;
+    flex-shrink: 0;
 }
 .presentation-title-overlay {
     position: absolute;

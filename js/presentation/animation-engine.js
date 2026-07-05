@@ -6,8 +6,14 @@ import { runPresentationAnimationStep } from './presentation-animation-handlers.
 import { PRESENTATION_SOURCE_ID, COMBO_FLY_RATIO } from './presentation-constants.js';
 
 const ANIMATED_POINT_SOURCE = 'presentation-animated-point';
+const ANIMATED_POINT_LAYER_SHADOW = `${ANIMATED_POINT_SOURCE}-shadow`;
+const ANIMATED_POINT_LAYER_GLOW = `${ANIMATED_POINT_SOURCE}-glow`;
+const ANIMATED_POINT_LAYER_SYMBOL = `${ANIMATED_POINT_SOURCE}-symbol`;
 const ANIMATED_LINE_SOURCE = 'presentation-animated-line';
 const PRESENTATION_LINE_LAYER = `${PRESENTATION_SOURCE_ID}-line`;
+const TRAVEL_SPHERE_IMAGE_SIZE = 80;
+const TRAVEL_MARKER_SIZE_SCALE = 1.42;
+const TRAVEL_MARKER_BORDER_COLOR = '#ffffff';
 
 function sleep(ms) {
     return new Promise((resolve) => setTimeout(resolve, ms));
@@ -100,23 +106,271 @@ function removeSourceIfExists(map, sourceId) {
     if (map.getSource(sourceId)) map.removeSource(sourceId);
 }
 
-function ensureAnimatedPointLayer(map, style = {}) {
+function travelSphereImageId(color) {
+    return `presentation-travel-sphere-${String(color || '#007aff').replace(/[^a-zA-Z0-9]/g, '')}`;
+}
+
+function adjustColorHex(hex, amount) {
+    const normalized = String(hex || '#007aff').replace('#', '');
+    const parsed = Number.parseInt(normalized, 16);
+    if (!Number.isFinite(parsed)) return hex || '#007aff';
+    const r = Math.min(255, Math.max(0, (parsed >> 16) + amount));
+    const g = Math.min(255, Math.max(0, ((parsed >> 8) & 0xff) + amount));
+    const b = Math.min(255, Math.max(0, (parsed & 0xff) + amount));
+    return `#${((r << 16) | (g << 8) | b).toString(16).padStart(6, '0')}`;
+}
+
+function hexToRgb(hex) {
+    const normalized = String(hex || '#007aff').replace('#', '');
+    const parsed = Number.parseInt(normalized, 16);
+    if (!Number.isFinite(parsed)) return { r: 0, g: 122, b: 255 };
+    return { r: (parsed >> 16) & 0xff, g: (parsed >> 8) & 0xff, b: parsed & 0xff };
+}
+
+function rgbToHsl(r, g, b) {
+    const rn = r / 255;
+    const gn = g / 255;
+    const bn = b / 255;
+    const max = Math.max(rn, gn, bn);
+    const min = Math.min(rn, gn, bn);
+    let h = 0;
+    let s = 0;
+    const l = (max + min) / 2;
+    if (max !== min) {
+        const d = max - min;
+        s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+        switch (max) {
+            case rn:
+                h = ((gn - bn) / d + (gn < bn ? 6 : 0)) / 6;
+                break;
+            case gn:
+                h = ((bn - rn) / d + 2) / 6;
+                break;
+            default:
+                h = ((rn - gn) / d + 4) / 6;
+                break;
+        }
+    }
+    return { h: h * 360, s, l };
+}
+
+function hslToHex(h, s, l) {
+    const hue = ((h % 360) + 360) % 360;
+    const c = (1 - Math.abs(2 * l - 1)) * s;
+    const x = c * (1 - Math.abs(((hue / 60) % 2) - 1));
+    const m = l - c / 2;
+    let r = 0;
+    let g = 0;
+    let b = 0;
+    if (hue < 60) {
+        r = c; g = x;
+    } else if (hue < 120) {
+        r = x; g = c;
+    } else if (hue < 180) {
+        g = c; b = x;
+    } else if (hue < 240) {
+        g = x; b = c;
+    } else if (hue < 300) {
+        r = x; b = c;
+    } else {
+        r = c; b = x;
+    }
+    const toByte = (value) => Math.round(Math.min(255, Math.max(0, (value + m) * 255)));
+    return `#${[toByte(r), toByte(g), toByte(b)].map((byte) => byte.toString(16).padStart(2, '0')).join('')}`;
+}
+
+/** Warm accent when the line color is neutral/gray. */
+function deriveContrastingMarkerColor(lineColor) {
+    const { r, g, b } = hexToRgb(lineColor);
+    const { h, s, l } = rgbToHsl(r, g, b);
+    if (s < 0.12) return '#ff6b35';
+    const complementHue = (h + 168) % 360;
+    const markerSaturation = Math.min(0.92, s + 0.2);
+    const markerLightness = l > 0.58 ? 0.46 : Math.min(0.58, l + 0.14);
+    return hslToHex(complementHue, markerSaturation, markerLightness);
+}
+
+function scaledTravelMarkerRadius(pointRadius) {
+    return (pointRadius ?? 8) * TRAVEL_MARKER_SIZE_SCALE;
+}
+
+/**
+ * Canvas-drawn sphere with ground shadow, white border, and specular highlight.
+ * @param {string} lineColor
+ */
+function createTravelSphereImageData(lineColor) {
+    if (typeof document === 'undefined') return null;
+    const color = deriveContrastingMarkerColor(lineColor);
+    const size = TRAVEL_SPHERE_IMAGE_SIZE;
+    const canvas = document.createElement('canvas');
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return null;
+
+    const cx = size / 2;
+    const anchorY = size * 0.88;
+    const sphereRadius = size * 0.28;
+    const sphereCy = anchorY - sphereRadius * 0.92;
+    const borderWidth = 3.5;
+
+    ctx.clearRect(0, 0, size, size);
+
+    ctx.save();
+    ctx.globalAlpha = 0.38;
+    ctx.fillStyle = '#000000';
+    ctx.beginPath();
+    ctx.ellipse(cx, anchorY, sphereRadius * 0.95, sphereRadius * 0.34, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+
+    ctx.fillStyle = TRAVEL_MARKER_BORDER_COLOR;
+    ctx.beginPath();
+    ctx.arc(cx, sphereCy, sphereRadius + borderWidth * 0.55, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.strokeStyle = 'rgba(0, 0, 0, 0.24)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.arc(cx, sphereCy, sphereRadius + borderWidth * 0.55 + 0.5, 0, Math.PI * 2);
+    ctx.stroke();
+
+    const bodyGradient = ctx.createRadialGradient(
+        cx - sphereRadius * 0.42,
+        sphereCy - sphereRadius * 0.42,
+        sphereRadius * 0.12,
+        cx + sphereRadius * 0.08,
+        sphereCy + sphereRadius * 0.12,
+        sphereRadius * 1.05
+    );
+    bodyGradient.addColorStop(0, adjustColorHex(color, 72));
+    bodyGradient.addColorStop(0.38, color);
+    bodyGradient.addColorStop(1, adjustColorHex(color, -58));
+    ctx.fillStyle = bodyGradient;
+    ctx.beginPath();
+    ctx.arc(cx, sphereCy, sphereRadius, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.34)';
+    ctx.lineWidth = 1.25;
+    ctx.beginPath();
+    ctx.arc(cx, sphereCy, sphereRadius - 0.5, Math.PI * 0.15, Math.PI * 1.05);
+    ctx.stroke();
+
+    const highlight = ctx.createRadialGradient(
+        cx - sphereRadius * 0.38,
+        sphereCy - sphereRadius * 0.48,
+        0,
+        cx - sphereRadius * 0.38,
+        sphereCy - sphereRadius * 0.48,
+        sphereRadius * 0.55
+    );
+    highlight.addColorStop(0, 'rgba(255, 255, 255, 0.95)');
+    highlight.addColorStop(0.45, 'rgba(255, 255, 255, 0.18)');
+    highlight.addColorStop(1, 'rgba(255, 255, 255, 0)');
+    ctx.fillStyle = highlight;
+    ctx.beginPath();
+    ctx.arc(cx - sphereRadius * 0.18, sphereCy - sphereRadius * 0.28, sphereRadius * 0.38, 0, Math.PI * 2);
+    ctx.fill();
+
+    return ctx.getImageData(0, 0, size, size);
+}
+
+function ensureTravelSphereImage(map, lineColor) {
+    const imageId = travelSphereImageId(lineColor);
+    if (map.hasImage(imageId)) return imageId;
+    const imageData = createTravelSphereImageData(lineColor);
+    if (!imageData) return null;
+    map.addImage(imageId, imageData, { pixelRatio: 2 });
+    return imageId;
+}
+
+function travelSphereIconSize(pointRadius) {
+    const sphereDiameterPx = TRAVEL_SPHERE_IMAGE_SIZE * 0.56;
+    return Math.max(0.2, (pointRadius * 2) / sphereDiameterPx);
+}
+
+function removeAnimatedPointLayers(map, style = {}) {
     removeLayerIfExists(map, `${ANIMATED_POINT_SOURCE}-circle`);
+    removeLayerIfExists(map, ANIMATED_POINT_LAYER_SHADOW);
+    removeLayerIfExists(map, ANIMATED_POINT_LAYER_GLOW);
+    removeLayerIfExists(map, ANIMATED_POINT_LAYER_SYMBOL);
     removeSourceIfExists(map, ANIMATED_POINT_SOURCE);
+    const imageId = travelSphereImageId(style.lineColor ?? '#007aff');
+    if (map.hasImage?.(imageId)) {
+        map.removeImage(imageId);
+    }
+}
+
+function ensureAnimatedPointLayer(map, style = {}) {
+    const lineColor = style.lineColor ?? '#007aff';
+    const markerColor = deriveContrastingMarkerColor(lineColor);
+    const markerRadius = scaledTravelMarkerRadius(style.pointRadius);
+    removeAnimatedPointLayers(map, style);
+
     map.addSource(ANIMATED_POINT_SOURCE, {
         type: 'geojson',
         data: { type: 'FeatureCollection', features: [] }
     });
+
+    map.addLayer({
+        id: ANIMATED_POINT_LAYER_SHADOW,
+        type: 'circle',
+        source: ANIMATED_POINT_SOURCE,
+        paint: {
+            'circle-radius': markerRadius * 1.15,
+            'circle-color': '#000000',
+            'circle-opacity': 0.22,
+            'circle-blur': 0.65,
+            'circle-translate': [1, 3],
+            'circle-translate-anchor': 'viewport',
+            'circle-pitch-alignment': 'viewport'
+        }
+    });
+
+    map.addLayer({
+        id: ANIMATED_POINT_LAYER_GLOW,
+        type: 'circle',
+        source: ANIMATED_POINT_SOURCE,
+        paint: {
+            'circle-radius': markerRadius * 1.45,
+            'circle-color': markerColor,
+            'circle-opacity': 0.22,
+            'circle-blur': 0.85,
+            'circle-pitch-alignment': 'viewport'
+        }
+    });
+
+    const imageId = ensureTravelSphereImage(map, lineColor);
+    if (imageId) {
+        map.addLayer({
+            id: ANIMATED_POINT_LAYER_SYMBOL,
+            type: 'symbol',
+            source: ANIMATED_POINT_SOURCE,
+            layout: {
+                'icon-image': imageId,
+                'icon-size': travelSphereIconSize(markerRadius),
+                'icon-anchor': 'bottom',
+                'icon-allow-overlap': true,
+                'icon-ignore-placement': true,
+                'icon-pitch-alignment': 'viewport',
+                'icon-rotation-alignment': 'viewport'
+            }
+        });
+        return;
+    }
+
     map.addLayer({
         id: `${ANIMATED_POINT_SOURCE}-circle`,
         type: 'circle',
         source: ANIMATED_POINT_SOURCE,
         paint: {
-            'circle-radius': style.pointRadius ?? 8,
-            'circle-color': style.lineColor ?? '#007aff',
-            'circle-stroke-color': '#ffffff',
-            'circle-stroke-width': 2,
-            'circle-opacity': 0.95
+            'circle-radius': markerRadius,
+            'circle-color': markerColor,
+            'circle-stroke-color': TRAVEL_MARKER_BORDER_COLOR,
+            'circle-stroke-width': 3,
+            'circle-opacity': 0.95,
+            'circle-pitch-alignment': 'viewport'
         }
     });
 }
@@ -698,8 +952,7 @@ export class PresentationAnimationEngine {
         this.stop();
         const map = this.map;
         if (!map) return;
-        removeLayerIfExists(map, `${ANIMATED_POINT_SOURCE}-circle`);
-        removeSourceIfExists(map, ANIMATED_POINT_SOURCE);
+        removeAnimatedPointLayers(map, this.style);
         removeLayerIfExists(map, `${ANIMATED_LINE_SOURCE}-line`);
         removeSourceIfExists(map, ANIMATED_LINE_SOURCE);
         setPresentationLineLayerVisible(map, true);
@@ -1135,6 +1388,8 @@ export class PresentationAnimationEngine {
 
         const startTime = performance.now();
         const baseRadius = this.style.pointRadius ?? 7;
+        const symbolLayerId = ANIMATED_POINT_LAYER_SYMBOL;
+        const fallbackLayerId = `${ANIMATED_POINT_SOURCE}-circle`;
         await new Promise((resolve) => {
             const frame = (now) => {
                 if (this._stopped) {
@@ -1144,9 +1399,14 @@ export class PresentationAnimationEngine {
                 const elapsed = now - startTime;
                 const progress = Math.min(1, elapsed / step.durationMs);
                 const pulse = 1 + Math.sin(progress * Math.PI * 4) * 0.35;
-                const layerId = `${ANIMATED_POINT_SOURCE}-circle`;
-                if (map.getLayer(layerId)) {
-                    map.setPaintProperty(layerId, 'circle-radius', baseRadius * pulse);
+                if (map.getLayer(symbolLayerId)) {
+                    map.setLayoutProperty(
+                        symbolLayerId,
+                        'icon-size',
+                        travelSphereIconSize(scaledTravelMarkerRadius(baseRadius * pulse))
+                    );
+                } else if (map.getLayer(fallbackLayerId)) {
+                    map.setPaintProperty(fallbackLayerId, 'circle-radius', scaledTravelMarkerRadius(baseRadius * pulse));
                 }
                 if (progress >= 1) {
                     resolve();
