@@ -38,32 +38,32 @@ const PRESENTATION_LINK_SCENE_BUNDLE = 'presentation-link:scene-bundle';
 let previewRuntime = null;
 /** @type {Map<string, boolean>} */
 let previewHiddenLayers = new Map();
-let presentationWidgetSessionActive = false;
 /** @type {((bundle: object) => void) | null} */
 let sceneApplier = null;
 
 function deliverSceneBundleToUi(bundle) {
-    if (!presentationWidgetSessionActive) {
-        // #region agent log
-        fetch('http://127.0.0.1:7928/ingest/d3c9e78b-c7ff-4f7c-bb94-4a8dca6fee71',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'c8639f'},body:JSON.stringify({sessionId:'c8639f',runId:'post-fix',hypothesisId:'H-C',location:'controller.js:deliverSceneBundleToUi',message:'deliver skipped session inactive (should not happen post-fix)',data:{active:presentationWidgetSessionActive,hasApplier:!!sceneApplier},timestamp:Date.now()})}).catch(()=>{});
-        // #endregion
-    }
     sceneApplier?.(bundle);
     setPresentationLinkSceneBundle(bundle);
     bus.emit(PRESENTATION_LINK_SCENE_BUNDLE, bundle);
-    // #region agent log
-    fetch('http://127.0.0.1:7928/ingest/d3c9e78b-c7ff-4f7c-bb94-4a8dca6fee71',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'c8639f'},body:JSON.stringify({sessionId:'c8639f',runId:'post-fix',hypothesisId:'H-C',location:'controller.js:deliverSceneBundleToUi',message:'scene bundle delivered',data:{limitsFeatureCount:bundle?.limits?.featureCount,validationOk:bundle?.validation?.ok,sourceSummaryFeatureCount:bundle?.sourceSummary?.featureCount,hasApplier:!!sceneApplier},timestamp:Date.now()})}).catch(()=>{});
-    // #endregion
 }
 
 function syncDimensionChrome(is3d) {
     bus.emit('map:chrome', { is3d: !!is3d });
 }
 
-function apply3DSelection(mapService, enabled) {
-    if (enabled) mapService.enable3D();
-    else mapService.disable3D();
-    syncDimensionChrome(enabled);
+const PRESENTATION_MIN_PITCH = 10;
+
+function ensurePresentation3DView(mapService) {
+    const map = mapService?.getMap?.();
+    if (!map) return;
+
+    const pitch = map.getPitch?.() ?? 0;
+    const enabled = mapService.is3DEnabled?.() ?? false;
+
+    if (!enabled || pitch < PRESENTATION_MIN_PITCH) {
+        mapService.enable3D({ pitch: 30, animate: true });
+    }
+    syncDimensionChrome(true);
 }
 
 function buildPresentationContext(ctx) {
@@ -212,9 +212,6 @@ async function buildSceneBundle(ctx, formState) {
         animation: formState.animation
     });
     const validation = validateSceneForUrl(scene);
-    // #region agent log
-    fetch('http://127.0.0.1:7928/ingest/d3c9e78b-c7ff-4f7c-bb94-4a8dca6fee71',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'c8639f'},body:JSON.stringify({sessionId:'c8639f',runId:'post-fix',hypothesisId:'H-B',location:'controller.js:buildSceneBundle',message:'scene bundle built',data:{resolvedFeatureCount:features?.features?.length||0,sceneFeatureCount:scene?.features?.features?.length||0,validationOk:validation.ok,validationErrors:validation.errors,sourceSummaryFeatureCount:sourceSummary?.featureCount,layerIds:layerMeta?.layerIds},timestamp:Date.now()})}).catch(()=>{});
-    // #endregion
     const bundle = {
         scene,
         validation,
@@ -277,18 +274,8 @@ export async function openPresentationLinkBuilder(ctx) {
 
     async function flushSceneRebuild() {
         const formState = latestFormState;
-        if (!formState || tornDown) {
-            // #region agent log
-            fetch('http://127.0.0.1:7928/ingest/d3c9e78b-c7ff-4f7c-bb94-4a8dca6fee71',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'c8639f'},body:JSON.stringify({sessionId:'c8639f',runId:'post-fix',hypothesisId:'H-C',location:'controller.js:flushSceneRebuild',message:'scene rebuild skipped pre-build',data:{hasFormState:!!formState,tornDown},timestamp:Date.now()})}).catch(()=>{});
-            // #endregion
-            return;
-        }
-        const bundle = await buildSceneBundle(ctx, formState);
-        if (tornDown) {
-            // #region agent log
-            fetch('http://127.0.0.1:7928/ingest/d3c9e78b-c7ff-4f7c-bb94-4a8dca6fee71',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'c8639f'},body:JSON.stringify({sessionId:'c8639f',runId:'post-fix',hypothesisId:'H-I',location:'controller.js:flushSceneRebuild',message:'scene rebuild dropped after async build',data:{limitsFeatureCount:bundle.limits?.featureCount,validationOk:bundle.validation?.ok},timestamp:Date.now()})}).catch(()=>{});
-            // #endregion
-        }
+        if (!formState || tornDown) return;
+        await buildSceneBundle(ctx, formState);
     }
 
     const subscribeSceneRebuild = () => {
@@ -300,14 +287,10 @@ export async function openPresentationLinkBuilder(ctx) {
         };
     };
 
-    const teardown = (reason = 'unknown') => {
+    const teardown = () => {
         if (tornDown) return;
         tornDown = true;
-        presentationWidgetSessionActive = false;
         sceneApplier = null;
-        // #region agent log
-        fetch('http://127.0.0.1:7928/ingest/d3c9e78b-c7ff-4f7c-bb94-4a8dca6fee71',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'c8639f'},body:JSON.stringify({sessionId:'c8639f',runId:'post-fix',hypothesisId:'H-G',location:'controller.js:teardown',message:'widget session torn down',data:{reason},timestamp:Date.now()})}).catch(()=>{});
-        // #endregion
         window.clearTimeout(rebuildTimer);
         unsubscribeSceneRefresh?.();
         unsubscribeSceneRefresh = null;
@@ -316,11 +299,8 @@ export async function openPresentationLinkBuilder(ctx) {
         teardownPresentationWidget(ctx, { was3d });
     };
 
-    if (!was3d) {
-        apply3DSelection(ctx.mapService, true);
-    }
+    ensurePresentation3DView(ctx.mapService);
     ctx.mapService.enablePresentationMultiSelect?.();
-    presentationWidgetSessionActive = true;
     unsubscribeSceneRefresh = subscribeSceneRebuild();
 
     await openReactIsland({
@@ -328,7 +308,7 @@ export async function openPresentationLinkBuilder(ctx) {
         width: '420px',
         mountPath: '../../../react/widgets/mountPresentationLinkBuilder.jsx',
         mountExport: 'mountPresentationLinkBuilder',
-        onOverlayDestroy: () => teardown('overlay-removed'),
+        onOverlayDestroy: () => teardown(),
         getProps: (close) => ({
             layers: getSpatialLayerOptions(ctx, { includeSelectionCount: true }),
             getLayerOptions: () => getSpatialLayerOptions(ctx, { includeSelectionCount: true }),
@@ -380,10 +360,7 @@ export async function openPresentationLinkBuilder(ctx) {
                 const refresh = (payload) => {
                     callback({
                         count: ctx.mapService.getTotalSelectionCount?.() || 0,
-                        activeLayerId: payload?.layerId
-                            || ctx.mapService.getActiveLayerId?.()
-                            || getActiveLayer()?.id
-                            || ''
+                        selectionLayerId: payload?.layerId || null
                     });
                 };
                 refresh();
@@ -452,7 +429,7 @@ export async function openPresentationLinkBuilder(ctx) {
             },
             onResetPreview: () => stopPreview(ctx),
             onCancel: () => {
-                teardown('cancel');
+                teardown();
                 close();
             }
         })

@@ -102,15 +102,7 @@ export function PresentationLinkBuilder({
         if (!bundle) return;
         const selectedCount = bundle.sourceSummary?.selectedCount ?? 0;
         const builtFeatureCount = bundle.limits?.featureCount ?? 0;
-        if (builtFeatureCount === 0 && selectedCount > 0) {
-            // #region agent log
-            fetch('http://127.0.0.1:7928/ingest/d3c9e78b-c7ff-4f7c-bb94-4a8dca6fee71',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'c8639f'},body:JSON.stringify({sessionId:'c8639f',runId:'post-fix',hypothesisId:'H-K',location:'PresentationLinkBuilder.jsx:applySceneBundle',message:'stale empty bundle skipped',data:{selectedCount,builtFeatureCount},timestamp:Date.now()})}).catch(()=>{});
-            // #endregion
-            return;
-        }
-        // #region agent log
-        fetch('http://127.0.0.1:7928/ingest/d3c9e78b-c7ff-4f7c-bb94-4a8dca6fee71',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'c8639f'},body:JSON.stringify({sessionId:'c8639f',runId:'post-fix',hypothesisId:'H-C',location:'PresentationLinkBuilder.jsx:applySceneBundle',message:'build result applied',data:{limitsFeatureCount:bundle.limits?.featureCount,validationOk:bundle.validation?.ok,sourceSummaryFeatureCount:bundle.sourceSummary?.featureCount,validationErrors:bundle.validation?.errors},timestamp:Date.now()})}).catch(()=>{});
-        // #endregion
+        if (builtFeatureCount === 0 && selectedCount > 0) return;
         setValidation(bundle.validation || { ok: false, errors: [] });
         setLimits(bundle.limits || EMPTY_LIMITS);
         setUrl(bundle.url || '');
@@ -144,18 +136,18 @@ export function PresentationLinkBuilder({
             setSelectionCount(0);
             return undefined;
         }
-        return onSubscribeLayerSelection(formState, ({ count, activeLayerId }) => {
+        return onSubscribeLayerSelection(formState, ({ count, selectionLayerId }) => {
             setSelectionCount(count);
-            if (activeLayerId) {
+            if (selectionLayerId) {
                 setFormState((prev) => (
-                    prev && prev.focusedLayerId !== activeLayerId
-                        ? { ...prev, focusedLayerId: activeLayerId }
+                    prev && prev.focusedLayerId !== selectionLayerId
+                        ? { ...prev, focusedLayerId: selectionLayerId }
                         : prev
                 ));
             }
             refreshLayerOptions();
         });
-    }, [formState, onSubscribeLayerSelection, refreshLayerOptions]);
+    }, [Boolean(formState), onSubscribeLayerSelection, refreshLayerOptions]);
 
     useEffect(() => {
         refreshLayerOptions();
@@ -207,6 +199,7 @@ export function PresentationLinkBuilder({
     };
 
     const focusLayer = (layerId) => {
+        onLayerFocus?.(layerId);
         setFormState((prev) => (prev ? { ...prev, focusedLayerId: layerId } : prev));
         refreshLayerOptions();
     };
