@@ -13,6 +13,7 @@ import {
     buildSceneFromConfig,
     collectAllSelectedPresentationFeatures,
     getCompatiblePresets,
+    getEmbedCodeForScene,
     getPresentationUrl,
     listLayerIdsWithSelections,
     ORBIT_PACE_MS,
@@ -21,6 +22,11 @@ import {
     summarizeSourceFeatures,
     validateSceneForUrl
 } from './engine.js';
+import {
+    exportPresentationGif,
+    exportPresentationVideo,
+    exportPresentationPoster
+} from '../../presentation/presentation-export.js';
 
 let previewRuntime = null;
 /** @type {Map<string, boolean>} */
@@ -188,9 +194,39 @@ async function buildSceneBundle(ctx, formState) {
         limits: buildLimitSummary(validation),
         url: validation.ok ? getPresentationUrl(scene) : null,
         compatiblePresets: getCompatiblePresets(features),
+        exportAvailability: summarizeExportAvailability(scene),
         sourceSummary,
         layerMeta
     };
+}
+
+async function preparePresentationPlayback(ctx, formState) {
+    stopPreview(ctx);
+    const bundle = await buildSceneBundle(ctx, formState);
+    const { scene, validation, layerMeta } = bundle;
+    if (!validation.ok) {
+        throw new Error(validation.tooLargeMessage || validation.errors[0]);
+    }
+
+    const map = ctx.mapService.getMap();
+    if (!map) throw new Error('Map is not ready');
+
+    previewHiddenLayers = new Map();
+    for (const layerId of layerMeta.layerIds) {
+        const layer = (ctx.getLayers?.() || []).find((entry) => entry.id === layerId);
+        previewHiddenLayers.set(layerId, layer?.visible !== false);
+        ctx.mapService.toggleLayer(layerId, false);
+    }
+
+    addPresentationFeatureLayers(map, scene.features, scene.style);
+    const engine = new PresentationAnimationEngine({
+        map,
+        features: scene.features,
+        style: scene.style
+    });
+    previewRuntime = { engine, scene, layerMeta };
+    await engine.applyCamera(scene.camera);
+    return { map, engine, scene, layerMeta, bundle };
 }
 
 export async function openPresentationLinkBuilder(ctx) {
@@ -266,30 +302,7 @@ export async function openPresentationLinkBuilder(ctx) {
                 return () => bus.off('selection:changed', handler);
             },
             onPreview: async (formState) => {
-                stopPreview(ctx);
-                const { scene, validation, layerMeta } = await buildSceneBundle(ctx, formState);
-                if (!validation.ok) {
-                    throw new Error(validation.tooLargeMessage || validation.errors[0]);
-                }
-
-                const map = ctx.mapService.getMap();
-                if (!map) throw new Error('Map is not ready');
-
-                previewHiddenLayers = new Map();
-                for (const layerId of layerMeta.layerIds) {
-                    const layer = (ctx.getLayers?.() || []).find((entry) => entry.id === layerId);
-                    previewHiddenLayers.set(layerId, layer?.visible !== false);
-                    ctx.mapService.toggleLayer(layerId, false);
-                }
-
-                addPresentationFeatureLayers(map, scene.features, scene.style);
-                const engine = new PresentationAnimationEngine({
-                    map,
-                    features: scene.features,
-                    style: scene.style
-                });
-                previewRuntime = { engine };
-                await engine.applyCamera(scene.camera);
+                const { engine, scene } = await preparePresentationPlayback(ctx, formState);
                 if (scene.animations?.length) {
                     await engine.playSequence(scene.animations);
                 }
@@ -298,6 +311,61 @@ export async function openPresentationLinkBuilder(ctx) {
             onCopyUrl: async (url) => {
                 await navigator.clipboard.writeText(url);
                 ctx.showToast('Presentation URL copied', 'success');
+            },
+            onCopyEmbed: async (formState) => {
+                const { bundle } = await buildSceneBundle(ctx, formState);
+                if (!bundle.validation.ok) {
+                    throw new Error(bundle.validation.tooLargeMessage || bundle.validation.errors[0]);
+                }
+                const embed = getEmbedCodeForScene(bundle.scene);
+                await navigator.clipboard.writeText(embed);
+                ctx.showToast('Embed code copied', 'success');
+            },
+            onExportGif: async (formState, onProgress) => {
+                const { map, engine, scene } = await preparePresentationPlayback(ctx, formState);
+                try {
+                    const result = await exportPresentationGif({
+                        map,
+                        mapService: ctx.mapService,
+                        scene,
+                        engine,
+                        onProgress
+                    });
+                    ctx.showToast(`GIF saved (${result.frames} frames).`, 'success');
+                    return result;
+                } finally {
+                    stopPreview(ctx);
+                }
+            },
+            onExportVideo: async (formState, onProgress) => {
+                const { map, engine, scene } = await preparePresentationPlayback(ctx, formState);
+                try {
+                    const result = await exportPresentationVideo({
+                        map,
+                        scene,
+                        engine,
+                        onProgress
+                    });
+                    ctx.showToast(`Video saved (${result.ext.toUpperCase()}).`, 'success');
+                    return result;
+                } finally {
+                    stopPreview(ctx);
+                }
+            },
+            onExportPoster: async (formState) => {
+                const { map, engine, scene } = await preparePresentationPlayback(ctx, formState);
+                try {
+                    const result = await exportPresentationPoster({
+                        map,
+                        mapService: ctx.mapService,
+                        scene,
+                        engine
+                    });
+                    ctx.showToast('Poster image saved.', 'success');
+                    return result;
+                } finally {
+                    stopPreview(ctx);
+                }
             },
             onSubscribeSourceRefresh: (onSourceChange, onMapViewChange) => {
                 const map = ctx.mapService?.getMap?.();

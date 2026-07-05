@@ -58,6 +58,10 @@ export function PresentationLinkBuilder({
     onClearAllSelections,
     onPreview,
     onCopyUrl,
+    onCopyEmbed,
+    onExportGif,
+    onExportVideo,
+    onExportPoster,
     onResetPreview,
     onSubscribeLayerSelection,
     onSubscribeSourceRefresh,
@@ -76,6 +80,9 @@ export function PresentationLinkBuilder({
     const [selectionCount, setSelectionCount] = useState(0);
     const [layerOptions, setLayerOptions] = useState(layers);
     const [compatiblePresets, setCompatiblePresets] = useState([]);
+    const [exportAvailability, setExportAvailability] = useState(null);
+    const [exportBusy, setExportBusy] = useState(false);
+    const [exportLabel, setExportLabel] = useState('');
     const [durationSec, setDurationSec] = useState(formatDurationSec(ORBIT_PACE_MS.normal));
     const durationEditingRef = useRef(false);
 
@@ -151,6 +158,7 @@ export function PresentationLinkBuilder({
             setLimits(result.limits || EMPTY_LIMITS);
             setUrl(result.url || '');
             if (result.compatiblePresets) setCompatiblePresets(result.compatiblePresets);
+            if (result.exportAvailability) setExportAvailability(result.exportAvailability);
             if (result.sourceSummary) setSourceSummary(result.sourceSummary);
         })();
         return () => { cancelled = true; };
@@ -225,6 +233,55 @@ export function PresentationLinkBuilder({
         }
     };
 
+    const runExport = async (label, task) => {
+        if (!formState || !validation.ok) return;
+        setExportBusy(true);
+        setExportLabel(label);
+        setStatus('');
+        try {
+            await task();
+        } catch (error) {
+            setStatus(error?.message || `${label} failed`);
+        } finally {
+            setExportBusy(false);
+            setExportLabel('');
+        }
+    };
+
+    const handleCopyEmbed = () => runExport('Embed', async () => {
+        await onCopyEmbed?.(formState);
+        setStatus('Embed code copied. Paste it into a web page or document.');
+    });
+
+    const handleExportGif = () => runExport('GIF', async () => {
+        await onExportGif?.(formState, (progress) => {
+            setExportLabel(`GIF ${Math.round(progress * 100)}%`);
+        });
+        setStatus('GIF saved to your downloads folder.');
+    });
+
+    const handleExportVideo = () => runExport('Video', async () => {
+        await onExportVideo?.(formState, (progress) => {
+            setExportLabel(`Video ${Math.round(progress * 100)}%`);
+        });
+        setStatus('Video saved to your downloads folder.');
+    });
+
+    const handleExportPoster = () => runExport('Poster', async () => {
+        await onExportPoster?.(formState);
+        setStatus('Poster image saved to your downloads folder.');
+    });
+
+    const gifExport = exportAvailability?.gif;
+    const videoExport = exportAvailability?.mp4;
+    const embedExport = exportAvailability?.embed;
+    const posterExport = exportAvailability?.poster;
+    const exportWarnings = [
+        ...(gifExport?.warnings || []),
+        ...(videoExport?.warnings || [])
+    ].filter(Boolean);
+    const isBusy = busy || exportBusy;
+
     if (loading || !formState) {
         return (
             <WidgetPanelShell className="presentation-link-builder" showRun={false} footer={null}>
@@ -262,10 +319,10 @@ export function PresentationLinkBuilder({
                     <button type="button" className="btn btn-secondary" onClick={() => { onResetPreview?.(); onCancel?.(); }}>
                         Close
                     </button>
-                    <button type="button" className="btn btn-secondary" disabled={busy || !validation.ok} onClick={() => { void handlePreview(); }}>
+                    <button type="button" className="btn btn-secondary" disabled={isBusy || !validation.ok} onClick={() => { void handlePreview(); }}>
                         {busy ? 'Previewing…' : 'Preview'}
                     </button>
-                    <button type="button" className="btn btn-primary" disabled={!validation.ok || !url} onClick={() => { void handleCopy(); }}>
+                    <button type="button" className="btn btn-primary" disabled={!validation.ok || !url || isBusy} onClick={() => { void handleCopy(); }}>
                         Copy Link
                     </button>
                 </div>
@@ -492,6 +549,57 @@ export function PresentationLinkBuilder({
                     onChange={(steps) => updateAnimation({ mode: 'sequence', steps })}
                 />
             )}
+
+            <div className="presentation-link-builder__section presentation-link-builder__export mt-12">
+                <div className="presentation-link-builder__heading">Share &amp; export</div>
+                <div className="presentation-link-builder__export-grid">
+                    <button
+                        type="button"
+                        className="btn btn-secondary btn-sm"
+                        disabled={!validation.ok || isBusy || embedExport?.ok === false}
+                        title={embedExport?.errors?.[0]}
+                        onClick={() => { void handleCopyEmbed(); }}
+                    >
+                        {exportLabel === 'Embed' ? 'Copying…' : 'Copy embed'}
+                    </button>
+                    <button
+                        type="button"
+                        className="btn btn-secondary btn-sm"
+                        disabled={!validation.ok || isBusy || gifExport?.ok === false}
+                        title={gifExport?.errors?.[0] || 'Best under 20 seconds'}
+                        onClick={() => { void handleExportGif(); }}
+                    >
+                        {exportLabel.startsWith('GIF') ? exportLabel : 'Download GIF'}
+                    </button>
+                    <button
+                        type="button"
+                        className="btn btn-secondary btn-sm"
+                        disabled={!validation.ok || isBusy || videoExport?.ok === false}
+                        title={videoExport?.errors?.[0] || 'Best under 60 seconds'}
+                        onClick={() => { void handleExportVideo(); }}
+                    >
+                        {exportLabel.startsWith('Video') ? exportLabel : 'Download video'}
+                    </button>
+                    <button
+                        type="button"
+                        className="btn btn-secondary btn-sm"
+                        disabled={!validation.ok || isBusy || posterExport?.ok === false}
+                        title={posterExport?.errors?.[0] || 'Final frame PNG'}
+                        onClick={() => { void handleExportPoster(); }}
+                    >
+                        {exportLabel === 'Poster' ? 'Saving…' : 'Poster PNG'}
+                    </button>
+                </div>
+                {exportWarnings.length > 0 ? (
+                    <p className="presentation-link-builder__hint text-xs text-muted">
+                        {exportWarnings[0]}
+                    </p>
+                ) : (
+                    <p className="presentation-link-builder__hint text-xs text-muted">
+                        GIF and video use the same smooth playback as Preview. GIF works best under 20s.
+                    </p>
+                )}
+            </div>
 
             <div className="presentation-link-builder__url text-xs mt-12" title={url}>
                 {validation.ok
