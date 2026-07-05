@@ -28,6 +28,31 @@ const sampleFeatures = {
     }]
 };
 
+const sampleLineFeatures = {
+    type: 'FeatureCollection',
+    features: [{
+        type: 'Feature',
+        properties: { name: 'Trail' },
+        geometry: {
+            type: 'LineString',
+            coordinates: [
+                [-111.91, 40.69],
+                [-111.90, 40.70],
+                [-111.89, 40.71]
+            ]
+        }
+    }]
+};
+
+function createMockMapService() {
+    return {
+        getCurrentBasemap: () => 'voyager',
+        is3DEnabled: () => true,
+        getLayerStyle: () => null,
+        getLayerDefaultColor: () => '#2563eb'
+    };
+}
+
 function createMockMap({ overviewZoom = 10, finalZoom = 16 } = {}) {
     let currentZoom = overviewZoom;
     return {
@@ -49,7 +74,7 @@ describe('buildSceneFromConfig camera strategy', () => {
         const scene = buildSceneFromConfig({
             features: sampleFeatures,
             map: createMockMap(),
-            mapService: { getCurrentBasemap: () => 'voyager', is3DEnabled: () => true },
+            mapService: createMockMapService(),
             animation: { presetId: 'none' }
         });
         expect(scene.camera.fitToFeatures).toBe(true);
@@ -65,7 +90,7 @@ describe('buildSceneFromConfig camera strategy', () => {
         const scene = buildSceneFromConfig({
             features: sampleFeatures,
             map,
-            mapService: { getCurrentBasemap: () => 'voyager', is3DEnabled: () => true },
+            mapService: createMockMapService(),
             animation: {
                 presetId: 'rotateAroundFeature',
                 durationMs: ORBIT_PACE_MS.slow
@@ -87,7 +112,7 @@ describe('buildSceneFromConfig camera strategy', () => {
         const scene = buildSceneFromConfig({
             features: sampleFeatures,
             map,
-            mapService: { getCurrentBasemap: () => 'voyager', is3DEnabled: () => true },
+            mapService: createMockMapService(),
             animation: {
                 presetId: 'flyToFeature',
                 durationMs: 8000
@@ -109,7 +134,7 @@ describe('buildSceneFromConfig camera strategy', () => {
         const scene = buildSceneFromConfig({
             features: sampleFeatures,
             map,
-            mapService: { getCurrentBasemap: () => 'voyager', is3DEnabled: () => true },
+            mapService: createMockMapService(),
             animation: {
                 presetId: 'flyToFeatureThenOrbit',
                 durationMs: COMBO_PACE_MS.normal
@@ -123,6 +148,43 @@ describe('buildSceneFromConfig camera strategy', () => {
         expect(scene.animations[0].durationMs).toBe(COMBO_PACE_MS.normal);
         expect(scene.animations[0].options.flyDurationMs).toBe(flyDurationMs);
         expect(scene.animations[0].options.orbitDurationMs).toBe(orbitDurationMs);
+    });
+
+    it('builds custom sequence with merged fly+orbit and authoring metadata', () => {
+        const map = createMockMap({ overviewZoom: 10, finalZoom: 16 });
+        const scene = buildSceneFromConfig({
+            features: sampleFeatures,
+            map,
+            mapService: createMockMapService(),
+            animation: {
+                mode: 'sequence',
+                steps: [
+                    { id: 'a', type: 'flyToFeature', durationMs: 8000 },
+                    { id: 'b', type: 'rotateAroundFeature', durationMs: 12000 }
+                ]
+            }
+        });
+        expect(scene.camera.pitch).toBe(0);
+        expect(scene.animations).toHaveLength(1);
+        expect(scene.animations[0].type).toBe('flyToFeatureThenOrbit');
+        expect(scene.metadata.authoring.mode).toBe('sequence');
+        expect(scene.metadata.authoring.steps).toHaveLength(2);
+    });
+
+    it('builds draw route preset for line features', () => {
+        const scene = buildSceneFromConfig({
+            features: sampleLineFeatures,
+            map: createMockMap(),
+            mapService: createMockMapService(),
+            animation: {
+                presetId: 'animateLinePath',
+                durationMs: 10000
+            }
+        });
+        expect(scene.camera.fitToFeatures).toBe(true);
+        expect(scene.animations).toHaveLength(1);
+        expect(scene.animations[0].type).toBe('animateLinePath');
+        expect(scene.animations[0].durationMs).toBe(10000);
     });
 });
 
@@ -142,7 +204,7 @@ describe('presentation link validation summary', () => {
         const scene = buildSceneFromConfig({
             features: dense,
             map: createMockMap(),
-            mapService: { getCurrentBasemap: () => 'voyager', is3DEnabled: () => true },
+            mapService: createMockMapService(),
             animation: { presetId: 'none' }
         });
         const validation = validateSceneForUrl(scene);

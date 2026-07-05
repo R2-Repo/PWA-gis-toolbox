@@ -77,3 +77,16 @@ Presets that should **not** appear in the widget (e.g. `flyAlongPath`) belong on
 For animations with a pace dropdown, set `ui.showPace: true`, `ui.pacePresetsMs`, and `ui.paceOptionLabels`. The React UI reads these automatically.
 
 Combined timelines (fly + orbit) can use `extendStepOptions` + `resolveDurationMs` — see `flyToFeatureThenOrbit` in the registry.
+
+## Custom sequences
+
+Users can switch to **Custom sequence** in the widget to build an ordered list (max 5 steps) with per-step durations and optional **Hold** rows.
+
+- Authoring state: `animation.mode = 'sequence'` + `animation.steps[]`
+- Compilation: `js/presentation/presentation-sequence-compiler.js` merges fly+orbit into the cinematic combo handler
+- Scene stores `metadata.authoring` for round-trip editing
+- Sequence step options: `listSequenceStepOptions()` (includes hold)
+
+## Orbit GIF removed
+
+The legacy print-menu orbit GIF was removed. Capture helpers remain in `js/map/map-export.js` for future presentation GIF export.

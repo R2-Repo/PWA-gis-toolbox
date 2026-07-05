@@ -6,26 +6,7 @@ const MAX_EXPORT_PIXEL_RATIO = 4;
 const GPU_MAX_RENDERBUFFER_FALLBACK = 8192;
 const GPU_MARGIN = 0.95;
 
-/** Frames sampled along the orbit — higher = smoother rotation */
-const GIF_CAPTURE_FPS = 20;
-const GIF_DEFAULT_PLAYBACK_SEC = 18;
-const GIF_MIN_FRAMES = 90;
-const GIF_MAX_FRAMES = 360;
-const GIF_MAX_WIDTH = 1280;
-
-/**
- * Separate smooth capture from slow playback so the GIF can feel cinematic without stutter.
- * @param {{ playbackSec?: number, durationSec?: number }} options — durationSec kept for dialog compat
- */
-function resolveOrbitGifTiming(options = {}) {
-    const playbackSec = options.playbackSec ?? options.durationSec ?? GIF_DEFAULT_PLAYBACK_SEC;
-    const frameCount = Math.min(
-        GIF_MAX_FRAMES,
-        Math.max(GIF_MIN_FRAMES, Math.round(playbackSec * GIF_CAPTURE_FPS))
-    );
-    const frameDelayMs = Math.max(40, Math.round((playbackSec * 1000) / frameCount));
-    return { frameCount, frameDelayMs, playbackSec };
-}
+export const GIF_MAX_WIDTH = 1280;
 
 function waitForMapIdle(map) {
     return new Promise((resolve) => {
@@ -38,7 +19,7 @@ function waitForMapIdle(map) {
     });
 }
 
-async function ensureMapFrameReady(map) {
+export async function ensureMapFrameReady(map) {
     await waitForMapIdle(map);
 }
 
@@ -95,7 +76,7 @@ function snapshotMapCanvas(sourceCanvas) {
     return canvas;
 }
 
-function captureLiveFrame(map, mapService) {
+export function captureLiveFrame(map, mapService) {
     const canvas = snapshotMapCanvas(map.getCanvas());
     if (mapService.is3DEnabled?.()) {
         const container = map.getContainer();
@@ -106,7 +87,7 @@ function captureLiveFrame(map, mapService) {
     return canvas;
 }
 
-function scaleCanvasToImageData(sourceCanvas, maxWidth) {
+export function scaleCanvasToImageData(sourceCanvas, maxWidth = GIF_MAX_WIDTH) {
     let width = sourceCanvas.width;
     let height = sourceCanvas.height;
     if (width > maxWidth) {
@@ -126,7 +107,7 @@ function scaleCanvasToImageData(sourceCanvas, maxWidth) {
     return ctx.getImageData(0, 0, width, height);
 }
 
-function suspendMapInteractions(map) {
+export function suspendMapInteractions(map) {
     const names = ['dragPan', 'scrollZoom', 'boxZoom', 'doubleClickZoom', 'touchZoomRotate'];
     const prev = {};
     for (const name of names) {
@@ -196,7 +177,8 @@ async function buildMapPdfBlob(canvas, pngDataUrl) {
     return doc.output('blob');
 }
 
-async function buildGifBlob(frames, delayMs) {
+/** @param {ImageData[]} frames */
+export async function buildGifBlob(frames, delayMs) {
     const { GIFEncoder, quantize, applyPalette } = await import('gifenc');
     const enc = GIFEncoder();
     for (const imageData of frames) {
@@ -248,75 +230,11 @@ export async function captureMapCanvas(mapService) {
     }
 }
 
-/**
- * Record one full 360° orbit and encode as GIF.
- * @param {object} mapService
- * @param {{ center?: { lng: number, lat: number }, zoom?: number, pitch?: number, playbackSec?: number, durationSec?: number, onProgress?: (frame: number, total: number) => void }} [options]
- */
-export async function exportOrbitGif(mapService, options = {}) {
-    const map = mapService?.getMap?.();
-    if (!map) {
-        throw new Error('Map is not ready');
-    }
-    if (!map.loaded()) {
-        throw new Error('Map is still loading');
-    }
-
-    const { frameCount, frameDelayMs, playbackSec } = resolveOrbitGifTiming(options);
-    const onProgress = options.onProgress;
-
-    mapService.stopCameraOrbit?.();
-
-    const center = options.center ?? {
-        lng: map.getCenter().lng,
-        lat: map.getCenter().lat
-    };
-    const resumeInteractions = suspendMapInteractions(map);
-
-    try {
-        const { startBearing } = await mapService.prepareOrbitView(center, {
-            zoom: options.zoom,
-            pitch: options.pitch
-        });
-
-        await ensureMapFrameReady(map);
-
-        const frames = [];
-        for (let i = 0; i < frameCount; i++) {
-            const bearing = startBearing + (360 * i) / frameCount;
-            map.rotateTo(bearing % 360, { duration: 0 });
-            await ensureMapFrameReady(map);
-
-            const frameCanvas = captureLiveFrame(map, mapService);
-            frames.push(scaleCanvasToImageData(frameCanvas, GIF_MAX_WIDTH));
-            onProgress?.(i + 1, frameCount);
-        }
-
-        const blob = await buildGifBlob(frames, frameDelayMs);
-        const filename = buildMapExportFilename('gif');
-        downloadBlob(blob, filename);
-        return {
-            filename,
-            frames: frameCount,
-            playbackSec,
-            width: frames[0]?.width,
-            height: frames[0]?.height
-        };
-    } finally {
-        resumeInteractions();
-        mapService.stopCameraOrbit?.();
-    }
-}
-
 export async function exportMapView(mapService, format, options = {}) {
-    const { blockWhenDualScreen = true, dualScreenCoordinator = null, onProgress = null } = options;
+    const { blockWhenDualScreen = true, dualScreenCoordinator = null } = options;
 
     if (blockWhenDualScreen && dualScreenCoordinator?.isActive) {
         throw new Error('Map is in the Dual Screen window — export from that window.');
-    }
-
-    if (format === 'gif') {
-        throw new Error('Orbit GIF requires setup — use pickAndExportOrbitGif or pickOrbitGifSettingsModal.');
     }
 
     const canvas = await captureMapCanvas(mapService);
@@ -386,18 +304,10 @@ export function setupMapPrintMenu(options) {
             const prevText = toggleBtn?.textContent;
             if (toggleBtn) toggleBtn.textContent = '…';
             try {
-                if (format === 'gif') {
-                    const { pickOrbitGifSettingsModal } = await import('../../react/tools/mountOrbitGifDialog.jsx');
-                    const settings = await pickOrbitGifSettingsModal(mapApi);
-                    if (!settings) return;
-                    showToast?.('Recording orbit GIF…', 'info');
-                    await exportOrbitGif(mapApi, settings);
-                } else {
-                    if (willUseHighResExport(mapApi)) {
-                        showToast?.('Exporting high-resolution map…', 'info');
-                    }
-                    await exportMapView(mapApi, format, { blockWhenDualScreen, dualScreenCoordinator });
+                if (willUseHighResExport(mapApi)) {
+                    showToast?.('Exporting high-resolution map…', 'info');
                 }
+                await exportMapView(mapApi, format, { blockWhenDualScreen, dualScreenCoordinator });
                 showToast?.(`${format.toUpperCase()} saved.`, 'success');
             } catch (err) {
                 showToast?.(err.message || 'Map export failed.', 'error');

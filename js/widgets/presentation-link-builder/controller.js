@@ -162,9 +162,11 @@ function buildDefaultFormState(sourceSummary, initialLayerId) {
     return {
         focusedLayerId: initialLayerId || sourceSummary.layerId || '',
         animation: {
+            mode: 'preset',
             presetId: 'none',
             durationMs: ORBIT_PACE_MS.normal,
-            orbitPace: 'normal'
+            orbitPace: 'normal',
+            steps: []
         },
         sourceSummary
     };
