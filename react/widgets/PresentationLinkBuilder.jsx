@@ -69,7 +69,6 @@ export function PresentationLinkBuilder({
     onCopyEmbed,
     onExportGif,
     onExportVideo,
-    onExportPoster,
     onResetPreview,
     onSubscribeLayerSelection,
     onSubscribeSourceRefresh,
@@ -286,15 +285,9 @@ export function PresentationLinkBuilder({
         setStatus('Video saved to your downloads folder.');
     });
 
-    const handleExportPoster = () => runExport('Poster', async () => {
-        await onExportPoster?.(formState);
-        setStatus('Poster image saved to your downloads folder.');
-    });
-
     const gifExport = exportAvailability?.gif;
     const videoExport = exportAvailability?.mp4;
     const embedExport = exportAvailability?.embed;
-    const posterExport = exportAvailability?.poster;
     const exportWarnings = [
         ...(gifExport?.warnings || []),
         ...(videoExport?.warnings || [])
@@ -598,15 +591,6 @@ export function PresentationLinkBuilder({
                         onClick={() => { void handleExportVideo(); }}
                     >
                         {exportLabel.startsWith('Video') ? exportLabel : 'Download video'}
-                    </button>
-                    <button
-                        type="button"
-                        className="btn btn-secondary btn-sm"
-                        disabled={!validation.ok || isBusy || posterExport?.ok === false}
-                        title={posterExport?.errors?.[0] || 'Final frame PNG'}
-                        onClick={() => { void handleExportPoster(); }}
-                    >
-                        {exportLabel === 'Poster' ? 'Saving…' : 'Poster PNG'}
                     </button>
                 </div>
                 {exportWarnings.length > 0 ? (

@@ -7,6 +7,7 @@ import { PRESENTATION_SOURCE_ID, COMBO_FLY_RATIO } from './presentation-constant
 
 const ANIMATED_POINT_SOURCE = 'presentation-animated-point';
 const ANIMATED_LINE_SOURCE = 'presentation-animated-line';
+const PRESENTATION_LINE_LAYER = `${PRESENTATION_SOURCE_ID}-line`;
 
 function sleep(ms) {
     return new Promise((resolve) => setTimeout(resolve, ms));
@@ -74,6 +75,23 @@ function getPrimaryLineFeature(featureCollection) {
     }) || null;
 }
 
+/**
+ * @param {import('geojson').FeatureCollection} featureCollection
+ * @returns {number[][]}
+ */
+function getPointCoordinates(featureCollection) {
+    const coords = [];
+    for (const feature of featureCollection?.features || []) {
+        const type = feature?.geometry?.type;
+        if (type === 'Point') {
+            coords.push(feature.geometry.coordinates);
+        } else if (type === 'MultiPoint') {
+            coords.push(...feature.geometry.coordinates);
+        }
+    }
+    return coords;
+}
+
 function removeLayerIfExists(map, layerId) {
     if (map.getLayer(layerId)) map.removeLayer(layerId);
 }
@@ -123,15 +141,19 @@ function ensureAnimatedLineLayer(map, style = {}) {
 }
 
 function setAnimatedPoint(map, coordinate) {
+    setAnimatedPoints(map, [coordinate]);
+}
+
+function setAnimatedPoints(map, coordinates) {
     const source = map.getSource(ANIMATED_POINT_SOURCE);
-    if (!source) return;
+    if (!source || !coordinates?.length) return;
     source.setData({
         type: 'FeatureCollection',
-        features: [{
+        features: coordinates.map((coordinate) => ({
             type: 'Feature',
             properties: {},
             geometry: { type: 'Point', coordinates: coordinate }
-        }]
+        }))
     });
 }
 
@@ -146,6 +168,15 @@ function setAnimatedLine(map, coordinates) {
             geometry: { type: 'LineString', coordinates }
         }]
     });
+}
+
+function setPresentationLineLayerVisible(map, visible) {
+    if (!map?.getLayer?.(PRESENTATION_LINE_LAYER)) return;
+    map.setLayoutProperty(
+        PRESENTATION_LINE_LAYER,
+        'visibility',
+        visible ? 'visible' : 'none'
+    );
 }
 
 const PRESENTATION_FIT_MAX_ZOOM = 16;
@@ -481,10 +512,157 @@ function sampleLineCoordinates(lineFeature, steps = 120) {
     return coords;
 }
 
+/**
+ * @param {import('geojson').Feature} lineFeature
+ */
+function buildPathLineFromFeature(lineFeature) {
+    const turf = getTurf();
+    if (!turf || !lineFeature?.geometry) return null;
+    const coords = lineFeature.geometry.type === 'MultiLineString'
+        ? lineFeature.geometry.coordinates[0]
+        : lineFeature.geometry.coordinates;
+    if (!coords || coords.length < 2) return null;
+    return turf.lineString(coords);
+}
+
+/**
+ * @param {import('geojson').LineString | import('geojson').MultiLineString} geometry
+ */
+function getLineGeometryCoordinates(geometry) {
+    if (!geometry) return [];
+    if (geometry.type === 'LineString') return geometry.coordinates;
+    if (geometry.type === 'MultiLineString') return geometry.coordinates.flat();
+    return [];
+}
+
+/**
+ * Coordinates from path start to a distance along the line (constant-speed draw).
+ * @param {import('geojson').Feature<import('geojson').LineString>} path
+ * @param {number} distanceKm
+ */
+function sliceLinePathToDistance(path, distanceKm) {
+    const turf = getTurf();
+    if (!turf || !path) return [];
+    const totalLength = turf.length(path, { units: 'kilometers' });
+    if (totalLength <= 0) return [];
+
+    if (distanceKm <= 0) {
+        const start = turf.along(path, 0, { units: 'kilometers' });
+        const coord = start.geometry.coordinates;
+        return [coord, coord];
+    }
+    if (distanceKm >= totalLength) {
+        return path.geometry.coordinates;
+    }
+
+    const slice = turf.lineSliceAlong(path, 0, distanceKm, { units: 'kilometers' });
+    const coords = getLineGeometryCoordinates(slice.geometry);
+    if (coords.length >= 2) return coords;
+    if (coords.length === 1) return [coords[0], coords[0]];
+    return [];
+}
+
 function bearingBetween(a, b) {
     const turf = getTurf();
     if (!turf) return 0;
     return turf.bearing(turf.point(a), turf.point(b));
+}
+
+/**
+ * @param {import('geojson').Feature<import('geojson').LineString>} path
+ * @param {number} distanceKm
+ */
+function pointAlongPath(path, distanceKm) {
+    const turf = getTurf();
+    if (!turf || !path) return null;
+    const totalLength = turf.length(path, { units: 'kilometers' });
+    if (totalLength <= 0) return null;
+    const clamped = Math.min(totalLength, Math.max(0, distanceKm));
+    return turf.along(path, clamped, { units: 'kilometers' }).geometry.coordinates;
+}
+
+/** Tunables for cinematic Follow path camera. */
+const PATH_FOLLOW = {
+    lookAheadRatio: 0.22,
+    lookAheadMinKm: 0.05,
+    lookAheadMaxKm: 3.5,
+    bearingSmoothSec: 1.05,
+    centerSmoothSec: 0.5
+};
+
+/** Look-ahead distance for cinematic path-following camera. */
+function computePathLookAheadKm(totalLengthKm) {
+    return Math.min(
+        PATH_FOLLOW.lookAheadMaxKm,
+        Math.max(PATH_FOLLOW.lookAheadMinKm, totalLengthKm * PATH_FOLLOW.lookAheadRatio)
+    );
+}
+
+/**
+ * @param {import('geojson').Feature<import('geojson').LineString>} path
+ * @param {number} distanceKm
+ * @param {number} lookAheadKm
+ * @param {number} totalLengthKm
+ */
+function bearingAlongPath(path, distanceKm, lookAheadKm, totalLengthKm) {
+    const from = pointAlongPath(path, distanceKm);
+    if (!from) return 0;
+    const aheadKm = Math.min(totalLengthKm, distanceKm + lookAheadKm);
+    const to = pointAlongPath(path, aheadKm);
+    if (!to) return 0;
+    if (Math.abs(aheadKm - distanceKm) < 1e-9) {
+        const fallback = pointAlongPath(path, Math.min(totalLengthKm, distanceKm + 0.001));
+        return fallback ? bearingBetween(from, fallback) : 0;
+    }
+    return bearingBetween(from, to);
+}
+
+function lerpAngle(fromDeg, toDeg, t) {
+    const clampedT = Math.min(1, Math.max(0, t));
+    const delta = ((toDeg - fromDeg + 540) % 360) - 180;
+    return fromDeg + delta * clampedT;
+}
+
+function expSmoothFactor(deltaMs, timeConstantSec) {
+    return 1 - Math.exp(-deltaMs / (timeConstantSec * 1000));
+}
+
+function lerpCoord(from, to, t) {
+    const s = Math.min(1, Math.max(0, t));
+    return [from[0] + (to[0] - from[0]) * s, from[1] + (to[1] - from[1]) * s];
+}
+
+/**
+ * @param {import('maplibre-gl').Map} map
+ * @param {import('geojson').Feature<import('geojson').LineString>} path
+ * @param {number} distanceKm
+ * @param {number} lookAheadKm
+ * @param {number} totalLengthKm
+ * @param {import('./presentation-scene-schema.js').PresentationAnimationStep} step
+ * @param {{ currentCenter: number[] | null, currentBearing: number }} state
+ * @param {number} deltaMs
+ */
+function applySmoothedPathFollowCamera(map, path, distanceKm, lookAheadKm, totalLengthKm, step, state, deltaMs) {
+    const targetCenter = pointAlongPath(path, distanceKm);
+    if (!targetCenter) return false;
+
+    const targetBearing = bearingAlongPath(path, distanceKm, lookAheadKm, totalLengthKm);
+    const bearingT = expSmoothFactor(deltaMs, PATH_FOLLOW.bearingSmoothSec);
+    const centerT = expSmoothFactor(deltaMs, PATH_FOLLOW.centerSmoothSec);
+    state.currentBearing = lerpAngle(state.currentBearing, targetBearing, bearingT);
+    state.currentCenter = state.currentCenter
+        ? lerpCoord(state.currentCenter, targetCenter, centerT)
+        : targetCenter;
+
+    map.easeTo({
+        center: state.currentCenter,
+        bearing: state.currentBearing,
+        pitch: step.options?.pitch ?? map.getPitch(),
+        zoom: step.options?.zoom ?? map.getZoom(),
+        duration: 0,
+        essential: true
+    });
+    return true;
 }
 
 export class PresentationAnimationEngine {
@@ -524,6 +702,7 @@ export class PresentationAnimationEngine {
         removeSourceIfExists(map, ANIMATED_POINT_SOURCE);
         removeLayerIfExists(map, `${ANIMATED_LINE_SOURCE}-line`);
         removeSourceIfExists(map, ANIMATED_LINE_SOURCE);
+        setPresentationLineLayerVisible(map, true);
         for (const layerId of this._sceneLayers) {
             removeLayerIfExists(map, layerId);
         }
@@ -837,17 +1016,20 @@ export class PresentationAnimationEngine {
         const map = this.map;
         const turf = getTurf();
         const lineFeature = getPrimaryLineFeature(this.features);
-        if (!turf || !lineFeature) return;
+        const path = buildPathLineFromFeature(lineFeature);
+        if (!turf || !path) return;
 
-        const path = turf.lineString(
-            lineFeature.geometry.type === 'MultiLineString'
-                ? lineFeature.geometry.coordinates[0]
-                : lineFeature.geometry.coordinates
-        );
-        const samples = sampleLineCoordinates(path, 100);
-        if (samples.length < 2) return;
+        const totalLength = turf.length(path, { units: 'kilometers' });
+        if (totalLength <= 0) return;
 
+        const lookAheadKm = computePathLookAheadKm(totalLength);
+        const cameraState = {
+            currentCenter: pointAlongPath(path, 0),
+            currentBearing: bearingAlongPath(path, 0, lookAheadKm, totalLength)
+        };
         const startTime = performance.now();
+        let lastFrameTime = startTime;
+
         await new Promise((resolve) => {
             const frame = (now) => {
                 if (this._stopped) {
@@ -857,17 +1039,19 @@ export class PresentationAnimationEngine {
                 const elapsed = now - startTime;
                 const progress = Math.min(1, elapsed / step.durationMs);
                 const eased = easeValue(progress, step.easing);
-                const index = Math.min(samples.length - 1, Math.floor(eased * (samples.length - 1)));
-                const coord = samples[index];
-                const next = samples[Math.min(samples.length - 1, index + 1)];
-                map.easeTo({
-                    center: coord,
-                    bearing: bearingBetween(coord, next),
-                    pitch: step.options?.pitch ?? map.getPitch(),
-                    zoom: step.options?.zoom ?? map.getZoom(),
-                    duration: 0,
-                    essential: true
-                });
+                const distanceKm = eased * totalLength;
+                const deltaMs = Math.max(1, now - lastFrameTime);
+                lastFrameTime = now;
+                applySmoothedPathFollowCamera(
+                    map,
+                    path,
+                    distanceKm,
+                    lookAheadKm,
+                    totalLength,
+                    step,
+                    cameraState,
+                    deltaMs
+                );
                 if (progress >= 1) {
                     resolve();
                     return;
@@ -882,17 +1066,26 @@ export class PresentationAnimationEngine {
         const map = this.map;
         const turf = getTurf();
         const lineFeature = getPrimaryLineFeature(this.features);
-        if (!turf || !lineFeature) return;
+        const path = buildPathLineFromFeature(lineFeature);
+        if (!turf || !path) return;
 
-        const path = turf.lineString(
-            lineFeature.geometry.type === 'MultiLineString'
-                ? lineFeature.geometry.coordinates[0]
-                : lineFeature.geometry.coordinates
-        );
-        const samples = sampleLineCoordinates(path, 100);
+        const totalLength = turf.length(path, { units: 'kilometers' });
+        if (totalLength <= 0) return;
+
         ensureAnimatedPointLayer(map, this.style);
         const followCamera = step.options?.followCamera !== false;
+        const lookAheadKm = computePathLookAheadKm(totalLength);
+        const startMarker = pointAlongPath(path, 0);
+        const cameraState = followCamera ? {
+            currentCenter: startMarker,
+            currentBearing: bearingAlongPath(path, 0, lookAheadKm, totalLength)
+        } : null;
         const startTime = performance.now();
+        let lastFrameTime = startTime;
+
+        if (startMarker) {
+            setAnimatedPoint(map, startMarker);
+        }
 
         await new Promise((resolve) => {
             const frame = (now) => {
@@ -903,11 +1096,24 @@ export class PresentationAnimationEngine {
                 const elapsed = now - startTime;
                 const progress = Math.min(1, elapsed / step.durationMs);
                 const eased = easeValue(progress, step.easing);
-                const index = Math.min(samples.length - 1, Math.floor(eased * (samples.length - 1)));
-                const coord = samples[index];
-                setAnimatedPoint(map, coord);
-                if (followCamera) {
-                    map.easeTo({ center: coord, duration: 0, essential: true });
+                const distanceKm = eased * totalLength;
+                const markerCoord = pointAlongPath(path, distanceKm);
+                if (markerCoord) {
+                    setAnimatedPoint(map, markerCoord);
+                    if (followCamera && cameraState) {
+                        const deltaMs = Math.max(1, now - lastFrameTime);
+                        lastFrameTime = now;
+                        applySmoothedPathFollowCamera(
+                            map,
+                            path,
+                            distanceKm,
+                            lookAheadKm,
+                            totalLength,
+                            step,
+                            cameraState,
+                            deltaMs
+                        );
+                    }
                 }
                 if (progress >= 1) {
                     resolve();
@@ -921,10 +1127,11 @@ export class PresentationAnimationEngine {
 
     async _animatePoint(step) {
         const map = this.map;
+        const pointCoords = getPointCoordinates(this.features);
+        if (!pointCoords.length) return;
+
         ensureAnimatedPointLayer(map, this.style);
-        const center = getFeatureCenter(this.features);
-        if (!center) return;
-        setAnimatedPoint(map, center);
+        setAnimatedPoints(map, pointCoords);
 
         const startTime = performance.now();
         const baseRadius = this.style.pointRadius ?? 7;
@@ -955,34 +1162,42 @@ export class PresentationAnimationEngine {
         const map = this.map;
         const turf = getTurf();
         const lineFeature = getPrimaryLineFeature(this.features);
-        if (!turf || !lineFeature) return;
+        const path = buildPathLineFromFeature(lineFeature);
+        if (!turf || !path) return;
 
-        const fullCoords = lineFeature.geometry.type === 'MultiLineString'
-            ? lineFeature.geometry.coordinates[0]
-            : lineFeature.geometry.coordinates;
+        const totalLength = turf.length(path, { units: 'kilometers' });
+        if (totalLength <= 0) return;
+
         ensureAnimatedLineLayer(map, this.style);
-        const startTime = performance.now();
+        setPresentationLineLayerVisible(map, false);
+        setAnimatedLine(map, sliceLinePathToDistance(path, 0));
 
-        await new Promise((resolve) => {
-            const frame = (now) => {
-                if (this._stopped) {
-                    resolve();
-                    return;
-                }
-                const elapsed = now - startTime;
-                const progress = Math.min(1, elapsed / step.durationMs);
-                const eased = easeValue(progress, step.easing);
-                const count = Math.max(2, Math.floor(eased * fullCoords.length));
-                setAnimatedLine(map, fullCoords.slice(0, count));
-                if (progress >= 1) {
-                    setAnimatedLine(map, fullCoords);
-                    resolve();
-                    return;
-                }
+        const startTime = performance.now();
+        try {
+            await new Promise((resolve) => {
+                const frame = (now) => {
+                    if (this._stopped) {
+                        resolve();
+                        return;
+                    }
+                    const elapsed = now - startTime;
+                    const progress = Math.min(1, elapsed / step.durationMs);
+                    const eased = easeValue(progress, step.easing);
+                    const distanceKm = eased * totalLength;
+                    setAnimatedLine(map, sliceLinePathToDistance(path, distanceKm));
+                    if (progress >= 1) {
+                        resolve();
+                        return;
+                    }
+                    this._rafId = requestAnimationFrame(frame);
+                };
                 this._rafId = requestAnimationFrame(frame);
-            };
-            this._rafId = requestAnimationFrame(frame);
-        });
+            });
+        } finally {
+            setPresentationLineLayerVisible(map, true);
+            removeLayerIfExists(map, `${ANIMATED_LINE_SOURCE}-line`);
+            removeSourceIfExists(map, ANIMATED_LINE_SOURCE);
+        }
     }
 }
 

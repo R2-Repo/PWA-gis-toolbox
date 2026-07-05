@@ -168,7 +168,7 @@ const LINK_ANIMATIONS = [
     {
         id: 'animatePoint',
         label: 'Pulse point',
-        usageHint: 'Pick a point feature. The point pulses to draw attention over your chosen duration.',
+        usageHint: 'Pick one or more point features. Selected points pulse to draw attention over your chosen duration.',
         requires: ['point'],
         cameraStrategy: 'fit',
         animated: true,

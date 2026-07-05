@@ -25,8 +25,7 @@ import {
 } from './engine.js';
 import {
     exportPresentationGif,
-    exportPresentationVideo,
-    exportPresentationPoster
+    exportPresentationVideo
 } from '../../presentation/presentation-export.js';
 import {
     clearPresentationLinkSceneBundle,
@@ -438,21 +437,6 @@ export async function openPresentationLinkBuilder(ctx) {
                         onProgress
                     });
                     ctx.showToast(`Video saved (${result.ext.toUpperCase()}).`, 'success');
-                    return result;
-                } finally {
-                    stopPreview(ctx);
-                }
-            },
-            onExportPoster: async (formState) => {
-                const { map, engine, scene } = await preparePresentationPlayback(ctx, formState);
-                try {
-                    const result = await exportPresentationPoster({
-                        map,
-                        mapService: ctx.mapService,
-                        scene,
-                        engine
-                    });
-                    ctx.showToast('Poster image saved.', 'success');
                     return result;
                 } finally {
                     stopPreview(ctx);
