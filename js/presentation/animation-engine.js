@@ -3,7 +3,7 @@
  */
 
 import { runPresentationAnimationStep } from './presentation-animation-handlers.js';
-import { PRESENTATION_SOURCE_ID } from './presentation-constants.js';
+import { PRESENTATION_SOURCE_ID, COMBO_FLY_RATIO } from './presentation-constants.js';
 
 const ANIMATED_POINT_SOURCE = 'presentation-animated-point';
 const ANIMATED_LINE_SOURCE = 'presentation-animated-line';
@@ -605,7 +605,7 @@ export class PresentationAnimationEngine {
 
     async _flyToFeatureThenOrbit(step) {
         const flyDurationMs = step.options?.flyDurationMs
-            ?? Math.round((step.durationMs ?? 10000) * 0.4);
+            ?? Math.round((step.durationMs ?? 10000) * COMBO_FLY_RATIO);
         const orbitDurationMs = step.options?.orbitDurationMs
             ?? ((step.durationMs ?? 10000) - flyDurationMs);
         await this._runFlyThenOrbitCombined(step, flyDurationMs, orbitDurationMs);

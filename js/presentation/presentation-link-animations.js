@@ -6,6 +6,7 @@
 
 import { createAnimationStep } from './animation-presets.js';
 import { computeFeatureFitCamera, computeOverviewCamera } from './animation-engine.js';
+import { COMBO_FLY_RATIO } from './presentation-constants.js';
 
 /** @typedef {'fit' | 'saved' | 'overview'} LinkCameraStrategy */
 
@@ -47,7 +48,7 @@ export const COMBO_PACE_MS = {
     fast: 12000
 };
 
-export const COMBO_FLY_RATIO = 0.30;
+export { COMBO_FLY_RATIO };
 
 /** @type {LinkAnimationDefinition[]} */
 const LINK_ANIMATIONS = [
@@ -124,8 +125,76 @@ const LINK_ANIMATIONS = [
             const { flyDurationMs, orbitDurationMs } = splitComboDurations(totalMs);
             return { ...stepOptions, flyDurationMs, orbitDurationMs };
         }
+    },
+    {
+        id: 'animateLinePath',
+        label: 'Draw route',
+        usageHint: 'Pick a line feature. The route draws progressively from start to end over your chosen duration.',
+        requires: ['line'],
+        cameraStrategy: 'fit',
+        animated: true,
+        ui: {
+            showDuration: true,
+            durationLabel: 'Duration (seconds)',
+            defaultDurationMs: ORBIT_PACE_MS.normal
+        }
+    },
+    {
+        id: 'flyAlongPath',
+        label: 'Follow path',
+        usageHint: 'Pick a line feature. The camera travels along the path at your chosen duration.',
+        requires: ['line'],
+        cameraStrategy: 'fit',
+        animated: true,
+        ui: {
+            showDuration: true,
+            durationLabel: 'Duration (seconds)',
+            defaultDurationMs: ORBIT_PACE_MS.normal
+        }
+    },
+    {
+        id: 'animatePointAlongLine',
+        label: 'Travel along path',
+        usageHint: 'Pick a line feature. A marker travels along the path while the camera follows.',
+        requires: ['line'],
+        cameraStrategy: 'fit',
+        animated: true,
+        ui: {
+            showDuration: true,
+            durationLabel: 'Duration (seconds)',
+            defaultDurationMs: ORBIT_PACE_MS.normal
+        }
+    },
+    {
+        id: 'animatePoint',
+        label: 'Pulse point',
+        usageHint: 'Pick a point feature. The point pulses to draw attention over your chosen duration.',
+        requires: ['point'],
+        cameraStrategy: 'fit',
+        animated: true,
+        ui: {
+            showDuration: true,
+            durationLabel: 'Duration (seconds)',
+            defaultDurationMs: ORBIT_PACE_MS.normal
+        }
     }
 ];
+
+/** Hold/pause row for custom sequences only — not a playback handler. */
+const HOLD_STEP_DEFINITION = {
+    id: 'hold',
+    label: 'Hold / pause',
+    usageHint: 'Pause between animations.',
+    requires: [],
+    cameraStrategy: 'saved',
+    animated: false,
+    sequenceOnly: true,
+    ui: {
+        showDuration: true,
+        durationLabel: 'Hold (seconds)',
+        defaultDurationMs: 2000
+    }
+};
 
 /**
  * @param {number} totalMs
@@ -141,6 +210,19 @@ export function splitComboDurations(totalMs) {
 
 export function listLinkAnimations() {
     return LINK_ANIMATIONS;
+}
+
+/** Animated presets plus hold — for custom sequence builder rows. */
+export function listSequenceStepOptions() {
+    return [...LINK_ANIMATIONS.filter((entry) => entry.id !== 'none' && entry.id !== 'flyToFeatureThenOrbit'), HOLD_STEP_DEFINITION];
+}
+
+/**
+ * @param {string} stepType
+ */
+export function getSequenceStepDefinition(stepType) {
+    if (stepType === 'hold') return HOLD_STEP_DEFINITION;
+    return getLinkAnimation(stepType);
 }
 
 /**

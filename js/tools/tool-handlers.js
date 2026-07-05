@@ -402,19 +402,6 @@ export async function exportProjectKit(options = {}) {
 export async function exportMapView(format) {
     try {
         const mod = await import('../map/map-export.js');
-        if (format === 'gif') {
-            if (dualScreenCoordinator?.isActive) {
-                showToast('Map is in the Dual Screen window — export from that window.', 'error');
-                return;
-            }
-            const { pickOrbitGifSettingsModal } = await import('../../react/tools/mountOrbitGifDialog.jsx');
-            const settings = await pickOrbitGifSettingsModal(mapService, { getActiveLayer });
-            if (!settings) return;
-            showToast('Recording orbit GIF…', 'info');
-            const result = await mod.exportOrbitGif(mapService, settings);
-            showToast('GIF saved.', 'success');
-            return result;
-        }
         if (mod.willUseHighResExport(mapService)) {
             showToast('Exporting high-resolution map…', 'info');
         }

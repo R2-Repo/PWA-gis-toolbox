@@ -3364,3 +3364,47 @@ textarea { resize: vertical; min-height: 60px; }
 .presentation-link-builder__btn-row {
     margin-bottom: 4px;
 }
+.presentation-link-builder__mode-toggle {
+    margin-top: 6px;
+}
+.presentation-sequence-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+.presentation-sequence-list__row {
+    display: grid;
+    grid-template-columns: 1.4rem 1fr 3.5rem 1.2rem auto auto;
+    gap: 6px;
+    align-items: center;
+}
+.presentation-sequence-list__row.is-incompatible {
+    opacity: 0.65;
+}
+.presentation-sequence-list__index {
+    font-size: 11px;
+    color: var(--text-muted);
+    text-align: center;
+}
+.presentation-sequence-list__type {
+    min-width: 0;
+}
+.presentation-sequence-list__duration {
+    width: 100%;
+}
+.presentation-sequence-list__unit {
+    white-space: nowrap;
+}
+.presentation-sequence-list__order {
+    display: flex;
+    gap: 2px;
+}
+.presentation-sequence-list__remove {
+    padding-inline: 6px;
+}
+.presentation-sequence-list__actions {
+    margin-top: 4px;
+}
+.presentation-sequence-list__hint {
+    margin: 0;
+}
