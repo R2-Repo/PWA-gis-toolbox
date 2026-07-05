@@ -18,6 +18,7 @@ import {
     listLayerIdsWithSelections,
     ORBIT_PACE_MS,
     SCENE_LIMITS,
+    summarizeExportAvailability,
     summarizeResolvedSource,
     summarizeSourceFeatures,
     validateSceneForUrl
@@ -43,7 +44,11 @@ let presentationWidgetSessionActive = false;
 let sceneApplier = null;
 
 function deliverSceneBundleToUi(bundle) {
-    if (!presentationWidgetSessionActive) return;
+    if (!presentationWidgetSessionActive) {
+        // #region agent log
+        fetch('http://127.0.0.1:7928/ingest/d3c9e78b-c7ff-4f7c-bb94-4a8dca6fee71',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'c8639f'},body:JSON.stringify({sessionId:'c8639f',runId:'post-fix',hypothesisId:'H-C',location:'controller.js:deliverSceneBundleToUi',message:'deliver skipped session inactive (should not happen post-fix)',data:{active:presentationWidgetSessionActive,hasApplier:!!sceneApplier},timestamp:Date.now()})}).catch(()=>{});
+        // #endregion
+    }
     sceneApplier?.(bundle);
     setPresentationLinkSceneBundle(bundle);
     bus.emit(PRESENTATION_LINK_SCENE_BUNDLE, bundle);
