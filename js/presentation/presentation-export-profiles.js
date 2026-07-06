@@ -1,5 +1,7 @@
 /** @typedef {'url' | 'embed' | 'gif' | 'mp4' | 'poster'} PresentationExportProfileId */
 
+import { estimateTimelineDurationMs } from './presentation-sequence-compiler.js';
+
 /**
  * @typedef {object} PresentationExportProfile
  * @property {PresentationExportProfileId} id
@@ -58,12 +60,7 @@ export const EXPORT_PROFILES = {
  * @param {import('./presentation-scene-schema.js').PresentationAnimationStep[]} animations
  */
 export function estimateSceneDurationMs(animations = []) {
-    if (!animations?.length) return 0;
-    let total = 0;
-    for (const step of animations) {
-        total += (step.delayMs ?? 0) + (step.durationMs ?? 0);
-    }
-    return total;
+    return estimateTimelineDurationMs(animations);
 }
 
 /**

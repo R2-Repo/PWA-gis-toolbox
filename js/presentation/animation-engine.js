@@ -3,6 +3,7 @@
  */
 
 import { runPresentationAnimationStep } from './presentation-animation-handlers.js';
+import { playTimeline } from './presentation-timeline-engine.js';
 import { PRESENTATION_SOURCE_ID, COMBO_FLY_RATIO } from './presentation-constants.js';
 
 const ANIMATED_POINT_SOURCE = 'presentation-animated-point';
@@ -932,11 +933,21 @@ export class PresentationAnimationEngine {
         this.style = style;
         this._stopped = false;
         this._rafId = null;
+        this._rafIds = new Set();
         this._sceneLayers = [];
+    }
+
+    _registerRafId(id) {
+        this._rafIds.add(id);
+        this._rafId = id;
     }
 
     stop() {
         this._stopped = true;
+        for (const id of this._rafIds) {
+            cancelAnimationFrame(id);
+        }
+        this._rafIds.clear();
         if (this._rafId) {
             cancelAnimationFrame(this._rafId);
             this._rafId = null;
@@ -1011,17 +1022,7 @@ export class PresentationAnimationEngine {
      * @param {import('./presentation-scene-schema.js').PresentationAnimationStep[]} steps
      */
     async playSequence(steps = []) {
-        for (const step of steps) {
-            if (this._stopped) return;
-            if (step.delayMs > 0) {
-                await sleep(step.delayMs);
-                if (this._stopped) return;
-            }
-            await this.playStep(step);
-            if (this._stopped) return;
-            if (!step.loop) continue;
-            await this.playStep(step);
-        }
+        return playTimeline(this, steps);
     }
 
     /**
@@ -1074,11 +1075,13 @@ export class PresentationAnimationEngine {
         const orbitStartMs = Math.max(0, flyDurationMs - Math.round(crossfadeMs * 0.6));
         const totalDuration = flyDurationMs + orbitDurationMs;
         const orbitSpan = Math.max(1, totalDuration - orbitStartMs);
+        const entryFromCurrent = step.options?.entryFromCurrent === true;
+        const startPitch = entryFromCurrent ? map.getPitch() : 0;
 
         map.jumpTo({
             center: startCenter,
             zoom: startZoom,
-            pitch: 0,
+            pitch: startPitch,
             bearing: startBearing,
             essential: true
         });
@@ -1086,7 +1089,7 @@ export class PresentationAnimationEngine {
         const from = {
             center: [startCenter.lng, startCenter.lat],
             zoom: startZoom,
-            pitch: 0,
+            pitch: startPitch,
             bearing: startBearing
         };
         const to = {
@@ -1135,9 +1138,9 @@ export class PresentationAnimationEngine {
                     resolve();
                     return;
                 }
-                this._rafId = requestAnimationFrame(frame);
+                this._registerRafId(requestAnimationFrame(frame));
             };
-            this._rafId = requestAnimationFrame(frame);
+            this._registerRafId(requestAnimationFrame(frame));
         });
     }
 
@@ -1168,11 +1171,13 @@ export class PresentationAnimationEngine {
         const startBearing = map.getBearing();
         const endZoom = Math.max(target.zoom, startZoom + 0.5);
         const duration = overrides.durationMs ?? step.durationMs ?? 3000;
+        const entryFromCurrent = step.options?.entryFromCurrent === true;
+        const startPitch = entryFromCurrent ? map.getPitch() : 0;
 
         map.jumpTo({
             center: startCenter,
             zoom: startZoom,
-            pitch: 0,
+            pitch: startPitch,
             bearing: startBearing,
             essential: true
         });
@@ -1180,7 +1185,7 @@ export class PresentationAnimationEngine {
         await runCinematicCameraFly(map, {
             center: [startCenter.lng, startCenter.lat],
             zoom: startZoom,
-            pitch: 0,
+            pitch: startPitch,
             bearing: startBearing
         }, {
             center: target.center,
@@ -1191,7 +1196,7 @@ export class PresentationAnimationEngine {
             duration,
             easing: step.easing || 'cinematic',
             shouldStop: () => this._stopped,
-            setRafId: (id) => { this._rafId = id; }
+            setRafId: (id) => { this._registerRafId(id); }
         });
     }
 
@@ -1237,7 +1242,7 @@ export class PresentationAnimationEngine {
                 duration: 700,
                 easing: 'cinematic',
                 shouldStop: () => this._stopped,
-                setRafId: (id) => { this._rafId = id; }
+                setRafId: (id) => { this._registerRafId(id); }
             });
             startBearing = map.getBearing();
         }
@@ -1259,9 +1264,9 @@ export class PresentationAnimationEngine {
                     resolve();
                     return;
                 }
-                this._rafId = requestAnimationFrame(frame);
+                this._registerRafId(requestAnimationFrame(frame));
             };
-            this._rafId = requestAnimationFrame(frame);
+            this._registerRafId(requestAnimationFrame(frame));
         });
     }
 
@@ -1309,9 +1314,9 @@ export class PresentationAnimationEngine {
                     resolve();
                     return;
                 }
-                this._rafId = requestAnimationFrame(frame);
+                this._registerRafId(requestAnimationFrame(frame));
             };
-            this._rafId = requestAnimationFrame(frame);
+            this._registerRafId(requestAnimationFrame(frame));
         });
     }
 
@@ -1372,9 +1377,9 @@ export class PresentationAnimationEngine {
                     resolve();
                     return;
                 }
-                this._rafId = requestAnimationFrame(frame);
+                this._registerRafId(requestAnimationFrame(frame));
             };
-            this._rafId = requestAnimationFrame(frame);
+            this._registerRafId(requestAnimationFrame(frame));
         });
     }
 
@@ -1412,9 +1417,9 @@ export class PresentationAnimationEngine {
                     resolve();
                     return;
                 }
-                this._rafId = requestAnimationFrame(frame);
+                this._registerRafId(requestAnimationFrame(frame));
             };
-            this._rafId = requestAnimationFrame(frame);
+            this._registerRafId(requestAnimationFrame(frame));
         });
     }
 
@@ -1449,9 +1454,9 @@ export class PresentationAnimationEngine {
                         resolve();
                         return;
                     }
-                    this._rafId = requestAnimationFrame(frame);
+                    this._registerRafId(requestAnimationFrame(frame));
                 };
-                this._rafId = requestAnimationFrame(frame);
+                this._registerRafId(requestAnimationFrame(frame));
             });
         } finally {
             setPresentationLineLayerVisible(map, true);
