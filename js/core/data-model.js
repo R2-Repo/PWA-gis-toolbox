@@ -383,6 +383,7 @@ function generateId() {
  * Get selected fields from schema
  */
 export function getSelectedFields(schema) {
+    if (!schema?.fields) return [];
     return schema.fields.filter(f => f.selected).sort((a, b) => a.order - b.order);
 }
 
