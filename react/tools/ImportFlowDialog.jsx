@@ -40,6 +40,8 @@ import { ImportProgressPanel } from './ImportProgressPanel.jsx';
 
 import { ImportReductionNotice } from './ImportReductionNotice.jsx';
 
+import { LiveMapPresetPicker } from './LiveMapPresetPicker.jsx';
+
 
 
 const LOCAL_FILE_ACCEPT = '.geojson,.json,.csv,.tsv,.txt,.xlsx,.xls,.kml,.kmz,.gpx,.zip,.xml,.gis-toolbox,.gtbx';
@@ -61,6 +63,10 @@ export function ImportFlowDialog({
     onOpenDraw,
 
     onOpenLiveMap,
+
+    liveMapPresets = [],
+
+    onBuildPresetShareUrl,
 
     onOptimizeImport,
 
@@ -104,6 +110,8 @@ export function ImportFlowDialog({
 
     const [importProgress, setImportProgress] = useState({ percent: 0, step: 'Starting import…' });
 
+    const [importView, setImportView] = useState('chooser');
+
 
 
     const resetImportStep = () => {
@@ -131,6 +139,8 @@ export function ImportFlowDialog({
 
 
     const backToChooser = () => {
+
+        setImportView('chooser');
 
         setPendingFiles([]);
 
@@ -494,7 +504,7 @@ export function ImportFlowDialog({
 
     const isKitOnly = pendingFiles.length > 0 && pendingFiles.every(isProjectKitFile);
 
-    const showChooser = !readyToImport && !startAtFieldPick && !importing;
+    const showChooser = !readyToImport && !startAtFieldPick && !importing && importView === 'chooser';
 
 
 
@@ -563,6 +573,18 @@ export function ImportFlowDialog({
             {readyToImport && !scanning ? (
 
                 <button type="button" className="btn btn-ghost btn-sm mb-8" onClick={backToChooser}>
+
+                    ← Back
+
+                </button>
+
+            ) : null}
+
+
+
+            {importView === 'liveMap' ? (
+
+                <button type="button" className="btn btn-ghost btn-sm mb-8" onClick={() => setImportView('chooser')}>
 
                     ← Back
 
@@ -674,6 +696,22 @@ export function ImportFlowDialog({
 
 
 
+            {importView === 'liveMap' ? (
+
+                <LiveMapPresetPicker
+
+                    presets={liveMapPresets}
+
+                    onBuildPresetShareUrl={onBuildPresetShareUrl}
+
+                    onCreateYourOwn={() => onOpenLiveMap?.()}
+
+                />
+
+            ) : null}
+
+
+
             {showChooser ? (
 
                 <>
@@ -748,7 +786,7 @@ export function ImportFlowDialog({
 
                             description="Live service layers & bookmark URLs"
 
-                            onClick={() => onOpenLiveMap?.()}
+                            onClick={() => setImportView('liveMap')}
 
                         />
 

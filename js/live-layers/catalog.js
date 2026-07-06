@@ -30,6 +30,7 @@ export const LIVE_MAP_PRESETS = [
     {
         id: 'utah-overview',
         name: 'Utah Overview',
+        icon: '🏔️',
         description: 'County boundaries over the state with a bookmark-friendly default view.',
         region: 'utah',
         category: 'Reference',
@@ -47,6 +48,7 @@ export const LIVE_MAP_PRESETS = [
     {
         id: 'usgs-quakes',
         name: 'USGS Recent Earthquakes',
+        icon: '🌋',
         description: 'Live earthquake feed from USGS (last 7 days).',
         region: 'global',
         category: 'Hazards',

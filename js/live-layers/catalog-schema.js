@@ -187,8 +187,8 @@ export function validateCatalog() {
 }
 
 export function listLiveMapPresets() {
-    return LIVE_MAP_PRESETS.map(({ id, name, description, category, region }) => ({
-        id, name, description, category, region
+    return LIVE_MAP_PRESETS.map(({ id, name, description, category, region, icon }) => ({
+        id, name, description, category, region, icon
     }));
 }
 

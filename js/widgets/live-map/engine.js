@@ -1,7 +1,6 @@
-import { buildAppUrl, captureAppUrlFromMap, encodeLiveUrlEntry, parseLiveEntry } from '../../url/app-url-builder.js';
-import { inferServiceKind, listLiveMapPresets, presetToAppUrlConfig, appUrlConfigToCatalogPreset, resolveMapPreset, resolveLiveLayer } from '../../live-layers/catalog-schema.js';
+import { buildAppUrl, captureAppUrlFromMap, encodeLiveUrlEntry } from '../../url/app-url-builder.js';
+import { inferServiceKind, listLiveMapPresets, presetToAppUrlConfig, appUrlConfigToCatalogPreset, resolveMapPreset } from '../../live-layers/catalog-schema.js';
 import { createServiceLayer } from '../../core/data-model.js';
-import { createServiceLayerFromUrl } from '../../live-layers/live-layer-engine.js';
 
 export const PANEL_OPTIONS = [
     { value: 'both', label: 'Both panels' },
@@ -22,8 +21,6 @@ export const DIM_OPTIONS = [
 
 export function createDefaultFormState() {
     return {
-        tab: 'prebuilt',
-        selectedPresetId: '',
         customUrls: [''],
         basemap: 'voyager',
         dim: '2d',
@@ -56,22 +53,6 @@ export function formStateToAppUrlConfig(form) {
             .filter(Boolean)
             .map((url) => encodeLiveUrlEntry(url))
     };
-
-    if (form.tab === 'prebuilt' && form.selectedPresetId) {
-        const presetConfig = resolveMapPreset(form.selectedPresetId);
-        if (presetConfig) {
-            return {
-                ...presetConfig,
-                basemap: form.basemap || presetConfig.basemap,
-                dim: form.dim || presetConfig.dim,
-                panel: form.panel || presetConfig.panel,
-                view: form.viewMode === 'center' ? configViewFromForm(form) : presetConfig.view,
-                bounds: form.viewMode === 'bounds' ? boundsFromForm(form) : presetConfig.bounds,
-                padding: form.padding
-            };
-        }
-        config.map = form.selectedPresetId;
-    }
 
     if (form.viewMode === 'bounds') {
         config.bounds = boundsFromForm(form);
@@ -185,31 +166,19 @@ export function listPresets() {
 }
 
 /**
+ * @param {string} presetId
+ * @param {string} [baseUrl]
+ */
+export function buildPresetShareUrl(presetId, baseUrl) {
+    const config = resolveMapPreset(presetId);
+    if (!config) throw new Error(`Unknown preset: ${presetId}`);
+    return buildAppUrl(config, baseUrl);
+}
+
+/**
  * @param {ReturnType<typeof createDefaultFormState>} form
  */
 export function buildServiceLayersFromForm(form) {
-    if (form.tab === 'prebuilt' && form.selectedPresetId) {
-        const config = resolveMapPreset(form.selectedPresetId);
-        if (!config?.live?.length) return [];
-        return config.live.map((entry) => {
-            const parsed = parseLiveEntry(entry);
-            if (parsed.type === 'url') {
-                return createServiceLayerFromUrl('Live Layer', parsed.url);
-            }
-            const catalogEntry = resolveLiveLayer(parsed.id);
-            if (!catalogEntry) return null;
-            return createServiceLayer({
-                name: catalogEntry.name,
-                url: catalogEntry.url,
-                kind: catalogEntry.kind,
-                refreshMs: catalogEntry.refreshMs,
-                opacity: catalogEntry.opacity,
-                attribution: catalogEntry.attribution,
-                presetId: catalogEntry.id
-            });
-        }).filter(Boolean);
-    }
-
     return form.customUrls
         .map((url) => url.trim())
         .filter(Boolean)
