@@ -11,8 +11,6 @@ import {
     getDurationMsForPace,
     ORBIT_PACE_MS
 } from '../../js/presentation/presentation-link-animations.js';
-import { defaultSequenceSteps } from '../../js/presentation/presentation-sequence-compiler.js';
-import { AnimationSequenceList } from './presentation/AnimationSequenceList.jsx';
 
 const EMPTY_SUMMARY = {
     featureCount: 0,
@@ -159,13 +157,12 @@ export function PresentationLinkBuilder({
 
     useEffect(() => {
         if (!formState || durationEditingRef.current) return;
-        if ((formState.animation?.mode || 'preset') !== 'preset') return;
         const definition = getLinkAnimation(formState.animation?.presetId || 'none');
         setDurationSec(formatDurationSec(
             formState.animation?.durationMs,
             definition.ui.defaultDurationMs
         ));
-    }, [formState?.animation?.durationMs, formState?.animation?.orbitPace, formState?.animation?.presetId, formState?.animation?.mode]);
+    }, [formState?.animation?.durationMs, formState?.animation?.orbitPace, formState?.animation?.presetId]);
 
     useEffect(() => {
         reportFormState?.(formState);
@@ -296,7 +293,6 @@ export function PresentationLinkBuilder({
     }
 
     const presetId = formState.animation?.presetId || 'none';
-    const animationMode = formState.animation?.mode || 'preset';
     const selectedDefinition = getLinkAnimation(presetId);
     const { ui } = selectedDefinition;
     const pacePresets = ui.pacePresetsMs ?? {};
@@ -425,135 +421,104 @@ export function PresentationLinkBuilder({
 
             <div className="presentation-link-builder__row mt-12">
                 <div className="presentation-link-builder__heading">Animation</div>
-                <div className="presentation-link-builder__mode-toggle gis-widget__btn-row">
-                    <button
-                        type="button"
-                        className={`btn btn-sm${animationMode === 'preset' ? ' btn-primary' : ' btn-secondary'}`}
-                        onClick={() => updateAnimation({ mode: 'preset' })}
-                    >
-                        Preset
-                    </button>
-                    <button
-                        type="button"
-                        className={`btn btn-sm${animationMode === 'sequence' ? ' btn-primary' : ' btn-secondary'}`}
-                        onClick={() => {
-                            const steps = formState.animation?.steps?.length
-                                ? formState.animation.steps
-                                : defaultSequenceSteps();
-                            updateAnimation({ mode: 'sequence', steps });
-                        }}
-                    >
-                        Custom sequence
-                    </button>
-                </div>
             </div>
 
-            {animationMode === 'preset' ? (
-                <>
-                    <div className="presentation-link-builder__row">
-                        <label className="field-label" htmlFor="presentation-animation">Choose animation</label>
-                        <select
-                            id="presentation-animation"
-                            className="input-sm w-full"
-                            value={presetId}
-                            onChange={(e) => {
-                                const nextPreset = e.target.value;
-                                const nextDefinition = getLinkAnimation(nextPreset);
-                                const patch = { presetId: nextPreset, mode: 'preset' };
-                                if (nextDefinition.ui.showPace && formState.animation?.orbitPace !== 'custom') {
-                                    const pace = formState.animation?.orbitPace || 'normal';
-                                    patch.orbitPace = pace;
-                                    patch.durationMs = getDurationMsForPace(nextDefinition, pace);
-                                }
-                                updateAnimation(patch);
-                            }}
+            <div className="presentation-link-builder__row">
+                <label className="field-label" htmlFor="presentation-animation">Choose animation</label>
+                <select
+                    id="presentation-animation"
+                    className="input-sm w-full"
+                    value={presetId}
+                    onChange={(e) => {
+                        const nextPreset = e.target.value;
+                        const nextDefinition = getLinkAnimation(nextPreset);
+                        const patch = { presetId: nextPreset };
+                        if (nextDefinition.ui.showPace && formState.animation?.orbitPace !== 'custom') {
+                            const pace = formState.animation?.orbitPace || 'normal';
+                            patch.orbitPace = pace;
+                            patch.durationMs = getDurationMsForPace(nextDefinition, pace);
+                        }
+                        updateAnimation(patch);
+                    }}
+                >
+                    {listLinkAnimations().map((option) => (
+                        <option
+                            key={option.id}
+                            value={option.id}
+                            disabled={compatibilityById[option.id] === false}
                         >
-                            {listLinkAnimations().map((option) => (
-                                <option
-                                    key={option.id}
-                                    value={option.id}
-                                    disabled={compatibilityById[option.id] === false}
-                                >
-                                    {option.label}
-                                </option>
-                            ))}
-                        </select>
-                        {selectedDefinition.usageHint ? (
-                            <p className="presentation-link-builder__hint text-xs text-muted">{selectedDefinition.usageHint}</p>
-                        ) : null}
-                        {compatibilityById[presetId] === false ? (
-                            <p className="presentation-link-builder__hint text-xs text-muted">
-                                This animation does not match the selected feature geometry.
-                            </p>
-                        ) : null}
-                    </div>
+                            {option.label}
+                        </option>
+                    ))}
+                </select>
+                {selectedDefinition.usageHint ? (
+                    <p className="presentation-link-builder__hint text-xs text-muted">{selectedDefinition.usageHint}</p>
+                ) : null}
+                {compatibilityById[presetId] === false ? (
+                    <p className="presentation-link-builder__hint text-xs text-muted">
+                        This animation does not match the selected feature geometry.
+                    </p>
+                ) : null}
+            </div>
 
-                    {ui.showPace ? (
-                        <div className="presentation-link-builder__row">
-                            <label className="field-label" htmlFor="presentation-orbit-pace">
-                                {ui.paceLabel}
-                            </label>
-                            <select
-                                id="presentation-orbit-pace"
-                                className="input-sm w-full"
-                                value={formState.animation?.orbitPace || 'normal'}
-                                onChange={(e) => {
-                                    const pace = e.target.value;
-                                    if (pace === 'custom') {
-                                        updateAnimation({ orbitPace: 'custom' });
-                                        return;
-                                    }
-                                    updateAnimation({
-                                        orbitPace: pace,
-                                        durationMs: pacePresets[pace] ?? ui.defaultDurationMs
-                                    });
-                                }}
-                            >
-                                {(['slow', 'normal', 'fast']).map((pace) => (
-                                    <option key={pace} value={pace}>
-                                        {ui.paceOptionLabels?.[pace] ?? pace}
-                                    </option>
-                                ))}
-                                <option value="custom">Custom</option>
-                            </select>
-                        </div>
-                    ) : null}
+            {ui.showPace ? (
+                <div className="presentation-link-builder__row">
+                    <label className="field-label" htmlFor="presentation-orbit-pace">
+                        {ui.paceLabel}
+                    </label>
+                    <select
+                        id="presentation-orbit-pace"
+                        className="input-sm w-full"
+                        value={formState.animation?.orbitPace || 'normal'}
+                        onChange={(e) => {
+                            const pace = e.target.value;
+                            if (pace === 'custom') {
+                                updateAnimation({ orbitPace: 'custom' });
+                                return;
+                            }
+                            updateAnimation({
+                                orbitPace: pace,
+                                durationMs: pacePresets[pace] ?? ui.defaultDurationMs
+                            });
+                        }}
+                    >
+                        {(['slow', 'normal', 'fast']).map((pace) => (
+                            <option key={pace} value={pace}>
+                                {ui.paceOptionLabels?.[pace] ?? pace}
+                            </option>
+                        ))}
+                        <option value="custom">Custom</option>
+                    </select>
+                </div>
+            ) : null}
 
-                    {ui.showDuration ? (
-                        <div className="presentation-link-builder__row">
-                            <label className="field-label" htmlFor="presentation-duration">
-                                {ui.durationLabel ?? 'Duration (seconds)'}
-                            </label>
-                            <input
-                                id="presentation-duration"
-                                type="number"
-                                className="input-sm w-full"
-                                min={DURATION_MIN}
-                                max={DURATION_MAX}
-                                value={durationSec}
-                                onChange={(e) => {
-                                    durationEditingRef.current = true;
-                                    setDurationSec(e.target.value);
-                                }}
-                                onBlur={(e) => commitDurationSec(e.target.value)}
-                                onKeyDown={(e) => {
-                                    if (e.key === 'Enter') {
-                                        e.preventDefault();
-                                        commitDurationSec(e.currentTarget.value);
-                                        e.currentTarget.blur();
-                                    }
-                                }}
-                            />
-                        </div>
-                    ) : null}
-                </>
-            ) : (
-                <AnimationSequenceList
-                    steps={formState.animation?.steps || []}
-                    compatibilityById={compatibilityById}
-                    onChange={(steps) => updateAnimation({ mode: 'sequence', steps })}
-                />
-            )}
+            {ui.showDuration ? (
+                <div className="presentation-link-builder__row">
+                    <label className="field-label" htmlFor="presentation-duration">
+                        {ui.durationLabel ?? 'Duration (seconds)'}
+                    </label>
+                    <input
+                        id="presentation-duration"
+                        type="number"
+                        className="input-sm w-full"
+                        min={DURATION_MIN}
+                        max={DURATION_MAX}
+                        value={durationSec}
+                        onChange={(e) => {
+                            durationEditingRef.current = true;
+                            setDurationSec(e.target.value);
+                        }}
+                        onBlur={(e) => commitDurationSec(e.target.value)}
+                        onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                                e.preventDefault();
+                                commitDurationSec(e.currentTarget.value);
+                                e.currentTarget.blur();
+                            }
+                        }}
+                    />
+                </div>
+            ) : null}
 
             <div className="presentation-link-builder__section presentation-link-builder__export mt-12">
                 <div className="presentation-link-builder__heading">Share &amp; export</div>

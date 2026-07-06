@@ -3,7 +3,6 @@
  */
 
 import { runPresentationAnimationStep } from './presentation-animation-handlers.js';
-import { playTimeline } from './presentation-timeline-engine.js';
 import { PRESENTATION_SOURCE_ID, COMBO_FLY_RATIO } from './presentation-constants.js';
 
 const ANIMATED_POINT_SOURCE = 'presentation-animated-point';
@@ -1022,7 +1021,17 @@ export class PresentationAnimationEngine {
      * @param {import('./presentation-scene-schema.js').PresentationAnimationStep[]} steps
      */
     async playSequence(steps = []) {
-        return playTimeline(this, steps);
+        for (const step of steps) {
+            if (this._stopped) return;
+            if (step.delayMs > 0) {
+                await sleep(step.delayMs);
+                if (this._stopped) return;
+            }
+            await this.playStep(step);
+            if (this._stopped) return;
+            if (!step.loop) continue;
+            await this.playStep(step);
+        }
     }
 
     /**

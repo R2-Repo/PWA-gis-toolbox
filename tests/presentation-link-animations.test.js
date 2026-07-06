@@ -4,7 +4,6 @@ import { listRegisteredAnimationTypes } from '../js/presentation/presentation-an
 import { COMBO_FLY_RATIO } from '../js/presentation/presentation-constants.js';
 import {
     listLinkAnimations,
-    listSequenceStepOptions,
     getLinkAnimation,
     getDurationMsForPace,
     splitComboDurations
@@ -20,12 +19,6 @@ describe('presentation link animation registry', () => {
         expect(ids).toContain('animateLinePath');
         expect(ids).toContain('flyAlongPath');
         expect(ids).toContain('animatePoint');
-    });
-
-    it('includes hold in sequence step options only', () => {
-        const sequenceIds = listSequenceStepOptions().map((entry) => entry.id);
-        expect(sequenceIds).toContain('hold');
-        expect(listLinkAnimations().map((entry) => entry.id)).not.toContain('hold');
     });
 
     it('every animated link type has a preset and playback handler', () => {

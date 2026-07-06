@@ -18,10 +18,6 @@ import {
     COMBO_FLY_RATIO,
     splitComboDurations
 } from '../../presentation/presentation-link-animations.js';
-import {
-    compileAuthoringSteps,
-    applySequenceCameraStrategy
-} from '../../presentation/presentation-sequence-compiler.js';
 import { summarizeExportAvailability } from '../../presentation/presentation-export.js';
 
 export { cloneFeature, toFeatureCollection } from './source-features.js';
@@ -123,28 +119,17 @@ export function buildSceneFromConfig(config) {
         enable3D: mapService?.is3DEnabled?.() ?? false
     };
 
-    const animationMode = animation.mode || 'preset';
-    const animations = [];
-
     const cameraCtx = {
         features: styledFeatures,
         map: probeLiveCamera ? map : null,
         cameraConfig
     };
+    const animations = [];
 
-    if (animationMode === 'sequence' && animation.steps?.length) {
-        applySequenceCameraStrategy(cameraConfig, animation.steps, cameraCtx);
-        animations.push(...compileAuthoringSteps(animation.steps, { map, cameraConfig }));
-    } else {
-        const presetId = animation.presetId || 'none';
-        applyLinkAnimationCameraStrategy(cameraConfig, presetId, cameraCtx);
-        const step = buildLinkAnimationStep(presetId, animation, { map, cameraConfig });
-        if (step) animations.push(step);
-    }
-
-    const authoringMetadata = animationMode === 'sequence' && animation.steps?.length
-        ? { mode: 'sequence', steps: animation.steps }
-        : { mode: 'preset', presetId: animation.presetId || 'none' };
+    const presetId = animation.presetId || 'none';
+    applyLinkAnimationCameraStrategy(cameraConfig, presetId, cameraCtx);
+    const step = buildLinkAnimationStep(presetId, animation, { map, cameraConfig });
+    if (step) animations.push(step);
 
     return createDefaultScene({
         camera: cameraConfig,
@@ -154,7 +139,7 @@ export function buildSceneFromConfig(config) {
         animations,
         metadata: {
             generatedAt: new Date().toISOString(),
-            authoring: authoringMetadata
+            authoring: { mode: 'preset', presetId }
         }
     });
 }

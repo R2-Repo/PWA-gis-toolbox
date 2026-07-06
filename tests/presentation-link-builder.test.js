@@ -150,27 +150,6 @@ describe('buildSceneFromConfig camera strategy', () => {
         expect(scene.animations[0].options.orbitDurationMs).toBe(orbitDurationMs);
     });
 
-    it('builds custom sequence with merged fly+orbit and authoring metadata', () => {
-        const map = createMockMap({ overviewZoom: 10, finalZoom: 16 });
-        const scene = buildSceneFromConfig({
-            features: sampleFeatures,
-            map,
-            mapService: createMockMapService(),
-            animation: {
-                mode: 'sequence',
-                steps: [
-                    { id: 'a', type: 'flyToFeature', durationMs: 8000 },
-                    { id: 'b', type: 'rotateAroundFeature', durationMs: 12000 }
-                ]
-            }
-        });
-        expect(scene.camera.pitch).toBe(0);
-        expect(scene.animations).toHaveLength(1);
-        expect(scene.animations[0].type).toBe('flyToFeatureThenOrbit');
-        expect(scene.metadata.authoring.mode).toBe('sequence');
-        expect(scene.metadata.authoring.steps).toHaveLength(2);
-    });
-
     it('builds draw route preset for line features', () => {
         const scene = buildSceneFromConfig({
             features: sampleLineFeatures,
