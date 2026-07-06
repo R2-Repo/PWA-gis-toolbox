@@ -118,4 +118,12 @@ describe('presentation sequence compiler', () => {
         ];
         expect(estimateTimelineDurationMs(legacy)).toBe(9000);
     });
+
+    it('compilePreviewTimeline works without cameraConfig in ctx', () => {
+        const steps = [{ id: 's1', type: 'flyToFeature', durationMs: 8000 }];
+        expect(() => compilePreviewTimeline(steps, {})).not.toThrow();
+        const timeline = compilePreviewTimeline(steps, {});
+        expect(timeline.totalDurationMs).toBe(8000);
+        expect(timeline.steps).toHaveLength(1);
+    });
 });

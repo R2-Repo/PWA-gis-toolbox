@@ -84,10 +84,11 @@ export function defaultSequenceSteps() {
  * @param {object} ctx.cameraConfig
  */
 function buildBaseStepOptions(ctx, timelineOptions = {}) {
+    const cameraConfig = ctx?.cameraConfig ?? {};
     return {
-        pitch: ctx.map?.getPitch?.() ?? ctx.cameraConfig.pitch,
-        bearing: ctx.map?.getBearing?.() ?? ctx.cameraConfig.bearing,
-        padding: ctx.cameraConfig.padding,
+        pitch: ctx?.map?.getPitch?.() ?? cameraConfig.pitch ?? 0,
+        bearing: ctx?.map?.getBearing?.() ?? cameraConfig.bearing ?? 0,
+        padding: cameraConfig.padding ?? 80,
         entryFromCurrent: true,
         ...timelineOptions
     };
