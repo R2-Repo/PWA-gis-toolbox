@@ -180,22 +180,6 @@ const LINK_ANIMATIONS = [
     }
 ];
 
-/** Hold/pause row for custom sequences only — not a playback handler. */
-const HOLD_STEP_DEFINITION = {
-    id: 'hold',
-    label: 'Hold / pause',
-    usageHint: 'Pause between animations.',
-    requires: [],
-    cameraStrategy: 'saved',
-    animated: false,
-    sequenceOnly: true,
-    ui: {
-        showDuration: true,
-        durationLabel: 'Hold (seconds)',
-        defaultDurationMs: 2000
-    }
-};
-
 /**
  * @param {number} totalMs
  */
@@ -210,19 +194,6 @@ export function splitComboDurations(totalMs) {
 
 export function listLinkAnimations() {
     return LINK_ANIMATIONS;
-}
-
-/** Animated presets plus hold — for custom sequence builder rows. */
-export function listSequenceStepOptions() {
-    return [...LINK_ANIMATIONS.filter((entry) => entry.id !== 'none' && entry.id !== 'flyToFeatureThenOrbit'), HOLD_STEP_DEFINITION];
-}
-
-/**
- * @param {string} stepType
- */
-export function getSequenceStepDefinition(stepType) {
-    if (stepType === 'hold') return HOLD_STEP_DEFINITION;
-    return getLinkAnimation(stepType);
 }
 
 /**
