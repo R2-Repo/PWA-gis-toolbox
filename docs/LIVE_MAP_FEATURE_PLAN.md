@@ -1,7 +1,7 @@
 # Live Map & App URL Config — Feature Plan
 
-> **Status:** Planned — not yet implemented.  
-> Use this document when resuming work (with an agent or solo). Commit on `staging`; implement in the order below.
+> **Status:** Implemented (phases 1–4).  
+> Catalog authoring: [`docs/LIVE_MAP_PRESETS.md`](LIVE_MAP_PRESETS.md).
 
 ## Overview
 
@@ -13,14 +13,14 @@ Delivered as a **Live Map widget** (Import entry) with **Prebuilt maps** and **C
 
 ## Implementation checklist
 
-- [ ] **url-infrastructure** — Create `js/url/` modules (schema, parser, builder, bootstrap) for app-wide URL config
-- [ ] **url-chrome-apply** — Wire URL bootstrap into `App.jsx` and `map-manager` init; panel collapse, basemap, dimension, viewport before session restore
-- [ ] **catalog-schema** — Declarative `js/live-layers/catalog.js` + schema + kind inference (new prebuilts = catalog edits only)
-- [ ] **service-layer-model** — Add `type: 'service'` to data-model, state, layer-info, session-store, layer-restore
-- [ ] **map-rendering** — `live-layer-engine` + map-manager service layer methods (WMS, ArcGIS raster, vector refresh)
-- [ ] **url-live-integration** — `map` / `live` URL params; live-layer bootstrap as URL consumer
-- [ ] **live-map-widget** — Widget (engine/controller/dialog); Import card; Prebuilt + Custom URL tabs
-- [ ] **persistence-polish** — Project kit service layers, `docs/LIVE_MAP_PRESETS.md` authoring guide, catalog tests, CSS
+- [x] **url-infrastructure** — Create `js/url/` modules (schema, parser, builder, bootstrap) for app-wide URL config
+- [x] **url-chrome-apply** — Wire URL bootstrap into `App.jsx` and `map-manager` init; panel collapse, basemap, dimension, viewport before session restore
+- [x] **catalog-schema** — Declarative `js/live-layers/catalog.js` + schema + kind inference (new prebuilts = catalog edits only)
+- [x] **service-layer-model** — Add `type: 'service'` to data-model, state, layer-info, session-store, layer-restore
+- [x] **map-rendering** — `live-layer-engine` + map-manager service layer methods (WMS, ArcGIS raster, vector refresh)
+- [x] **url-live-integration** — `map` / `live` URL params; live-layer bootstrap as URL consumer
+- [x] **live-map-widget** — Widget (engine/controller/dialog); Import card; Prebuilt + Custom URL tabs
+- [x] **persistence-polish** — Project kit service layers, `docs/LIVE_MAP_PRESETS.md` authoring guide, catalog tests, CSS
 
 ---
 

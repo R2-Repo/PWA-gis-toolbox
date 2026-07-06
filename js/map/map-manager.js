@@ -5,7 +5,7 @@
 import logger from '../core/logger.js';
 import bus from '../core/event-bus.js';
 import { getActiveLayer, setActiveLayer } from '../core/state.js';
-import { flattenFeatureGeometryCollections, isWorkspaceLayer } from '../core/data-model.js';
+import { flattenFeatureGeometryCollections, isWorkspaceLayer, isServiceLayer } from '../core/data-model.js';
 import { getCoverageRasters, isCoverageRasterLayer } from '../core/coverage-raster-layer.js';
 import { MAP_CHUNK_BATCH_SIZE, RENDER_LIMITS } from './render-limits.js';
 import { buildViewportGeoJSON } from '../workspace/viewport-loader.js';
@@ -19,6 +19,17 @@ import {
 import { resetMapPopupScroll } from './map-popup-utils.js';
 import { isPresentationMode, getPresentationModeState } from '../presentation/presentation-mode-detector.js';
 import { resolvePresentationMapInit } from '../presentation/presentation-scene-schema.js';
+import { hasAppUrlConfig, getAppUrlConfig } from '../url/app-url-detector.js';
+import { mergePresetWithUrlConfig, resolveAppUrlMapInit } from '../url/app-url-bootstrap.js';
+import {
+    addServiceLayer as engineAddServiceLayer,
+    removeServiceLayer as engineRemoveServiceLayer,
+    refreshServiceLayer as engineRefreshServiceLayer,
+    refreshAllVectorServiceLayers,
+    toggleServiceLayer,
+    materializeServiceLayerViewport,
+    getServiceLayerRuntime
+} from '../live-layers/live-layer-engine.js';
 
 const POINT_CLUSTER_THRESHOLD = 10000;
 
@@ -277,25 +288,27 @@ class MapManager {
             return;
         }
 
-        const presentationInit = isPresentationMode()
+        const mapInit = isPresentationMode()
             ? resolvePresentationMapInit(getPresentationModeState().scene)
-            : null;
-        const basemapKey = presentationInit?.basemap ?? 'voyager';
+            : hasAppUrlConfig()
+                ? resolveAppUrlMapInit(mergePresetWithUrlConfig(getAppUrlConfig()))
+                : null;
+        const basemapKey = mapInit?.basemap ?? 'voyager';
         this.currentBasemap = basemapKey;
-        if (presentationInit?.enable3D) {
+        if (mapInit?.enable3D) {
             this._3dEnabled = true;
         }
 
         this.map = new maplibregl.Map({
             container: containerId,
             style: this._buildStyle(basemapKey),
-            center: presentationInit?.center ?? [-111.09, 39.32],
-            zoom: presentationInit?.zoom ?? 7,
-            pitch: presentationInit?.pitch ?? 0,
-            bearing: presentationInit?.bearing ?? 0,
+            center: mapInit?.center ?? [-111.09, 39.32],
+            zoom: mapInit?.zoom ?? 7,
+            pitch: mapInit?.pitch ?? 0,
+            bearing: mapInit?.bearing ?? 0,
             attributionControl: true,
             maxPitch: 85,
-            dragRotate: presentationInit?.enable3D ?? false,
+            dragRotate: mapInit?.enable3D ?? false,
             touchZoomRotate: true,
             preserveDrawingBuffer: true,
             // Keep parent-zoom tiles visible while zooming in so motion feels smooth
@@ -304,7 +317,7 @@ class MapManager {
         });
 
         // Disable right-click rotate and touch rotation (keeps zoom gestures)
-        if (!presentationInit?.enable3D) {
+        if (!mapInit?.enable3D) {
             this.map.dragRotate.disable();
             this.map.touchZoomRotate.disableRotation();
         }
@@ -353,6 +366,7 @@ class MapManager {
             this._workspaceMoveTimer = window.setTimeout(() => {
                 this._reapplyAllScaleRangesIfNeeded();
                 void this._refreshAllWorkspaceLayers();
+                refreshAllVectorServiceLayers(this);
             }, 100);
         });
 
@@ -554,12 +568,27 @@ class MapManager {
         this._layerStyles.set(layerId, style);
     }
 
-    // ==========================================
-    // Layer management
-    // ==========================================
+    async addServiceLayer(dataset, colorIndex = 0, { fit = false } = {}) {
+        return engineAddServiceLayer(this, dataset, colorIndex, { fit });
+    }
+
+    removeServiceLayer(layerId) {
+        engineRemoveServiceLayer(this, layerId);
+    }
+
+    materializeServiceLayer(dataset) {
+        return materializeServiceLayerViewport(this, dataset);
+    }
+
+    refreshServiceLayer(layerId) {
+        return engineRefreshServiceLayer(this, layerId);
+    }
 
     addLayer(dataset, colorIndex = 0, { fit = false } = {}) {
         if (!this.map) return;
+        if (isServiceLayer(dataset)) {
+            return this.addServiceLayer(dataset, colorIndex, { fit });
+        }
         if (isWorkspaceLayer(dataset)) {
             return this.addWorkspaceLayer(dataset, colorIndex, { fit });
         }
@@ -1372,6 +1401,10 @@ class MapManager {
     }
 
     removeLayer(id) {
+        if (getServiceLayerRuntime(this, id)) {
+            engineRemoveServiceLayer(this, id);
+            return;
+        }
         const info = this.dataLayers.get(id);
         if (info) {
             const chunks = info.chunkSources || [{ sourceId: info.sourceId, layerIds: info.layerIds || [] }];
@@ -1398,6 +1431,10 @@ class MapManager {
     }
 
     toggleLayer(id, visible) {
+        if (getServiceLayerRuntime(this, id)) {
+            toggleServiceLayer(this, id, visible);
+            return;
+        }
         const info = this.dataLayers.get(id);
         if (!info) return;
         const visibility = visible ? 'visible' : 'none';

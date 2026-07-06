@@ -3491,3 +3491,107 @@ textarea { resize: vertical; min-height: 60px; }
 .presentation-link-builder__export-grid .btn {
     width: 100%;
 }
+
+/* Live Map widget */
+.live-map-dialog__tabs {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 16px;
+}
+.live-map-dialog__tab {
+    flex: 1;
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface);
+    cursor: pointer;
+    font-size: 13px;
+}
+.live-map-dialog__tab--active {
+    border-color: var(--primary);
+    background: color-mix(in srgb, var(--primary) 12%, var(--surface));
+    font-weight: 600;
+}
+.live-map-dialog__section {
+    margin-bottom: 18px;
+}
+.live-map-dialog__section-title {
+    margin: 0 0 10px;
+    font-size: 13px;
+    font-weight: 600;
+}
+.live-map-dialog__section-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 10px;
+}
+.live-map-dialog__hint {
+    margin: 0 0 12px;
+    font-size: 12px;
+    color: var(--text-muted);
+}
+.live-map-dialog__field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font-size: 12px;
+}
+.live-map-dialog__label {
+    color: var(--text-muted);
+    font-weight: 600;
+}
+.live-map-dialog__grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+}
+.live-map-dialog__grid--4 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.live-map-dialog__url-row {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+.live-map-dialog__url-row .input {
+    flex: 1;
+}
+.live-map-dialog__preset-grid {
+    display: grid;
+    gap: 8px;
+}
+.live-map-dialog__preset {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+    text-align: left;
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface);
+    cursor: pointer;
+}
+.live-map-dialog__preset span {
+    font-size: 12px;
+    color: var(--text-muted);
+}
+.live-map-dialog__preset--active {
+    border-color: var(--primary);
+    background: color-mix(in srgb, var(--primary) 10%, var(--surface));
+}
+.live-map-dialog__preview {
+    width: 100%;
+    font-family: ui-monospace, monospace;
+    font-size: 11px;
+    resize: vertical;
+}
+.live-map-dialog__footer-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    justify-content: flex-end;
+    width: 100%;
+}

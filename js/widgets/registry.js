@@ -9,6 +9,7 @@ import { openCrsManager } from './crs-manager/controller.js';
 import { openQuery } from './query/controller.js';
 import { openWirelessSitePlanning } from './wireless-site-planning/controller.js';
 import { openPresentationLinkBuilder } from './presentation-link-builder/controller.js';
+import { openLiveMap } from './live-map/controller.js';
 import logger from '../core/logger.js';
 
 /** @typedef {import('./widget-types.js').WidgetContext} WidgetContext */
@@ -112,6 +113,14 @@ export const GIS_WIDGETS_HIDDEN = [
         icon: '🔗',
         tip: 'Build a fullscreen presentation URL from selected map features.',
         open: openPresentationLinkBuilder
+    },
+    {
+        type: 'live-map',
+        action: 'openLiveMap',
+        label: 'Live Map',
+        icon: '🗺️',
+        tip: 'Add live service layers and build bookmarkable map URLs.',
+        open: openLiveMap
     }
 ];
 

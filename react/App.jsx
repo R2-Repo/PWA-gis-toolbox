@@ -43,8 +43,10 @@ import {
     exportMapView,
     buildMapContextMenuItems,
     setPanelCollapsed,
-    openPresentationLinkBuilderWidget
+    openPresentationLinkBuilderWidget,
+    bootstrapAppFromUrl
 } from '../js/tools/tool-handlers.js';
+import { getAppUrlConfig } from '../js/url/app-url-detector.js';
 import { getActiveLayer } from '../js/core/state.js';
 import { isLayerVisibleAtScale } from '../js/map/scale-range.js';
 import { AppStoreProvider, createAppStore, useAppStore } from './providers/AppStore.jsx';
@@ -88,8 +90,21 @@ function SaveIndicator() {
     );
 }
 
+function getInitialPanelCollapsed(side) {
+    const panel = getAppUrlConfig().panel;
+    if (!panel || panel === 'both') return false;
+    if (panel === 'none') return true;
+    if (panel === 'left') return side === 'right';
+    if (panel === 'right') return side === 'left';
+    return false;
+}
+
 function usePanelCollapse(side) {
-    const [collapsed, setCollapsed] = useState(false);
+    const [collapsed, setCollapsed] = useState(() => getInitialPanelCollapsed(side));
+
+    useLayoutEffect(() => {
+        setPanelCollapsed(side, collapsed);
+    }, [side, collapsed]);
 
     const toggle = useCallback(() => {
         setCollapsed((prev) => {
@@ -104,7 +119,12 @@ function usePanelCollapse(side) {
         setPanelCollapsed(side, false);
     }, [side]);
 
-    return { collapsed, toggle, expand };
+    const applyCollapsed = useCallback((next) => {
+        setCollapsed(next);
+        setPanelCollapsed(side, next);
+    }, [side]);
+
+    return { collapsed, toggle, expand, setCollapsed: applyCollapsed };
 }
 
 function AppShell() {
@@ -118,6 +138,24 @@ function AppShell() {
     const [dimension, setDimension] = useState('2d');
     const leftPanel = usePanelCollapse('left');
     const rightPanel = usePanelCollapse('right');
+
+    useEffect(() => {
+        return bus.on('app-url:panel', (panel) => {
+            if (!panel || panel === 'both') {
+                leftPanel.setCollapsed(false);
+                rightPanel.setCollapsed(false);
+            } else if (panel === 'none') {
+                leftPanel.setCollapsed(true);
+                rightPanel.setCollapsed(true);
+            } else if (panel === 'left') {
+                leftPanel.setCollapsed(false);
+                rightPanel.setCollapsed(true);
+            } else if (panel === 'right') {
+                leftPanel.setCollapsed(true);
+                rightPanel.setCollapsed(false);
+            }
+        });
+    }, [leftPanel, rightPanel]);
 
     const panelActions = useMemo(() => ({
         setActiveLayer: setActiveLayerAndRefresh,
@@ -393,6 +431,7 @@ export function App() {
         if (!bootRanRef.current) {
             bootRanRef.current = true;
             void (async () => {
+                bootstrapAppFromUrl();
                 if (window.innerWidth >= 768) {
                     await showToolInfo();
                 }
