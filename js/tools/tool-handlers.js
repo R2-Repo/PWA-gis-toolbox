@@ -9,12 +9,11 @@ import {
     getState, getLayers, getActiveLayer, addLayer, removeLayer, updateLayer,
     setActiveLayer, toggleLayerVisibility, reorderLayer, reorderLayerToIndex, setUIState, toggleAGOLCompat
 } from '../core/state.js';
-import { mergeDatasets, getSelectedFields, tableToSpatial, createSpatialDataset, createTableDataset, analyzeSchema, analyzeTableSchema, isSpatialLayer } from '../core/data-model.js';
+import { mergeDatasets, getSelectedFields, tableToSpatial, createSpatialDataset, createTableDataset, analyzeSchema, analyzeTableSchema, isSpatialLayer, isServiceLayer, isWorkspaceLayer } from '../core/data-model.js';
 import { isLayerDisplayReady, layerCrsWarning, getLayerCrs, resolveReprojectFromCrs } from '../crs/layer-crs.js';
 import { importFile, importFiles } from '../import/importer.js';
 import { cancelWorkerParse } from '../import/import-parse-service.js';
 import { convertSpatialDatasetToWorkspace } from '../import/workspace-import.js';
-import { isWorkspaceLayer, isServiceLayer } from '../core/data-model.js';
 import {
     materializeSpatialLayer,
     getWorkingFeaturesFromLayer,
@@ -660,12 +659,13 @@ export function getRightPanelSnapshot() {
 
     const agolMode = !!getState().agolCompatMode;
     const layerIndex = getLayers().indexOf(layer);
+    const isService = isServiceLayer(layer);
     return {
         layer,
-        selectedFields: getSelectedFields(layer.schema),
-        formats: getAvailableFormats(layer),
+        selectedFields: layer.schema ? getSelectedFields(layer.schema) : [],
+        formats: isService ? [] : getAvailableFormats(layer),
         agolMode,
-        agolCheck: agolMode ? checkAGOLCompatibility(layer) : null,
+        agolCheck: agolMode && !isService ? checkAGOLCompatibility(layer) : null,
         layerStyle: isSpatialLayer(layer) ? mapService.getLayerStyle(layer.id) : null,
         styleDefaultColor: getLayerDefaultColor(layerIndex),
         mapZoom,
