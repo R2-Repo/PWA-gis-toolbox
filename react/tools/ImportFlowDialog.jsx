@@ -60,6 +60,8 @@ export function ImportFlowDialog({
 
     onOpenDraw,
 
+    onOpenLiveMap,
+
     onOptimizeImport,
 
     hasActiveFence = false,
@@ -735,6 +737,18 @@ export function ImportFlowDialog({
                             description="Feature services & map layers"
 
                             onClick={() => onOpenArcGIS?.()}
+
+                        />
+
+                        <ImportOptionCard
+
+                            icon="🗺️"
+
+                            title="Live Map"
+
+                            description="Live service layers & bookmark URLs"
+
+                            onClick={() => onOpenLiveMap?.()}
 
                         />
 

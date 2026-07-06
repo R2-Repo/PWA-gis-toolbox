@@ -1,7 +1,7 @@
 /**
  * Read-only layer summary rows for the Data Preview panel.
  */
-import { getLayerFeatureCount, isSpatialLayer, isWorkspaceLayer } from './data-model.js';
+import { getLayerFeatureCount, isSpatialLayer, isWorkspaceLayer, isServiceLayer } from './data-model.js';
 import { getLayerCrs, isLayerDisplayReady, layerCrsWarning } from '../crs/layer-crs.js';
 import { crsLabel } from '../crs/registry.js';
 import { formatBytes } from '../import/import-preflight.js';
@@ -57,28 +57,42 @@ export function getLayerInfoSummary(layer) {
 
     const rows = [];
     const spatial = isSpatialLayer(layer);
+    const service = isServiceLayer(layer);
     const count = getLayerFeatureCount(layer);
     const fieldCount = layer.schema?.fields?.length ?? 0;
 
     rows.push({
         id: 'type',
         label: 'Type',
-        value: spatial ? 'Spatial layer' : 'Table'
+        value: service ? `Live service (${layer.service?.kind || 'unknown'})` : spatial ? 'Spatial layer' : 'Table'
     });
 
-    rows.push({
-        id: 'records',
-        label: spatial ? 'Features' : 'Rows',
-        value: count.toLocaleString()
-    });
+    if (service) {
+        rows.push({
+            id: 'serviceUrl',
+            label: 'Service URL',
+            value: layer.service?.url || '—'
+        });
+        rows.push({
+            id: 'refresh',
+            label: 'Refresh',
+            value: layer.service?.refreshMs ? `${Math.round(layer.service.refreshMs / 1000)}s` : '—'
+        });
+    } else {
+        rows.push({
+            id: 'records',
+            label: spatial ? 'Features' : 'Rows',
+            value: count.toLocaleString()
+        });
 
-    rows.push({
-        id: 'fields',
-        label: 'Fields',
-        value: String(fieldCount)
-    });
+        rows.push({
+            id: 'fields',
+            label: 'Fields',
+            value: String(fieldCount)
+        });
+    }
 
-    if (spatial && layer.schema?.geometryType) {
+    if (!service && spatial && layer.schema?.geometryType) {
         rows.push({
             id: 'geometry',
             label: 'Geometry',
@@ -86,7 +100,7 @@ export function getLayerInfoSummary(layer) {
         });
     }
 
-    if (spatial) {
+    if (!service && spatial) {
         const crs = getLayerCrs(layer);
         const crsWarning = layerCrsWarning(layer);
         rows.push({
@@ -100,7 +114,7 @@ export function getLayerInfoSummary(layer) {
     rows.push({
         id: 'source',
         label: 'Source',
-        value: formatSource(layer)
+        value: service ? (layer.service?.url || 'Live service') : formatSource(layer)
     });
 
     if (layer.source?.fileSize > 0) {
@@ -120,7 +134,7 @@ export function getLayerInfoSummary(layer) {
         });
     }
 
-    if (spatial) {
+    if (!service && spatial) {
         rows.push({
             id: 'storage',
             label: 'Storage',

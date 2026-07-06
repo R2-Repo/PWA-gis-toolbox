@@ -95,6 +95,58 @@ export function isSpatialLayer(layer) {
     return layer?.type === 'spatial' || isWorkspaceLayer(layer);
 }
 
+/**
+ * @param {object} options
+ * @param {string} options.name
+ * @param {string} options.url
+ * @param {string} options.kind
+ * @param {number} [options.refreshMs]
+ * @param {number} [options.opacity]
+ * @param {string} [options.attribution]
+ * @param {string} [options.presetId]
+ */
+export function createServiceLayer({
+    name,
+    url,
+    kind,
+    refreshMs = 300000,
+    opacity = 1,
+    attribution = '',
+    presetId = null
+}) {
+    return {
+        id: generateId(),
+        name,
+        type: 'service',
+        visible: true,
+        active: true,
+        created: new Date().toISOString(),
+        service: {
+            presetId,
+            kind,
+            url: String(url || '').trim().replace(/\/+$/, '').split('?')[0],
+            refreshMs,
+            opacity,
+            attribution
+        },
+        source: {
+            format: 'live-service',
+            presetId,
+            url: String(url || '').trim().replace(/\/+$/, '').split('?')[0]
+        }
+    };
+}
+
+/** @param {object} layer */
+export function isServiceLayer(layer) {
+    return layer?.type === 'service';
+}
+
+/** Layers that support spatial analysis (in-memory features). */
+export function isAnalyzableLayer(layer) {
+    return isSpatialLayer(layer);
+}
+
 /** Feature/row count for UI labels — workspace layers use schema.featureCount, not in-memory geojson length. */
 export function getLayerFeatureCount(layer) {
     if (!layer) return 0;

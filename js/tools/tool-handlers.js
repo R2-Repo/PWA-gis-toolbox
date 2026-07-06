@@ -14,7 +14,7 @@ import { isLayerDisplayReady, layerCrsWarning, getLayerCrs, resolveReprojectFrom
 import { importFile, importFiles } from '../import/importer.js';
 import { cancelWorkerParse } from '../import/import-parse-service.js';
 import { convertSpatialDatasetToWorkspace } from '../import/workspace-import.js';
-import { isWorkspaceLayer } from '../core/data-model.js';
+import { isWorkspaceLayer, isServiceLayer } from '../core/data-model.js';
 import {
     materializeSpatialLayer,
     getWorkingFeaturesFromLayer,
@@ -80,6 +80,8 @@ import { loadPaletteFavorites, savePaletteFavorites } from '../map/palette-store
 import { getWorkspaceLayer, exportWorkspaceLayerBundle } from '../workspace/workspace-store.js';
 import { WorkflowStore } from '../workflow/workflow-store.js';
 import { buildWidgetActions } from '../widgets/registry.js';
+import { shouldSkipSessionRestore } from '../url/app-url-detector.js';
+import { bootstrapAppUrl } from '../url/app-url-bootstrap.js';
 import { openPresentationLinkBuilder } from '../widgets/presentation-link-builder/controller.js';
 import {
     loadWidgetStore,
@@ -106,6 +108,10 @@ export function getWorkflowOverlay() { return _workflowOverlay; }
 // ============================
 export async function restoreSessionIfAvailable() {
     try {
+        if (shouldSkipSessionRestore()) {
+            logger.info('Session', 'Skipped restore — app URL config present');
+            return;
+        }
         const info = await sessionStore.hasSession();
         if (!info) return;
 
@@ -136,6 +142,8 @@ export async function restoreSessionIfAvailable() {
                             continue;
                         }
                         dataset = buildDatasetFromWorkspaceRef(saved);
+                    } else if (saved.type === 'service') {
+                        dataset = await buildDatasetFromSavedLayer(saved, {});
                     } else {
                         dataset = await buildDatasetFromSavedLayer(saved, {
                             spatial: saved.geojson,
@@ -152,6 +160,8 @@ export async function restoreSessionIfAvailable() {
                         await mapService.addWorkspaceLayer(dataset, layerIdx, { fit: false });
                     } else if (dataset.type === 'spatial') {
                         mapService.addLayer(dataset, layerIdx, { fit: false });
+                    } else if (dataset.type === 'service') {
+                        await mapService.addServiceLayer(dataset, layerIdx, { fit: false });
                     }
                     restored++;
                 } catch (err) {
@@ -842,6 +852,8 @@ async function _addImportedDatasets(datasets, importOpts = {}) {
             } else {
                 mapService.addLayer(ds, layerIdx, { fit: false });
             }
+        } else if (ds.type === 'service') {
+            await mapService.addServiceLayer(ds, layerIdx, { fit: false });
         } else {
             mapService.addLayer(ds, layerIdx, { fit: false });
         }
@@ -1142,6 +1154,10 @@ function _openImportFlowModal(flowProps = {}) {
                 onOpenFence: () => {
                     close();
                     startImportFence();
+                },
+                onOpenLiveMap: () => {
+                    close();
+                    openLiveMap();
                 },
                 ...flowProps
             });
@@ -3657,6 +3673,30 @@ export function openPresentationLinkBuilderWidget() {
     return openPresentationLinkBuilder(getWidgetContext());
 }
 
+export async function openLiveMap() {
+    const { openLiveMap: open } = await import('../widgets/live-map/controller.js');
+    return open(getWidgetContext());
+}
+
+export function bootstrapAppFromUrl() {
+    bootstrapAppUrl({ mapService, setPanelCollapsed });
+}
+
+export async function materializeServiceLayerWithConfirm(layerId) {
+    const layer = getLayers().find((entry) => entry.id === layerId);
+    if (!layer || !isServiceLayer(layer)) return;
+    try {
+        const dataset = mapService.materializeServiceLayer(layer);
+        addLayer(dataset, { activate: true });
+        const layerIdx = getLayers().indexOf(dataset);
+        mapService.addLayer(dataset, layerIdx, { fit: true });
+        refreshUI();
+        showToast(`Materialized ${dataset.geojson.features.length} features to a new layer`, 'success');
+    } catch (error) {
+        showToast(error?.message || 'Could not materialize layer', 'warning');
+    }
+}
+
 // ============================
 // Import Fence
 // ============================
@@ -4748,6 +4788,8 @@ const APP_ACTIONS = {
     openNearestNeighborAnalysis,
     openPhotoMapper: openPhotoMapper,
     openArcGISImporter: openArcGISImporter,
+    openLiveMap,
+    materializeServiceLayer: materializeServiceLayerWithConfirm,
     startImportFence,
     ...buildWidgetActions(getWidgetContext),
     openPresentationLinkBuilder: openPresentationLinkBuilderWidget,

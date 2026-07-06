@@ -99,6 +99,19 @@ export async function buildDatasetFromSavedLayer(saved, payload = {}) {
         };
     }
 
+    if (saved.type === 'service' && saved.service) {
+        return {
+            id: layerId,
+            name: saved.name,
+            type: 'service',
+            service: { ...saved.service },
+            source: saved.source || { format: 'live-service', url: saved.service.url },
+            visible: saved.visible !== false,
+            active: false,
+            created: saved.created || new Date().toISOString()
+        };
+    }
+
     return null;
 }
 

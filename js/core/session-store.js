@@ -126,6 +126,9 @@ function _serializeLayer(layer) {
     if (layer.type === 'table' && layer.rows) {
         out.rows = layer.rows;
     }
+    if (layer.type === 'service' && layer.service) {
+        out.service = { ...layer.service };
+    }
     // Preserve filters if present
     if (layer.filters) out.filters = layer.filters;
     if (layer.scaleRangeEnabled) out.scaleRangeEnabled = true;

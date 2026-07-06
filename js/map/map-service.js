@@ -40,6 +40,18 @@ export function createMapService({ mapAdapter = mapManager } = {}) {
         addWorkspaceLayer(dataset, colorIndex = 0, options = {}) {
             return mapAdapter.addWorkspaceLayer(dataset, colorIndex, options);
         },
+        addServiceLayer(dataset, colorIndex = 0, options = {}) {
+            return mapAdapter.addServiceLayer(dataset, colorIndex, options);
+        },
+        removeServiceLayer(layerId) {
+            return mapAdapter.removeServiceLayer(layerId);
+        },
+        refreshServiceLayer(layerId) {
+            return mapAdapter.refreshServiceLayer(layerId);
+        },
+        materializeServiceLayer(dataset) {
+            return mapAdapter.materializeServiceLayer(dataset);
+        },
         refreshWorkspaceLayerViewport(layerId) {
             return mapAdapter.refreshWorkspaceLayerViewport(layerId);
         },
