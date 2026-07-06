@@ -1116,6 +1116,7 @@ function _openImportFlowModal(flowProps = {}) {
             if (!root) return;
             try {
             const { mountImportFlowDialog } = await import('../../react/tools/mountImportFlowDialog.jsx');
+            const { listPresets, buildPresetShareUrl } = await import('../widgets/live-map/engine.js');
             const mounted = mountImportFlowDialog(root, {
                 onCancel: () => close(),
                 hasActiveFence: hasActiveImportFence(),
@@ -1159,6 +1160,8 @@ function _openImportFlowModal(flowProps = {}) {
                     close();
                     openLiveMap();
                 },
+                liveMapPresets: listPresets(),
+                onBuildPresetShareUrl: (presetId) => buildPresetShareUrl(presetId),
                 ...flowProps
             });
             watchOverlayUnmount(overlay, () => mounted.unmount?.());

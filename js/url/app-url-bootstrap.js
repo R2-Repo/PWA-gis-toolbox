@@ -3,6 +3,7 @@ import { getAppUrlConfig } from './app-url-detector.js';
 import { resolveAppUrlMapInit } from './app-url-builder.js';
 import { applyLiveLayerConfig } from '../live-layers/live-layer-bootstrap.js';
 import { resolveMapPreset } from '../live-layers/catalog-schema.js';
+import { applyChromeFromConfig, waitForMapStyleReady } from '../widgets/live-map/apply-live-map-config.js';
 
 /**
  * @typedef {object} AppUrlBootstrapDeps
@@ -127,21 +128,9 @@ async function applyAfterMapReady(deps, config, init) {
     const map = deps.mapService.getMap?.();
     if (!map) return;
 
-    if (config.basemap && config.basemap !== deps.mapService.getCurrentBasemap?.()) {
-        deps.mapService.setBasemap(config.basemap);
-    }
-
-    if (config.dim === '3d') {
-        deps.mapService.enable3D({ animate: false });
-    } else if (config.dim === '2d') {
-        deps.mapService.disable3D({ animate: false });
-    }
-
+    await applyChromeFromConfig({ mapService: deps.mapService }, config);
+    await waitForMapStyleReady(map);
     applyViewportConfig(map, init);
-    bus.emit('map:chrome', {
-        basemap: deps.mapService.getCurrentBasemap?.(),
-        is3d: deps.mapService.is3DEnabled?.()
-    });
 
     await applyLiveLayerConfig(config, deps);
 }

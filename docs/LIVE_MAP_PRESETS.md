@@ -2,12 +2,14 @@
 
 Add prebuilt maps by editing [`js/live-layers/catalog.js`](../js/live-layers/catalog.js).
 
+Curated presets appear in **Import → Live Map** as card tiles. Clicking a preset opens its bookmark URL in a new browser tab. The **Create your own** card opens the custom Live Map builder in the right panel.
+
 ## Quick workflow
 
 1. Open GIS Toolbox and configure the map (layers, basemap, 2D/3D, panels, view).
-2. **Import → Live Map → Custom URL** tab.
-3. Click **Use current map view** and set any custom layer URLs.
-4. Click **Copy catalog entry** and paste the JSON into `LIVE_MAP_PRESETS` in `catalog.js`.
+2. **Import → Live Map → Create your own** to open the custom builder.
+3. Add your layer URLs, click **Use current map view** (under Advanced) if needed.
+4. Click **Copy catalog entry (developer)** and paste the JSON into `LIVE_MAP_PRESETS` in `catalog.js`.
 5. For reusable layer definitions, add entries to `LIVE_LAYERS` and reference them by id in the preset `layers` array.
 
 ## Catalog shapes
@@ -32,8 +34,9 @@ Add prebuilt maps by editing [`js/live-layers/catalog.js`](../js/live-layers/cat
 {
   id: 'my-preset-id',
   name: 'My Preset',
-  description: 'Short description for the UI',
-  category: 'Reference',
+  description: 'Short description for the import card',
+  icon: '🗺️', // optional — shown on the import preset card
+  category: 'Reference', // optional — badge on the import card
   layers: ['my-layer-id'], // or inline { name, url } objects
   basemap: 'voyager',
   dim: '2d',
