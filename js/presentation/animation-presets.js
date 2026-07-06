@@ -71,7 +71,8 @@ export function getAnimationPreset(presetId) {
  * @returns {PresentationAnimationStep}
  */
 export function createAnimationStep(presetId, options = {}) {
-    return {
+    /** @type {PresentationAnimationStep} */
+    const step = {
         id: options.id || `step-${Date.now()}`,
         type: presetId,
         durationMs: options.durationMs ?? 3000,
@@ -81,6 +82,10 @@ export function createAnimationStep(presetId, options = {}) {
         loop: !!options.loop,
         options: options.stepOptions || {}
     };
+    if (options.startAtMs != null) {
+        step.startAtMs = options.startAtMs;
+    }
+    return step;
 }
 
 export function listEasingOptions() {

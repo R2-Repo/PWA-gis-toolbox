@@ -40,6 +40,7 @@
  * @property {string} type
  * @property {number} durationMs
  * @property {number} delayMs
+ * @property {number} [startAtMs]
  * @property {string} easing
  * @property {string} [target]
  * @property {boolean} [loop]
