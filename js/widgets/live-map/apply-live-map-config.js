@@ -63,10 +63,11 @@ export async function applyChromeFromConfig(ctx, config) {
         await waitForMapStyleReady(mapService.getMap?.());
     }
 
-    if (target3d && !current3d) {
-        mapService.enable3D({ animate: false });
+    if (target3d) {
+        mapService.set3DEnabled(true);
+        mapService.reconcile3DState({ emitEvent: false });
         await waitForMapStyleReady(mapService.getMap?.());
-    } else if (!target3d && current3d) {
+    } else if (current3d) {
         mapService.disable3D({ animate: false });
         await waitForMapStyleReady(mapService.getMap?.());
     }

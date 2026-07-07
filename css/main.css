@@ -3340,55 +3340,21 @@ textarea { resize: vertical; min-height: 60px; }
     margin: 0 0 8px;
     color: var(--primary);
 }
-.presentation-link-builder__summary {
+.presentation-link-builder__selection {
     display: grid;
-    gap: 4px;
-    margin-top: 8px;
-}
-.presentation-link-builder__layer-list {
-    max-height: 180px;
-    overflow: auto;
-    border: 1px solid var(--border);
-    border-radius: 6px;
-}
-.presentation-link-builder__layer-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
     gap: 8px;
-    width: 100%;
-    padding: 8px 10px;
-    border: none;
-    border-bottom: 1px solid var(--border);
-    background: transparent;
-    color: inherit;
-    font-size: 13px;
-    text-align: left;
-    cursor: pointer;
+    margin-bottom: 12px;
 }
-.presentation-link-builder__layer-row:last-child {
-    border-bottom: none;
+.presentation-link-builder__selection-summary {
+    color: var(--text-muted);
+    line-height: 1.45;
 }
-.presentation-link-builder__layer-row:hover {
-    background: var(--bg-surface);
+.presentation-link-builder__selection-summary.is-over-limit {
+    color: var(--danger, #ff453a);
 }
-.presentation-link-builder__layer-row.is-focused {
-    background: rgba(0, 122, 255, 0.12);
-    box-shadow: inset 3px 0 0 var(--primary, #007aff);
-}
-.presentation-link-builder__layer-row.has-selection .presentation-link-builder__layer-name {
-    font-weight: 600;
-}
-.presentation-link-builder__layer-name {
-    flex: 1;
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-.presentation-link-builder__layer-meta {
-    flex-shrink: 0;
-    font-size: 12px;
+.presentation-link-builder__selection-error {
+    color: var(--danger, #ff453a);
+    line-height: 1.45;
 }
 .presentation-link-builder__url {
     word-break: break-all;
@@ -3403,40 +3369,15 @@ textarea { resize: vertical; min-height: 60px; }
     flex-wrap: wrap;
     gap: 8px;
 }
-.presentation-link-builder--simple .presentation-link-builder__intro {
-    margin: 0 0 12px;
-}
-.presentation-link-builder__status-card {
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-    background: var(--bg-surface);
-    padding: 12px;
-    margin-bottom: 12px;
-}
-.presentation-link-builder__status-card.is-ready {
-    border-color: rgba(48, 209, 88, 0.35);
-}
-.presentation-link-builder__status-title {
-    font-size: 13px;
-    font-weight: 700;
-    margin-bottom: 4px;
-}
 .presentation-link-builder__row {
     margin-bottom: 10px;
 }
 .presentation-link-builder__hint {
-    margin: 6px 0 0;
+    margin: 0;
     line-height: 1.45;
 }
-.presentation-link-builder__limits {
-    margin-top: 6px;
-    color: var(--text-muted);
-}
-.presentation-link-builder__limits.is-over-limit {
-    color: var(--danger, #ff453a);
-}
 .presentation-link-builder__btn-row {
-    margin-bottom: 4px;
+    margin-bottom: 0;
 }
 .presentation-link-builder__export-grid {
     display: grid;

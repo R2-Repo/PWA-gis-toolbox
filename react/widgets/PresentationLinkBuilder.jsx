@@ -5,6 +5,7 @@ import {
     subscribePresentationLinkSceneBundle
 } from '../../js/widgets/presentation-link-builder/scene-store.js';
 import { WidgetPanelShell } from './shared/WidgetPanelShell.jsx';
+import { LayerSelect } from './shared/LayerSelect.jsx';
 import {
     listLinkAnimations,
     getLinkAnimation,
@@ -46,6 +47,26 @@ function formatDurationSec(durationMs, fallbackMs = ORBIT_PACE_MS.normal) {
 
 function formatLimitNumber(value) {
     return Number(value ?? 0).toLocaleString();
+}
+
+function formatLayerOption(layer) {
+    const selected = layer.selectedCount ?? 0;
+    if (selected > 0) {
+        return `${layer.name} (${selected} selected)`;
+    }
+    return `${layer.name} (${layer.featureCount ?? layer.count ?? 0} features)`;
+}
+
+function buildSelectionSummary(sourceSummary, limits, selectionCount) {
+    const limitPart = `${formatLimitNumber(limits.featureCount)}/${formatLimitNumber(limits.maxFeatures)} · ${formatLimitNumber(limits.vertexCount)}/${formatLimitNumber(limits.maxVertices)} vertices`;
+
+    if (sourceSummary.featureCount > 0) {
+        return `${sourceSummary.sourceLabel} · ${limitPart}`;
+    }
+    if (selectionCount > 0) {
+        return `${selectionCount} selected on map · ${limitPart}`;
+    }
+    return 'No features selected';
 }
 
 const PRESENTATION_LINK_SCENE_BUNDLE = 'presentation-link:scene-bundle';
@@ -302,16 +323,17 @@ export function PresentationLinkBuilder({
             compatible: true
         }))).map((entry) => [entry.id, entry.compatible])
     );
-    const geometryLabel = sourceSummary.geometryTypes?.join(', ') || 'Geometry';
-    const statusTitle = validation.ok
-        ? 'Ready to share'
-        : ((limits.featureCount ?? 0) > 0 ? 'Over presentation limits' : 'Need features');
+    const selectionSummary = buildSelectionSummary(sourceSummary, limits, selectionCount);
+    const hasSelection = sourceSummary.featureCount > 0 || selectionCount > 0;
+    const validationError = !validation.ok && hasSelection
+        ? (validation.errors?.[0] || 'Select features on the map.')
+        : '';
 
     return (
         <WidgetPanelShell
             className="presentation-link-builder presentation-link-builder--simple"
             status={status}
-            statusTone={validation.ok ? 'muted' : 'danger'}
+            statusTone="muted"
             onCancel={() => { onResetPreview?.(); onCancel?.(); }}
             cancelLabel="Close"
             showRun={false}
@@ -329,94 +351,55 @@ export function PresentationLinkBuilder({
                 </div>
             )}
         >
-            <p className="text-sm text-muted presentation-link-builder__intro">
-                Click features on any layer to add them. Shift/Ctrl+click or drag a box to add more on the focused layer.
-            </p>
-
-            <div className="presentation-link-builder__section">
-                <div className="presentation-link-builder__heading">Layers</div>
+            <div className="presentation-link-builder__selection">
                 {layerOptions.length === 0 ? (
                     <p className="text-xs text-muted">No spatial layers loaded.</p>
                 ) : (
-                    <div className="presentation-link-builder__layer-list">
-                        {layerOptions.map((layer) => {
-                            const isFocused = focusedLayerId === layer.id;
-                            const selectedOnLayer = layer.selectedCount ?? 0;
-                            return (
-                                <button
-                                    key={layer.id}
-                                    type="button"
-                                    className={[
-                                        'presentation-link-builder__layer-row',
-                                        isFocused ? 'is-focused' : '',
-                                        selectedOnLayer > 0 ? 'has-selection' : ''
-                                    ].filter(Boolean).join(' ')}
-                                    onClick={() => focusLayer(layer.id)}
-                                >
-                                    <span className="presentation-link-builder__layer-name">{layer.name}</span>
-                                    <span className="presentation-link-builder__layer-meta text-muted">
-                                        {selectedOnLayer > 0
-                                            ? `${selectedOnLayer} selected`
-                                            : `${layer.featureCount ?? 0} features`}
-                                    </span>
-                                </button>
-                            );
-                        })}
-                    </div>
+                    <LayerSelect
+                        label="Active layer"
+                        value={focusedLayerId}
+                        onChange={focusLayer}
+                        layers={layerOptions}
+                        formatOption={formatLayerOption}
+                    />
                 )}
                 <p className="presentation-link-builder__hint text-xs text-muted">
-                    Highlighted layer is used for box select and Select all. Clicks work on any visible layer.
+                    Click features on any visible layer. Shift/Ctrl+click or box-select uses the active layer.
                 </p>
-            </div>
-
-            <div className={`presentation-link-builder__status-card${validation.ok ? ' is-ready' : ''}`}>
-                <div className="presentation-link-builder__status-title">
-                    {statusTitle}
+                <div className={`presentation-link-builder__selection-summary text-xs${!validation.ok && hasSelection ? ' is-over-limit' : ''}`}>
+                    {selectionSummary}
                 </div>
-                <div className="text-sm">{sourceSummary.sourceLabel}</div>
-                {sourceSummary.featureCount > 0 || selectionCount > 0 ? (
-                    <div className="text-xs text-muted">
-                        {geometryLabel}
-                        {selectionCount > 0 ? ` · ${selectionCount} selected total` : null}
+                {validationError ? (
+                    <div className="presentation-link-builder__selection-error text-xs">
+                        {validationError}
                     </div>
                 ) : null}
-                <div className={`presentation-link-builder__limits text-xs${validation.ok ? '' : ' is-over-limit'}`}>
-                    {formatLimitNumber(limits.featureCount)} / {formatLimitNumber(limits.maxFeatures)} features
-                    {' · '}
-                    {formatLimitNumber(limits.vertexCount)} / {formatLimitNumber(limits.maxVertices)} vertices
+                <div className="presentation-link-builder__btn-row gis-widget__btn-row">
+                    <button
+                        type="button"
+                        className="btn btn-secondary btn-sm"
+                        disabled={!focusedLayerId}
+                        onClick={handleSelectAll}
+                    >
+                        Select all
+                    </button>
+                    <button
+                        type="button"
+                        className="btn btn-secondary btn-sm"
+                        disabled={!focusedLayerId}
+                        onClick={() => onClearSelection?.(formState)}
+                    >
+                        Clear
+                    </button>
+                    <button
+                        type="button"
+                        className="btn btn-secondary btn-sm"
+                        disabled={selectionCount === 0}
+                        onClick={() => onClearAllSelections?.()}
+                    >
+                        Clear all
+                    </button>
                 </div>
-                {!validation.ok ? (
-                    <div className="text-xs text-muted">
-                        {validation.errors?.[0] || 'Select features on the map.'}
-                    </div>
-                ) : null}
-            </div>
-
-            <div className="presentation-link-builder__btn-row gis-widget__btn-row">
-                <button
-                    type="button"
-                    className="btn btn-secondary btn-sm"
-                    disabled={!focusedLayerId}
-                    onClick={handleSelectAll}
-                >
-                    Select all
-                </button>
-                <button
-                    type="button"
-                    className="btn btn-secondary btn-sm"
-                    disabled={!focusedLayerId}
-                    onClick={() => onClearSelection?.(formState)}
-                >
-                    Clear layer
-                </button>
-                <button
-                    type="button"
-                    className="btn btn-secondary btn-sm"
-                    disabled={selectionCount === 0}
-                    onClick={() => onClearAllSelections?.()}
-                >
-                    Clear all
-                </button>
             </div>
 
             <div className="presentation-link-builder__row mt-12">

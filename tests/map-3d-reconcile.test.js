@@ -143,4 +143,22 @@ describe('MapManager 3D reconcile', () => {
 
         expect(manager._apply3D).toHaveBeenCalled();
     });
+
+    it('re-applies buildings when terrain is active but the buildings layer is missing', () => {
+        const manager = new MapManager();
+        manager._3dEnabled = true;
+        manager._terrainEnabled = true;
+        manager._buildingsEnabled = true;
+        manager.map = createMockMap({ terrain: { source: 'terrain-source' } });
+        manager._setAllAnnotationMapLibreVisibility = vi.fn();
+        manager._annotationOverlay = { setActive: vi.fn() };
+        manager._apply3D = vi.fn(() => {
+            manager.map.addLayer({ id: '3d-buildings', type: 'fill-extrusion' });
+            manager._buildingsEnabled = true;
+        });
+
+        manager.reconcile3DState({ emitEvent: false });
+
+        expect(manager._apply3D).toHaveBeenCalled();
+    });
 });

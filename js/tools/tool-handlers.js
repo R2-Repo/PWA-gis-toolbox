@@ -1259,8 +1259,8 @@ export function setPanelCollapsed(side, collapsed) {
 
     const expandId = side === 'left' ? 'expand-left-panel' : 'expand-right-panel';
     const toggleId = side === 'left' ? 'toggle-left-panel' : 'toggle-right-panel';
-    const collapsedGlyph = side === 'left' ? '???' : '???';
-    const expandedGlyph = side === 'left' ? '???' : '???';
+    const collapsedGlyph = side === 'left' ? '▶' : '◀';
+    const expandedGlyph = side === 'left' ? '◀' : '▶';
 
     document.getElementById(expandId)?.classList.toggle('hidden', !collapsed);
     const toggleButton = document.getElementById(toggleId);

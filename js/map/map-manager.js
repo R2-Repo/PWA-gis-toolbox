@@ -397,6 +397,9 @@ class MapManager {
         this.map.on('load', () => {
             logger.info('Map', 'Map initialized');
             bus.emit('map:ready', this.map);
+            if (this._3dEnabled) {
+                this.reconcile3DState({ emitEvent: false });
+            }
             if (!isPresentationMode()) {
                 this._initCoordSearch();
                 this._initMeasureTool();
@@ -2066,6 +2069,15 @@ class MapManager {
         return !!this.map?.getTerrain?.();
     }
 
+    _isBuildingsLayerActive() {
+        return !!this.map?.getLayer?.('3d-buildings');
+    }
+
+    _sync3DAssetFlags() {
+        this._terrainEnabled = this._isMapTerrainActive();
+        this._buildingsEnabled = this._isBuildingsLayerActive();
+    }
+
     _sync3DAnnotations(is3D) {
         this._setAllAnnotationMapLibreVisibility(!is3D);
         this._annotationOverlay?.setActive(!!is3D);
@@ -2092,10 +2104,15 @@ class MapManager {
     }
 
     _ensure3DAssets() {
-        if (!this._isMapTerrainActive()) {
-            this._reset3DAssetFlags();
-            this._apply3D();
+        const needsTerrain = !this._isMapTerrainActive();
+        const needsBuildings = !this._isBuildingsLayerActive();
+        if (!needsTerrain && !needsBuildings) {
+            this._sync3DAssetFlags();
+            return;
         }
+        if (needsTerrain) this._terrainEnabled = false;
+        if (needsBuildings) this._buildingsEnabled = false;
+        this._apply3D();
     }
 
     _teardown3DAssetsSync() {
@@ -2210,9 +2227,12 @@ class MapManager {
         this.map.dragRotate.enable();
         this.map.touchZoomRotate.enableRotation();
 
-        if (!this._isMapTerrainActive()) {
-            this._reset3DAssetFlags();
+        if (!this._isMapTerrainActive() || !this._isBuildingsLayerActive()) {
+            if (!this._isMapTerrainActive()) this._terrainEnabled = false;
+            if (!this._isBuildingsLayerActive()) this._buildingsEnabled = false;
             this._apply3D();
+        } else {
+            this._sync3DAssetFlags();
         }
 
         this._sync3DAnnotations(true);
@@ -2303,7 +2323,10 @@ class MapManager {
     }
 
     _addBuildingsLayer() {
-        if (this._buildingsEnabled) return;
+        if (this._isBuildingsLayerActive()) {
+            this._buildingsEnabled = true;
+            return;
+        }
 
         if (!this.map.getSource('openfreemap')) {
             this.map.addSource('openfreemap', {
