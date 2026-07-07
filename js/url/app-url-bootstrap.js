@@ -1,9 +1,6 @@
 import bus from '../core/event-bus.js';
 import { getAppUrlConfig } from './app-url-detector.js';
 import { resolveAppUrlMapInit } from './app-url-builder.js';
-import { applyLiveLayerConfig } from '../live-layers/live-layer-bootstrap.js';
-import { resolveMapPreset } from '../live-layers/catalog-schema.js';
-import { applyChromeFromConfig, waitForMapStyleReady } from '../widgets/live-map/apply-live-map-config.js';
 
 /**
  * @typedef {object} AppUrlBootstrapDeps
@@ -11,6 +8,79 @@ import { applyChromeFromConfig, waitForMapStyleReady } from '../widgets/live-map
  * @property {(side: 'left' | 'right', collapsed: boolean) => void} setPanelCollapsed
  * @property {(mode: import('./app-url-schema.js').PanelMode) => void} [applyPanelMode]
  */
+
+/**
+ * Wait for map style to finish loading after setBasemap or 3D changes.
+ * @param {import('maplibre-gl').Map | null | undefined} map
+ * @param {number} [timeoutMs]
+ */
+export function waitForMapStyleReady(map, timeoutMs = 5000) {
+    return new Promise((resolve) => {
+        if (!map) {
+            resolve();
+            return;
+        }
+
+        const isReady = () => map.loaded?.() && map.isStyleLoaded?.();
+        if (isReady()) {
+            resolve();
+            return;
+        }
+
+        let settled = false;
+        const finish = () => {
+            if (settled) return;
+            settled = true;
+            map.off('load', onReady);
+            map.off('styledata', onStyleData);
+            clearTimeout(timer);
+            resolve();
+        };
+
+        const onReady = () => {
+            if (isReady()) finish();
+        };
+        const onStyleData = () => {
+            if (isReady()) finish();
+        };
+
+        map.on('load', onReady);
+        map.on('styledata', onStyleData);
+        const timer = setTimeout(finish, timeoutMs);
+    });
+}
+
+/**
+ * Apply basemap and dimension from URL config.
+ * @param {{ mapService: object }} ctx
+ * @param {import('./app-url-schema.js').AppUrlConfig} config
+ */
+export async function applyChromeFromConfig(ctx, config) {
+    const mapService = ctx.mapService;
+    const currentBasemap = mapService.getCurrentBasemap?.();
+    const targetBasemap = config.basemap;
+    const target3d = config.dim === '3d';
+    const current3d = mapService.is3DEnabled?.();
+
+    if (targetBasemap && targetBasemap !== currentBasemap) {
+        mapService.setBasemap(targetBasemap);
+        await waitForMapStyleReady(mapService.getMap?.());
+    }
+
+    if (target3d) {
+        mapService.set3DEnabled(true);
+        mapService.reconcile3DState({ emitEvent: false });
+        await waitForMapStyleReady(mapService.getMap?.());
+    } else if (current3d) {
+        mapService.disable3D({ animate: false });
+        await waitForMapStyleReady(mapService.getMap?.());
+    }
+
+    bus.emit('map:chrome', {
+        basemap: mapService.getCurrentBasemap?.(),
+        is3d: mapService.is3DEnabled?.()
+    });
+}
 
 /**
  * Apply panel chrome from URL config.
@@ -77,32 +147,10 @@ export function applyViewportConfig(map, init) {
 }
 
 /**
- * Merge preset config with explicit URL params (explicit wins).
- * @param {import('./app-url-schema.js').AppUrlConfig} urlConfig
- */
-export function mergePresetWithUrlConfig(urlConfig) {
-    if (!urlConfig.map) return urlConfig;
-    const preset = resolveMapPreset(urlConfig.map);
-    if (!preset) return urlConfig;
-
-    return {
-        basemap: urlConfig.basemap ?? preset.basemap,
-        dim: urlConfig.dim ?? preset.dim,
-        panel: urlConfig.panel ?? preset.panel,
-        view: urlConfig.view ?? preset.view,
-        bounds: urlConfig.bounds ?? preset.bounds,
-        padding: urlConfig.padding ?? preset.padding,
-        map: urlConfig.map,
-        live: urlConfig.live?.length ? urlConfig.live : preset.live
-    };
-}
-
-/**
  * @param {AppUrlBootstrapDeps} deps
  */
 export function bootstrapAppUrl(deps) {
-    const rawConfig = getAppUrlConfig();
-    const config = mergePresetWithUrlConfig(rawConfig);
+    const config = getAppUrlConfig();
     const init = resolveAppUrlMapInit(config);
 
     applyPanelConfig(config.panel, deps);
@@ -131,8 +179,6 @@ async function applyAfterMapReady(deps, config, init) {
     await applyChromeFromConfig({ mapService: deps.mapService }, config);
     await waitForMapStyleReady(map);
     applyViewportConfig(map, init);
-
-    await applyLiveLayerConfig(config, deps);
 }
 
 export { resolveAppUrlMapInit };

@@ -1116,7 +1116,8 @@ function _openImportFlowModal(flowProps = {}) {
             if (!root) return;
             try {
             const { mountImportFlowDialog } = await import('../../react/tools/mountImportFlowDialog.jsx');
-            const { listPresets, buildPresetShareUrl } = await import('../widgets/live-map/engine.js');
+            const { listCatalogLiveLayers } = await import('../live-layers/catalog-schema.js');
+            const { addCatalogLayerToMap } = await import('../live-layers/live-layer-bootstrap.js');
             const mounted = mountImportFlowDialog(root, {
                 onCancel: () => close(),
                 hasActiveFence: hasActiveImportFence(),
@@ -1156,12 +1157,18 @@ function _openImportFlowModal(flowProps = {}) {
                     close();
                     startImportFence();
                 },
-                onOpenLiveMap: () => {
+                catalogLiveLayers: listCatalogLiveLayers(),
+                onAddCatalogLiveLayer: async (layerId) => {
                     close();
-                    openLiveMap();
+                    try {
+                        await addCatalogLayerToMap(
+                            { mapService, showToast, refreshUI },
+                            layerId
+                        );
+                    } catch (error) {
+                        showErrorToast(handleError(error, 'Import', 'Add live layer'));
+                    }
                 },
-                liveMapPresets: listPresets(),
-                onBuildPresetShareUrl: (presetId) => buildPresetShareUrl(presetId),
                 ...flowProps
             });
             watchOverlayUnmount(overlay, () => mounted.unmount?.());
@@ -3676,11 +3683,6 @@ export function openPresentationLinkBuilderWidget() {
     return openPresentationLinkBuilder(getWidgetContext());
 }
 
-export async function openLiveMap() {
-    const { openLiveMap: open } = await import('../widgets/live-map/controller.js');
-    return open(getWidgetContext());
-}
-
 export function bootstrapAppFromUrl() {
     bootstrapAppUrl({ mapService, setPanelCollapsed });
 }
@@ -4791,7 +4793,6 @@ const APP_ACTIONS = {
     openNearestNeighborAnalysis,
     openPhotoMapper: openPhotoMapper,
     openArcGISImporter: openArcGISImporter,
-    openLiveMap,
     materializeServiceLayer: materializeServiceLayerWithConfirm,
     startImportFence,
     ...buildWidgetActions(getWidgetContext),

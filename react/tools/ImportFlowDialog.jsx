@@ -40,7 +40,7 @@ import { ImportProgressPanel } from './ImportProgressPanel.jsx';
 
 import { ImportReductionNotice } from './ImportReductionNotice.jsx';
 
-import { LiveMapPresetPicker } from './LiveMapPresetPicker.jsx';
+import { LiveLayerCatalogPicker } from './LiveLayerCatalogPicker.jsx';
 
 
 
@@ -62,11 +62,9 @@ export function ImportFlowDialog({
 
     onOpenDraw,
 
-    onOpenLiveMap,
+    catalogLiveLayers = [],
 
-    liveMapPresets = [],
-
-    onBuildPresetShareUrl,
+    onAddCatalogLiveLayer,
 
     onOptimizeImport,
 
@@ -582,7 +580,7 @@ export function ImportFlowDialog({
 
 
 
-            {importView === 'liveMap' ? (
+            {importView === 'liveLayers' ? (
 
                 <button type="button" className="btn btn-ghost btn-sm mb-8" onClick={() => setImportView('chooser')}>
 
@@ -696,15 +694,13 @@ export function ImportFlowDialog({
 
 
 
-            {importView === 'liveMap' ? (
+            {importView === 'liveLayers' ? (
 
-                <LiveMapPresetPicker
+                <LiveLayerCatalogPicker
 
-                    presets={liveMapPresets}
+                    layers={catalogLiveLayers}
 
-                    onBuildPresetShareUrl={onBuildPresetShareUrl}
-
-                    onCreateYourOwn={() => onOpenLiveMap?.()}
+                    onAddCatalogLiveLayer={onAddCatalogLiveLayer}
 
                 />
 
@@ -782,11 +778,11 @@ export function ImportFlowDialog({
 
                             icon="🗺️"
 
-                            title="Live Map"
+                            title="Live Layers"
 
-                            description="Live service layers & bookmark URLs"
+                            description="Pre-styled live service layers"
 
-                            onClick={() => setImportView('liveMap')}
+                            onClick={() => setImportView('liveLayers')}
 
                         />
 

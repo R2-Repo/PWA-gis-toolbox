@@ -20,7 +20,7 @@ import { resetMapPopupScroll } from './map-popup-utils.js';
 import { isPresentationMode, getPresentationModeState } from '../presentation/presentation-mode-detector.js';
 import { resolvePresentationMapInit } from '../presentation/presentation-scene-schema.js';
 import { hasAppUrlConfig, getAppUrlConfig } from '../url/app-url-detector.js';
-import { mergePresetWithUrlConfig, resolveAppUrlMapInit } from '../url/app-url-bootstrap.js';
+import { resolveAppUrlMapInit } from '../url/app-url-bootstrap.js';
 import {
     addServiceLayer as engineAddServiceLayer,
     removeServiceLayer as engineRemoveServiceLayer,
@@ -309,7 +309,7 @@ class MapManager {
         const mapInit = isPresentationMode()
             ? resolvePresentationMapInit(getPresentationModeState().scene)
             : hasAppUrlConfig()
-                ? resolveAppUrlMapInit(mergePresetWithUrlConfig(getAppUrlConfig()))
+                ? resolveAppUrlMapInit(getAppUrlConfig())
                 : null;
         const basemapKey = mapInit?.basemap ?? 'voyager';
         this.currentBasemap = basemapKey;

@@ -1,71 +1,38 @@
-# Live Map preset authoring
+# Live Layers catalog
 
-Add prebuilt maps by editing [`js/live-layers/catalog.js`](../js/live-layers/catalog.js).
+Curated live service layers appear in **Import → Live Layers**. Clicking a card adds the layer to the current map session with catalog styling applied.
 
-Curated presets appear in **Import → Live Map** as card tiles. Clicking a preset opens its bookmark URL in a new browser tab. The **Create your own** card opens the custom Live Map builder in the right panel.
+## Add a new layer
 
-## Quick workflow
-
-1. Open GIS Toolbox and configure the map (layers, basemap, 2D/3D, panels, view).
-2. **Import → Live Map → Create your own** to open the custom builder.
-3. Add your layer URLs, click **Use current map view** (under Advanced) if needed.
-4. Click **Copy catalog entry (developer)** and paste the JSON into `LIVE_MAP_PRESETS` in `catalog.js`.
-5. For reusable layer definitions, add entries to `LIVE_LAYERS` and reference them by id in the preset `layers` array.
-
-## Catalog shapes
-
-### `LIVE_LAYERS` entry
+Edit [`js/live-layers/catalog.js`](../js/live-layers/catalog.js) and append to `LIVE_LAYERS`:
 
 ```javascript
 {
   id: 'my-layer-id',
   name: 'Display Name',
-  kind: 'arcgis-featureserver', // or arcgis-mapserver, geojson-feed, wms, wfs
-  url: 'https://…',
+  description: 'Short description for the Import card.',
+  icon: '🔥',
+  category: 'Wildfire',
+  kind: 'arcgis-featureserver',
+  url: 'https://…/FeatureServer/0',
   refreshMs: 300000,
-  opacity: 0.85,
-  attribution: 'Data provider'
+  opacity: 1,
+  attribution: 'Source agency',
+  style: MY_LAYER_STYLE   // optional — see live-layer-styles.js
 }
 ```
 
-### `LIVE_MAP_PRESETS` entry
+## Styling
 
-```javascript
-{
-  id: 'my-preset-id',
-  name: 'My Preset',
-  description: 'Short description for the import card',
-  icon: '🗺️', // optional — shown on the import preset card
-  category: 'Reference', // optional — badge on the import card
-  layers: ['my-layer-id'], // or inline { name, url } objects
-  basemap: 'voyager',
-  dim: '2d',
-  panel: 'both',
-  viewport: {
-    center: [-111.5, 39.5],
-    zoom: 6,
-    pitch: 0,
-    bearing: 0
-  }
-}
-```
+Assign a `style` object using the same schema as the main style engine (`mode: 'smart'` with visual variables, or simple flat style). Reuse presets from [`js/live-layers/live-layer-styles.js`](../js/live-layers/live-layer-styles.js) or define new exported constants there.
 
-## URL parameters
+Paint is compiled in [`js/live-layers/live-layer-engine.js`](../js/live-layers/live-layer-engine.js) via `resolveServiceLayerStyle()` → `compilePaint()`.
 
-| Param | Purpose |
-|-------|---------|
-| `?map=preset-id` | Load a catalog preset |
-| `?live=layer-id,url:https%3A%2F%2F…` | Load individual live layers |
-| `?view=zoom,lng,lat[,pitch,bearing]` | Camera |
-| `?bounds=w,s,e,n` | Fit extent |
-| `?basemap=voyager\|satellite` | Basemap |
-| `?dim=2d\|3d` | Dimension |
-| `?panel=both\|left\|right\|none` | Panel chrome |
+## Runtime behavior
 
-## Spatial analysis
-
-- **Vector live layers** (FeatureServer, GeoJSON): use layer context **Materialize viewport** (or `materializeServiceLayer` action) to snapshot visible features into a normal spatial layer for analysis.
-- **Raster live layers** (MapServer, WMS): visual overlay only.
+- Layers are `type: 'service'` — they stream for the current viewport and refresh on pan/zoom.
+- Styles come from the catalog (not the layer style panel).
+- Use **Materialize viewport** on a service layer when you need a normal spatial copy for GIS widgets.
 
 ## Validation
 

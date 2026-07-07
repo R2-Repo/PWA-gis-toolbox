@@ -109,7 +109,7 @@ npm test         # run tests
 | Document | Description |
 |----------|-------------|
 | [`docs/LIVE_MAP_FEATURE_PLAN.md`](LIVE_MAP_FEATURE_PLAN.md) | App URL config, live/service layers, Live Map widget (Import entry). |
-| [`docs/LIVE_MAP_PRESETS.md`](LIVE_MAP_PRESETS.md) | Catalog authoring for Live Map prebuilts. |
+| [`docs/LIVE_MAP_PRESETS.md`](LIVE_MAP_PRESETS.md) | Catalog authoring for Import → Live Layers. |
 
 ## Optional: Cursor User Rules note
 

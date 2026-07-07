@@ -1,55 +1,44 @@
-import { parseLiveEntry } from '../url/app-url-builder.js';
 import { addLayer, getLayers, setActiveLayer } from '../core/state.js';
 import { createServiceLayer, isServiceLayer } from '../core/data-model.js';
 import { resolveLiveLayer } from './catalog-schema.js';
-import { addServiceLayer, createServiceLayerFromUrl } from './live-layer-engine.js';
+import { addServiceLayer } from './live-layer-engine.js';
 
 /**
- * @param {import('../url/app-url-schema.js').AppUrlConfig} config
- * @param {{ mapService: object }} deps
+ * @param {object} catalogEntry
  */
-export async function applyLiveLayerConfig(config, deps) {
-    const entries = config.live || [];
-    if (!entries.length) return;
-
-    const datasets = [];
-    for (const entry of entries) {
-        const parsed = parseLiveEntry(entry);
-        if (parsed.type === 'catalog') {
-            const catalogEntry = resolveLiveLayer(parsed.id);
-            if (!catalogEntry) continue;
-            datasets.push(createServiceLayer({
-                name: catalogEntry.name,
-                kind: catalogEntry.kind,
-                url: catalogEntry.url,
-                refreshMs: catalogEntry.refreshMs,
-                opacity: catalogEntry.opacity,
-                attribution: catalogEntry.attribution,
-                presetId: catalogEntry.id,
-                style: catalogEntry.style
-            }));
-        } else if (parsed.type === 'url') {
-            datasets.push(createServiceLayerFromUrl('Custom Live Layer', parsed.url));
-        }
-    }
-
-    for (let i = 0; i < datasets.length; i++) {
-        const dataset = datasets[i];
-        addLayer(dataset, { activate: i === datasets.length - 1 });
-        await deps.mapService.addServiceLayer(dataset, getLayers().indexOf(dataset), { fit: i === 0 });
-    }
-
-    if (datasets.length) {
-        setActiveLayer(datasets[datasets.length - 1].id);
-    }
+function createServiceLayerFromCatalogEntry(catalogEntry) {
+    return createServiceLayer({
+        name: catalogEntry.name,
+        kind: catalogEntry.kind,
+        url: catalogEntry.url,
+        refreshMs: catalogEntry.refreshMs,
+        opacity: catalogEntry.opacity,
+        attribution: catalogEntry.attribution,
+        presetId: catalogEntry.id,
+        style: catalogEntry.style
+    });
 }
 
 /**
- * @param {object} ctx - widget context
- * @param {import('../url/app-url-schema.js').AppUrlConfig} config
+ * Add a catalog live layer to the current map session.
+ * @param {{ mapService: object, showToast?: (msg: string, type?: string) => void, refreshUI?: () => void }} ctx
+ * @param {string} layerId
+ * @param {{ fit?: boolean }} [options]
  */
-export async function addLiveConfigToMap(ctx, config) {
-    await applyLiveLayerConfig(config, { mapService: ctx.mapService });
+export async function addCatalogLayerToMap(ctx, layerId, { fit = true } = {}) {
+    const catalogEntry = resolveLiveLayer(layerId);
+    if (!catalogEntry) {
+        throw new Error(`Unknown live layer: ${layerId}`);
+    }
+
+    const dataset = createServiceLayerFromCatalogEntry(catalogEntry);
+    addLayer(dataset, { activate: true });
+    await ctx.mapService.addServiceLayer(dataset, getLayers().indexOf(dataset), { fit });
+    setActiveLayer(dataset.id);
+
+    ctx.showToast?.(`Added ${catalogEntry.name}`, 'success');
+    ctx.refreshUI?.();
+    return dataset;
 }
 
 /**

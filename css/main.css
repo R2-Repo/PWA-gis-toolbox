@@ -3486,6 +3486,7 @@ textarea { resize: vertical; min-height: 60px; }
     justify-content: flex-end;
     width: 100%;
 }
+.live-layer-catalog-picker .import-option-hint,
 .live-map-preset-picker .import-option-hint {
     text-align: left;
 }

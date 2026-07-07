@@ -23,10 +23,10 @@ describe('app-url parser', () => {
         expect(config.panel).toBe('none');
     });
 
-    it('parses live and map params', () => {
-        const config = parseAppUrl('?map=utah-overview&live=utah-counties,usgs-quakes-7d');
-        expect(config.map).toBe('utah-overview');
-        expect(config.live).toEqual(['utah-counties', 'usgs-quakes-7d']);
+    it('parses live param without map preset bootstrap', () => {
+        const config = parseAppUrl('?live=firewatch');
+        expect(config.map).toBeUndefined();
+        expect(config.live).toEqual(['firewatch']);
     });
 
     it('detects recognized config', () => {
@@ -41,15 +41,13 @@ describe('app-url builder', () => {
             basemap: 'satellite',
             dim: '3d',
             panel: 'right',
-            view: { zoom: 9, center: [-111.1, 40.1], pitch: 30, bearing: 45 },
-            live: ['utah-counties']
+            view: { zoom: 9, center: [-111.1, 40.1], pitch: 30, bearing: 45 }
         };
         const url = buildAppUrl(config, 'https://example.test/app');
         const parsed = parseAppUrl(url.split('?')[1] ? `?${url.split('?')[1]}` : '');
         expect(parsed.basemap).toBe('satellite');
         expect(parsed.dim).toBe('3d');
         expect(parsed.panel).toBe('right');
-        expect(parsed.live).toEqual(['utah-counties']);
         expect(parsed.view?.zoom).toBe(9);
         expect(parsed.view?.center).toEqual([-111.1, 40.1]);
     });
