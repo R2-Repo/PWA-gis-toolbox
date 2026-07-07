@@ -17,8 +17,8 @@ function waitForMapStyleLoad(map) {
     });
 }
 
-/** Wait until style/terrain changes from basemap or 3D setup have settled. */
-function waitForMapIdle(map, timeoutMs = 500) {
+/** Wait until style/terrain/building changes from basemap or 3D setup have settled. */
+function waitForMapIdle(map, timeoutMs = 5000) {
     if (!map) return Promise.resolve();
     return new Promise((resolve) => {
         let settled = false;
@@ -30,6 +30,31 @@ function waitForMapIdle(map, timeoutMs = 500) {
         };
         map.once('idle', done);
         window.setTimeout(done, timeoutMs);
+    });
+}
+
+/** Wait for core 3D tile sources when presentation opens in 3D. */
+function waitForPresentation3DTiles(map, timeoutMs = 6000) {
+    if (!map) return Promise.resolve();
+    return new Promise((resolve) => {
+        let settled = false;
+        const done = () => {
+            if (settled) return;
+            settled = true;
+            map.off('idle', done);
+            map.off('sourcedata', onSourceData);
+            window.clearTimeout(timer);
+            resolve();
+        };
+        const onSourceData = (event) => {
+            if (!event?.isSourceLoaded) return;
+            if (event.sourceId === 'terrain-source' || event.sourceId === 'openfreemap') {
+                done();
+            }
+        };
+        map.on('sourcedata', onSourceData);
+        map.once('idle', done);
+        const timer = window.setTimeout(done, timeoutMs);
     });
 }
 
@@ -59,7 +84,12 @@ async function applyPresentationMapView(mapService, scene) {
     }
 
     const map = mapService.getMap();
-    if (map) await waitForMapIdle(map);
+    if (map) {
+        await waitForMapIdle(map);
+        if (enable3D) {
+            await waitForPresentation3DTiles(map);
+        }
+    }
 }
 
 export function PresentationApp() {

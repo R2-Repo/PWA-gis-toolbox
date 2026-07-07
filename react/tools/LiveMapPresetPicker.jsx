@@ -3,6 +3,7 @@ import { ImportOptionCard } from './ImportOptionCard.jsx';
 const CATEGORY_ICONS = {
     Reference: '📍',
     Hazards: '⚠️',
+    Wildfire: '🔥',
     Global: '🌍',
     Custom: '✏️'
 };

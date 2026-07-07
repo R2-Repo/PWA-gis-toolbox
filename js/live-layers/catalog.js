@@ -2,6 +2,7 @@
  * Live layer catalog — data-only entries.
  * Add new prebuilt maps by appending to LIVE_MAP_PRESETS.
  */
+import { FIREWATCH_STYLE } from './live-layer-styles.js';
 
 /** @type {import('./catalog-schema.js').LiveLayerEntry[]} */
 export const LIVE_LAYERS = [
@@ -22,6 +23,16 @@ export const LIVE_LAYERS = [
         refreshMs: 300000,
         opacity: 1,
         attribution: 'USGS'
+    },
+    {
+        id: 'noaa-fire-detections',
+        name: 'NOAA Satellite Fire Detections',
+        kind: 'arcgis-featureserver',
+        url: 'https://services2.arcgis.com/C8EMgrsFcRFL6LrL/ArcGIS/rest/services/NOAA_Satellite_Fire_Detections_(v1)/FeatureServer/0',
+        refreshMs: 300000,
+        opacity: 1,
+        attribution: 'NOAA',
+        style: FIREWATCH_STYLE
     }
 ];
 
@@ -58,6 +69,24 @@ export const LIVE_MAP_PRESETS = [
         panel: 'right',
         viewport: {
             center: [-111.09, 39.32],
+            zoom: 4,
+            pitch: 0,
+            bearing: 0
+        }
+    },
+    {
+        id: 'firewatch',
+        name: 'Firewatch',
+        icon: '🔥',
+        description: 'NOAA satellite fire detections sized and colored by fire intensity (FRP).',
+        region: 'us',
+        category: 'Wildfire',
+        layers: ['noaa-fire-detections'],
+        basemap: 'satellite',
+        dim: '2d',
+        panel: 'right',
+        viewport: {
+            center: [-98, 39],
             zoom: 4,
             pitch: 0,
             bearing: 0

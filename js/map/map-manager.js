@@ -121,6 +121,21 @@ const WIRELESS_COVERAGE_RASTER_PAINT = {
     'raster-resampling': 'linear'
 };
 
+const BASEMAP_RASTER_PAINT = {
+    'raster-fade-duration': 0,
+    'raster-resampling': 'linear'
+};
+
+const OPENFREEMAP_SOURCE_URL = 'https://tiles.openfreemap.org/planet';
+const TERRAIN_SOURCE_SPEC = {
+    type: 'raster-dem',
+    tiles: ['https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'],
+    encoding: 'terrarium',
+    tileSize: 256,
+    maxzoom: 15
+};
+const TERRAIN_EXAGGERATION = 1.35;
+
 /** MapLibre filter (boolean expression): geometry-type is one of the given GeoJSON types */
 function _geomTypesFilter(types) {
     return ['in', ['geometry-type'], ['literal', types]];
@@ -182,6 +197,9 @@ class MapManager {
         this._3dEnabled = false;
         this._terrainEnabled = false;
         this._buildingsEnabled = false;
+        this._buildingsRetryBound = false;
+        this._buildingsRetryHandler = null;
+        this._buildingsRetryTimer = null;
 
         // Popup
         this._popup = null;
@@ -417,6 +435,7 @@ class MapManager {
      */
     destroy() {
         this.stopCameraOrbit?.();
+        this._clearBuildingsRetry();
         this._closePopup?.();
         this._cancelInteraction?.();
         this.clearSelection?.();
@@ -457,7 +476,8 @@ class MapManager {
                 type: 'raster',
                 source: 'basemap',
                 minzoom: 0,
-                maxzoom: 22
+                maxzoom: 22,
+                paint: BASEMAP_RASTER_PAINT
             });
 
             if (bm.overlayTiles) {
@@ -472,7 +492,8 @@ class MapManager {
                     type: 'raster',
                     source: 'basemap-overlay',
                     minzoom: 0,
-                    maxzoom: 22
+                    maxzoom: 22,
+                    paint: BASEMAP_RASTER_PAINT
                 });
             }
         }
@@ -518,17 +539,17 @@ class MapManager {
         Object.assign(newStyle.sources, userSources);
         newStyle.layers.push(...userLayers);
 
-        // If 3D is active, carry terrain into the new style so there is
-        // no gap between setStyle and _apply3D (prevents black flash)
+        // If 3D is active, carry terrain/buildings into the new style so there is
+        // no gap between setStyle and _apply3D (prevents black flash / missing buildings)
         if (this._3dEnabled) {
-            newStyle.sources['terrain-source'] = {
-                type: 'raster-dem',
-                tiles: ['https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'],
-                encoding: 'terrarium',
-                tileSize: 256,
-                maxzoom: 15
+            this._buildingsEnabled = false;
+            newStyle.sources['terrain-source'] = { ...TERRAIN_SOURCE_SPEC };
+            newStyle.sources.openfreemap = {
+                type: 'vector',
+                url: OPENFREEMAP_SOURCE_URL
             };
-            newStyle.terrain = { source: 'terrain-source', exaggeration: 1.5 };
+            newStyle.terrain = { source: 'terrain-source', exaggeration: TERRAIN_EXAGGERATION };
+            this._append3DStyleLayers(newStyle, key);
         }
 
         this.map.setStyle(newStyle, { diff: true });
@@ -2169,17 +2190,73 @@ class MapManager {
     }
 
     /** Internal helper — adds terrain, sky, buildings without changing _3dEnabled flag */
-    _apply3D() {
-        if (!this.map.getSource('terrain-source')) {
-            this.map.addSource('terrain-source', {
-                type: 'raster-dem',
-                tiles: ['https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'],
-                encoding: 'terrarium',
-                tileSize: 256,
-                maxzoom: 15
+    _build3DBuildingsLayerSpec() {
+        return {
+            id: '3d-buildings',
+            source: 'openfreemap',
+            'source-layer': 'building',
+            type: 'fill-extrusion',
+            minzoom: 13,
+            filter: ['any', ['!', ['has', 'hide_3d']], ['!=', ['get', 'hide_3d'], true]],
+            paint: {
+                'fill-extrusion-color': [
+                    'interpolate', ['linear'], ['coalesce', ['get', 'render_height'], 12],
+                    0, '#d4d4d8', 40, '#94a3b8', 120, '#64748b', 240, '#475569'
+                ],
+                'fill-extrusion-height': [
+                    'interpolate', ['linear'], ['zoom'],
+                    13, 0,
+                    14, ['*', ['coalesce', ['get', 'render_height'], 12], 0.45],
+                    15, ['*', ['coalesce', ['get', 'render_height'], 12], 0.8],
+                    16, ['coalesce', ['get', 'render_height'], 12]
+                ],
+                'fill-extrusion-base': ['coalesce', ['get', 'render_min_height'], 0],
+                'fill-extrusion-opacity': 0.88,
+                'fill-extrusion-vertical-gradient': true
+            }
+        };
+    }
+
+    _buildOpenFreeMapSourceSpec() {
+        return {
+            type: 'vector',
+            url: OPENFREEMAP_SOURCE_URL
+        };
+    }
+
+    /** Append hillshade, sky, and buildings to a style object (basemap switch carry-over). */
+    _append3DStyleLayers(style, basemapKey = this.currentBasemap) {
+        if (basemapKey !== 'satellite') {
+            style.layers.push({
+                id: 'hillshade',
+                type: 'hillshade',
+                source: 'terrain-source',
+                paint: {
+                    'hillshade-illumination-direction': 315,
+                    'hillshade-exaggeration': 0.8,
+                    'hillshade-shadow-color': '#473B24',
+                    'hillshade-highlight-color': '#FFFFFF',
+                    'hillshade-accent-color': '#6e6e6e'
+                }
             });
         }
-        this.map.setTerrain({ source: 'terrain-source', exaggeration: 1.5 });
+        style.layers.push({
+            id: 'sky',
+            type: 'sky',
+            paint: {
+                'sky-type': 'atmosphere',
+                'sky-atmosphere-sun': [0.0, 0.0],
+                'sky-atmosphere-sun-intensity': 15
+            }
+        });
+        style.layers.push(this._build3DBuildingsLayerSpec());
+    }
+
+    _apply3D() {
+        if (!this.map.getSource('terrain-source')) {
+            this.map.addSource('terrain-source', { ...TERRAIN_SOURCE_SPEC });
+        }
+        this.map.setTerrain({ source: 'terrain-source', exaggeration: TERRAIN_EXAGGERATION });
         this._terrainEnabled = true;
 
         // Only add hillshade on non-satellite basemaps
@@ -2188,7 +2265,7 @@ class MapManager {
             const layers = this.map.getStyle().layers;
             let beforeId;
             for (const l of layers) {
-                if (!l.id.startsWith('basemap') && l.id !== 'hillshade' && l.id !== 'sky') {
+                if (!l.id.startsWith('basemap') && l.id !== 'hillshade' && l.id !== 'sky' && l.id !== '3d-buildings') {
                     beforeId = l.id;
                     break;
                 }
@@ -2324,47 +2401,102 @@ class MapManager {
 
     _addBuildingsLayer() {
         if (this._isBuildingsLayerActive()) {
+            this._sync3DBuildingsLayerSpec();
             this._buildingsEnabled = true;
             return;
         }
 
         if (!this.map.getSource('openfreemap')) {
-            this.map.addSource('openfreemap', {
-                type: 'vector',
-                url: 'https://tiles.openfreemap.org/planet'
-            });
+            this.map.addSource('openfreemap', this._buildOpenFreeMapSourceSpec());
         }
 
-        if (!this.map.getLayer('3d-buildings')) {
-            this.map.addLayer({
-                id: '3d-buildings',
-                source: 'openfreemap',
-                'source-layer': 'building',
-                type: 'fill-extrusion',
-                minzoom: 15,
-                filter: ['!=', ['get', 'hide_3d'], true],
-                paint: {
-                    'fill-extrusion-color': [
-                        'interpolate', ['linear'], ['get', 'render_height'],
-                        0, 'lightgray', 200, 'royalblue', 400, 'lightblue'
-                    ],
-                    'fill-extrusion-height': [
-                        'interpolate', ['linear'], ['zoom'],
-                        15, 0, 16, ['get', 'render_height']
-                    ],
-                    'fill-extrusion-base': [
-                        'case',
-                        ['>=', ['zoom'], 16],
-                        ['get', 'render_min_height'], 0
-                    ]
+        try {
+            this.map.addLayer(this._build3DBuildingsLayerSpec());
+            this._buildingsEnabled = true;
+        } catch (error) {
+            logger.warn('Map', '3D buildings layer add failed — will retry when source is ready', {
+                message: error?.message
+            });
+            this._scheduleBuildingsLayerRetry();
+        }
+    }
+
+    _sync3DBuildingsLayerSpec() {
+        const layer = this.map.getLayer('3d-buildings');
+        if (!layer) return;
+        const spec = this._build3DBuildingsLayerSpec();
+        for (const [key, value] of Object.entries(spec.paint || {})) {
+            this.map.setPaintProperty('3d-buildings', key, value);
+        }
+        if (spec.minzoom != null) {
+            this.map.setLayerZoomRange('3d-buildings', spec.minzoom, layer.maxzoom ?? 24);
+        }
+        if (spec.filter) {
+            this.map.setFilter('3d-buildings', spec.filter);
+        }
+    }
+
+    _scheduleBuildingsLayerRetry() {
+        if (!this.map || !this._3dEnabled || this._buildingsRetryBound) return;
+        this._buildingsRetryBound = true;
+
+        const tryAdd = () => {
+            if (!this.map || !this._3dEnabled) {
+                this._clearBuildingsRetry();
+                return;
+            }
+            if (this._isBuildingsLayerActive()) {
+                this._buildingsEnabled = true;
+                this._clearBuildingsRetry();
+                return;
+            }
+            if (!this.map.getSource('openfreemap')) {
+                try {
+                    this.map.addSource('openfreemap', this._buildOpenFreeMapSourceSpec());
+                } catch {
+                    return;
                 }
-            });
-        }
+            }
+            try {
+                this.map.addLayer(this._build3DBuildingsLayerSpec());
+                this._buildingsEnabled = true;
+                this._clearBuildingsRetry();
+            } catch {
+                // Source tiles may still be loading.
+            }
+        };
 
-        this._buildingsEnabled = true;
+        this._buildingsRetryHandler = (event) => {
+            if (event?.sourceId && event.sourceId !== 'openfreemap') return;
+            tryAdd();
+        };
+
+        this.map.on('sourcedata', this._buildingsRetryHandler);
+        this.map.on('styledata', this._buildingsRetryHandler);
+        tryAdd();
+        this._buildingsRetryTimer = window.setTimeout(() => {
+            tryAdd();
+            if (!this._isBuildingsLayerActive()) {
+                this._clearBuildingsRetry();
+            }
+        }, 4000);
+    }
+
+    _clearBuildingsRetry() {
+        if (this._buildingsRetryBound && this.map) {
+            this.map.off('sourcedata', this._buildingsRetryHandler);
+            this.map.off('styledata', this._buildingsRetryHandler);
+        }
+        if (this._buildingsRetryTimer) {
+            window.clearTimeout(this._buildingsRetryTimer);
+            this._buildingsRetryTimer = null;
+        }
+        this._buildingsRetryBound = false;
+        this._buildingsRetryHandler = null;
     }
 
     _removeBuildingsLayer() {
+        this._clearBuildingsRetry();
         if (this.map.getLayer('3d-buildings')) this.map.removeLayer('3d-buildings');
         if (this.map.getSource('openfreemap')) this.map.removeSource('openfreemap');
         this._buildingsEnabled = false;
@@ -2448,17 +2580,20 @@ class MapManager {
         map.once('moveend', () => {
             if (!this._orbitCenter) return; // cancelled while flying
             const startBearing = map.getBearing();
-            const startTime = performance.now();
-            const degreesPerSec = 10; // rotation speed
+            const orbitSpanMs = 360_000 / 10; // 10°/sec for a full turn
 
-            const frame = (now) => {
-                if (!this._orbitCenter) return; // stopped
-                const elapsed = (now - startTime) / 1000;
-                const bearing = startBearing + elapsed * degreesPerSec;
-                map.rotateTo(bearing % 360, { duration: 0 });
-                this._orbitAnimId = requestAnimationFrame(frame);
+            const spin = () => {
+                if (!this._orbitCenter) return;
+                map.stop();
+                map.easeTo({
+                    bearing: startBearing + 360,
+                    duration: orbitSpanMs,
+                    easing: (t) => t,
+                    essential: true,
+                    freezeElevation: true
+                });
             };
-            this._orbitAnimId = requestAnimationFrame(frame);
+            spin();
         });
 
         logger.debug('Map', `Camera orbit started at ${center.lat.toFixed(4)}, ${center.lng.toFixed(4)}`);

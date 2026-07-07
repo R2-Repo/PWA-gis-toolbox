@@ -114,14 +114,11 @@ export function PresentationLinkBuilder({
 
     const refreshLayerOptions = useCallback(() => {
         const next = getLayerOptions?.() || layers;
-        if (next?.length) setLayerOptions(next);
+        setLayerOptions(next || []);
     }, [getLayerOptions, layers]);
 
     const applySceneBundle = useCallback((bundle) => {
         if (!bundle) return;
-        const selectedCount = bundle.sourceSummary?.selectedCount ?? 0;
-        const builtFeatureCount = bundle.limits?.featureCount ?? 0;
-        if (builtFeatureCount === 0 && selectedCount > 0) return;
         setValidation(bundle.validation || { ok: false, errors: [] });
         setLimits(bundle.limits || EMPTY_LIMITS);
         setUrl(bundle.url || '');
@@ -129,6 +126,25 @@ export function PresentationLinkBuilder({
         if (bundle.exportAvailability) setExportAvailability(bundle.exportAvailability);
         if (bundle.sourceSummary) setSourceSummary(bundle.sourceSummary);
     }, []);
+
+    const updateAnimation = useCallback((patch) => {
+        setFormState((prev) => {
+            if (!prev) return prev;
+            const next = {
+                ...prev,
+                animation: { ...prev.animation, ...patch }
+            };
+            reportFormState?.(next);
+            return next;
+        });
+    }, [reportFormState]);
+
+    const focusLayer = useCallback((layerId) => {
+        if (!layerId) return;
+        onLayerFocus?.(layerId);
+        setFormState((prev) => (prev ? { ...prev, focusedLayerId: layerId } : prev));
+        refreshLayerOptions();
+    }, [onLayerFocus, refreshLayerOptions]);
 
     const sceneBundle = useSyncExternalStore(
         subscribePresentationLinkSceneBundle,
@@ -173,8 +189,32 @@ export function PresentationLinkBuilder({
     }, [refreshLayerOptions]);
 
     useEffect(() => {
+        if (!formState || loading || focusedLayerId || !layerOptions.length) return;
+        focusLayer(layerOptions[0].id);
+    }, [formState, loading, focusedLayerId, layerOptions, focusLayer]);
+
+    useEffect(() => {
         if (focusedLayerId) onLayerFocus?.(focusedLayerId);
     }, [focusedLayerId, onLayerFocus]);
+
+    useEffect(() => {
+        if (!formState || !compatiblePresets.length) return;
+        const presetId = formState.animation?.presetId || 'none';
+        const current = compatiblePresets.find((entry) => entry.id === presetId);
+        if (current?.compatible !== false) return;
+        const fallback = compatiblePresets.find((entry) => entry.compatible !== false)?.id || 'none';
+        if (fallback === presetId) return;
+        const fallbackDefinition = getLinkAnimation(fallback);
+        const patch = { presetId: fallback };
+        if (fallbackDefinition.ui.showPace && formState.animation?.orbitPace !== 'custom') {
+            const pace = formState.animation?.orbitPace || 'normal';
+            patch.orbitPace = pace;
+            patch.durationMs = getDurationMsForPace(fallbackDefinition, pace);
+        } else if (fallbackDefinition.ui.defaultDurationMs) {
+            patch.durationMs = fallbackDefinition.ui.defaultDurationMs;
+        }
+        updateAnimation(patch);
+    }, [compatiblePresets, formState, updateAnimation]);
 
     useEffect(() => {
         if (!formState || durationEditingRef.current) return;
@@ -208,19 +248,6 @@ export function PresentationLinkBuilder({
         if (!formState || !onSubscribeSourceRefresh) return undefined;
         return onSubscribeSourceRefresh(refreshLayerOptions);
     }, [formState, onSubscribeSourceRefresh, refreshLayerOptions]);
-
-    const updateAnimation = (patch) => {
-        setFormState((prev) => (prev ? {
-            ...prev,
-            animation: { ...prev.animation, ...patch }
-        } : prev));
-    };
-
-    const focusLayer = (layerId) => {
-        onLayerFocus?.(layerId);
-        setFormState((prev) => (prev ? { ...prev, focusedLayerId: layerId } : prev));
-        refreshLayerOptions();
-    };
 
     const handleSelectAll = () => {
         if (!focusedLayerId || !formState) return;
@@ -361,6 +388,7 @@ export function PresentationLinkBuilder({
                         onChange={focusLayer}
                         layers={layerOptions}
                         formatOption={formatLayerOption}
+                        allowEmpty={false}
                     />
                 )}
                 <p className="presentation-link-builder__hint text-xs text-muted">

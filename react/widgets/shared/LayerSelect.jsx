@@ -4,6 +4,7 @@ export function LayerSelect({
     onChange,
     layers = [],
     placeholder = '- select layer -',
+    allowEmpty = true,
     formatOption = (layer) => `${layer.name} (${layer.featureCount ?? layer.count ?? 0})`,
     className = '',
     headerExtra = null
@@ -19,7 +20,7 @@ export function LayerSelect({
                 <label>{label}</label>
             )}
             <select value={value} onChange={(e) => onChange?.(e.target.value)}>
-                <option value="">{placeholder}</option>
+                {allowEmpty ? <option value="">{placeholder}</option> : null}
                 {layers.map((layer) => (
                     <option key={layer.id} value={layer.id}>
                         {formatOption(layer)}

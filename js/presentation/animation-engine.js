@@ -592,7 +592,11 @@ export function computeFeatureFitCamera(map, featureCollection, options = {}) {
     }
 }
 
-function waitForMoveEnd(map, timeoutMs = 15000) {
+function mapEasingFn(name) {
+    return (t) => easeValue(t, name);
+}
+
+function waitForCameraMove(map, durationMs, timeoutMs = 15000) {
     return new Promise((resolve) => {
         let done = false;
         const finish = () => {
@@ -602,7 +606,7 @@ function waitForMoveEnd(map, timeoutMs = 15000) {
             clearTimeout(timer);
             resolve();
         };
-        const timer = setTimeout(finish, timeoutMs);
+        const timer = setTimeout(finish, Math.max(durationMs + 250, timeoutMs));
         map.once('moveend', finish);
     });
 }
@@ -630,7 +634,7 @@ function lerpBearing(from, to, t) {
 }
 
 /**
- * Smooth camera fly with pitch, zoom, center, and bearing animated in sync from frame one.
+ * Smooth camera fly using MapLibre's native easing (better tile loading than per-frame jumpTo).
  * @param {import('maplibre-gl').Map} map
  * @param {object} from
  * @param {object} to
@@ -640,7 +644,8 @@ function runCinematicCameraFly(map, from, to, options = {}) {
     const duration = options.duration ?? 3000;
     const easing = options.easing ?? 'easeInOut';
     const shouldStop = options.shouldStop ?? (() => false);
-    const setRafId = options.setRafId;
+
+    if (shouldStop()) return Promise.resolve();
 
     if (duration === 0) {
         map.jumpTo({
@@ -648,41 +653,35 @@ function runCinematicCameraFly(map, from, to, options = {}) {
             zoom: to.zoom,
             pitch: to.pitch,
             bearing: to.bearing,
-            essential: true
+            essential: true,
+            freezeElevation: true
         });
         return Promise.resolve();
     }
 
-    return new Promise((resolve) => {
-        const startTime = performance.now();
-        const frame = (now) => {
-            if (shouldStop()) {
-                resolve();
-                return;
-            }
-            const progress = Math.min(1, (now - startTime) / duration);
-            const eased = easeValue(progress, easing);
+    map.stop();
+    map.jumpTo({
+        center: from.center,
+        zoom: from.zoom,
+        pitch: from.pitch,
+        bearing: from.bearing,
+        essential: true,
+        freezeElevation: true
+    });
 
-            map.jumpTo({
-                center: [
-                    lerp(from.center[0], to.center[0], eased),
-                    lerp(from.center[1], to.center[1], eased)
-                ],
-                zoom: lerp(from.zoom, to.zoom, eased),
-                pitch: lerp(from.pitch, to.pitch, eased),
-                bearing: lerpBearing(from.bearing, to.bearing, eased),
-                essential: true
-            });
+    map.easeTo({
+        center: to.center,
+        zoom: to.zoom,
+        pitch: to.pitch,
+        bearing: to.bearing,
+        duration,
+        easing: mapEasingFn(easing),
+        essential: true,
+        freezeElevation: true
+    });
 
-            if (progress >= 1) {
-                resolve();
-                return;
-            }
-            const id = requestAnimationFrame(frame);
-            setRafId?.(id);
-        };
-        const id = requestAnimationFrame(frame);
-        setRafId?.(id);
+    return waitForCameraMove(map, duration).then(() => {
+        if (shouldStop()) return;
     });
 }
 
@@ -908,13 +907,13 @@ function applySmoothedPathFollowCamera(map, path, distanceKm, lookAheadKm, total
         ? lerpCoord(state.currentCenter, targetCenter, centerT)
         : targetCenter;
 
-    map.easeTo({
+    map.jumpTo({
         center: state.currentCenter,
         bearing: state.currentBearing,
         pitch: step.options?.pitch ?? map.getPitch(),
         zoom: step.options?.zoom ?? map.getZoom(),
-        duration: 0,
-        essential: true
+        essential: true,
+        freezeElevation: true
     });
     return true;
 }
@@ -1078,79 +1077,35 @@ export class PresentationAnimationEngine {
         const endZoom = Math.max(fit.zoom, startZoom + 0.5);
         const orbitCenter = [centerCoords[0], centerCoords[1]];
         const orbitDegrees = step.options?.degrees ?? 360;
-
-        const crossfadeMs = Math.min(1800, Math.round(flyDurationMs * 0.24));
-        const approachDuration = flyDurationMs + crossfadeMs;
-        const orbitStartMs = Math.max(0, flyDurationMs - Math.round(crossfadeMs * 0.6));
-        const totalDuration = flyDurationMs + orbitDurationMs;
-        const orbitSpan = Math.max(1, totalDuration - orbitStartMs);
         const entryFromCurrent = step.options?.entryFromCurrent === true;
         const startPitch = entryFromCurrent ? map.getPitch() : 0;
 
-        map.jumpTo({
-            center: startCenter,
-            zoom: startZoom,
-            pitch: startPitch,
-            bearing: startBearing,
-            essential: true
-        });
-
-        const from = {
+        await runCinematicCameraFly(map, {
             center: [startCenter.lng, startCenter.lat],
             zoom: startZoom,
             pitch: startPitch,
             bearing: startBearing
-        };
-        const to = {
+        }, {
             center: orbitCenter,
             zoom: endZoom,
             pitch: targetPitch,
             bearing: targetBearing
-        };
-
-        await new Promise((resolve) => {
-            const startTime = performance.now();
-            const frame = (now) => {
-                if (this._stopped) {
-                    resolve();
-                    return;
-                }
-
-                const elapsed = now - startTime;
-                const approachT = Math.min(1, elapsed / approachDuration);
-                const approachE = easeValue(approachT, easing);
-
-                const center = [
-                    lerp(from.center[0], to.center[0], approachE),
-                    lerp(from.center[1], to.center[1], approachE)
-                ];
-                const zoom = lerp(from.zoom, to.zoom, approachE);
-                const pitch = lerp(from.pitch, to.pitch, approachE);
-                const approachBearing = lerpBearing(from.bearing, to.bearing, approachE);
-
-                let orbitAngle = 0;
-                if (elapsed >= orbitStartMs) {
-                    const orbitT = Math.min(1, (elapsed - orbitStartMs) / orbitSpan);
-                    const orbitE = easeValue(orbitT, easing);
-                    orbitAngle = orbitE * orbitDegrees;
-                }
-
-                map.jumpTo({
-                    center,
-                    zoom,
-                    pitch,
-                    bearing: approachBearing + orbitAngle,
-                    essential: true
-                });
-
-                if (elapsed >= totalDuration) {
-                    resolve();
-                    return;
-                }
-                this._registerRafId(requestAnimationFrame(frame));
-            };
-            this._registerRafId(requestAnimationFrame(frame));
+        }, {
+            duration: flyDurationMs,
+            easing,
+            shouldStop: () => this._stopped
         });
+        if (this._stopped) return;
+
+        map.stop();
+        map.easeTo({
+            bearing: map.getBearing() + orbitDegrees,
+            duration: orbitDurationMs,
+            easing: mapEasingFn(easing),
+            essential: true,
+            freezeElevation: true
+        });
+        await waitForCameraMove(map, orbitDurationMs);
     }
 
     async _runCinematicFlyTo(step, overrides = {}) {
@@ -1256,27 +1211,16 @@ export class PresentationAnimationEngine {
             startBearing = map.getBearing();
         }
 
-        const startTime = performance.now();
         const orbitEasing = step.easing || 'cinematic';
-        await new Promise((resolve) => {
-            const frame = (now) => {
-                if (this._stopped) {
-                    resolve();
-                    return;
-                }
-                const elapsed = now - startTime;
-                const progress = Math.min(1, elapsed / orbitDuration);
-                const eased = easeValue(progress, orbitEasing);
-                const bearing = startBearing + eased * (step.options?.degrees ?? 360);
-                map.setBearing(bearing);
-                if (progress >= 1) {
-                    resolve();
-                    return;
-                }
-                this._registerRafId(requestAnimationFrame(frame));
-            };
-            this._registerRafId(requestAnimationFrame(frame));
+        map.stop();
+        map.easeTo({
+            bearing: startBearing + (step.options?.degrees ?? 360),
+            duration: orbitDuration,
+            easing: mapEasingFn(orbitEasing),
+            essential: true,
+            freezeElevation: true
         });
+        await waitForCameraMove(map, orbitDuration);
     }
 
     async _flyAlongPath(step) {

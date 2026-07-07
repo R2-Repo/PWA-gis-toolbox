@@ -267,6 +267,7 @@ export async function openPresentationLinkBuilder(ctx) {
     /** @type {object|null} */
     let latestFormState = null;
     let rebuildTimer = null;
+    let rebuildRetryTimer = null;
     let unsubscribeSceneRefresh = null;
 
     const scheduleSceneRebuild = () => {
@@ -277,10 +278,18 @@ export async function openPresentationLinkBuilder(ctx) {
         }, 150);
     };
 
-    async function flushSceneRebuild() {
+    async function flushSceneRebuild(allowRetry = true) {
         const formState = latestFormState;
         if (!formState || tornDown) return;
-        await buildSceneBundle(ctx, formState);
+        const bundle = await buildSceneBundle(ctx, formState);
+        const selectedCount = bundle.sourceSummary?.selectedCount ?? 0;
+        const builtFeatureCount = bundle.limits?.featureCount ?? 0;
+        if (allowRetry && selectedCount > 0 && builtFeatureCount === 0) {
+            window.clearTimeout(rebuildRetryTimer);
+            rebuildRetryTimer = window.setTimeout(() => {
+                void flushSceneRebuild(false);
+            }, 250);
+        }
     }
 
     const subscribeSceneRebuild = () => {
@@ -297,6 +306,7 @@ export async function openPresentationLinkBuilder(ctx) {
         tornDown = true;
         sceneApplier = null;
         window.clearTimeout(rebuildTimer);
+        window.clearTimeout(rebuildRetryTimer);
         unsubscribeSceneRefresh?.();
         unsubscribeSceneRefresh = null;
         latestFormState = null;

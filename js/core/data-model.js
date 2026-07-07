@@ -104,6 +104,7 @@ export function isSpatialLayer(layer) {
  * @param {number} [options.opacity]
  * @param {string} [options.attribution]
  * @param {string} [options.presetId]
+ * @param {object} [options.style]
  */
 export function createServiceLayer({
     name,
@@ -112,7 +113,8 @@ export function createServiceLayer({
     refreshMs = 300000,
     opacity = 1,
     attribution = '',
-    presetId = null
+    presetId = null,
+    style = null
 }) {
     return {
         id: generateId(),
@@ -127,7 +129,8 @@ export function createServiceLayer({
             url: String(url || '').trim().replace(/\/+$/, '').split('?')[0],
             refreshMs,
             opacity,
-            attribution
+            attribution,
+            ...(style ? { style } : {})
         },
         source: {
             format: 'live-service',

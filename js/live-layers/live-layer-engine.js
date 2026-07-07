@@ -1,10 +1,11 @@
 import { ArcGISRestImporter } from '../arcgis/rest-importer.js';
 import { createSpatialDataset } from '../core/data-model.js';
+import { compilePaint } from '../map/style-engine.js';
 import { inferServiceKind } from './catalog-schema.js';
+import { resolveServiceLayerStyle, scalePaintOpacity } from './live-layer-styles.js';
 import logger from '../core/logger.js';
 
 const DEFAULT_REFRESH_MS = 300000;
-const LAYER_COLORS = ['#2563eb', '#dc2626', '#16a34a', '#d97706', '#7c3aed', '#0891b2', '#be185d', '#65a30d'];
 
 /**
  * @typedef {object} ServiceRuntime
@@ -45,7 +46,7 @@ export function normalizeServiceUrl(url) {
  * @param {string} [url]
  * @param {import('./catalog-schema.js').ServiceKind} [kind]
  */
-export function createServiceLayerFromUrl(name, url, kind = inferServiceKind(url)) {
+export function createServiceLayerFromUrl(name, url, kind = inferServiceKind(url), style = null) {
     const resolvedKind = kind || inferServiceKind(url) || 'geojson-feed';
     return {
         id: `svc-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
@@ -59,7 +60,8 @@ export function createServiceLayerFromUrl(name, url, kind = inferServiceKind(url
             url: normalizeServiceUrl(url),
             refreshMs: DEFAULT_REFRESH_MS,
             opacity: resolvedKind === 'arcgis-mapserver' || resolvedKind === 'wms' ? 0.85 : 1,
-            attribution: ''
+            attribution: '',
+            ...(style ? { style } : {})
         },
         source: {
             format: 'live-service',
@@ -94,8 +96,8 @@ export async function addServiceLayer(mapManager, dataset, colorIndex = 0, optio
         viewportCache: { type: 'FeatureCollection', features: [] }
     });
 
-    const color = LAYER_COLORS[colorIndex % LAYER_COLORS.length];
     const opacity = service.opacity ?? (kind === 'arcgis-mapserver' || kind === 'wms' ? 0.85 : 1);
+    const layerStyle = resolveServiceLayerStyle(service, colorIndex);
 
     try {
         if (kind === 'arcgis-mapserver' || kind === 'wms') {
@@ -118,7 +120,7 @@ export async function addServiceLayer(mapManager, dataset, colorIndex = 0, optio
                 type: 'geojson',
                 data: { type: 'FeatureCollection', features: [] }
             });
-            runtime.mapLayerIds = addVectorLayers(map, dataset.id, sourceId, color, opacity);
+            runtime.mapLayerIds = addVectorLayers(map, dataset.id, sourceId, layerStyle, opacity);
             await refreshServiceLayer(mapManager, dataset.id);
         }
 
@@ -157,12 +159,16 @@ function buildRasterTileUrl(runtime, service) {
 
 /**
  * @param {import('maplibre-gl').Map} map
+ * @param {ReturnType<typeof resolveServiceLayerStyle>} layerStyle
  */
-function addVectorLayers(map, datasetId, sourceId, color, opacity) {
+function addVectorLayers(map, datasetId, sourceId, layerStyle, opacity) {
     const ids = [];
     const polygonId = `svc-lyr-${datasetId}-fill`;
     const lineId = `svc-lyr-${datasetId}-line`;
     const pointId = `svc-lyr-${datasetId}-circle`;
+    const styPoly = compilePaint(layerStyle, 'polygon');
+    const styLine = compilePaint(layerStyle, 'line');
+    const styPoint = compilePaint(layerStyle, 'point');
 
     map.addLayer({
         id: polygonId,
@@ -170,8 +176,8 @@ function addVectorLayers(map, datasetId, sourceId, color, opacity) {
         source: sourceId,
         filter: ['match', ['geometry-type'], ['Polygon', 'MultiPolygon'], true, false],
         paint: {
-            'fill-color': color,
-            'fill-opacity': opacity * 0.35
+            'fill-color': styPoly.fillColor,
+            'fill-opacity': scalePaintOpacity(styPoly.fillOpacity, opacity * 0.35)
         }
     });
     map.addLayer({
@@ -180,9 +186,9 @@ function addVectorLayers(map, datasetId, sourceId, color, opacity) {
         source: sourceId,
         filter: ['match', ['geometry-type'], ['LineString', 'MultiLineString', 'Polygon', 'MultiPolygon'], true, false],
         paint: {
-            'line-color': color,
-            'line-width': 2,
-            'line-opacity': opacity
+            'line-color': styLine.strokeColor,
+            'line-width': styLine.strokeWidth,
+            'line-opacity': scalePaintOpacity(styLine.strokeOpacity, opacity)
         }
     });
     map.addLayer({
@@ -191,9 +197,11 @@ function addVectorLayers(map, datasetId, sourceId, color, opacity) {
         source: sourceId,
         filter: ['match', ['geometry-type'], ['Point', 'MultiPoint'], true, false],
         paint: {
-            'circle-color': color,
-            'circle-radius': 5,
-            'circle-opacity': opacity
+            'circle-radius': styPoint.circleRadius,
+            'circle-color': styPoint.fillColor,
+            'circle-stroke-color': styPoint.strokeColor,
+            'circle-stroke-width': styPoint.strokeWidth,
+            'circle-opacity': scalePaintOpacity(styPoint.fillOpacity, opacity)
         }
     });
 

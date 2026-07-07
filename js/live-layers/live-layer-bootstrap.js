@@ -25,7 +25,8 @@ export async function applyLiveLayerConfig(config, deps) {
                 refreshMs: catalogEntry.refreshMs,
                 opacity: catalogEntry.opacity,
                 attribution: catalogEntry.attribution,
-                presetId: catalogEntry.id
+                presetId: catalogEntry.id,
+                style: catalogEntry.style
             }));
         } else if (parsed.type === 'url') {
             datasets.push(createServiceLayerFromUrl('Custom Live Layer', parsed.url));

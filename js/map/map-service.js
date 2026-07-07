@@ -100,6 +100,9 @@ export function createMapService({ mapAdapter = mapManager } = {}) {
         },
         set3DEnabled(enabled) {
             mapAdapter._3dEnabled = !!enabled;
+            if (mapAdapter.map?.loaded?.()) {
+                mapAdapter.reconcile3DState({ emitEvent: false });
+            }
             return !!mapAdapter._3dEnabled;
         },
         getLayerStyles() {
