@@ -16,6 +16,7 @@ let _rescheduleAfterSave = false;
 let _onSaveStatus = null; // optional callback for UI indicator
 let _pendingLayers = null;
 let _pendingLayerStyles = null;
+let _pendingLayerGroups = null;
 let _savePaused = false;
 
 // ——————— IndexedDB Setup ———————
@@ -44,8 +45,9 @@ function openDB() {
  * Save all layers to IndexedDB
  * @param {Array} layers - array of layer objects from state
  * @param {Object|null} [layerStyles] - map of layerId -> style object
+ * @param {Array} [layerGroups] - import/manual group metadata
  */
-async function saveSession(layers, layerStyles = null) {
+async function saveSession(layers, layerStyles = null, layerGroups = null) {
     if (_saving) {
         _rescheduleAfterSave = true;
         return;
@@ -81,6 +83,14 @@ async function saveSession(layers, layerStyles = null) {
             });
         }
 
+        if (Array.isArray(layerGroups)) {
+            metaStore.put({
+                key: 'layerGroups',
+                data: layerGroups,
+                timestamp: Date.now()
+            });
+        }
+
         await _txComplete(tx);
         _onSaveStatus?.('saved');
         console.debug('[SessionStore] Saved', layers.length, 'layers');
@@ -95,7 +105,7 @@ async function saveSession(layers, layerStyles = null) {
         _saving = false;
         if (_rescheduleAfterSave) {
             _rescheduleAfterSave = false;
-            scheduleSave(_pendingLayers, _pendingLayerStyles);
+            scheduleSave(_pendingLayers, _pendingLayerStyles, _pendingLayerGroups);
         }
     }
 }
@@ -135,6 +145,7 @@ function _serializeLayer(layer) {
     if (layer.scaleRangeEnabled) out.scaleRangeEnabled = true;
     if (layer.minScale != null && layer.minScale > 0) out.minScale = layer.minScale;
     if (layer.maxScale != null && layer.maxScale > 0) out.maxScale = layer.maxScale;
+    if (layer.groupId) out.groupId = layer.groupId;
     return out;
 }
 
@@ -151,10 +162,11 @@ async function loadSession() {
         const layerStore = tx.objectStore(STORE_LAYERS);
         const metaStore = tx.objectStore(STORE_META);
 
-        const [layers, meta, stylesMeta] = await Promise.all([
+        const [layers, meta, stylesMeta, groupsMeta] = await Promise.all([
             _getAllFromStore(layerStore),
             _getFromStore(metaStore, 'session'),
-            _getFromStore(metaStore, 'layerStyles')
+            _getFromStore(metaStore, 'layerStyles'),
+            _getFromStore(metaStore, 'layerGroups')
         ]);
 
         if (!layers || layers.length === 0) return null;
@@ -162,7 +174,8 @@ async function loadSession() {
         return {
             layers,
             meta: meta || { timestamp: 0 },
-            layerStyles: stylesMeta?.data || null
+            layerStyles: stylesMeta?.data || null,
+            layerGroups: groupsMeta?.data || []
         };
     } catch (err) {
         console.error('[SessionStore] Load failed:', err);
@@ -205,15 +218,18 @@ async function clearSession() {
 
 // ——————— Debounced Auto-Save ———————
 
-function scheduleSave(layers, layerStyles = null) {
+function scheduleSave(layers, layerStyles = null, layerGroups = null) {
     _pendingLayers = layers;
     if (layerStyles !== null && layerStyles !== undefined) {
         _pendingLayerStyles = layerStyles;
     }
+    if (layerGroups !== null && layerGroups !== undefined) {
+        _pendingLayerGroups = layerGroups;
+    }
     if (_savePaused) return;
     if (_saveTimer) clearTimeout(_saveTimer);
     _saveTimer = setTimeout(() => {
-        saveSession(_pendingLayers, _pendingLayerStyles);
+        saveSession(_pendingLayers, _pendingLayerStyles, _pendingLayerGroups);
     }, DEBOUNCE_MS);
 }
 
@@ -230,7 +246,7 @@ function pauseSessionSave() {
 function resumeSessionSave(flush = true) {
     _savePaused = false;
     if (flush && _pendingLayers) {
-        scheduleSave(_pendingLayers, _pendingLayerStyles);
+        scheduleSave(_pendingLayers, _pendingLayerStyles, _pendingLayerGroups);
     }
 }
 

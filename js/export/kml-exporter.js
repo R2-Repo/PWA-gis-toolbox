@@ -461,11 +461,17 @@ export async function exportMultiLayerKML(layers, options = {}, task) {
         folderParts.push(`    <Folder>\n      <name>${escapeXml(folderName)}</name>\n${marks}\n    </Folder>`);
     });
 
+    let foldersBody = folderParts.join('\n');
+    if (options.parentFolder) {
+        const nested = folderParts.map((part) => part.replace(/^    /gm, '      ')).join('\n');
+        foldersBody = `    <Folder>\n      <name>${escapeXml(options.parentFolder)}</name>\n${nested}\n    </Folder>`;
+    }
+
     const kml = `<?xml version="1.0" encoding="UTF-8"?>
 <kml xmlns="http://www.opengis.net/kml/2.2">
   <Document>
     <name>${escapeXml(docName)}</name>
-${styleBlock}${folderParts.join('\n')}
+${styleBlock}${foldersBody}
   </Document>
 </kml>`;
 
