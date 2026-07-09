@@ -7,7 +7,8 @@ import bus from '../core/event-bus.js';
 import { handleError } from '../core/error-handler.js';
 import {
     getState, getLayers, getActiveLayer, addLayer, removeLayer, updateLayer,
-    setActiveLayer, toggleLayerVisibility, reorderLayer, reorderLayerToIndex, setUIState, toggleAGOLCompat
+    setActiveLayer, toggleLayerVisibility, toggleLayerLock, getMapLayerOrderIds,
+    reorderLayer, reorderLayerToIndex, setUIState, toggleAGOLCompat
 } from '../core/state.js';
 import { mergeDatasets, getSelectedFields, tableToSpatial, createSpatialDataset, createTableDataset, analyzeSchema, analyzeTableSchema, isSpatialLayer, isServiceLayer, isWorkspaceLayer } from '../core/data-model.js';
 import { isLayerDisplayReady, layerCrsWarning, getLayerCrs, resolveReprojectFromCrs } from '../crs/layer-crs.js';
@@ -175,6 +176,7 @@ export async function restoreSessionIfAvailable() {
 
             // Fit map to all restored spatial layers
             if (restored > 0) {
+                mapService.syncLayerOrder(getMapLayerOrderIds());
                 mapService.fitToAll();
             }
 
@@ -584,7 +586,7 @@ export function buildMapContextMenuItems(payload) {
                     while (layers.indexOf(layers.find((l) => l.id === layerId)) > 0) {
                         reorderLayer(layerId, 'up');
                     }
-                    mapService.syncLayerOrder(getLayers().map((l) => l.id));
+                    mapService.syncLayerOrder(getMapLayerOrderIds());
                     refreshUI();
                 }
             });
@@ -597,7 +599,7 @@ export function buildMapContextMenuItems(payload) {
                     while (layers.indexOf(layers.find((l) => l.id === layerId)) < layers.length - 1) {
                         reorderLayer(layerId, 'down');
                     }
-                    mapService.syncLayerOrder(getLayers().map((l) => l.id));
+                    mapService.syncLayerOrder(getMapLayerOrderIds());
                     refreshUI();
                 }
             });
@@ -1646,19 +1648,19 @@ export function refreshUI() {
 
 export function moveLayerUp(id) {
     reorderLayer(id, 'up');
-    mapService.syncLayerOrder(getLayers().map(l => l.id));
+    mapService.syncLayerOrder(getMapLayerOrderIds());
     refreshUI();
 }
 
 export function moveLayerDown(id) {
     reorderLayer(id, 'down');
-    mapService.syncLayerOrder(getLayers().map(l => l.id));
+    mapService.syncLayerOrder(getMapLayerOrderIds());
     refreshUI();
 }
 
 export function moveLayerToIndex(id, toIndex) {
     reorderLayerToIndex(id, toIndex);
-    mapService.syncLayerOrder(getLayers().map(l => l.id));
+    mapService.syncLayerOrder(getMapLayerOrderIds());
     refreshUI();
 }
 
@@ -1670,6 +1672,13 @@ export function setActiveLayerAndRefresh(id) {
 export function toggleLayerVisibilityAndRender(id) {
     toggleLayerVisibility(id);
     mapService.toggleLayer(id, getLayers().find(l => l.id === id)?.visible);
+    refreshUI();
+}
+
+export function toggleLayerLockAndRender(id) {
+    toggleLayerLock(id);
+    mapService.applyLayerLock(id);
+    mapService.syncLayerOrder(getMapLayerOrderIds());
     refreshUI();
 }
 
@@ -4741,6 +4750,7 @@ export function invokeAppAction(action, arg) {
 const APP_ACTIONS = {
     setActiveLayer: setActiveLayerAndRefresh,
     toggleVisibility: toggleLayerVisibilityAndRender,
+    toggleLock: toggleLayerLockAndRender,
     zoomToLayer,
     removeLayer: removeLayerWithConfirm,
     removeLayers: removeLayersWithConfirm,

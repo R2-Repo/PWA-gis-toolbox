@@ -82,6 +82,9 @@ export function createMapService({ mapAdapter = mapManager } = {}) {
         setLayerStyle(layerId, style) {
             return mapAdapter.setLayerStyle(layerId, style);
         },
+        applyLayerLock(layerId) {
+            return mapAdapter.applyLayerLock?.(layerId);
+        },
         syncLayerOrder(orderedIds) {
             return mapAdapter.syncLayerOrder(orderedIds);
         },
