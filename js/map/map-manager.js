@@ -4,7 +4,7 @@
  */
 import logger from '../core/logger.js';
 import bus from '../core/event-bus.js';
-import { getActiveLayer, setActiveLayer } from '../core/state.js';
+import { getActiveLayer, setActiveLayer, isLayerLocked, getMapLayerOrderIds } from '../core/state.js';
 import { flattenFeatureGeometryCollections, isWorkspaceLayer, isServiceLayer } from '../core/data-model.js';
 import { getCoverageRasters, isCoverageRasterLayer } from '../core/coverage-raster-layer.js';
 import { MAP_CHUNK_BATCH_SIZE, RENDER_LIMITS } from './render-limits.js';
@@ -593,7 +593,9 @@ class MapManager {
     }
 
     async addServiceLayer(dataset, colorIndex = 0, { fit = false } = {}) {
-        return engineAddServiceLayer(this, dataset, colorIndex, { fit });
+        const result = await engineAddServiceLayer(this, dataset, colorIndex, { fit });
+        this._applyDatasetLock(dataset);
+        return result;
     }
 
     removeServiceLayer(layerId) {
@@ -656,6 +658,7 @@ class MapManager {
             this._layerNames.set(dataset.id, dataset.name);
             logger.info('Map', 'No geometries to display', { layer: dataset.name });
             this._applyDatasetVisibility(dataset);
+            this._applyDatasetLock(dataset);
             bus.emit('map:layerAdded', { id: dataset.id, name: dataset.name });
             return;
         }
@@ -829,6 +832,7 @@ class MapManager {
             renderParts: taggedFeatures.length
         });
         this._applyDatasetVisibility(dataset);
+        this._applyDatasetLock(dataset);
         bus.emit('map:layerAdded', { id: dataset.id, name: dataset.name });
     }
 
@@ -927,6 +931,7 @@ class MapManager {
             rasters: coverageRasters.length
         });
         this._applyDatasetVisibility(dataset);
+        this._applyDatasetLock(dataset);
         bus.emit('map:layerAdded', { id: dataset.id, name: dataset.name });
     }
 
@@ -983,6 +988,7 @@ class MapManager {
         }
 
         this._applyDatasetVisibility(dataset);
+        this._applyDatasetLock(dataset);
         bus.emit('map:layerAdded', { id: dataset.id, name: dataset.name });
     }
 
@@ -1276,7 +1282,7 @@ class MapManager {
             if (!this._boundClickLayers) this._boundClickLayers = new Set();
 
             this.map.on('click', lid, (e) => {
-                if (e._drawHandled) return;
+                if (e._drawHandled || isLayerLocked(dataset.id)) return;
                 e.preventDefault();
                 const props = e.features?.[0]?.properties;
                 if (!props) return;
@@ -1325,6 +1331,7 @@ class MapManager {
             });
 
             this.map.on('contextmenu', lid, (e) => {
+                if (isLayerLocked(dataset.id)) return;
                 e.preventDefault();
                 const props = e.features?.[0]?.properties;
                 if (!props) return;
@@ -1338,6 +1345,7 @@ class MapManager {
             });
 
             this.map.on('mouseenter', lid, () => {
+                if (isLayerLocked(dataset.id)) return;
                 if (this.map.getCanvas().style.cursor !== 'crosshair') {
                     this.map.getCanvas().style.cursor = 'pointer';
                 }
@@ -1418,7 +1426,8 @@ class MapManager {
 
     _getInteractiveLayerIds() {
         const ids = [];
-        for (const info of this.dataLayers.values()) {
+        for (const [layerId, info] of this.dataLayers.entries()) {
+            if (isLayerLocked(layerId)) continue;
             ids.push(...info.layerIds);
         }
         return ids;
@@ -1451,6 +1460,44 @@ class MapManager {
     _applyDatasetVisibility(dataset) {
         if (dataset?.visible === false) {
             this.toggleLayer(dataset.id, false);
+        }
+    }
+
+    _getMapSubLayerIds(layerId) {
+        const info = this.dataLayers.get(layerId);
+        if (info?.layerIds?.length) return info.layerIds;
+        const svc = getServiceLayerRuntime(this, layerId);
+        if (svc?.mapLayerIds?.length) return svc.mapLayerIds;
+        return [];
+    }
+
+    _setLayerInteractive(layerId, interactive) {
+        for (const lid of this._getMapSubLayerIds(layerId)) {
+            if (!this.map?.getLayer(lid)) continue;
+            try {
+                this.map.setLayoutProperty(lid, 'interactive', interactive);
+            } catch (_) { /* layer type may not support interactive */ }
+        }
+    }
+
+    applyLayerLock(layerId) {
+        const locked = isLayerLocked(layerId);
+        this._setLayerInteractive(layerId, !locked);
+        if (locked) {
+            this.clearSelection(layerId);
+            this.clearQueryResults?.();
+            if (this._highlightedInfo?.layerId === layerId) {
+                this.clearHighlight();
+            }
+            if (this._popupHits?.some((h) => h.layerId === layerId)) {
+                this._closePopup();
+            }
+        }
+    }
+
+    _applyDatasetLock(dataset) {
+        if (dataset?.locked) {
+            this.applyLayerLock(dataset.id);
         }
     }
 
@@ -1503,10 +1550,14 @@ class MapManager {
     }
 
     syncLayerOrder(orderedIds) {
+        const locked = [];
+        const unlocked = [];
         for (const id of orderedIds) {
-            const info = this.dataLayers.get(id);
-            if (!info) continue;
-            for (const lid of info.layerIds) {
+            if (isLayerLocked(id)) locked.push(id);
+            else unlocked.push(id);
+        }
+        for (const id of [...locked, ...unlocked]) {
+            for (const lid of this._getMapSubLayerIds(id)) {
                 if (this.map.getLayer(lid)) this.map.moveLayer(lid);
             }
         }
@@ -1731,6 +1782,7 @@ class MapManager {
     // ==========================================
 
     highlightFeature(layerId, featureIndex, originalColor) {
+        if (isLayerLocked(layerId)) return;
         this.clearHighlight();
         const info = this.dataLayers.get(layerId);
         if (!info) return;
@@ -3999,7 +4051,7 @@ class MapManager {
     isSelectionMode() { return this._canSelect(); }
 
     _syncSelectionContext(layerId, featureIndex, { toggle = false } = {}) {
-        if (!this._canSelect()) return;
+        if (!this._canSelect() || isLayerLocked(layerId)) return;
         const previousId = getActiveLayer()?.id;
         if (layerId !== previousId) {
             if (!this._presentationMultiSelect && previousId) {
@@ -4018,6 +4070,7 @@ class MapManager {
     }
 
     _handleSelectionClick(layerId, featureIndex, toggleKey) {
+        if (isLayerLocked(layerId)) return;
         if (!this._presentationMultiSelect && !this._isActiveLayer(layerId)) return;
         if (!this._selections.has(layerId)) this._selections.set(layerId, new Set());
         const sel = this._selections.get(layerId);
@@ -4138,7 +4191,7 @@ class MapManager {
 
     _selectFeaturesInBounds(bbox, addToExisting) {
         const layerId = this._activeLayerId;
-        if (!layerId) return;
+        if (!layerId || isLayerLocked(layerId)) return;
         const info = this.dataLayers.get(layerId);
         if (!info) return;
 
@@ -4233,6 +4286,7 @@ class MapManager {
     }
 
     selectFeatures(layerId, indices) {
+        if (isLayerLocked(layerId)) return;
         this._selections.set(layerId, new Set(indices));
         this._renderSelectionHighlights(layerId);
         bus.emit('selection:changed', { layerId, count: indices.length, totalCount: this.getTotalSelectionCount() });
@@ -4255,7 +4309,7 @@ class MapManager {
     }
 
     showQueryResults(layerId, indices = []) {
-        if (!this.map) return;
+        if (!this.map || isLayerLocked(layerId)) return;
         this._stopQueryResultPulse();
         const features = buildQueryResultFeatures(this.dataLayers, layerId, indices);
         renderQueryResultLayers(this.map, features);

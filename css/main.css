@@ -825,6 +825,10 @@ textarea { resize: vertical; min-height: 60px; }
 .layer-item:hover { background: rgba(255,255,255,0.08); }
 .layer-item.active { background: rgba(10,132,255,0.08); border-left: 3px solid var(--primary); }
 .layer-item-hidden { opacity: 0.65; }
+.layer-item-locked .layer-name { color: var(--text-muted); }
+.layer-item-locked.layer-item.active { background: rgba(255,255,255,0.04); border-left-color: var(--text-muted); }
+.layer-lock-btn { font-size: 13px; line-height: 1; opacity: 0.75; }
+.layer-lock-btn-active { opacity: 1; }
 .layer-item-dragging { opacity: 0.45; }
 .layer-item-drop-target::before {
     content: '';

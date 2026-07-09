@@ -88,6 +88,29 @@ export function toggleLayerVisibility(id) {
     }
 }
 
+export function isLayerLocked(id) {
+    const layer = state.layers.find((l) => l.id === id);
+    return layer?.locked === true;
+}
+
+export function toggleLayerLock(id) {
+    const layer = state.layers.find((l) => l.id === id);
+    if (!layer) return;
+    layer.locked = !layer.locked;
+    bus.emit('layer:updated', layer);
+    bus.emit('layers:changed', state.layers);
+}
+
+/** Panel order with locked layers stacked below unlocked layers on the map. */
+export function getMapLayerOrderIds() {
+    const locked = [];
+    const unlocked = [];
+    for (const layer of state.layers) {
+        (layer.locked ? locked : unlocked).push(layer.id);
+    }
+    return [...locked, ...unlocked];
+}
+
 export function reorderLayer(id, direction) {
     const idx = state.layers.findIndex(l => l.id === id);
     if (idx === -1) return;
@@ -133,6 +156,7 @@ window.addEventListener('resize', checkMobile);
 
 export default {
     getState, getLayers, getActiveLayer, addLayer, removeLayer, setActiveLayer,
-    updateLayer, updateLayerData, toggleLayerVisibility, reorderLayer, reorderLayerToIndex,
+    updateLayer, updateLayerData, toggleLayerVisibility, toggleLayerLock, isLayerLocked,
+    getMapLayerOrderIds, reorderLayer, reorderLayerToIndex,
     setUIState, toggleAGOLCompat
 };

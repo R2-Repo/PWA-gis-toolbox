@@ -41,7 +41,8 @@ export async function buildDatasetFromSavedLayer(saved, payload = {}) {
             filters: saved.filters,
             scaleRangeEnabled: saved.scaleRangeEnabled,
             minScale: saved.minScale,
-            maxScale: saved.maxScale
+            maxScale: saved.maxScale,
+            ...(saved.locked ? { locked: true } : {})
         };
     }
 
@@ -78,7 +79,8 @@ export async function buildDatasetFromSavedLayer(saved, payload = {}) {
             filters: saved.filters,
             scaleRangeEnabled: saved.scaleRangeEnabled,
             minScale: saved.minScale,
-            maxScale: saved.maxScale
+            maxScale: saved.maxScale,
+            ...(saved.locked ? { locked: true } : {})
         };
     }
 
@@ -95,7 +97,8 @@ export async function buildDatasetFromSavedLayer(saved, payload = {}) {
             visible: saved.visible !== false,
             active: false,
             created: saved.created || new Date().toISOString(),
-            filters: saved.filters
+            filters: saved.filters,
+            ...(saved.locked ? { locked: true } : {})
         };
     }
 
@@ -108,7 +111,8 @@ export async function buildDatasetFromSavedLayer(saved, payload = {}) {
             source: saved.source || { format: 'live-service', url: saved.service.url },
             visible: saved.visible !== false,
             active: false,
-            created: saved.created || new Date().toISOString()
+            created: saved.created || new Date().toISOString(),
+            ...(saved.locked ? { locked: true } : {})
         };
     }
 
@@ -137,7 +141,8 @@ export function buildDatasetFromWorkspaceRef(saved, newLayerId = saved.id) {
         filters: saved.filters,
         scaleRangeEnabled: saved.scaleRangeEnabled,
         minScale: saved.minScale,
-        maxScale: saved.maxScale
+        maxScale: saved.maxScale,
+        ...(saved.locked ? { locked: true } : {})
     };
 }
 

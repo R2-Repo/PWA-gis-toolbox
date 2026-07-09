@@ -131,6 +131,7 @@ function _serializeLayer(layer) {
     }
     // Preserve filters if present
     if (layer.filters) out.filters = layer.filters;
+    if (layer.locked === true) out.locked = true;
     if (layer.scaleRangeEnabled) out.scaleRangeEnabled = true;
     if (layer.minScale != null && layer.minScale > 0) out.minScale = layer.minScale;
     if (layer.maxScale != null && layer.maxScale > 0) out.maxScale = layer.maxScale;

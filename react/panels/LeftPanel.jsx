@@ -135,6 +135,7 @@ export function LayerListPanel({
                     const fieldCount = layer.schema?.fields?.length || 0;
                     const geomType = layer.schema?.geometryType;
                     const isVisible = layer.visible !== false;
+                    const isLocked = layer.locked === true;
 
                     const outOfScale = layer._outOfScaleRange;
                     const crsWarning = isSpatial && !isLayerDisplayReady(layer) ? layerCrsWarning(layer) : '';
@@ -147,6 +148,7 @@ export function LayerListPanel({
                                 isActive ? 'active' : '',
                                 outOfScale ? 'layer-item-scale-hidden' : '',
                                 !isVisible ? 'layer-item-hidden' : '',
+                                isLocked ? 'layer-item-locked' : '',
                                 isDragging ? 'layer-item-dragging' : '',
                                 isDropTarget ? 'layer-item-drop-target' : ''
                             ].filter(Boolean).join(' ')}
@@ -214,6 +216,17 @@ export function LayerListPanel({
                                             CRS
                                         </span>
                                     ) : null}
+                                    <button
+                                        type="button"
+                                        className={['btn-icon', 'layer-lock-btn', isLocked ? 'layer-lock-btn-active' : ''].filter(Boolean).join(' ')}
+                                        title={isLocked ? 'Unlock layer (enable map interaction)' : 'Lock layer (reference only — no selection or popups)'}
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            actions.toggleLock(layer.id);
+                                        }}
+                                    >
+                                        {isLocked ? '🔒' : '🔓'}
+                                    </button>
                                     <button
                                         type="button"
                                         className="btn-icon layer-visibility-btn"
