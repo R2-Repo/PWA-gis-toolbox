@@ -35,6 +35,10 @@ import { assessImportRoute, shouldConvertToWorkspace, arcgisShouldUseWorkspace }
 import { ErrorCategory } from '../core/error-handler.js';
 import { getAvailableFormats, exportDataset, exportMultiLayerKMZFile, exportMultiLayerKMLFile, setExportMapManager } from '../export/exporter.js';
 import { isCoverageRasterLayer } from '../core/coverage-raster-layer.js';
+import {
+    getContextMenuGisTools,
+    isLayerFeatureDeletable
+} from './context-menu-gis-tools.js';
 import mapService, { formatElevationLabel } from '../map/map-service.js';
 import { isSmartStyleActive } from '../map/style-engine.js';
 import dualScreenCoordinator from '../dual-screen/coordinator.js';
@@ -501,6 +505,34 @@ export function buildMapContextMenuItems(payload) {
                 action: () => openImportStationTable(getWidgetContext(), layer)
             });
         }
+
+        const gisTools = getContextMenuGisTools(layer, feature);
+        if (gisTools.length > 0) {
+            items.push({
+                icon: '🛠',
+                label: 'Tools',
+                children: gisTools.map((tool) => ({
+                    label: tool.label,
+                    action: () => invokeAppAction(tool.action)
+                }))
+            });
+        }
+
+        if (isLayerFeatureDeletable(layer)) {
+            items.push({
+                icon: '🗑',
+                label: 'Delete feature',
+                action: () => deleteFeatureAt(layerId, featureIndex)
+            });
+        }
+    }
+
+    if (!isPresentationMode()) {
+        items.push({
+            icon: '📐',
+            label: 'Measure from here',
+            action: () => mapService.startMeasureFrom(latlng)
+        });
     }
 
     items.push({
@@ -2530,6 +2562,28 @@ export async function deleteSelectedFeatures() {
     mapService.addLayer(layer, getLayers().indexOf(layer));
     refreshUI();
     showToast(`Deleted ${indices.length} feature(s)`, 'success');
+}
+
+export async function deleteFeatureAt(layerId, featureIndex) {
+    const layer = getLayers().find((l) => l.id === layerId);
+    if (!layer || !isLayerFeatureDeletable(layer)) return;
+    if (featureIndex == null || featureIndex < 0 || featureIndex >= (layer.geojson?.features?.length ?? 0)) {
+        return showToast('Feature not found', 'warning');
+    }
+
+    const ok = await confirm('Delete Feature', 'Delete this feature? This can be undone.');
+    if (!ok) return;
+
+    saveSnapshot(layer.id, 'Delete feature', layer.geojson);
+    const remaining = layer.geojson.features.filter((_, i) => i !== featureIndex);
+    layer.geojson = { type: 'FeatureCollection', features: remaining };
+    layer.schema = analyzeSchema(layer.geojson);
+    bus.emit('layer:updated', layer);
+    bus.emit('layers:changed', getLayers());
+    mapService.clearSelection(layer.id);
+    mapService.addLayer(layer, getLayers().indexOf(layer));
+    refreshUI();
+    showToast('Feature deleted', 'success');
 }
 
 function addResultLayer(dataset) {
@@ -4806,6 +4860,7 @@ const APP_ACTIONS = {
     selectAllFeatures,
     invertSelection,
     deleteSelectedFeatures,
+    deleteFeatureAt,
     openFeatureEditor,
     openDrawTools,
     createDrawLayer,

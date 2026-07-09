@@ -2,6 +2,45 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import bus from '../../js/core/event-bus.js';
 
+function ContextMenuItem({ item, index, dismiss }) {
+  if (item.sep) return <div key={`sep-${index}`} className="ctx-sep" />;
+
+  if (item.children?.length) {
+    return (
+      <div key={`${item.label}-${index}`} className="ctx-item ctx-item-has-submenu">
+        <span className="ctx-icon">{item.icon}</span>
+        <span className="ctx-label">{item.label}</span>
+        <span className="ctx-submenu-arrow" aria-hidden>▸</span>
+        <div className="ctx-submenu" onClick={(e) => e.stopPropagation()}>
+          {item.children.map((child, childIndex) => (
+            <ContextMenuItem
+              key={`${child.label}-${childIndex}`}
+              item={child}
+              index={childIndex}
+              dismiss={dismiss}
+            />
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      key={`${item.label}-${index}`}
+      className="ctx-item"
+      onClick={(e) => {
+        e.stopPropagation();
+        dismiss();
+        item.action?.();
+      }}
+    >
+      <span className="ctx-icon">{item.icon}</span>
+      {item.label}
+    </div>
+  );
+}
+
 /**
  * React portal context menu for map right-clicks.
  * Subscribes to map:contextmenu bus events; actions via props.
@@ -75,23 +114,9 @@ export function MapContextMenu({ buildItems }) {
             onClick={(e) => e.stopPropagation()}
         >
             {menu.layerName ? <div className="ctx-header">Layer: {menu.layerName}</div> : null}
-            {menu.items.map((item, index) => {
-                if (item.sep) return <div key={`sep-${index}`} className="ctx-sep" />;
-                return (
-                    <div
-                        key={`${item.label}-${index}`}
-                        className="ctx-item"
-                        onClick={(e) => {
-                            e.stopPropagation();
-                            dismiss();
-                            item.action?.();
-                        }}
-                    >
-                        <span className="ctx-icon">{item.icon}</span>
-                        {item.label}
-                    </div>
-                );
-            })}
+            {menu.items.map((item, index) => (
+                <ContextMenuItem key={`${item.label ?? 'sep'}-${index}`} item={item} index={index} dismiss={dismiss} />
+            ))}
         </div>,
         document.body
     );

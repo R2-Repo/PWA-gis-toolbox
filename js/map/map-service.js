@@ -373,6 +373,9 @@ export function createMapService({ mapAdapter = mapManager } = {}) {
         queryElevationAt(lat, lng) {
             return mapAdapter.queryElevationAt?.(lat, lng) ?? null;
         },
+        startMeasureFrom(latlng) {
+            return mapAdapter.startMeasureFromLatLng?.(latlng);
+        },
     };
 }
 
