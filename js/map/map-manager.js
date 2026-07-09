@@ -1343,6 +1343,11 @@ class MapManager {
                 if (!props) return;
                 const featureIndex = props._featureIndex;
                 const feature = dataset.geojson.features[featureIndex];
+                this._closePopup();
+                this.clearHighlight();
+                if (this._canSelect()) {
+                    this._syncSelectionContext(dataset.id, featureIndex, { toggle: false });
+                }
                 bus.emit('map:contextmenu', {
                     latlng: { lat: e.lngLat.lat, lng: e.lngLat.lng },
                     originalEvent: e.originalEvent,
@@ -4729,6 +4734,26 @@ class MapManager {
 
         const ctrl = { onAdd: () => container, onRemove: () => { deactivate(); container.remove(); } };
         this.map.addControl(ctrl, 'top-left');
+
+        this._measureActivate = activate;
+        this._measureDeactivate = deactivate;
+        this._measureAddPoint = (lng, lat) => {
+            const coord = [lng, lat];
+            this._measurePoints.push(coord);
+            updateLine();
+            recalc();
+        };
+    }
+
+    /**
+     * Activate the map measure tool with an initial vertex at the given location.
+     * @param {{ lat: number, lng: number }} latlng
+     */
+    startMeasureFromLatLng(latlng) {
+        if (!this._measureActivate || !latlng) return;
+        this._measureDeactivate();
+        this._measureActivate();
+        this._measureAddPoint(latlng.lng, latlng.lat);
     }
 
     _getActivePopupHit() {

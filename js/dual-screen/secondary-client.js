@@ -277,9 +277,10 @@ function setupDrawCmdHandler() {
 }
 
 export function handleDrawCmd(payload) {
-    const { action, layerId, layerName } = payload || {};
+    const { action, layerId, layerName, startTool } = payload || {};
     if (action === 'showToolbar' && layerId) {
         drawManager.showToolbar(layerId, layerName || 'Layer');
+        if (startTool) drawManager.startTool(startTool);
         showMapToast('Draw tools active on map window', 'info');
         return;
     }
