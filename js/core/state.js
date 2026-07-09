@@ -7,6 +7,7 @@ import { analyzeSchema } from './data-model.js';
 
 const state = {
     layers: [],           // Array of canonical datasets
+    layerGroups: [],      // Visual import/manual groups (not map layers)
     activeLayerId: null,
     filters: [],
     agolCompatMode: false,
@@ -25,6 +26,8 @@ const state = {
 export function getState() { return state; }
 
 export function getLayers() { return state.layers; }
+
+export function getLayerGroupsState() { return state.layerGroups; }
 
 export function getActiveLayer() {
     return state.layers.find(l => l.id === state.activeLayerId) || state.layers[0] || null;
@@ -155,7 +158,7 @@ function checkMobile() {
 window.addEventListener('resize', checkMobile);
 
 export default {
-    getState, getLayers, getActiveLayer, addLayer, removeLayer, setActiveLayer,
+    getState, getLayers, getLayerGroupsState, getActiveLayer, addLayer, removeLayer, setActiveLayer,
     updateLayer, updateLayerData, toggleLayerVisibility, toggleLayerLock, isLayerLocked,
     getMapLayerOrderIds, reorderLayer, reorderLayerToIndex,
     setUIState, toggleAGOLCompat

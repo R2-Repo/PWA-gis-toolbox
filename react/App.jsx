@@ -27,6 +27,14 @@ import {
     zoomToLayer,
     removeLayerWithConfirm,
     removeLayersWithConfirm,
+    moveGroupToIndex,
+    toggleGroupCollapsedAndRefresh,
+    renameLayerGroupInline,
+    toggleGroupVisibilityAndRender,
+    dissolveLayerGroupWithConfirm,
+    removeLayerGroupWithConfirm,
+    groupSelectedLayers,
+    exportLayerGroup,
     toggleField,
     selectAllFields,
     addField,
@@ -130,6 +138,7 @@ function usePanelCollapse(side) {
 
 function AppShell() {
     const layers = useAppStore((s) => s.layers);
+    const layerGroups = useAppStore((s) => s.layerGroups);
     const activeLayer = useAppStore((s) => s.activeLayer);
     const toolbar = useAppStore((s) => s.toolbar);
     const refreshTick = useAppStore((s) => s.refreshTick);
@@ -169,6 +178,14 @@ function AppShell() {
         zoomToLayer,
         removeLayer: removeLayerWithConfirm,
         removeLayers: removeLayersWithConfirm,
+        moveGroupToIndex,
+        toggleGroupCollapsed: toggleGroupCollapsedAndRefresh,
+        renameLayerGroupInline,
+        toggleGroupVisibility: toggleGroupVisibilityAndRender,
+        dissolveLayerGroup: dissolveLayerGroupWithConfirm,
+        removeLayerGroup: removeLayerGroupWithConfirm,
+        groupSelectedLayers,
+        exportLayerGroup,
         openFilterBuilder: (id) => openFilterBuilder(id),
         toggleField,
         selectAllFields,
@@ -279,6 +296,7 @@ function AppShell() {
                         <CollapsibleSection title="Layers" bodyId="layer-list">
                             <LayerListPanel
                                 layers={layersForPanel}
+                                layerGroups={layerGroups}
                                 activeLayerId={activeLayer?.id || null}
                                 actions={panelActions}
                             />
