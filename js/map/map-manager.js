@@ -399,20 +399,9 @@ class MapManager {
             this._annotationOverlay?.setActive(!!is3D);
         });
 
-        // Right-click
+        // Right-click — resolved globally so selection overlays and top-layer hits still work
         this.map.on('contextmenu', (e) => {
-            e.preventDefault();
-            const hitLayers = this._getInteractiveLayerIds();
-            const features = hitLayers.length > 0 ? this._queryFeaturesAtPoint(e.point, hitLayers) : [];
-            if (features.length === 0) {
-                bus.emit('map:contextmenu', {
-                    latlng: { lat: e.lngLat.lat, lng: e.lngLat.lng },
-                    originalEvent: e.originalEvent,
-                    layerId: null,
-                    featureIndex: null,
-                    feature: null
-                });
-            }
+            this._handleMapContextMenu(e);
         });
 
         this.map.on('load', () => {
@@ -1336,25 +1325,6 @@ class MapManager {
                 });
             });
 
-            this.map.on('contextmenu', lid, (e) => {
-                if (isLayerLocked(dataset.id)) return;
-                e.preventDefault();
-                const props = e.features?.[0]?.properties;
-                if (!props) return;
-                const featureIndex = props._featureIndex;
-                const feature = dataset.geojson.features[featureIndex];
-                this._closePopup();
-                this.clearHighlight();
-                if (this._canSelect()) {
-                    this._syncSelectionContext(dataset.id, featureIndex, { toggle: false });
-                }
-                bus.emit('map:contextmenu', {
-                    latlng: { lat: e.lngLat.lat, lng: e.lngLat.lng },
-                    originalEvent: e.originalEvent,
-                    layerId: dataset.id, featureIndex, feature
-                });
-            });
-
             this.map.on('mouseenter', lid, () => {
                 if (isLayerLocked(dataset.id)) return;
                 if (this.map.getCanvas().style.cursor !== 'crosshair') {
@@ -1442,6 +1412,97 @@ class MapManager {
             ids.push(...info.layerIds);
         }
         return ids;
+    }
+
+    async _resolveFeatureForContextMenu(layerId, featureIndex, renderedFeature) {
+        const info = this.dataLayers.get(layerId);
+        if (!info) return null;
+
+        const wsDataset = this._workspaceDatasets?.get(layerId);
+        let feature = info.geojson?.features?.find(
+            (f) => f.properties?._featureIndex === featureIndex
+        ) || info.geojson?.features?.[featureIndex];
+
+        if (wsDataset || info.workspace) {
+            const wsId = wsDataset?.workspaceLayerId || layerId;
+            const attrs = await getWorkspaceFeatureAttributes(wsId, featureIndex);
+            if (feature && attrs) {
+                feature = { ...feature, properties: { ...attrs } };
+            } else if (attrs) {
+                feature = {
+                    type: 'Feature',
+                    geometry: renderedFeature?.geometry || feature?.geometry,
+                    properties: attrs
+                };
+            }
+        } else if (info.geojson?.features) {
+            feature = info.geojson.features.find(
+                (f) => f.properties?._featureIndex === featureIndex
+            ) || info.geojson.features[featureIndex];
+        }
+
+        return feature || null;
+    }
+
+    _handleMapContextMenu(e) {
+        e.preventDefault();
+        const latlng = { lat: e.lngLat.lat, lng: e.lngLat.lng };
+        const hitLayers = this._getInteractiveLayerIds();
+        const rendered = hitLayers.length > 0 ? this._queryFeaturesAtPoint(e.point, hitLayers) : [];
+        const hit = rendered.find(
+            (f) => f.properties?._featureIndex !== undefined && f.properties?._datasetId
+        );
+
+        if (!hit) {
+            bus.emit('map:contextmenu', {
+                latlng,
+                originalEvent: e.originalEvent,
+                layerId: null,
+                featureIndex: null,
+                feature: null
+            });
+            return;
+        }
+
+        const layerId = hit.properties._datasetId;
+        const featureIndex = hit.properties._featureIndex;
+
+        if (isLayerLocked(layerId)) {
+            bus.emit('map:contextmenu', {
+                latlng,
+                originalEvent: e.originalEvent,
+                layerId: null,
+                featureIndex: null,
+                feature: null
+            });
+            return;
+        }
+
+        void this._resolveFeatureForContextMenu(layerId, featureIndex, hit).then((feature) => {
+            if (!feature) {
+                bus.emit('map:contextmenu', {
+                    latlng,
+                    originalEvent: e.originalEvent,
+                    layerId: null,
+                    featureIndex: null,
+                    feature: null
+                });
+                return;
+            }
+
+            this._closePopup();
+            this.clearHighlight();
+            if (this._canSelect()) {
+                this._syncSelectionContext(layerId, featureIndex, { toggle: false });
+            }
+            bus.emit('map:contextmenu', {
+                latlng,
+                originalEvent: e.originalEvent,
+                layerId,
+                featureIndex,
+                feature
+            });
+        });
     }
 
     removeLayer(id) {
