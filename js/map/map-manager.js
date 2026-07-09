@@ -4,7 +4,7 @@
  */
 import logger from '../core/logger.js';
 import bus from '../core/event-bus.js';
-import { getActiveLayer, setActiveLayer } from '../core/state.js';
+import { getActiveLayer, setActiveLayer, isLayerLocked, getMapLayerOrderIds } from '../core/state.js';
 import { flattenFeatureGeometryCollections, isWorkspaceLayer, isServiceLayer } from '../core/data-model.js';
 import { getCoverageRasters, isCoverageRasterLayer } from '../core/coverage-raster-layer.js';
 import { MAP_CHUNK_BATCH_SIZE, RENDER_LIMITS } from './render-limits.js';
@@ -17,6 +17,7 @@ import {
     MAPLIBRE_MAX_ZOOM
 } from './scale-range.js';
 import { resetMapPopupScroll } from './map-popup-utils.js';
+import { buildPopupBodyHtml, POPUP_MODES } from './map-popup-content.js';
 import { isPresentationMode, getPresentationModeState } from '../presentation/presentation-mode-detector.js';
 import { resolvePresentationMapInit } from '../presentation/presentation-scene-schema.js';
 import { hasAppUrlConfig, getAppUrlConfig } from '../url/app-url-detector.js';
@@ -202,6 +203,8 @@ class MapManager {
         this._buildingsRetryTimer = null;
 
         // Popup
+        this._popupMode = 'full';
+        this._popupRenderOptions = {};
         this._popup = null;
         this._popupDelegationBound = false;
         this._presentationAnchor = null;
@@ -582,7 +585,9 @@ class MapManager {
     }
 
     async addServiceLayer(dataset, colorIndex = 0, { fit = false } = {}) {
-        return engineAddServiceLayer(this, dataset, colorIndex, { fit });
+        const result = await engineAddServiceLayer(this, dataset, colorIndex, { fit });
+        this._applyDatasetLock(dataset);
+        return result;
     }
 
     removeServiceLayer(layerId) {
@@ -645,6 +650,7 @@ class MapManager {
             this._layerNames.set(dataset.id, dataset.name);
             logger.info('Map', 'No geometries to display', { layer: dataset.name });
             this._applyDatasetVisibility(dataset);
+            this._applyDatasetLock(dataset);
             bus.emit('map:layerAdded', { id: dataset.id, name: dataset.name });
             return;
         }
@@ -818,6 +824,7 @@ class MapManager {
             renderParts: taggedFeatures.length
         });
         this._applyDatasetVisibility(dataset);
+        this._applyDatasetLock(dataset);
         bus.emit('map:layerAdded', { id: dataset.id, name: dataset.name });
     }
 
@@ -916,6 +923,7 @@ class MapManager {
             rasters: coverageRasters.length
         });
         this._applyDatasetVisibility(dataset);
+        this._applyDatasetLock(dataset);
         bus.emit('map:layerAdded', { id: dataset.id, name: dataset.name });
     }
 
@@ -972,6 +980,7 @@ class MapManager {
         }
 
         this._applyDatasetVisibility(dataset);
+        this._applyDatasetLock(dataset);
         bus.emit('map:layerAdded', { id: dataset.id, name: dataset.name });
     }
 
@@ -1265,7 +1274,7 @@ class MapManager {
             if (!this._boundClickLayers) this._boundClickLayers = new Set();
 
             this.map.on('click', lid, (e) => {
-                if (e._drawHandled) return;
+                if (e._drawHandled || isLayerLocked(dataset.id)) return;
                 e.preventDefault();
                 const props = e.features?.[0]?.properties;
                 if (!props) return;
@@ -1301,7 +1310,10 @@ class MapManager {
                     }];
                     this._popupIndex = 0;
                     this._popupLatLng = latlng;
-                    this._renderCyclePopup();
+                    this._popupRenderOptions = {};
+                    if (this._popupMode !== 'off') {
+                        this._renderCyclePopup(this._popupRenderOptions);
+                    }
 
                     this._rememberPresentationAnchor(dataset.id, featureIndex, feature, dataset.name);
 
@@ -1314,6 +1326,7 @@ class MapManager {
             });
 
             this.map.on('mouseenter', lid, () => {
+                if (isLayerLocked(dataset.id)) return;
                 if (this.map.getCanvas().style.cursor !== 'crosshair') {
                     this.map.getCanvas().style.cursor = 'pointer';
                 }
@@ -1394,7 +1407,8 @@ class MapManager {
 
     _getInteractiveLayerIds() {
         const ids = [];
-        for (const info of this.dataLayers.values()) {
+        for (const [layerId, info] of this.dataLayers.entries()) {
+            if (isLayerLocked(layerId)) continue;
             ids.push(...info.layerIds);
         }
         return ids;
@@ -1453,6 +1467,17 @@ class MapManager {
         const layerId = hit.properties._datasetId;
         const featureIndex = hit.properties._featureIndex;
 
+        if (isLayerLocked(layerId)) {
+            bus.emit('map:contextmenu', {
+                latlng,
+                originalEvent: e.originalEvent,
+                layerId: null,
+                featureIndex: null,
+                feature: null
+            });
+            return;
+        }
+
         void this._resolveFeatureForContextMenu(layerId, featureIndex, hit).then((feature) => {
             if (!feature) {
                 bus.emit('map:contextmenu', {
@@ -1510,6 +1535,44 @@ class MapManager {
         }
     }
 
+    _getMapSubLayerIds(layerId) {
+        const info = this.dataLayers.get(layerId);
+        if (info?.layerIds?.length) return info.layerIds;
+        const svc = getServiceLayerRuntime(this, layerId);
+        if (svc?.mapLayerIds?.length) return svc.mapLayerIds;
+        return [];
+    }
+
+    _setLayerInteractive(layerId, interactive) {
+        for (const lid of this._getMapSubLayerIds(layerId)) {
+            if (!this.map?.getLayer(lid)) continue;
+            try {
+                this.map.setLayoutProperty(lid, 'interactive', interactive);
+            } catch (_) { /* layer type may not support interactive */ }
+        }
+    }
+
+    applyLayerLock(layerId) {
+        const locked = isLayerLocked(layerId);
+        this._setLayerInteractive(layerId, !locked);
+        if (locked) {
+            this.clearSelection(layerId);
+            this.clearQueryResults?.();
+            if (this._highlightedInfo?.layerId === layerId) {
+                this.clearHighlight();
+            }
+            if (this._popupHits?.some((h) => h.layerId === layerId)) {
+                this._closePopup();
+            }
+        }
+    }
+
+    _applyDatasetLock(dataset) {
+        if (dataset?.locked) {
+            this.applyLayerLock(dataset.id);
+        }
+    }
+
     toggleLayer(id, visible) {
         if (getServiceLayerRuntime(this, id)) {
             toggleServiceLayer(this, id, visible);
@@ -1559,10 +1622,14 @@ class MapManager {
     }
 
     syncLayerOrder(orderedIds) {
+        const locked = [];
+        const unlocked = [];
         for (const id of orderedIds) {
-            const info = this.dataLayers.get(id);
-            if (!info) continue;
-            for (const lid of info.layerIds) {
+            if (isLayerLocked(id)) locked.push(id);
+            else unlocked.push(id);
+        }
+        for (const id of [...locked, ...unlocked]) {
+            for (const lid of this._getMapSubLayerIds(id)) {
                 if (this.map.getLayer(lid)) this.map.moveLayer(lid);
             }
         }
@@ -1572,33 +1639,37 @@ class MapManager {
     // Popups
     // ==========================================
 
-    _buildPopupHtml(feature) {
-        const props = feature.properties || {};
-        let imgHtml = '';
-        const imgSrc = props._thumbnailUrl || props._thumbnailDataUrl;
-        if (imgSrc) {
-            imgHtml = `<div style="margin-bottom:6px;text-align:center;">
-                <img src="${imgSrc}" style="max-width:280px;max-height:200px;border-radius:4px;" />
-            </div>`;
+    getPopupMode() {
+        return this._popupMode;
+    }
+
+    setPopupMode(mode) {
+        const next = POPUP_MODES.includes(mode) ? mode : 'full';
+        if (this._popupMode === next) return this._popupMode;
+        this._popupMode = next;
+
+        if (next === 'off') {
+            this._closePopup();
+            return this._popupMode;
         }
 
-        const rows = Object.entries(props)
-            .filter(([k]) => !k.startsWith('_'))
-            .map(([k, v]) => {
-                if (v && typeof v === 'object' && v._att && v.dataUrl) {
-                    return `<tr><th>${k}</th><td style="padding:4px 0;">
-                        <img src="${v.dataUrl}" style="max-width:240px;max-height:180px;border-radius:4px;display:block;margin-bottom:2px;" />
-                        <span style="font-size:10px;color:#888;">${v.name || 'photo'}</span>
-                    </td></tr>`;
-                }
-                let val = v;
-                if (val == null) val = '';
-                else if (typeof v === 'object') val = JSON.stringify(v);
-                if (typeof val === 'string' && val.length > 100) val = val.slice(0, 100) + '…';
-                return `<tr><th>${k}</th><td>${val}</td></tr>`;
-            }).join('');
-        const tableHtml = rows ? `<table>${rows}</table>` : '<em>No attributes</em>';
-        return imgHtml + tableHtml;
+        if (this._popupHits?.length) {
+            this._renderCyclePopup(this._popupRenderOptions || {});
+        } else if (this._popup) {
+            this._closePopup();
+        }
+
+        return this._popupMode;
+    }
+
+    _resolvePopupContentMode({ forceFull = false } = {}) {
+        if (forceFull) return 'full';
+        return this._popupMode === 'minimal' ? 'minimal' : 'full';
+    }
+
+    _buildPopupHtml(feature, options = {}) {
+        const mode = this._resolvePopupContentMode(options);
+        return buildPopupBodyHtml(feature, mode);
     }
 
     _attachPopup(popup) {
@@ -1607,13 +1678,16 @@ class MapManager {
         popup.on('open', () => resetMapPopupScroll(popup));
     }
 
-    showPopup(feature, layer, latlng) {
-        const html = this._buildPopupHtml(feature);
+    showPopup(feature, layer, latlng, options = {}) {
+        const html = this._buildPopupHtml(feature, options);
         const pos = latlng || this._getFeatureCenter(feature);
         this._closePopup();
+        const attrsClass = this._resolvePopupContentMode(options) === 'minimal'
+            ? 'map-popup-attributes map-popup-attributes--minimal'
+            : 'map-popup-attributes';
         this._popup = new maplibregl.Popup({ maxWidth: '350px' })
             .setLngLat([pos.lng, pos.lat])
-            .setHTML(`<div class="map-popup-content"><div class="map-popup-attributes">${html}</div></div>`);
+            .setHTML(`<div class="map-popup-content"><div class="${attrsClass}">${html}</div></div>`);
         this._attachPopup(this._popup);
         this._popup.on('close', () => this.clearHighlight());
     }
@@ -1726,22 +1800,24 @@ class MapManager {
         return { ...feature, properties: props };
     }
 
-    async _showMultiPopup(hits, latlng) {
+    async _showMultiPopup(hits, latlng, options = {}) {
         if (hits.length === 0) return;
         const enriched = await this._enrichPopupHitsWithWorkspaceAttrs(hits);
         this._popupHits = enriched;
         this._popupIndex = 0;
         this._popupLatLng = latlng;
-        this._renderCyclePopup();
+        this._popupRenderOptions = options;
+        this._renderCyclePopup(options);
     }
 
-    _renderCyclePopup() {
+    _renderCyclePopup(options = {}) {
         const hits = this._popupHits;
         const idx = this._popupIndex;
         if (!hits || !hits[idx]) return;
 
         const hit = hits[idx];
-        const bodyHtml = this._buildPopupHtml(hit.feature);
+        const contentMode = this._resolvePopupContentMode(options);
+        const bodyHtml = buildPopupBodyHtml(hit.feature, contentMode);
         const layerName = hit.layerName || hit.layerId;
         const layerLabel = `<div style="font-size:10px;color:var(--text-muted);margin-bottom:4px;border-bottom:1px solid var(--border);padding-bottom:3px;">
             <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${hit.layerColor};margin-right:4px;"></span>
@@ -1761,7 +1837,10 @@ class MapManager {
             <button type="button" data-map-popup-action="edit" style="background:var(--primary);color:#fff;border:none;border-radius:4px;padding:3px 12px;cursor:pointer;font-size:12px;">✏️ Edit</button>
         </div>`;
 
-        const html = `<div class="map-popup-content">${layerLabel}${navHtml}<div class="map-popup-attributes">${bodyHtml}</div>${editBtn}</div>`;
+        const attrsClass = contentMode === 'minimal'
+            ? 'map-popup-attributes map-popup-attributes--minimal'
+            : 'map-popup-attributes';
+        const html = `<div class="map-popup-content">${layerLabel}${navHtml}<div class="${attrsClass}">${bodyHtml}</div>${editBtn}</div>`;
 
         this.highlightFeature(hit.layerId, hit.featureIndex, hit.layerColor);
 
@@ -1787,6 +1866,7 @@ class MapManager {
     // ==========================================
 
     highlightFeature(layerId, featureIndex, originalColor) {
+        if (isLayerLocked(layerId)) return;
         this.clearHighlight();
         const info = this.dataLayers.get(layerId);
         if (!info) return;
@@ -4055,7 +4135,7 @@ class MapManager {
     isSelectionMode() { return this._canSelect(); }
 
     _syncSelectionContext(layerId, featureIndex, { toggle = false } = {}) {
-        if (!this._canSelect()) return;
+        if (!this._canSelect() || isLayerLocked(layerId)) return;
         const previousId = getActiveLayer()?.id;
         if (layerId !== previousId) {
             if (!this._presentationMultiSelect && previousId) {
@@ -4074,6 +4154,7 @@ class MapManager {
     }
 
     _handleSelectionClick(layerId, featureIndex, toggleKey) {
+        if (isLayerLocked(layerId)) return;
         if (!this._presentationMultiSelect && !this._isActiveLayer(layerId)) return;
         if (!this._selections.has(layerId)) this._selections.set(layerId, new Set());
         const sel = this._selections.get(layerId);
@@ -4194,7 +4275,7 @@ class MapManager {
 
     _selectFeaturesInBounds(bbox, addToExisting) {
         const layerId = this._activeLayerId;
-        if (!layerId) return;
+        if (!layerId || isLayerLocked(layerId)) return;
         const info = this.dataLayers.get(layerId);
         if (!info) return;
 
@@ -4289,6 +4370,7 @@ class MapManager {
     }
 
     selectFeatures(layerId, indices) {
+        if (isLayerLocked(layerId)) return;
         this._selections.set(layerId, new Set(indices));
         this._renderSelectionHighlights(layerId);
         bus.emit('selection:changed', { layerId, count: indices.length, totalCount: this.getTotalSelectionCount() });
@@ -4311,7 +4393,7 @@ class MapManager {
     }
 
     showQueryResults(layerId, indices = []) {
-        if (!this.map) return;
+        if (!this.map || isLayerLocked(layerId)) return;
         this._stopQueryResultPulse();
         const features = buildQueryResultFeatures(this.dataLayers, layerId, indices);
         renderQueryResultLayers(this.map, features);
@@ -4756,7 +4838,7 @@ class MapManager {
                 if (!Array.isArray(this._popupHits) || this._popupHits.length === 0) return;
                 const len = this._popupHits.length;
                 this._popupIndex = (this._popupIndex + dir + len) % len;
-                this._renderCyclePopup();
+                this._renderCyclePopup(this._popupRenderOptions || {});
                 this._syncPopupHitSelection();
             } else if (action === 'edit') {
                 const hit = this._getActivePopupHit();

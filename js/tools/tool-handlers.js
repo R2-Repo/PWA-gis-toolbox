@@ -7,7 +7,8 @@ import bus from '../core/event-bus.js';
 import { handleError } from '../core/error-handler.js';
 import {
     getState, getLayers, getActiveLayer, addLayer, removeLayer, updateLayer,
-    setActiveLayer, toggleLayerVisibility, reorderLayer, reorderLayerToIndex, setUIState, toggleAGOLCompat
+    setActiveLayer, toggleLayerVisibility, toggleLayerLock, getMapLayerOrderIds,
+    reorderLayer, reorderLayerToIndex, setUIState, toggleAGOLCompat
 } from '../core/state.js';
 import { mergeDatasets, getSelectedFields, tableToSpatial, createSpatialDataset, createTableDataset, analyzeSchema, analyzeTableSchema, isSpatialLayer, isServiceLayer, isWorkspaceLayer } from '../core/data-model.js';
 import { isLayerDisplayReady, layerCrsWarning, getLayerCrs, resolveReprojectFromCrs } from '../crs/layer-crs.js';
@@ -103,6 +104,22 @@ import { createWidgetContext } from '../widgets/widget-context.js';
 import { openImportStationTable } from '../widgets/project-stationing/controller.js';
 import { isProjectStationingCenterline } from '../widgets/project-stationing/route-profile.js';
 import { createWorkflowController } from '../workflow/workflow-controller.js';
+import {
+    getLayerGroups,
+    setLayerGroups,
+    createImportGroupForDatasets,
+    toggleGroupCollapsed,
+    renameLayerGroup,
+    dissolveLayerGroup,
+    onLayerRemoved,
+    reconcileGroupsAfterReorder,
+    moveGroupBlockToIndex,
+    expandLayerIdsForRemoval,
+    createManualGroupFromLayerIds,
+    getGroupChildLayers,
+    isGroupFullyVisible,
+    clearAllLayerGroups
+} from '../core/layer-groups.js';
 
 // ============================
 // Initialize app
@@ -137,6 +154,10 @@ export async function restoreSessionIfAvailable() {
 
             if (session.layerStyles) {
                 mapService.setLayerStylesRecord(session.layerStyles);
+            }
+
+            if (Array.isArray(session.layerGroups) && session.layerGroups.length) {
+                setLayerGroups(session.layerGroups);
             }
 
             let restored = 0;
@@ -185,6 +206,7 @@ export async function restoreSessionIfAvailable() {
 
             // Fit map to all restored spatial layers
             if (restored > 0) {
+                mapService.syncLayerOrder(getMapLayerOrderIds());
                 mapService.fitToAll();
             }
 
@@ -253,6 +275,7 @@ async function _clearLayersForKitReplace() {
         mapService.removeLayer(id);
         removeLayer(id);
     }
+    clearAllLayerGroups();
 }
 
 function _mergePaletteFavorites(existing, incoming, mode) {
@@ -308,6 +331,17 @@ async function applyProjectKitSnapshot(snapshot, { sections, mode = 'replace' })
             await _addRestoredDatasets(datasets, styles, activeLayerId, {
                 replaceStyles: mode === 'replace'
             });
+
+            const kitGroups = snapshot.layers.layerGroups || [];
+            if (kitGroups.length) {
+                const remapped = layerIdMap?.size
+                    ? kitGroups.map((group) => ({
+                        ...group,
+                        childLayerIds: group.childLayerIds.map((id) => layerIdMap.get(id) || id)
+                    }))
+                    : kitGroups;
+                setLayerGroups(remapped.filter((group) => group.childLayerIds.length >= 2));
+            }
         }
 
         if (selected.includes('widgets') && snapshot.widgets) {
@@ -402,6 +436,7 @@ export async function exportProjectKit(options = {}) {
                 layers: getLayers(),
                 activeLayerId: getState().activeLayerId,
                 layerStyles: mapService.getLayerStylesRecord(),
+                layerGroups: getLayerGroups(),
                 map: _getMapChromeSnapshot(),
                 workflow: wf?.engine ? {
                     pipeline: wf.engine.toJSON(),
@@ -495,8 +530,9 @@ export function buildMapContextMenuItems(payload) {
             label: 'View attributes',
             action: () => {
                 const nearby = mapService.findFeaturesNearClick(latlng, layerId, featureIndex);
-                if (nearby.length > 0) mapService.showMultiPopup(nearby, latlng);
-                else mapService.showPopup(feature, null, latlng);
+                const popupOptions = { forceFull: true };
+                if (nearby.length > 0) mapService.showMultiPopup(nearby, latlng, popupOptions);
+                else mapService.showPopup(feature, null, latlng, popupOptions);
             }
         });
         items.push({
@@ -626,7 +662,7 @@ export function buildMapContextMenuItems(payload) {
                     while (layers.indexOf(layers.find((l) => l.id === layerId)) > 0) {
                         reorderLayer(layerId, 'up');
                     }
-                    mapService.syncLayerOrder(getLayers().map((l) => l.id));
+                    mapService.syncLayerOrder(getMapLayerOrderIds());
                     refreshUI();
                 }
             });
@@ -639,7 +675,7 @@ export function buildMapContextMenuItems(payload) {
                     while (layers.indexOf(layers.find((l) => l.id === layerId)) < layers.length - 1) {
                         reorderLayer(layerId, 'down');
                     }
-                    mapService.syncLayerOrder(getLayers().map((l) => l.id));
+                    mapService.syncLayerOrder(getMapLayerOrderIds());
                     refreshUI();
                 }
             });
@@ -870,6 +906,13 @@ function _rollbackImportedLayers(layerIds) {
 async function _addImportedDatasets(datasets, importOpts = {}) {
     const ids = [];
     const INCREMENTAL_THRESHOLD = 10000;
+    let createdGroup = null;
+
+    if (datasets.length >= 2) {
+        const result = createImportGroupForDatasets(datasets);
+        createdGroup = result.group;
+    }
+
     for (const raw of datasets) {
         let ds = raw;
         if (ds.type === 'spatial' && !isWorkspaceLayer(ds)) {
@@ -912,7 +955,7 @@ async function _addImportedDatasets(datasets, importOpts = {}) {
         );
     }
 
-    return ids;
+    return { ids, group: createdGroup };
 }
 
 export async function handleFileImport(files, fenceBbox = null, options = {}) {
@@ -988,6 +1031,7 @@ export async function handleFileImport(files, fenceBbox = null, options = {}) {
 
         let allExpanded = [];
         let totalFiltered = 0;
+        const importGroupsCreated = [];
 
         sessionStore.pauseSessionSave();
         const { errors, cancelled } = await importFiles(dataFiles, {
@@ -1006,10 +1050,11 @@ export async function handleFileImport(files, fenceBbox = null, options = {}) {
                 const { resolveImportCrsForDatasets } = await import('../import/import-crs-resolve.js');
                 const { pickCrsConfirmModal } = await import('../../react/tools/mountCrsConfirmDialog.jsx');
                 await resolveImportCrsForDatasets(expanded, pickCrsConfirmModal);
-                const ids = await _addImportedDatasets(expanded, {
+                const { ids, group } = await _addImportedDatasets(expanded, {
                     importMode: options.importMode,
                     useWorkspace: options.useWorkspace
                 });
+                if (group) importGroupsCreated.push(group);
                 batchLayerIds.push(...ids);
                 allExpanded.push(...expanded);
             }
@@ -1038,7 +1083,8 @@ export async function handleFileImport(files, fenceBbox = null, options = {}) {
                 expanded: allExpanded,
                 totalFiltered,
                 errors,
-                fenceBbox
+                fenceBbox,
+                importGroups: importGroupsCreated
             });
             const fenceNote = fenceBbox && totalFiltered > 0 ? ` (${totalFiltered} features outside fence excluded)` : '';
             showToast(`${formatImportSummaryToast(summary)}${fenceNote}`, 'success');
@@ -1504,8 +1550,9 @@ export function setupAppWiring() {
     // Listen for layer changes to update UI
     bus.on('layers:changed', refreshUI);
     bus.on('map:scaleRangeChanged', refreshUI);
-    bus.on('layers:changed', () => sessionStore.scheduleSave(getLayers(), mapService.getLayerStylesRecord()));
-    bus.on('map:styleChanged', () => sessionStore.scheduleSave(getLayers(), mapService.getLayerStylesRecord()));
+    bus.on('layers:changed', () => sessionStore.scheduleSave(getLayers(), mapService.getLayerStylesRecord(), getLayerGroups()));
+    bus.on('map:styleChanged', () => sessionStore.scheduleSave(getLayers(), mapService.getLayerStylesRecord(), getLayerGroups()));
+    bus.on('layer-groups:changed', () => sessionStore.scheduleSave(getLayers(), mapService.getLayerStylesRecord(), getLayerGroups()));
     bus.on('layer:active', (layer) => {
         mapService.setActiveLayerId?.(layer?.id ?? getActiveLayer()?.id ?? null);
         refreshUI();
@@ -1688,20 +1735,129 @@ export function refreshUI() {
 
 export function moveLayerUp(id) {
     reorderLayer(id, 'up');
-    mapService.syncLayerOrder(getLayers().map(l => l.id));
+    mapService.syncLayerOrder(getMapLayerOrderIds());
     refreshUI();
 }
 
 export function moveLayerDown(id) {
     reorderLayer(id, 'down');
-    mapService.syncLayerOrder(getLayers().map(l => l.id));
+    mapService.syncLayerOrder(getMapLayerOrderIds());
     refreshUI();
 }
 
 export function moveLayerToIndex(id, toIndex) {
     reorderLayerToIndex(id, toIndex);
-    mapService.syncLayerOrder(getLayers().map(l => l.id));
+    reconcileGroupsAfterReorder(getLayers());
+    mapService.syncLayerOrder(getMapLayerOrderIds());
     refreshUI();
+}
+
+export function moveGroupToIndex(groupId, toIndex) {
+    moveGroupBlockToIndex(groupId, toIndex, getLayers());
+    mapService.syncLayerOrder(getMapLayerOrderIds());
+    refreshUI();
+}
+
+export function toggleGroupCollapsedAndRefresh(groupId) {
+    toggleGroupCollapsed(groupId);
+    refreshUI();
+}
+
+export function renameLayerGroupInline(groupId, el) {
+    if (!el) return;
+    const group = getLayerGroups().find((g) => g.id === groupId);
+    if (!group) return;
+    const current = group.name;
+    el.contentEditable = 'true';
+    el.focus();
+    const range = document.createRange();
+    range.selectNodeContents(el);
+    const sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+
+    const finish = () => {
+        el.contentEditable = 'false';
+        const next = el.textContent?.trim();
+        if (next && next !== current) renameLayerGroup(groupId, next);
+        else el.textContent = current;
+        refreshUI();
+    };
+    el.onblur = finish;
+    el.onkeydown = (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); el.blur(); }
+        if (e.key === 'Escape') { el.textContent = current; el.blur(); }
+    };
+}
+
+export function toggleGroupVisibilityAndRender(groupId) {
+    const children = getGroupChildLayers(groupId, getLayers());
+    if (!children.length) return;
+    const showAll = !isGroupFullyVisible(groupId, getLayers());
+    for (const layer of children) {
+        if ((layer.visible !== false) !== showAll) {
+            toggleLayerVisibility(layer.id);
+            mapService.toggleLayer(layer.id, showAll);
+        }
+    }
+    refreshUI();
+}
+
+export async function dissolveLayerGroupWithConfirm(groupId) {
+    const group = getLayerGroups().find((g) => g.id === groupId);
+    if (!group) return;
+    const ok = await confirm('Ungroup Layers', `Ungroup "${group.name}"? Layers will stay on the map.`);
+    if (!ok) return;
+    dissolveLayerGroup(groupId, getLayers());
+    refreshUI();
+}
+
+export async function removeLayerGroupWithConfirm(groupId) {
+    const group = getLayerGroups().find((g) => g.id === groupId);
+    if (!group) return;
+    const count = group.childLayerIds.length;
+    const ok = await confirm(
+        'Remove Group',
+        `Remove "${group.name}" and all ${count} layer${count !== 1 ? 's' : ''} inside it?`
+    );
+    if (!ok) return;
+    await removeLayersWithConfirm(group.childLayerIds);
+}
+
+export async function groupSelectedLayers(layerIds, name) {
+    const group = createManualGroupFromLayerIds(layerIds, getLayers(), name);
+    if (!group) {
+        showToast('Select at least 2 layers to group', 'warning');
+        return false;
+    }
+    mapService.syncLayerOrder(getMapLayerOrderIds());
+    refreshUI();
+    return true;
+}
+
+export async function exportLayerGroup(groupId, format = 'kmz') {
+    const group = getLayerGroups().find((g) => g.id === groupId);
+    if (!group) return;
+    const layers = getGroupChildLayers(groupId, getLayers()).filter((l) => l.type === 'spatial');
+    if (!layers.length) return showToast('No spatial layers in this group', 'warning');
+
+    try {
+        const layerData = layers.map((ds) => ({
+            dataset: ds,
+            style: mapService.getLayerStyle(ds.id) || {}
+        }));
+        const fname = group.name.replace(/\.[^.]+$/, '').slice(0, 60);
+        const parentFolder = group.name;
+        if (format === 'kml') {
+            await exportMultiLayerKMLFile(layerData, { filename: fname, parentFolder });
+            showToast(`Exported ${layers.length} layers as KML`, 'success');
+        } else {
+            await exportMultiLayerKMZFile(layerData, { filename: fname, parentFolder });
+            showToast(`Exported ${layers.length} layers as KMZ`, 'success');
+        }
+    } catch (e) {
+        showErrorToast(handleError(e, 'Export', 'group-kml-kmz'));
+    }
 }
 
 export function setActiveLayerAndRefresh(id) {
@@ -1712,6 +1868,13 @@ export function setActiveLayerAndRefresh(id) {
 export function toggleLayerVisibilityAndRender(id) {
     toggleLayerVisibility(id);
     mapService.toggleLayer(id, getLayers().find(l => l.id === id)?.visible);
+    refreshUI();
+}
+
+export function toggleLayerLockAndRender(id) {
+    toggleLayerLock(id);
+    mapService.applyLayerLock(id);
+    mapService.syncLayerOrder(getMapLayerOrderIds());
     refreshUI();
 }
 
@@ -1731,15 +1894,17 @@ export async function removeLayerWithConfirm(id) {
 }
 
 export async function removeLayersWithConfirm(ids) {
+    const layers = getLayers();
     const uniqueIds = [...new Set(ids)].filter(Boolean);
-    if (!uniqueIds.length) return false;
-    const message = uniqueIds.length === 1
+    const expandedIds = expandLayerIdsForRemoval(uniqueIds, layers);
+    if (!expandedIds.length) return false;
+    const message = expandedIds.length === 1
         ? 'Remove this layer?'
-        : `Remove ${uniqueIds.length} selected layers?`;
+        : `Remove ${expandedIds.length} selected layers?`;
     const ok = await confirm('Remove Layers', message);
     if (!ok) return false;
-    for (const id of uniqueIds) {
-        const layer = getLayers().find((l) => l.id === id);
+    for (const id of expandedIds) {
+        const layer = layers.find((l) => l.id === id);
         if (layer) {
             revokeKmzBlobUrls(layer);
             if (isWorkspaceLayer(layer)) {
@@ -1748,6 +1913,7 @@ export async function removeLayersWithConfirm(ids) {
         }
         mapService.removeLayer(id);
         removeLayer(id);
+        onLayerRemoved(id, getLayers());
     }
     refreshUI();
     return true;
@@ -4011,7 +4177,7 @@ export async function openArcGISImporter() {
                                     onProgress?.({ percent: 98, step: 'Adding layer to map...' });
                                     progressUi?.onProgress?.({ percent: 98, step: 'Adding layer to map...' });
 
-                                    const ids = await _addImportedDatasets([dataset], { useWorkspace: false });
+                                    const { ids } = await _addImportedDatasets([dataset], { useWorkspace: false });
                                     await mapService.fitToLayers(ids);
                                     const count = isWorkspaceLayer(dataset)
                                         ? (dataset.schema?.featureCount || 0)
@@ -4820,6 +4986,7 @@ export function invokeAppAction(action, arg) {
 const APP_ACTIONS = {
     setActiveLayer: setActiveLayerAndRefresh,
     toggleVisibility: toggleLayerVisibilityAndRender,
+    toggleLock: toggleLayerLockAndRender,
     zoomToLayer,
     removeLayer: removeLayerWithConfirm,
     removeLayers: removeLayersWithConfirm,

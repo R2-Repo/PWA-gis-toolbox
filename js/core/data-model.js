@@ -525,11 +525,16 @@ export function splitByGeometryType(dataset) {
 
     return populated.map(([gtype, feats]) => {
         const fc = { type: 'FeatureCollection', features: feats };
-        return createSpatialDataset(
+        const child = createSpatialDataset(
             `${dataset.name} - ${labels[gtype]}`,
             fc,
             { ...dataset.source }
         );
+        if (dataset._kmlStyle) child._kmlStyle = dataset._kmlStyle;
+        if (dataset._importWarning) child._importWarning = dataset._importWarning;
+        if (dataset._kmzLinkResolver) child._kmzLinkResolver = dataset._kmzLinkResolver;
+        if (dataset._networkLinkHrefs) child._networkLinkHrefs = dataset._networkLinkHrefs;
+        return child;
     });
 }
 

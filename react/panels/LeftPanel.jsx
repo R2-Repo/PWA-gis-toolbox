@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { isSpatialLayer, getLayerFeatureCount } from '../../js/core/data-model.js';
 import { isLayerDisplayReady, layerCrsWarning } from '../../js/crs/layer-crs.js';
+import { buildLayerPanelRows, isGroupFullyVisible, isGroupPartiallyVisible } from '../../js/core/layer-groups.js';
 import { LayerDataToolsPanel } from './LayerDataToolsPanel.jsx';
 import { CollapsibleSection } from '../ui/CollapsibleSection.jsx';
 
@@ -12,8 +13,184 @@ function getDropIndex(clientY, itemElements) {
     return Math.max(0, itemElements.length - 1);
 }
 
+function LayerItemRow({
+    layer,
+    idx,
+    activeLayerId,
+    selectedIds,
+    draggingId,
+    dragOverIndex,
+    actions,
+    onToggleSelected,
+    onDragPointerDown,
+    onDragPointerMove,
+    onFinishDrag,
+    nested = false
+}) {
+    const isActive = layer.id === activeLayerId;
+    const isSelected = selectedIds.has(layer.id);
+    const isDragging = layer.id === draggingId;
+    const isDropTarget = dragOverIndex === idx && draggingId && draggingId !== layer.id;
+    const isSpatial = isSpatialLayer(layer);
+    const icon = isSpatial ? '🗺️' : '📊';
+    const count = isSpatial
+        ? `${getLayerFeatureCount(layer).toLocaleString()} features`
+        : `${getLayerFeatureCount(layer).toLocaleString()} rows`;
+    const fieldCount = layer.schema?.fields?.length || 0;
+    const geomType = layer.schema?.geometryType;
+    const isVisible = layer.visible !== false;
+    const isLocked = layer.locked === true;
+    const outOfScale = layer._outOfScaleRange;
+    const crsWarning = isSpatial && !isLayerDisplayReady(layer) ? layerCrsWarning(layer) : '';
+
+    return (
+        <div
+            className={[
+                'layer-item',
+                nested ? 'layer-item-nested' : '',
+                isActive ? 'active' : '',
+                outOfScale ? 'layer-item-scale-hidden' : '',
+                !isVisible ? 'layer-item-hidden' : '',
+                isLocked ? 'layer-item-locked' : '',
+                isDragging ? 'layer-item-dragging' : '',
+                isDropTarget ? 'layer-item-drop-target' : ''
+            ].filter(Boolean).join(' ')}
+            data-id={layer.id}
+            data-flat-index={idx}
+            onClick={() => actions.setActiveLayer(layer.id)}
+        >
+            <button
+                type="button"
+                className="layer-drag-handle"
+                title="Drag to reorder"
+                aria-label="Drag to reorder layer"
+                onPointerDown={(e) => onDragPointerDown(e, layer.id, idx)}
+                onPointerMove={onDragPointerMove}
+                onPointerUp={(e) => onFinishDrag(e, layer.id)}
+                onPointerCancel={(e) => onFinishDrag(e, layer.id)}
+            >
+                <span aria-hidden>⋮⋮</span>
+            </button>
+            <input
+                type="checkbox"
+                className="layer-select-cb"
+                checked={isSelected}
+                aria-label={`Select ${layer.name}`}
+                onClick={(e) => e.stopPropagation()}
+                onChange={(e) => onToggleSelected(layer.id, e.target.checked)}
+            />
+            <span className="layer-icon">{icon}</span>
+            <div className="layer-main">
+                <div className="layer-name-row">
+                    <div
+                        className="layer-name"
+                        title={layer.name}
+                        onDoubleClick={(e) => {
+                            e.stopPropagation();
+                            actions.renameLayerInline(layer.id, e.currentTarget);
+                        }}
+                    >
+                        {layer.name}
+                    </div>
+                    {layer._activeFilter ? (
+                        <span
+                            className="layer-filter-badge"
+                            title="Filter active – click to edit"
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                actions.openFilterBuilder(layer.id);
+                            }}
+                        >
+                            FILTERED
+                        </span>
+                    ) : null}
+                    {layer.scaleRangeEnabled ? (
+                        <span
+                            className="layer-filter-badge layer-scale-badge"
+                            title={outOfScale ? 'Outside visible scale range at current zoom' : 'Scale range active'}
+                        >
+                            SCALE
+                        </span>
+                    ) : null}
+                    {crsWarning ? (
+                        <span
+                            className="layer-filter-badge layer-crs-badge"
+                            title={crsWarning}
+                        >
+                            CRS
+                        </span>
+                    ) : null}
+                    <button
+                        type="button"
+                        className={['btn-icon', 'layer-lock-btn', isLocked ? 'layer-lock-btn-active' : ''].filter(Boolean).join(' ')}
+                        title={isLocked ? 'Unlock layer (enable map interaction)' : 'Lock layer (reference only — no selection or popups)'}
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            actions.toggleLock(layer.id);
+                        }}
+                    >
+                        {isLocked ? '🔒' : '🔓'}
+                    </button>
+                    <button
+                        type="button"
+                        className="btn-icon layer-visibility-btn"
+                        title={isVisible ? 'Hide layer' : 'Show layer'}
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            actions.toggleVisibility(layer.id);
+                        }}
+                    >
+                        {isVisible ? '👁️' : '👁️‍🗨️'}
+                    </button>
+                </div>
+                <div className="layer-bottom-row">
+                    <div className="layer-meta">
+                        {count} · {fieldCount} fields {geomType ? <span className="badge badge-info">{geomType}</span> : null}
+                    </div>
+                    <div className="layer-actions">
+                        <button
+                            type="button"
+                            className="btn-icon"
+                            title="Rename"
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                actions.renameLayer(layer.id);
+                            }}
+                        >
+                            ✏️
+                        </button>
+                        <button
+                            type="button"
+                            className="btn-icon"
+                            title="Zoom to layer"
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                actions.zoomToLayer(layer.id);
+                            }}
+                        >
+                            🔍
+                        </button>
+                        <button
+                            type="button"
+                            className="btn-icon"
+                            title="Remove"
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                actions.removeLayer(layer.id);
+                            }}
+                        >
+                            🗑️
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+}
+
 export function LayerListPanel({
     layers = [],
+    layerGroups = [],
     activeLayerId = null,
     actions
 }) {
@@ -22,8 +199,10 @@ export function LayerListPanel({
     const [selectedIds, setSelectedIds] = useState(() => new Set());
     const [draggingId, setDraggingId] = useState(null);
     const [dragOverIndex, setDragOverIndex] = useState(null);
+    const [draggingGroupId, setDraggingGroupId] = useState(null);
 
     const layerIdSet = useMemo(() => new Set(layers.map((layer) => layer.id)), [layers]);
+    const panelRows = useMemo(() => buildLayerPanelRows(layers, layerGroups), [layers, layerGroups]);
 
     useEffect(() => {
         setSelectedIds((prev) => {
@@ -34,6 +213,7 @@ export function LayerListPanel({
 
     const selectedCount = selectedIds.size;
     const allSelected = layers.length > 0 && selectedCount === layers.length;
+    const canGroupSelection = selectedCount >= 2;
 
     const toggleSelected = useCallback((layerId, checked) => {
         setSelectedIds((prev) => {
@@ -58,34 +238,57 @@ export function LayerListPanel({
         if (removed) setSelectedIds(new Set());
     }, [actions, selectedIds]);
 
+    const handleGroupSelected = useCallback(async () => {
+        const ok = await actions.groupSelectedLayers([...selectedIds]);
+        if (ok) setSelectedIds(new Set());
+    }, [actions, selectedIds]);
+
     const handleDragPointerDown = useCallback((e, layerId, fromIndex) => {
         e.stopPropagation();
         e.preventDefault();
-        dragRef.current = { layerId, fromIndex, overIndex: fromIndex, pointerId: e.pointerId };
+        dragRef.current = { kind: 'layer', layerId, fromIndex, overIndex: fromIndex, pointerId: e.pointerId };
         setDraggingId(layerId);
+        setDraggingGroupId(null);
         setDragOverIndex(fromIndex);
+        e.currentTarget.setPointerCapture(e.pointerId);
+    }, []);
+
+    const handleGroupDragPointerDown = useCallback((e, groupId, startIndex) => {
+        e.stopPropagation();
+        e.preventDefault();
+        dragRef.current = { kind: 'group', groupId, fromIndex: startIndex, overIndex: startIndex, pointerId: e.pointerId };
+        setDraggingGroupId(groupId);
+        setDraggingId(null);
+        setDragOverIndex(startIndex);
         e.currentTarget.setPointerCapture(e.pointerId);
     }, []);
 
     const handleDragPointerMove = useCallback((e) => {
         const drag = dragRef.current;
         if (!drag || e.pointerId !== drag.pointerId) return;
-        const items = listRef.current?.querySelectorAll('.layer-item');
+        const selector = drag.kind === 'group'
+            ? '.layer-list-items > .layer-group > .layer-group-header, .layer-list-items > .layer-item'
+            : '.layer-item';
+        const items = listRef.current?.querySelectorAll(selector);
         if (!items?.length) return;
-        const overIndex = getDropIndex(e.clientY, items);
-        drag.overIndex = overIndex;
-        setDragOverIndex(overIndex);
+        const hoverIndex = getDropIndex(e.clientY, items);
+        const targetEl = items[hoverIndex];
+        const flatIndex = Number(targetEl?.dataset?.flatIndex ?? hoverIndex);
+        drag.overIndex = flatIndex;
+        setDragOverIndex(flatIndex);
     }, []);
 
-    const finishDrag = useCallback((e, layerId) => {
+    const finishDrag = useCallback((e) => {
         const drag = dragRef.current;
         if (!drag || e.pointerId !== drag.pointerId) return;
-        const { fromIndex, overIndex } = drag;
+        const { kind, fromIndex, overIndex, layerId, groupId } = drag;
         dragRef.current = null;
         setDraggingId(null);
+        setDraggingGroupId(null);
         setDragOverIndex(null);
         if (fromIndex !== overIndex) {
-            actions.moveLayerToIndex(layerId, overIndex);
+            if (kind === 'group') actions.moveGroupToIndex(groupId, overIndex);
+            else actions.moveLayerToIndex(layerId, overIndex);
         }
     }, [actions]);
 
@@ -114,6 +317,15 @@ export function LayerListPanel({
                 </button>
                 <button
                     type="button"
+                    className="btn btn-sm btn-secondary"
+                    disabled={!canGroupSelection}
+                    onClick={handleGroupSelected}
+                    title="Group selected layers"
+                >
+                    Group{canGroupSelection ? ` (${selectedCount})` : ''}
+                </button>
+                <button
+                    type="button"
                     className="btn btn-sm btn-danger"
                     disabled={selectedCount === 0}
                     onClick={handleBulkDelete}
@@ -122,151 +334,161 @@ export function LayerListPanel({
                 </button>
             </div>
             <div ref={listRef} className="layer-list-items">
-                {layers.map((layer, idx) => {
-                    const isActive = layer.id === activeLayerId;
-                    const isSelected = selectedIds.has(layer.id);
-                    const isDragging = layer.id === draggingId;
-                    const isDropTarget = dragOverIndex === idx && draggingId && draggingId !== layer.id;
-                    const isSpatial = isSpatialLayer(layer);
-                    const icon = isSpatial ? '🗺️' : '📊';
-                    const count = isSpatial
-                        ? `${getLayerFeatureCount(layer).toLocaleString()} features`
-                        : `${getLayerFeatureCount(layer).toLocaleString()} rows`;
-                    const fieldCount = layer.schema?.fields?.length || 0;
-                    const geomType = layer.schema?.geometryType;
-                    const isVisible = layer.visible !== false;
+                {panelRows.map((row) => {
+                    if (row.type === 'layer') {
+                        return (
+                            <LayerItemRow
+                                key={row.layer.id}
+                                layer={row.layer}
+                                idx={row.index}
+                                activeLayerId={activeLayerId}
+                                selectedIds={selectedIds}
+                                draggingId={draggingId}
+                                dragOverIndex={dragOverIndex}
+                                actions={actions}
+                                onToggleSelected={toggleSelected}
+                                onDragPointerDown={handleDragPointerDown}
+                                onDragPointerMove={handleDragPointerMove}
+                                onFinishDrag={finishDrag}
+                            />
+                        );
+                    }
 
-                    const outOfScale = layer._outOfScaleRange;
-                    const crsWarning = isSpatial && !isLayerDisplayReady(layer) ? layerCrsWarning(layer) : '';
+                    const { group, children, startIndex } = row;
+                    const isDraggingGroup = draggingGroupId === group.id;
+                    const isDropTarget = dragOverIndex === startIndex && draggingGroupId && draggingGroupId !== group.id;
+                    const groupVisible = isGroupFullyVisible(group.id, layers);
+                    const groupPartial = isGroupPartiallyVisible(group.id, layers);
 
                     return (
-                        <div
-                            key={layer.id}
-                            className={[
-                                'layer-item',
-                                isActive ? 'active' : '',
-                                outOfScale ? 'layer-item-scale-hidden' : '',
-                                !isVisible ? 'layer-item-hidden' : '',
-                                isDragging ? 'layer-item-dragging' : '',
-                                isDropTarget ? 'layer-item-drop-target' : ''
-                            ].filter(Boolean).join(' ')}
-                            data-id={layer.id}
-                            onClick={() => actions.setActiveLayer(layer.id)}
-                        >
-                            <button
-                                type="button"
-                                className="layer-drag-handle"
-                                title="Drag to reorder"
-                                aria-label="Drag to reorder layer"
-                                onPointerDown={(e) => handleDragPointerDown(e, layer.id, idx)}
-                                onPointerMove={handleDragPointerMove}
-                                onPointerUp={(e) => finishDrag(e, layer.id)}
-                                onPointerCancel={(e) => finishDrag(e, layer.id)}
+                        <div key={group.id} className="layer-group">
+                            <div
+                                className={[
+                                    'layer-group-header',
+                                    isDraggingGroup ? 'layer-item-dragging' : '',
+                                    isDropTarget ? 'layer-item-drop-target' : ''
+                                ].filter(Boolean).join(' ')}
+                                data-group-id={group.id}
+                                data-flat-index={startIndex}
                             >
-                                <span aria-hidden>⋮⋮</span>
-                            </button>
-                            <input
-                                type="checkbox"
-                                className="layer-select-cb"
-                                checked={isSelected}
-                                aria-label={`Select ${layer.name}`}
-                                onClick={(e) => e.stopPropagation()}
-                                onChange={(e) => toggleSelected(layer.id, e.target.checked)}
-                            />
-                            <span className="layer-icon">{icon}</span>
-                            <div className="layer-main">
-                                <div className="layer-name-row">
-                                    <div
-                                        className="layer-name"
-                                        title={layer.name}
-                                        onDoubleClick={(e) => {
-                                            e.stopPropagation();
-                                            actions.renameLayerInline(layer.id, e.currentTarget);
-                                        }}
-                                    >
-                                        {layer.name}
+                                <button
+                                    type="button"
+                                    className="layer-drag-handle"
+                                    title="Drag to reorder group"
+                                    aria-label="Drag to reorder group"
+                                    onPointerDown={(e) => handleGroupDragPointerDown(e, group.id, startIndex)}
+                                    onPointerMove={handleDragPointerMove}
+                                    onPointerUp={finishDrag}
+                                    onPointerCancel={finishDrag}
+                                >
+                                    <span aria-hidden>⋮⋮</span>
+                                </button>
+                                <button
+                                    type="button"
+                                    className={['layer-group-toggle', group.collapsed ? 'collapsed' : ''].filter(Boolean).join(' ')}
+                                    title={group.collapsed ? 'Expand group' : 'Collapse group'}
+                                    aria-expanded={!group.collapsed}
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        actions.toggleGroupCollapsed(group.id);
+                                    }}
+                                >
+                                    ▼
+                                </button>
+                                <span className="layer-group-icon" aria-hidden>📁</span>
+                                <div className="layer-group-main">
+                                    <div className="layer-name-row">
+                                        <div
+                                            className="layer-name layer-group-name"
+                                            title={group.name}
+                                            onDoubleClick={(e) => {
+                                                e.stopPropagation();
+                                                actions.renameLayerGroupInline(group.id, e.currentTarget);
+                                            }}
+                                        >
+                                            {group.name}
+                                        </div>
+                                        <span className="layer-group-count badge badge-info">
+                                            {children.length} layers
+                                        </span>
+                                        <button
+                                            type="button"
+                                            className="btn-icon layer-visibility-btn"
+                                            title={groupVisible ? 'Hide all layers in group' : 'Show all layers in group'}
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                actions.toggleGroupVisibility(group.id);
+                                            }}
+                                        >
+                                            {groupVisible ? '👁️' : groupPartial ? '👁️‍🗨️' : '👁️‍🗨️'}
+                                        </button>
                                     </div>
-                                    {layer._activeFilter ? (
-                                        <span
-                                            className="layer-filter-badge"
-                                            title="Filter active – click to edit"
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                actions.openFilterBuilder(layer.id);
-                                            }}
-                                        >
-                                            FILTERED
-                                        </span>
-                                    ) : null}
-                                    {layer.scaleRangeEnabled ? (
-                                        <span
-                                            className="layer-filter-badge layer-scale-badge"
-                                            title={outOfScale ? 'Outside visible scale range at current zoom' : 'Scale range active'}
-                                        >
-                                            SCALE
-                                        </span>
-                                    ) : null}
-                                    {crsWarning ? (
-                                        <span
-                                            className="layer-filter-badge layer-crs-badge"
-                                            title={crsWarning}
-                                        >
-                                            CRS
-                                        </span>
-                                    ) : null}
-                                    <button
-                                        type="button"
-                                        className="btn-icon layer-visibility-btn"
-                                        title={isVisible ? 'Hide layer' : 'Show layer'}
-                                        onClick={(e) => {
-                                            e.stopPropagation();
-                                            actions.toggleVisibility(layer.id);
-                                        }}
-                                    >
-                                        {isVisible ? '👁️' : '👁️‍🗨️'}
-                                    </button>
-                                </div>
-                                <div className="layer-bottom-row">
-                                    <div className="layer-meta">
-                                        {count} · {fieldCount} fields {geomType ? <span className="badge badge-info">{geomType}</span> : null}
-                                    </div>
-                                    <div className="layer-actions">
-                                        <button
-                                            type="button"
-                                            className="btn-icon"
-                                            title="Rename"
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                actions.renameLayer(layer.id);
-                                            }}
-                                        >
-                                            ✏️
-                                        </button>
-                                        <button
-                                            type="button"
-                                            className="btn-icon"
-                                            title="Zoom to layer"
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                actions.zoomToLayer(layer.id);
-                                            }}
-                                        >
-                                            🔍
-                                        </button>
-                                        <button
-                                            type="button"
-                                            className="btn-icon"
-                                            title="Remove"
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                actions.removeLayer(layer.id);
-                                            }}
-                                        >
-                                            🗑️
-                                        </button>
+                                    <div className="layer-bottom-row">
+                                        <div className="layer-meta layer-group-meta">
+                                            {group.source === 'import' ? 'Imported together' : 'Layer group'}
+                                        </div>
+                                        <div className="layer-actions">
+                                            <button
+                                                type="button"
+                                                className="btn-icon"
+                                                title="Export group as KMZ"
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    actions.exportLayerGroup(group.id, 'kmz');
+                                                }}
+                                            >
+                                                📤
+                                            </button>
+                                            <button
+                                                type="button"
+                                                className="btn-icon"
+                                                title="Ungroup"
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    actions.dissolveLayerGroup(group.id);
+                                                }}
+                                            >
+                                                📂
+                                            </button>
+                                            <button
+                                                type="button"
+                                                className="btn-icon"
+                                                title="Remove group and all layers"
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    actions.removeLayerGroup(group.id);
+                                                }}
+                                            >
+                                                🗑️
+                                            </button>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
+                            {!group.collapsed ? (
+                                <div className="layer-group-children">
+                                    {children.map((layer) => {
+                                        const idx = layers.findIndex((entry) => entry.id === layer.id);
+                                        return (
+                                            <LayerItemRow
+                                                key={layer.id}
+                                                layer={layer}
+                                                idx={idx}
+                                                activeLayerId={activeLayerId}
+                                                selectedIds={selectedIds}
+                                                draggingId={draggingId}
+                                                dragOverIndex={dragOverIndex}
+                                                actions={actions}
+                                                onToggleSelected={toggleSelected}
+                                                onDragPointerDown={handleDragPointerDown}
+                                                onDragPointerMove={handleDragPointerMove}
+                                                onFinishDrag={finishDrag}
+                                                nested
+                                            />
+                                        );
+                                    })}
+                                </div>
+                            ) : null}
                         </div>
                     );
                 })}

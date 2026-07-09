@@ -8,6 +8,7 @@ import {
     setActiveLayer,
     toggleAGOLCompat
 } from '../../js/core/state.js';
+import { getLayerGroups } from '../../js/core/layer-groups.js';
 import { getHistoryState } from '../../js/dataprep/transform-history.js';
 
 function buildToolbarState() {
@@ -23,6 +24,7 @@ function buildToolbarState() {
 function buildSnapshot() {
     return {
         layers: getLayers(),
+        layerGroups: getLayerGroups(),
         activeLayer: getActiveLayer(),
         agolCompatMode: !!getState().agolCompatMode,
         toolbar: buildToolbarState(),
@@ -54,6 +56,7 @@ export function AppStoreProvider({ store, children }) {
         const refresh = () => s.getState().bumpRefresh();
         const events = [
             'layers:changed',
+            'layer-groups:changed',
             'layer:active',
             'layer:updated',
             'agol:toggled',

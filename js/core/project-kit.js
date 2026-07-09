@@ -97,6 +97,7 @@ export function resolveLayerIdConflict(id, existingIds) {
  *   layers?: object[],
  *   activeLayerId?: string|null,
  *   layerStyles?: object|null,
+ *   layerGroups?: object[]|null,
  *   map?: object|null,
  *   workflow?: { pipeline: object, nodeCache?: object }|null,
  *   preferences?: object|null,
@@ -121,7 +122,8 @@ export async function buildProjectKitSnapshot(options) {
             options.layers,
             options.activeLayerId,
             options.layerStyles,
-            options.exportWorkspaceLayerBundle
+            options.exportWorkspaceLayerBundle,
+            options.layerGroups
         );
     }
 
@@ -177,7 +179,7 @@ function buildWorkflowConfig(pipeline, nodeCache = {}) {
     };
 }
 
-async function gatherLayerSection(layers, activeLayerId, layerStyles, exportWorkspaceLayerBundle) {
+async function gatherLayerSection(layers, activeLayerId, layerStyles, exportWorkspaceLayerBundle, layerGroups = []) {
     const index = [];
     const spatial = {};
     const tables = {};
@@ -215,6 +217,7 @@ async function gatherLayerSection(layers, activeLayerId, layerStyles, exportWork
         index,
         activeLayerId: activeLayerId || null,
         styles: layerStyles && typeof layerStyles === 'object' ? layerStyles : {},
+        layerGroups: Array.isArray(layerGroups) ? layerGroups : [],
         spatial,
         tables,
         workspace,
@@ -242,7 +245,8 @@ export async function packProjectKit(snapshot, JSZipLib, task) {
         task?.updateProgress?.(15, 'Packing layers…');
         zip.file('layers/index.json', JSON.stringify({
             index: snapshot.layers.index,
-            activeLayerId: snapshot.layers.activeLayerId
+            activeLayerId: snapshot.layers.activeLayerId,
+            layerGroups: snapshot.layers.layerGroups || []
         }, null, 2));
         zip.file('layers/styles.json', JSON.stringify(snapshot.layers.styles || {}, null, 2));
 
@@ -419,6 +423,7 @@ async function parseLayerSection(zip) {
         index: indexDoc.index || [],
         activeLayerId: indexDoc.activeLayerId || null,
         styles,
+        layerGroups: indexDoc.layerGroups || [],
         spatial,
         tables,
         workspace,
