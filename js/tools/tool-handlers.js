@@ -39,9 +39,15 @@ import {
     getContextMenuGisTools,
     isLayerFeatureDeletable
 } from './context-menu-gis-tools.js';
+import {
+    createQuickDrawLayer,
+    findQuickDrawLayer,
+    clearQuickDrawLayerFlag
+} from './quick-draw.js';
 import mapService, { formatElevationLabel } from '../map/map-service.js';
 import { isSmartStyleActive } from '../map/style-engine.js';
 import dualScreenCoordinator from '../dual-screen/coordinator.js';
+import { isPresentationMode } from '../presentation/presentation-mode-detector.js';
 import { installDualScreenPrimaryHandlers } from '../dual-screen/primary-handlers.js';
 import {
     POPUP_BLOCKED_MESSAGE,
@@ -528,6 +534,11 @@ export function buildMapContextMenuItems(payload) {
     }
 
     if (!isPresentationMode()) {
+        items.push({
+            icon: '✏️',
+            label: 'Quick Draw',
+            action: () => startQuickDraw()
+        });
         items.push({
             icon: '📐',
             label: 'Measure from here',
@@ -4314,6 +4325,18 @@ function _doCreateDrawLayer() {
     _openDrawToolbarOnMap(dataset.id, dataset.name);
 }
 
+export function startQuickDraw() {
+    let layer = findQuickDrawLayer();
+    if (!layer) {
+        layer = createQuickDrawLayer();
+        addLayer(layer);
+        mapService.addLayer(layer, getLayers().indexOf(layer), { fit: false });
+    }
+    setActiveLayer(layer.id);
+    refreshUI();
+    _openDrawToolbarOnMap(layer.id, layer.name, 'point');
+}
+
 function openDrawTools(layerId) {
     const layer = getLayers().find(l => l.id === layerId);
     if (!layer || !isSpatialLayer(layer)) return showToast('Need a spatial layer', 'warning');
@@ -4322,14 +4345,15 @@ function openDrawTools(layerId) {
     _openDrawToolbarOnMap(layerId, layer.name);
 }
 
-function _openDrawToolbarOnMap(layerId, layerName) {
+function _openDrawToolbarOnMap(layerId, layerName, startTool = null) {
     if (dualScreenCoordinator.isActive) {
-        dualScreenCoordinator.broadcastDrawCmd({ action: 'showToolbar', layerId, layerName });
+        dualScreenCoordinator.broadcastDrawCmd({ action: 'showToolbar', layerId, layerName, startTool });
         dualScreenCoordinator.focusMapWindow();
         dualScreenCoordinator.broadcastToast(`Draw on: ${layerName}`, 'info');
         return;
     }
     drawManager.showToolbar(layerId, layerName);
+    if (startTool) drawManager.startTool(startTool);
 }
 
 export async function handleMergeLayers() {
@@ -4574,6 +4598,7 @@ export function renameLayer(layerId, el) {
         startInlineEdit(el, layer.name, (newName) => {
             newName = newName.trim();
             if (newName && newName !== layer.name) {
+                if (layer._isQuickDrawLayer) clearQuickDrawLayerFlag(layer);
                 layer.name = newName;
                 refreshUI();
                 refreshUI();
@@ -4585,6 +4610,7 @@ export function renameLayer(layerId, el) {
     // Fallback: prompt
     const newName = prompt('Rename layer:', layer.name);
     if (newName && newName.trim() && newName.trim() !== layer.name) {
+        if (layer._isQuickDrawLayer) clearQuickDrawLayerFlag(layer);
         layer.name = newName.trim();
         refreshUI();
         refreshUI();
@@ -4863,6 +4889,7 @@ const APP_ACTIONS = {
     deleteFeatureAt,
     openFeatureEditor,
     openDrawTools,
+    startQuickDraw,
     createDrawLayer,
     _coordSearchAddNew,
     _coordSearchAddToExisting,
