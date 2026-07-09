@@ -941,7 +941,13 @@ textarea { resize: vertical; min-height: 60px; }
     flex-shrink: 0;
 }
 .layer-item:hover .layer-actions,
-.layer-item.active .layer-actions { opacity: 1; pointer-events: auto; }
+.layer-item.active .layer-actions,
+.layer-group-header:hover .layer-actions { opacity: 1; pointer-events: auto; }
+.layer-group-delete-btn {
+    flex-shrink: 0;
+    opacity: 1;
+    pointer-events: auto;
+}
 .layer-filter-badge {
     display: inline-block; font-size: 9px; background: var(--gold); color: #000;
     border-radius: 3px; padding: 0 4px; cursor: pointer; font-weight: 700; flex-shrink: 0;

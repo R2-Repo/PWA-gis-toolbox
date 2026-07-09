@@ -452,8 +452,15 @@ export function LayerListPanel({
                                             </button>
                                             <button
                                                 type="button"
-                                                className="btn-icon"
-                                                title="Remove group and all layers"
+                                                className={[
+                                                    'btn-icon',
+                                                    group.source === 'import' ? 'layer-group-delete-btn' : ''
+                                                ].filter(Boolean).join(' ')}
+                                                title={
+                                                    group.source === 'import'
+                                                        ? 'Delete import and all layers'
+                                                        : 'Remove group and all layers'
+                                                }
                                                 onClick={(e) => {
                                                     e.stopPropagation();
                                                     actions.removeLayerGroup(group.id);

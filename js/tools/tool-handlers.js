@@ -1816,12 +1816,15 @@ export async function removeLayerGroupWithConfirm(groupId) {
     const group = getLayerGroups().find((g) => g.id === groupId);
     if (!group) return;
     const count = group.childLayerIds.length;
+    const isImport = group.source === 'import';
     const ok = await confirm(
-        'Remove Group',
-        `Remove "${group.name}" and all ${count} layer${count !== 1 ? 's' : ''} inside it?`
+        isImport ? 'Delete Import' : 'Remove Group',
+        isImport
+            ? `Delete "${group.name}" and all ${count} layer${count !== 1 ? 's' : ''} from this import?`
+            : `Remove "${group.name}" and all ${count} layer${count !== 1 ? 's' : ''} inside it?`
     );
     if (!ok) return;
-    await removeLayersWithConfirm(group.childLayerIds);
+    await removeLayers(group.childLayerIds);
 }
 
 export async function groupSelectedLayers(layerIds, name) {
@@ -1893,16 +1896,11 @@ export async function removeLayerWithConfirm(id) {
     return removed;
 }
 
-export async function removeLayersWithConfirm(ids) {
+export async function removeLayers(ids) {
     const layers = getLayers();
     const uniqueIds = [...new Set(ids)].filter(Boolean);
     const expandedIds = expandLayerIdsForRemoval(uniqueIds, layers);
     if (!expandedIds.length) return false;
-    const message = expandedIds.length === 1
-        ? 'Remove this layer?'
-        : `Remove ${expandedIds.length} selected layers?`;
-    const ok = await confirm('Remove Layers', message);
-    if (!ok) return false;
     for (const id of expandedIds) {
         const layer = layers.find((l) => l.id === id);
         if (layer) {
@@ -1917,6 +1915,19 @@ export async function removeLayersWithConfirm(ids) {
     }
     refreshUI();
     return true;
+}
+
+export async function removeLayersWithConfirm(ids) {
+    const layers = getLayers();
+    const uniqueIds = [...new Set(ids)].filter(Boolean);
+    const expandedIds = expandLayerIdsForRemoval(uniqueIds, layers);
+    if (!expandedIds.length) return false;
+    const message = expandedIds.length === 1
+        ? 'Remove this layer?'
+        : `Remove ${expandedIds.length} selected layers?`;
+    const ok = await confirm('Remove Layers', message);
+    if (!ok) return false;
+    return removeLayers(expandedIds);
 }
 
 // ============================
