@@ -403,6 +403,23 @@
 .map-popup-content td { padding: 2px 0; word-break: break-word; color: var(--text); }
 .map-popup-attributes { max-height: 200px; overflow-y: auto; overflow-anchor: none; }
 
+.map-popup-minimal-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text);
+    padding: 2px 0 4px;
+}
+
+.map-popup-minimal-empty {
+    font-weight: 400;
+    color: var(--text-muted);
+}
+
+#map-container .map-popup-attributes--minimal {
+    max-height: none;
+    overflow: visible;
+}
+
 /* Coordinate search popup buttons (inside MapLibre popup) */
 .coord-popup-content { padding: 2px 0; }
 .coord-popup-btn {

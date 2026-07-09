@@ -336,7 +336,13 @@ export function createMapService({ mapAdapter = mapManager } = {}) {
             if (!Array.isArray(mapAdapter._popupHits) || mapAdapter._popupHits.length === 0) return;
             const len = mapAdapter._popupHits.length;
             mapAdapter._popupIndex = (mapAdapter._popupIndex + dir + len) % len;
-            return mapAdapter._renderCyclePopup?.();
+            return mapAdapter._renderCyclePopup?.(mapAdapter._popupRenderOptions || {});
+        },
+        getPopupMode() {
+            return mapAdapter.getPopupMode?.() ?? 'full';
+        },
+        setPopupMode(mode) {
+            return mapAdapter.setPopupMode?.(mode);
         },
         getActivePopupHit() {
             const hits = mapAdapter._popupHits;
@@ -352,11 +358,11 @@ export function createMapService({ mapAdapter = mapManager } = {}) {
         queryFeaturesAtPoint(point, layerIds = null, bufferPx) {
             return mapAdapter._queryFeaturesAtPoint(point, layerIds, bufferPx);
         },
-        showMultiPopup(hits, latlng) {
-            return mapAdapter._showMultiPopup(hits, latlng);
+        showMultiPopup(hits, latlng, options = {}) {
+            return mapAdapter._showMultiPopup(hits, latlng, options);
         },
-        showPopup(feature, layer, latlng) {
-            return mapAdapter.showPopup(feature, layer, latlng);
+        showPopup(feature, layer, latlng, options = {}) {
+            return mapAdapter.showPopup(feature, layer, latlng, options);
         },
         isOrbiting() {
             return !!mapAdapter.isOrbiting;

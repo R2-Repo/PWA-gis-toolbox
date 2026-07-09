@@ -221,6 +221,44 @@ html, body {
 .header-print-item:hover {
     background: rgba(255, 255, 255, 0.06);
 }
+
+.header-popup-mode-item {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+}
+
+.header-popup-mode-item.active {
+    background: rgba(255, 255, 255, 0.04);
+}
+
+.header-popup-mode-item-label {
+    font-size: 13px;
+}
+
+.header-popup-mode-item-hint {
+    font-size: 11px;
+    color: var(--text-muted);
+    padding-left: 16px;
+}
+
+.map-popup-minimal-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text);
+    padding: 2px 0 4px;
+}
+
+.map-popup-minimal-empty {
+    font-weight: 400;
+    color: var(--text-muted);
+}
+
+#map-container .map-popup-attributes--minimal {
+    max-height: none;
+    overflow: visible;
+}
 .header-pipeline-dual {
     display: inline-flex;
     align-items: center;

@@ -136,6 +136,7 @@ function AppShell() {
 
     const [basemap, setBasemap] = useState('voyager');
     const [dimension, setDimension] = useState('2d');
+    const [popupMode, setPopupMode] = useState(() => mapService.getPopupMode?.() || 'full');
     const leftPanel = usePanelCollapse('left');
     const rightPanel = usePanelCollapse('right');
 
@@ -199,6 +200,11 @@ function AppShell() {
         applyDimensionHeaderSelection(value);
     }, []);
 
+    const onPopupModeChange = useCallback((value) => {
+        setPopupMode(value);
+        mapService.setPopupMode(value);
+    }, []);
+
     useEffect(() => {
         return bus.on('map:chrome', (payload) => {
             if (payload?.is3d !== undefined) {
@@ -246,6 +252,8 @@ function AppShell() {
                     showMerge={toolbar.showMerge}
                     basemap={basemap}
                     dimension={dimension}
+                    popupMode={popupMode}
+                    onPopupModeChange={onPopupModeChange}
                 />
             </header>
 

@@ -147,8 +147,9 @@ function showSecondaryContextMenu({ latlng, originalEvent, layerId, featureIndex
     if (feature && layerId != null) {
         items.push({ icon: '📋', label: 'View attributes', action: () => {
             const nearby = mapService.findFeaturesNearClick(latlng, layerId, featureIndex);
-            if (nearby.length > 0) mapService.showMultiPopup(nearby, latlng);
-            else mapService.showPopup(feature, null, latlng);
+            const popupOptions = { forceFull: true };
+            if (nearby.length > 0) mapService.showMultiPopup(nearby, latlng, popupOptions);
+            else mapService.showPopup(feature, null, latlng, popupOptions);
         }});
         items.push({ icon: '✏️', label: 'Edit feature', action: () => {
             post(MessageType.POPUP_ACTION, { action: 'editFeature', layerId, featureIndex });
