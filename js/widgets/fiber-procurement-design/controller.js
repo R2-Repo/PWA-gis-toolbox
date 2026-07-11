@@ -7,6 +7,7 @@ import { createCenterlineDrawHandlers } from '../map-draw-helpers.js';
 import { getSpatialLayerOptions } from '../widget-context.js';
 import { isProjectStationingCenterline } from '../project-stationing/route-profile.js';
 import { markWidgetClosed, upsertWidgetState } from '../widget-state-store.js';
+import { openPlanProductionExport } from '../plan-production-export/controller.js';
 import { normalizeProcurementCatalog } from './catalog-adapter.js';
 import {
     WIDGET_ID,
@@ -477,6 +478,9 @@ export async function openFiberProcurementDesign(ctx, { restoreState = null } = 
                 persistSession(session);
                 renderDesignPreview(ctx, session);
                 return session;
+            },
+            onOpenFullPlanExport: () => {
+                openPlanProductionExport(ctx);
             },
             structureTypes: [
                 { value: STRUCTURE_TYPES.JUNCTION_BOX, label: 'Junction box' },

@@ -6,6 +6,7 @@ import { openReactIsland } from '../../ui/open-react-island.js';
 import { getSpatialLayerOptions } from '../widget-context.js';
 import { isProjectStationingCenterline } from '../project-stationing/route-profile.js';
 import { markWidgetClosed, upsertWidgetState, getWidgetEntry } from '../widget-state-store.js';
+import { openPlanProductionExport } from '../plan-production-export/controller.js';
 import {
     WIDGET_ID,
     CALLOUT_STEPS,
@@ -302,6 +303,9 @@ export async function openPlanSetCallouts(ctx, { restoreState = null } = {}) {
                     JSON.stringify(serializeCalloutSession(session), null, 2),
                     'application/json'
                 );
+            },
+            onOpenFullPlanExport: () => {
+                openPlanProductionExport(ctx);
             }
         })
     });

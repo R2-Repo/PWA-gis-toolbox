@@ -30,7 +30,8 @@ export function PlanSetCalloutsDialog({
     onValidate,
     onExportPackage,
     onAddResultLayers,
-    onSaveSession
+    onSaveSession,
+    onOpenFullPlanExport
 }) {
     const [step, setStep] = useState(1);
     const [session, setSession] = useState(initialSession);
@@ -396,6 +397,16 @@ export function PlanSetCalloutsDialog({
                 </button>
                 <button type="button" className="gis-widget__link-btn" disabled={busy} onClick={() => onSaveSession?.()}>
                     Save session JSON
+                </button>
+            </div>
+            <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid var(--border)' }}>
+                <button
+                    type="button"
+                    className="gis-widget__primary-btn"
+                    disabled={busy}
+                    onClick={() => onOpenFullPlanExport?.()}
+                >
+                    Export full plan package
                 </button>
             </div>
         </>

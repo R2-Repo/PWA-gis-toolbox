@@ -48,7 +48,8 @@ export function FiberProcurementDesignDialog({
     onAddDesignLayers,
     onValidate,
     onSaveSession,
-    onRestoreSession
+    onRestoreSession,
+    onOpenFullPlanExport
 }) {
     const catalogFileRef = useRef(null);
     const restoreFileRef = useRef(null);
@@ -947,6 +948,19 @@ export function FiberProcurementDesignDialog({
                     }, 'Export package downloaded.')}
                 >
                     Export package
+                </button>
+            </div>
+            <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid var(--border)' }}>
+                <p className="text-xs" style={{ color: 'var(--text-muted)', marginBottom: 8 }}>
+                    Link open design, callout, and sheet sessions, run readiness checks, and download a combined procurement or plan set package.
+                </p>
+                <button
+                    type="button"
+                    className="gis-widget__primary-btn"
+                    disabled={busy}
+                    onClick={() => onOpenFullPlanExport?.()}
+                >
+                    Export full plan package
                 </button>
             </div>
         </>

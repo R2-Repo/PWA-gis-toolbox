@@ -93,14 +93,6 @@ export const GIS_WIDGETS = [
         icon: '✂️',
         tip: 'Cut a project route into numbered plan sheet extents with matchlines and export.',
         open: openSheetCutting
-    },
-    {
-        type: 'plan-production-export',
-        action: 'openPlanProductionExport',
-        label: 'Plan Production Export',
-        icon: '📦',
-        tip: 'Run plan readiness checks and export a professional procurement or plan set package.',
-        open: openPlanProductionExport
     }
 ];
 
@@ -148,6 +140,14 @@ export const GIS_WIDGETS_HIDDEN = [
         icon: '🔗',
         tip: 'Build a fullscreen presentation URL from selected map features.',
         open: openPresentationLinkBuilder
+    },
+    {
+        type: 'plan-production-export',
+        action: 'openPlanProductionExport',
+        label: 'Plan Production Export',
+        icon: '📦',
+        tip: 'Run plan readiness checks and export a professional procurement or plan set package.',
+        open: openPlanProductionExport
     }
 ];
 
