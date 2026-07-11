@@ -5,8 +5,6 @@
 import { createPlanProject, updatePlanProject } from '../../plan-project/plan-project-model.js';
 import { serializePlanProject, restorePlanProject } from '../../plan-project/serialization.js';
 import { getStationingRoutes, getStationRangeForLine, getStationAtCoordinate, applyStationingToLineFeature, applyStationingToPointFeature } from '../../plan-project/stationing-adapter.js';
-import { validateRelationships } from '../../plan-project/relationship-model.js';
-import { indexDesignFeatures } from './design-model.js';
 import { createSampleProcurementCatalog } from './catalog-adapter.js';
 import {
     createAlignment,
@@ -28,14 +26,38 @@ import {
     createBranchCableAtEnclosure,
     rebuildFiberSectionsForFibers,
     buildSpliceSchedule,
-    validateSpliceConfiguration,
     SPLICE_MODES,
     SPLICE_MODE_OPTIONS,
     NEAR_FIBER_FT
 } from './splice-engine.js';
-import { recalculateDesignQuantities, mergeQuantityOverrides } from './quantity-rules.js';
+import { recalculateDesignQuantities, mergeQuantityOverrides, applyManualQuantityOverride } from './quantity-rules.js';
 import { buildProjectExportPackage } from './export-builder.js';
 import { lineLengthAny } from '../../tools/line-geojson.js';
+import {
+    listAvailableAssemblies,
+    getActiveAssembly,
+    expandAssemblyToSegmentDefaults,
+    applyAssemblyDefaultsToSegment,
+    saveProjectAssembly,
+    toggleAssemblyFavorite,
+    listFavoriteAssemblies,
+    BUILT_IN_ASSEMBLIES
+} from './assembly-engine.js';
+import {
+    resolveConduitDrawingDefaults,
+    continueFromConduitSegment,
+    copyConduitProperties,
+    bulkUpdateConduitSegments,
+    applyAutomaticLabels,
+    captureLastUsedFromConfiguration,
+    summarizeSegmentInheritance
+} from './productivity-engine.js';
+import {
+    validateDesignSessionDetailed,
+    buildQuantityTraceabilityReport,
+    runDesignReadinessCheck
+} from './validation-engine.js';
+import { createNonSpatialItem } from './design-model.js';
 
 export const WIDGET_ID = 'fiber-procurement-design';
 
@@ -43,6 +65,7 @@ export const DESIGN_STEPS = [
     'Project',
     'Stationing',
     'Catalog',
+    'Assemblies',
     'Alignment',
     'Structures',
     'Conduit',
@@ -114,14 +137,232 @@ export function selectStationingSource(session, layers = [], stationingLayerId =
  */
 export function loadProcurementCatalog(session, catalog = null) {
     const resolved = catalog || createSampleProcurementCatalog();
+    const assemblies = (session.design?.assemblies?.length)
+        ? session.design.assemblies
+        : BUILT_IN_ASSEMBLIES.map((assembly) => ({ ...assembly, isFavorite: false }));
+
     return {
         ...session,
         catalog: resolved,
+        design: {
+            ...session.design,
+            assemblies
+        },
         project: updatePlanProject(session.project, {
             procurementCatalogId: resolved.catalogId,
-            procurementCatalogVersion: resolved.version
+            procurementCatalogVersion: resolved.version,
+            activeAssemblyId: session.project.activeAssemblyId || BUILT_IN_ASSEMBLIES[0].assemblyId
         })
     };
+}
+
+/**
+ * @param {object} session
+ * @returns {object[]}
+ */
+export function getAvailableAssemblies(session) {
+    return listAvailableAssemblies(session.design || {});
+}
+
+/**
+ * @param {object} session
+ * @param {string} assemblyId
+ * @returns {object}
+ */
+export function setActiveAssembly(session, assemblyId) {
+    const assembly = listAvailableAssemblies(session.design).find((entry) => entry.assemblyId === assemblyId);
+    if (!assembly) throw new Error('Assembly not found.');
+
+    return {
+        ...session,
+        project: updatePlanProject(session.project, { activeAssemblyId: assemblyId })
+    };
+}
+
+/**
+ * @param {object} session
+ * @param {object} assemblyInput
+ * @returns {object}
+ */
+export function saveCustomAssembly(session, assemblyInput = {}) {
+    const assemblies = saveProjectAssembly(session.design, assemblyInput);
+    return {
+        ...session,
+        design: {
+            ...session.design,
+            assemblies
+        }
+    };
+}
+
+/**
+ * @param {object} session
+ * @param {string} assemblyId
+ * @param {boolean} favorite
+ * @returns {object}
+ */
+export function setAssemblyFavorite(session, assemblyId, favorite = true) {
+    const assemblies = toggleAssemblyFavorite(session.design, assemblyId, favorite);
+    return {
+        ...session,
+        design: {
+            ...session.design,
+            assemblies
+        }
+    };
+}
+
+/**
+ * @param {object} session
+ * @returns {object[]}
+ */
+export function getFavoriteAssemblies(session) {
+    return listFavoriteAssemblies(session.design || {});
+}
+
+/**
+ * Apply active assembly defaults to conduit segments.
+ * @param {object} session
+ * @param {string[]} [segmentIds]
+ * @returns {object}
+ */
+export function applyActiveAssemblyToSegments(session, segmentIds = []) {
+    const assembly = getActiveAssembly(session.project, session.design);
+    const defaults = expandAssemblyToSegmentDefaults(
+        assembly,
+        session.project,
+        session.catalog?.items || []
+    );
+    const idSet = new Set(segmentIds.length ? segmentIds : (session.design.conduitSegments || []).map((s) => s.segmentId));
+
+    const conduitSegments = (session.design.conduitSegments || []).map((segment) =>
+        idSet.has(segment.segmentId) ? applyAssemblyDefaultsToSegment(segment, defaults) : segment
+    );
+
+    return recalculateSessionQuantities({
+        ...session,
+        design: applyAutomaticLabels({
+            ...session.design,
+            conduitSegments
+        })
+    });
+}
+
+/**
+ * @param {object} session
+ * @param {string[]} segmentIds
+ * @param {object} patch
+ * @returns {object}
+ */
+export function bulkUpdateSegments(session, segmentIds = [], patch = {}) {
+    const conduitSegments = bulkUpdateConduitSegments(
+        session.design.conduitSegments || [],
+        segmentIds,
+        patch
+    );
+    const designWithLastUsed = captureLastUsedFromConfiguration(session, patch);
+
+    return recalculateSessionQuantities({
+        ...session,
+        design: applyAutomaticLabels({
+            ...designWithLastUsed,
+            conduitSegments
+        })
+    });
+}
+
+/**
+ * @param {object} session
+ * @param {string} sourceSegmentId
+ * @param {string} targetSegmentId
+ * @returns {object}
+ */
+export function continueConduitFromSegment(session, sourceSegmentId, targetSegmentId) {
+    const source = (session.design.conduitSegments || []).find((segment) => segment.segmentId === sourceSegmentId);
+    if (!source) throw new Error('Source conduit segment not found.');
+
+    const patch = continueFromConduitSegment(source);
+    return bulkUpdateSegments(session, [targetSegmentId], patch);
+}
+
+/**
+ * @param {object} session
+ * @param {string} sourceSegmentId
+ * @param {string[]} targetSegmentIds
+ * @returns {object}
+ */
+export function copyConduitToSegments(session, sourceSegmentId, targetSegmentIds = []) {
+    const source = (session.design.conduitSegments || []).find((segment) => segment.segmentId === sourceSegmentId);
+    if (!source) throw new Error('Source conduit segment not found.');
+    return bulkUpdateSegments(session, targetSegmentIds, copyConduitProperties(source));
+}
+
+/**
+ * @param {object} session
+ * @param {object} input
+ * @returns {object}
+ */
+export function addNonSpatialItem(session, input = {}) {
+    const catalogItem = (session.catalog?.items || []).find((item) => item.catalogItemId === input.catalogItemId);
+    const item = createNonSpatialItem({
+        projectId: session.project.projectId,
+        catalogItemId: input.catalogItemId || '',
+        description: input.description || catalogItem?.description || input.name || 'Non-spatial item',
+        quantity: input.quantity ?? 1,
+        unit: input.unit || catalogItem?.unit || 'each',
+        reason: input.reason || '',
+        notes: input.notes || ''
+    });
+
+    return recalculateSessionQuantities({
+        ...session,
+        design: {
+            ...session.design,
+            nonSpatialItems: [...(session.design.nonSpatialItems || []), item]
+        }
+    });
+}
+
+/**
+ * @param {object} session
+ * @param {string} quantityId
+ * @param {number} finalQuantity
+ * @param {string} [reason]
+ * @returns {object}
+ */
+export function overrideQuantity(session, quantityId, finalQuantity, reason = '') {
+    const quantities = (session.design.quantities || []).map((record) =>
+        record.quantityId === quantityId
+            ? applyManualQuantityOverride(record, finalQuantity, reason)
+            : record
+    );
+
+    return {
+        ...session,
+        design: {
+            ...session.design,
+            quantities
+        }
+    };
+}
+
+/**
+ * @param {object} session
+ * @returns {object[]}
+ */
+export function getQuantityTraceability(session) {
+    return buildQuantityTraceabilityReport(session.design, session.catalog?.items || []);
+}
+
+/**
+ * @param {object} session
+ * @param {string} segmentId
+ * @returns {object}
+ */
+export function getSegmentInheritanceSummary(session, segmentId) {
+    const segment = (session.design.conduitSegments || []).find((item) => item.segmentId === segmentId);
+    if (!segment) throw new Error('Conduit segment not found.');
+    return summarizeSegmentInheritance(segment, session);
 }
 
 /**
@@ -166,12 +407,15 @@ export function addPlanningAlignment(session, geometry, meta = {}) {
         conduitSegments: regen.segments
     };
 
-    return {
+    let nextSession = {
         ...session,
         design,
         activeAlignmentId: alignment.alignmentId,
         project: updatePlanProject(session.project, { relationships: regen.relationships })
     };
+
+    nextSession = applyActiveAssemblyToSegments(nextSession);
+    return nextSession;
 }
 
 /**
@@ -243,12 +487,14 @@ export function configureConduitSegment(session, segmentId, patch = {}) {
         segment.segmentId === segmentId ? updateConduitSegment(segment, patch) : segment
     );
 
+    const designWithLastUsed = captureLastUsedFromConfiguration(session, patch);
+
     return recalculateSessionQuantities({
         ...session,
-        design: {
-            ...session.design,
+        design: applyAutomaticLabels({
+            ...designWithLastUsed,
             conduitSegments: segments
-        }
+        })
     });
 }
 
@@ -440,10 +686,10 @@ export function recalculateSessionQuantities(session) {
 
     return {
         ...session,
-        design: {
+        design: applyAutomaticLabels({
             ...session.design,
             quantities
-        }
+        })
     };
 }
 
@@ -452,48 +698,7 @@ export function recalculateSessionQuantities(session) {
  * @returns {object}
  */
 export function validateDesignSession(session) {
-    const errors = [];
-    const warnings = [];
-
-    if (!session.project?.projectId) errors.push('Project is not initialized.');
-    if (!session.stationingRoute) warnings.push('No stationing source selected.');
-    if (!(session.design.alignments || []).length) warnings.push('No planning alignment drawn.');
-    if (!(session.design.conduitSegments || []).length) warnings.push('No conduit segments generated.');
-
-    const featuresById = indexDesignFeatures(session.design);
-    const relationshipValidation = validateRelationships(session.project.relationships || [], featuresById);
-    if (!relationshipValidation.valid) {
-        warnings.push(...relationshipValidation.errors);
-    }
-
-    for (const segment of session.design.conduitSegments || []) {
-        if (!segment.measuredLength || segment.measuredLength <= 0) {
-            warnings.push(`Segment ${segment.segmentId} has zero length.`);
-        }
-        if (!segment.installationMethod) {
-            warnings.push(`Segment ${segment.segmentId} is missing an installation method.`);
-        }
-    }
-
-    for (const fiber of session.design.fibers || []) {
-        if (!fiber.sourceSegmentIds?.length) {
-            warnings.push(`Fiber ${fiber.fiberId} has no source conduit segments.`);
-        }
-    }
-
-    warnings.push(...validateSpliceConfiguration(session.design));
-
-    for (const enclosure of session.design.spliceEnclosures || []) {
-        if (!enclosure.spliceMode) {
-            warnings.push(`Splice enclosure ${enclosure.enclosureId} is missing splice configuration.`);
-        }
-    }
-
-    return {
-        valid: errors.length === 0,
-        errors,
-        warnings
-    };
+    return validateDesignSessionDetailed(session);
 }
 
 /**
@@ -634,5 +839,8 @@ export {
     STRUCTURE_TYPES,
     SPLICE_MODES,
     SPLICE_MODE_OPTIONS,
-    NEAR_FIBER_FT
+    NEAR_FIBER_FT,
+    runDesignReadinessCheck,
+    buildQuantityTraceabilityReport,
+    BUILT_IN_ASSEMBLIES
 };

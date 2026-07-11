@@ -97,6 +97,8 @@ export function createConduitSegment(input = {}) {
         startMilepost: input.startMilepost ?? null,
         endMilepost: input.endMilepost ?? null,
         symbolKey: input.symbolKey || 'conduit-proposed',
+        assemblyId: input.assemblyId || '',
+        displayLabel: input.displayLabel || '',
         notes: input.notes || ''
     };
 }
@@ -192,6 +194,24 @@ export function createFiberSection(input = {}) {
  * @param {object} input
  * @returns {object}
  */
+export function createNonSpatialItem(input = {}) {
+    return {
+        itemId: input.itemId || createStableId('nspatial'),
+        projectId: input.projectId,
+        catalogItemId: input.catalogItemId || '',
+        description: input.description || '',
+        quantity: Number(input.quantity ?? 0),
+        unit: input.unit || 'each',
+        reason: input.reason || '',
+        notes: input.notes || '',
+        manuallyEntered: input.manuallyEntered !== false
+    };
+}
+
+/**
+ * @param {object} input
+ * @returns {object}
+ */
 export function createDesignState(input = {}) {
     return {
         alignments: Array.isArray(input.alignments) ? [...input.alignments] : [],
@@ -221,7 +241,8 @@ export function indexDesignFeatures(design) {
         design.fibers,
         design.fiberSections,
         design.spliceEnclosures,
-        design.pointAssets
+        design.pointAssets,
+        design.nonSpatialItems
     ]) {
         for (const item of list || []) {
             const id = item.alignmentId || item.structureId || item.segmentId || item.fiberId

@@ -21,6 +21,18 @@ import {
     configureSplice,
     addBranchCable,
     getSpliceSchedule,
+    getAvailableAssemblies,
+    setActiveAssembly,
+    setAssemblyFavorite,
+    saveCustomAssembly,
+    applyActiveAssemblyToSegments,
+    bulkUpdateSegments,
+    continueConduitFromSegment,
+    copyConduitToSegments,
+    addNonSpatialItem,
+    overrideQuantity,
+    getQuantityTraceability,
+    getSegmentInheritanceSummary,
     buildSessionExport,
     serializeDesignSession,
     restoreDesignSession,
@@ -197,6 +209,64 @@ export async function openFiberProcurementDesign(ctx, { restoreState = null } = 
                 persistSession(session);
                 return session;
             },
+            assemblies: getAvailableAssemblies(session),
+            activeAssemblyId: session.project?.activeAssemblyId || '',
+            onSetActiveAssembly: (assemblyId) => {
+                session = setActiveAssembly(session, assemblyId);
+                session = applyActiveAssemblyToSegments(session);
+                persistSession(session);
+                renderDesignPreview(ctx, session);
+                return session;
+            },
+            onToggleAssemblyFavorite: (assemblyId, favorite) => {
+                session = setAssemblyFavorite(session, assemblyId, favorite);
+                persistSession(session);
+                return session;
+            },
+            onSaveCustomAssembly: (assemblyInput) => {
+                session = saveCustomAssembly(session, assemblyInput);
+                persistSession(session);
+                return session;
+            },
+            onApplyActiveAssembly: (segmentIds) => {
+                session = applyActiveAssemblyToSegments(session, segmentIds);
+                persistSession(session);
+                renderDesignPreview(ctx, session);
+                return session;
+            },
+            onBulkUpdateSegments: (segmentIds, patch) => {
+                session = bulkUpdateSegments(session, segmentIds, patch);
+                persistSession(session);
+                renderDesignPreview(ctx, session);
+                return session;
+            },
+            onContinueFromSegment: (sourceSegmentId, targetSegmentId) => {
+                session = continueConduitFromSegment(session, sourceSegmentId, targetSegmentId);
+                persistSession(session);
+                renderDesignPreview(ctx, session);
+                return session;
+            },
+            onCopyConduitToSegments: (sourceSegmentId, targetSegmentIds) => {
+                session = copyConduitToSegments(session, sourceSegmentId, targetSegmentIds);
+                persistSession(session);
+                renderDesignPreview(ctx, session);
+                return session;
+            },
+            onGetSegmentInheritance: (segmentId) => getSegmentInheritanceSummary(session, segmentId),
+            onAddNonSpatialItem: (input) => {
+                session = addNonSpatialItem(session, input);
+                persistSession(session);
+                return session;
+            },
+            onOverrideQuantity: (quantityId, finalQuantity, reason) => {
+                session = overrideQuantity(session, quantityId, finalQuantity, reason);
+                persistSession(session);
+                return session;
+            },
+            onGetQuantityTraceability: () => getQuantityTraceability(session),
+            nonSpatialCatalogItems: (session.catalog?.items || []).filter((item) =>
+                item.allowsManualQuantity || item.measurementRule === 'manual'
+            ),
             onDrawAlignment: async (meta) => {
                 const feature = await centerlineHandlers.drawCenterline();
                 if (!feature?.geometry) return session;
@@ -303,6 +373,20 @@ export async function openFiberProcurementDesign(ctx, { restoreState = null } = 
                     downloadTextFile(
                         `${session.project.projectName.replace(/\s+/g, '_')}_splice_schedule.csv`,
                         exportPackage.spliceScheduleCsv,
+                        'text/csv'
+                    );
+                }
+                if (exportPackage.quantityTraceabilityCsv) {
+                    downloadTextFile(
+                        `${session.project.projectName.replace(/\s+/g, '_')}_quantity_traceability.csv`,
+                        exportPackage.quantityTraceabilityCsv,
+                        'text/csv'
+                    );
+                }
+                if (exportPackage.nonSpatialItemsCsv) {
+                    downloadTextFile(
+                        `${session.project.projectName.replace(/\s+/g, '_')}_non_spatial_items.csv`,
+                        exportPackage.nonSpatialItemsCsv,
                         'text/csv'
                     );
                 }

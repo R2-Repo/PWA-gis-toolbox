@@ -27,6 +27,20 @@ export function FiberProcurementDesignDialog({
     onAddBranchCable,
     onGetSpliceSchedule,
     spliceModeOptions = [],
+    assemblies = [],
+    activeAssemblyId: initialActiveAssemblyId = '',
+    onSetActiveAssembly,
+    onToggleAssemblyFavorite,
+    onSaveCustomAssembly,
+    onApplyActiveAssembly,
+    onBulkUpdateSegments,
+    onContinueFromSegment,
+    onCopyConduitToSegments,
+    onGetSegmentInheritance,
+    onAddNonSpatialItem,
+    onOverrideQuantity,
+    onGetQuantityTraceability,
+    nonSpatialCatalogItems = [],
     onExportPackage,
     onAddDesignLayers,
     onValidate,
@@ -52,6 +66,15 @@ export function FiberProcurementDesignDialog({
     const [branchStrandCount, setBranchStrandCount] = useState('12');
     const [branchCableType, setBranchCableType] = useState('SM');
     const [spliceSchedule, setSpliceSchedule] = useState([]);
+    const [activeAssemblyId, setActiveAssemblyId] = useState(initialActiveAssemblyId || initialSession?.project?.activeAssemblyId || '');
+    const [customAssemblyName, setCustomAssemblyName] = useState('');
+    const [bulkSegmentIds, setBulkSegmentIds] = useState([]);
+    const [continueSourceSegmentId, setContinueSourceSegmentId] = useState('');
+    const [inheritanceHint, setInheritanceHint] = useState('');
+    const [nonSpatialCatalogItemId, setNonSpatialCatalogItemId] = useState('');
+    const [nonSpatialQuantity, setNonSpatialQuantity] = useState('1');
+    const [nonSpatialReason, setNonSpatialReason] = useState('');
+    const [traceability, setTraceability] = useState([]);
     const [busy, setBusy] = useState(false);
     const [message, setMessage] = useState('');
     const [error, setError] = useState('');
@@ -68,7 +91,9 @@ export function FiberProcurementDesignDialog({
     const spliceEnclosures = session?.design?.spliceEnclosures || [];
     const fiberSections = session?.design?.fiberSections || [];
     const quantities = session?.design?.quantities || [];
+    const nonSpatialItems = session?.design?.nonSpatialItems || [];
     const catalogCount = session?.catalog?.items?.length || 0;
+    const assemblyOptions = assemblies.length ? assemblies : (session?.design?.assemblies || []);
 
     const run = async (fn, successMessage = '') => {
         setBusy(true);
@@ -136,6 +161,76 @@ export function FiberProcurementDesignDialog({
                     <strong>{catalogCount}</strong> catalog items loaded.
                 </div>
             ) : null}
+        </>
+    );
+
+    const toggleBulkSegment = (segmentId) => {
+        setBulkSegmentIds((current) =>
+            current.includes(segmentId)
+                ? current.filter((id) => id !== segmentId)
+                : [...current, segmentId]
+        );
+    };
+
+    const renderAssembliesStep = () => (
+        <>
+            <p className="text-xs">
+                Choose an active design assembly. New conduit segments inherit installation method, products, and waste factors from this template.
+            </p>
+            <div className="form-group">
+                <label>Active assembly</label>
+                <select value={activeAssemblyId} onChange={(e) => setActiveAssemblyId(e.target.value)}>
+                    <option value="">- choose assembly -</option>
+                    {assemblyOptions.map((assembly) => (
+                        <option key={assembly.assemblyId} value={assembly.assemblyId}>
+                            {assembly.assemblyName}{assembly.isFavorite ? ' ★' : ''}
+                        </option>
+                    ))}
+                </select>
+            </div>
+            {activeAssemblyId ? (
+                <div className="text-xs" style={{ marginTop: 8 }}>
+                    {assemblyOptions.find((assembly) => assembly.assemblyId === activeAssemblyId)?.description}
+                </div>
+            ) : null}
+            <div className="gis-widget__btn-row" style={{ marginTop: 12 }}>
+                <button
+                    type="button"
+                    className="gis-widget__link-btn"
+                    disabled={busy || !activeAssemblyId}
+                    onClick={() => run(() => onSetActiveAssembly?.(activeAssemblyId), 'Active assembly updated.')}
+                >
+                    Set active assembly
+                </button>
+                <button
+                    type="button"
+                    className="gis-widget__link-btn"
+                    disabled={busy || !activeAssemblyId}
+                    onClick={() => run(() => onToggleAssemblyFavorite?.(activeAssemblyId, true), 'Assembly saved to favorites.')}
+                >
+                    Save favorite
+                </button>
+            </div>
+            <div className="form-group" style={{ marginTop: 12 }}>
+                <label>Save current segment setup as assembly</label>
+                <input value={customAssemblyName} onChange={(e) => setCustomAssemblyName(e.target.value)} placeholder="Assembly name" />
+            </div>
+            <button
+                type="button"
+                className="gis-widget__link-btn"
+                disabled={busy || !customAssemblyName.trim() || !selectedSegmentId}
+                onClick={() => run(() => {
+                    const segment = segments.find((entry) => entry.segmentId === selectedSegmentId);
+                    return onSaveCustomAssembly?.({
+                        assemblyName: customAssemblyName.trim(),
+                        installationMethod: segment?.installationMethod,
+                        conduitComponents: segment?.conduitComponents,
+                        wasteFactor: session?.project?.defaultWasteFactor
+                    });
+                }, 'Custom assembly saved.')}
+            >
+                Save custom assembly
+            </button>
         </>
     );
 
@@ -240,6 +335,86 @@ export function FiberProcurementDesignDialog({
                 }), 'Conduit segment updated.')}
             >
                 Apply conduit configuration
+            </button>
+            {selectedSegmentId ? (
+                <button
+                    type="button"
+                    className="gis-widget__link-btn"
+                    style={{ marginTop: 8 }}
+                    disabled={busy}
+                    onClick={() => {
+                        const summary = onGetSegmentInheritance?.(selectedSegmentId);
+                        setInheritanceHint(summary?.installationMethod?.hint || '');
+                    }}
+                >
+                    Show inheritance
+                </button>
+            ) : null}
+            {inheritanceHint ? (
+                <div className="text-xs" style={{ marginTop: 8, color: 'var(--text-muted)' }}>{inheritanceHint}</div>
+            ) : null}
+            <div className="form-group" style={{ marginTop: 12 }}>
+                <label>Bulk edit segments</label>
+                <div style={{ display: 'grid', gap: 6 }}>
+                    {segments.map((segment, index) => (
+                        <label key={segment.segmentId} className="text-xs" style={{ display: 'flex', gap: 8 }}>
+                            <input
+                                type="checkbox"
+                                checked={bulkSegmentIds.includes(segment.segmentId)}
+                                onChange={() => toggleBulkSegment(segment.segmentId)}
+                            />
+                            <span>{segment.displayLabel || `Segment ${index + 1}`}</span>
+                        </label>
+                    ))}
+                </div>
+            </div>
+            <div className="gis-widget__btn-row">
+                <button
+                    type="button"
+                    className="gis-widget__link-btn"
+                    disabled={busy || !bulkSegmentIds.length}
+                    onClick={() => run(() => onBulkUpdateSegments?.(bulkSegmentIds, {
+                        installationMethod,
+                        conduitComponents: [{
+                            productType,
+                            diameter,
+                            ductCount: Number(ductCount) || 1,
+                            lengthMultiplier: 1
+                        }]
+                    }), 'Bulk update applied.')}
+                >
+                    Bulk apply configuration
+                </button>
+                <button
+                    type="button"
+                    className="gis-widget__link-btn"
+                    disabled={busy || !bulkSegmentIds.length || !session?.project?.activeAssemblyId}
+                    onClick={() => run(() => onApplyActiveAssembly?.(bulkSegmentIds), 'Active assembly applied.')}
+                >
+                    Apply active assembly
+                </button>
+            </div>
+            <div className="form-group" style={{ marginTop: 12 }}>
+                <label>Continue from segment</label>
+                <select value={continueSourceSegmentId} onChange={(e) => setContinueSourceSegmentId(e.target.value)}>
+                    <option value="">- source segment -</option>
+                    {segments.map((segment, index) => (
+                        <option key={segment.segmentId} value={segment.segmentId}>
+                            Segment {index + 1}
+                        </option>
+                    ))}
+                </select>
+            </div>
+            <button
+                type="button"
+                className="gis-widget__link-btn"
+                disabled={busy || !continueSourceSegmentId || !selectedSegmentId}
+                onClick={() => run(
+                    () => onContinueFromSegment?.(continueSourceSegmentId, selectedSegmentId),
+                    'Segment properties copied from source.'
+                )}
+            >
+                Continue from selected source
             </button>
         </>
     );
@@ -441,8 +616,43 @@ export function FiberProcurementDesignDialog({
 
     const renderQuantitiesStep = () => (
         <>
-            <p className="text-xs">Review calculated procurement quantities. Manual overrides are preserved on recalculation.</p>
-            <div style={{ maxHeight: 220, overflow: 'auto', marginTop: 8 }}>
+            <p className="text-xs">Review calculated procurement quantities, add non-spatial items, and inspect traceability.</p>
+            <div className="form-group">
+                <label>Non-spatial procurement item</label>
+                <select value={nonSpatialCatalogItemId} onChange={(e) => setNonSpatialCatalogItemId(e.target.value)}>
+                    <option value="">- choose item -</option>
+                    {nonSpatialCatalogItems.map((item) => (
+                        <option key={item.catalogItemId} value={item.catalogItemId}>
+                            {item.description}
+                        </option>
+                    ))}
+                </select>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 8 }}>
+                <input value={nonSpatialQuantity} onChange={(e) => setNonSpatialQuantity(e.target.value)} placeholder="Quantity" />
+                <input value={nonSpatialReason} onChange={(e) => setNonSpatialReason(e.target.value)} placeholder="Reason" />
+            </div>
+            <button
+                type="button"
+                className="gis-widget__link-btn"
+                style={{ marginTop: 8 }}
+                disabled={busy || !nonSpatialCatalogItemId}
+                onClick={() => run(() => onAddNonSpatialItem?.({
+                    catalogItemId: nonSpatialCatalogItemId,
+                    quantity: Number(nonSpatialQuantity) || 1,
+                    reason: nonSpatialReason
+                }), 'Non-spatial item added.')}
+            >
+                Add non-spatial item
+            </button>
+            {nonSpatialItems.length ? (
+                <div className="text-xs" style={{ marginTop: 8 }}>
+                    {nonSpatialItems.map((item) => (
+                        <div key={item.itemId}>{item.description}: {item.quantity} {item.unit}</div>
+                    ))}
+                </div>
+            ) : null}
+            <div style={{ maxHeight: 180, overflow: 'auto', marginTop: 12 }}>
                 <table className="text-xs" style={{ width: '100%', borderCollapse: 'collapse' }}>
                     <thead>
                         <tr>
@@ -465,22 +675,45 @@ export function FiberProcurementDesignDialog({
                     </tbody>
                 </table>
             </div>
-            <button
-                type="button"
-                className="gis-widget__link-btn"
-                style={{ marginTop: 12 }}
-                disabled={busy}
-                onClick={() => {
-                    const result = onValidate?.();
-                    setValidation(result || null);
-                }}
-            >
-                Run design validation
-            </button>
+            <div className="gis-widget__btn-row" style={{ marginTop: 12 }}>
+                <button
+                    type="button"
+                    className="gis-widget__link-btn"
+                    disabled={busy}
+                    onClick={() => {
+                        const result = onValidate?.();
+                        setValidation(result || null);
+                    }}
+                >
+                    Run readiness check
+                </button>
+                <button
+                    type="button"
+                    className="gis-widget__link-btn"
+                    disabled={busy}
+                    onClick={() => setTraceability(onGetQuantityTraceability?.() || [])}
+                >
+                    Show traceability
+                </button>
+            </div>
             {validation ? (
                 <div className="text-xs" style={{ marginTop: 8 }}>
                     {validation.errors?.map((entry) => <div key={entry} style={{ color: 'var(--danger)' }}>{entry}</div>)}
                     {validation.warnings?.map((entry) => <div key={entry}>{entry}</div>)}
+                    {validation.findings?.map((entry) => (
+                        <div key={`${entry.code}-${entry.featureId || entry.message}`}>
+                            [{entry.severity}] {entry.message}
+                        </div>
+                    ))}
+                </div>
+            ) : null}
+            {traceability.length ? (
+                <div className="text-xs" style={{ marginTop: 8, maxHeight: 120, overflow: 'auto' }}>
+                    {traceability.map((entry) => (
+                        <div key={entry.quantityId}>
+                            {entry.description}: {entry.finalQuantity} ({entry.linkedFeatures.length} features)
+                        </div>
+                    ))}
                 </div>
             ) : null}
         </>
@@ -533,6 +766,7 @@ export function FiberProcurementDesignDialog({
         renderProjectStep,
         renderStationingStep,
         renderCatalogStep,
+        renderAssembliesStep,
         renderAlignmentStep,
         renderStructuresStep,
         renderConduitStep,
@@ -546,8 +780,9 @@ export function FiberProcurementDesignDialog({
         step === 1 ? projectName.trim() :
         step === 2 ? Boolean(stationingLayerId || session?.stationingRoute) :
         step === 3 ? catalogCount > 0 :
-        step === 4 ? Boolean(alignment) :
-        step === 7 ? fibers.length > 0 :
+        step === 4 ? Boolean(activeAssemblyId || session?.project?.activeAssemblyId) :
+        step === 5 ? Boolean(alignment) :
+        step === 8 ? fibers.length > 0 :
         true
     );
 
@@ -558,6 +793,8 @@ export function FiberProcurementDesignDialog({
             await run(() => onSelectStationing?.(stationingLayerId), 'Stationing source selected.');
         } else if (step === 3 && !catalogCount) {
             await run(() => onLoadCatalog?.(), 'Sample catalog loaded.');
+        } else if (step === 4 && activeAssemblyId) {
+            await run(() => onSetActiveAssembly?.(activeAssemblyId), 'Active assembly set.');
         }
         if (canGoNext) setStep((current) => Math.min(current + 1, DESIGN_STEPS.length));
     };

@@ -4,6 +4,7 @@
 
 import { buildFeatureLabel } from '../../plan-project/symbology-registry.js';
 import { buildSpliceSchedule } from './splice-engine.js';
+import { buildQuantityTraceabilityReport } from './validation-engine.js';
 
 /**
  * @param {object} design
@@ -46,7 +47,7 @@ export function buildConduitGeoJson(design) {
                 end_station_label: segment.endStation != null ? String(segment.endStation) : '',
                 symbol_key: segment.symbolKey,
                 component_count: (segment.conduitComponents || []).length,
-                label: (segment.conduitComponents || []).map((component) =>
+                label: segment.displayLabel || (segment.conduitComponents || []).map((component) =>
                     `${component.ductCount} × ${component.diameter} ${component.productType}`
                 ).join(', ')
             },
@@ -73,7 +74,7 @@ export function buildFiberGeoJson(design) {
                 measured_route_length_ft: fiber.measuredRouteLength,
                 calculated_length_ft: fiber.calculatedLength,
                 symbol_key: fiber.symbolKey,
-                label: buildFeatureLabel(fiber.symbolKey, fiber)
+                label: fiber.displayLabel || buildFeatureLabel(fiber.symbolKey, fiber)
             },
             geometry: fiber.geometry
         }))
@@ -218,6 +219,60 @@ export function buildSpliceScheduleCsv(design = {}) {
 }
 
 /**
+ * @param {object} design
+ * @returns {string}
+ */
+export function buildNonSpatialItemsCsv(design = {}) {
+    const header = ['item_id', 'description', 'quantity', 'unit', 'reason', 'catalog_item_id', 'notes'];
+    const rows = (design.nonSpatialItems || []).map((item) => [
+        item.itemId,
+        item.description,
+        item.quantity,
+        item.unit,
+        item.reason,
+        item.catalogItemId,
+        item.notes
+    ]);
+    return [header, ...rows]
+        .map((row) => row.map((cell) => `"${String(cell ?? '').replace(/"/g, '""')}"`).join(','))
+        .join('\n');
+}
+
+/**
+ * @param {object} design
+ * @param {object[]} catalogItems
+ * @returns {string}
+ */
+export function buildQuantityTraceabilityCsv(design = {}, catalogItems = []) {
+    const report = buildQuantityTraceabilityReport(design, catalogItems);
+    const header = [
+        'quantity_id',
+        'description',
+        'calculation_type',
+        'measured_value',
+        'calculated_quantity',
+        'final_quantity',
+        'manually_overridden',
+        'calculation_explanation',
+        'linked_feature_ids'
+    ];
+    const rows = report.map((entry) => [
+        entry.quantityId,
+        entry.description,
+        entry.calculationType,
+        entry.measuredValue,
+        entry.calculatedQuantity,
+        entry.finalQuantity,
+        entry.manuallyOverridden ? 'yes' : 'no',
+        entry.calculationExplanation,
+        entry.linkedFeatures.map((feature) => feature.featureId).join(';')
+    ]);
+    return [header, ...rows]
+        .map((row) => row.map((cell) => `"${String(cell ?? '').replace(/"/g, '""')}"`).join(','))
+        .join('\n');
+}
+
+/**
  * @param {object} project
  * @param {object} design
  * @param {object[]} catalogItems
@@ -239,7 +294,10 @@ export function buildProjectExportPackage(project, design, catalogItems = []) {
             points: buildPointAssetGeoJson(design)
         },
         quantitySummaryCsv: buildQuantitySummaryCsv(design.quantities || [], catalogItems),
+        quantityTraceabilityCsv: buildQuantityTraceabilityCsv(design, catalogItems),
+        nonSpatialItemsCsv: buildNonSpatialItemsCsv(design),
         spliceScheduleCsv: buildSpliceScheduleCsv(design),
-        spliceSchedule: buildSpliceSchedule(design)
+        spliceSchedule: buildSpliceSchedule(design),
+        quantityTraceability: buildQuantityTraceabilityReport(design, catalogItems)
     };
 }
