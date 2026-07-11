@@ -56,3 +56,15 @@ export {
     validateSheetAwarePlacements,
     resolveFeatureDistanceAlongRoute
 } from '../widgets/plan-set-callouts/sheet-placement-engine.js';
+
+export {
+    runPlanReadinessCheck,
+    calculateReadinessScore,
+    buildReadinessReportCsv
+} from '../widgets/plan-production-export/readiness-engine.js';
+
+export {
+    EXPORT_PROFILES,
+    buildProfessionalPlanExport,
+    enrichAssemblyForExport
+} from '../widgets/plan-production-export/export-builder.js';
