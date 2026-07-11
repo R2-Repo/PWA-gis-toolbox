@@ -7,6 +7,7 @@ import { openLayerMatchAssistant } from './layer-match-assistant/controller.js';
 import { openFiberProcurementDesign } from './fiber-procurement-design/controller.js';
 import { openPlanSetCallouts } from './plan-set-callouts/controller.js';
 import { openSheetCutting } from './sheet-cutting/controller.js';
+import { openSheetCutter } from './sheet-cutter/controller.js';
 import { openPlanProductionExport } from './plan-production-export/controller.js';
 import { openFiberSlackOtdrHelper } from './fiber-slack-otdr-helper/controller.js';
 import { openCrsManager } from './crs-manager/controller.js';
@@ -94,6 +95,14 @@ export const GIS_WIDGETS = [
         icon: '📄',
         tip: 'Generate plan sheet frames along a route with match lines and overview layout.',
         open: openSheetCutting
+    },
+    {
+        type: 'sheet-cutter',
+        action: 'openSheetCutter',
+        label: 'Sheet Cutter',
+        icon: '✂️',
+        tip: 'Cut a long centerline into numbered plan sheet extents with matchlines.',
+        open: openSheetCutter
     },
     {
         type: 'callout-builder',
