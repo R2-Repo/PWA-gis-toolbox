@@ -7,6 +7,7 @@ import { openLayerMatchAssistant } from './layer-match-assistant/controller.js';
 import { openFiberProcurementDesign } from './fiber-procurement-design/controller.js';
 import { openPlanSetCallouts } from './plan-set-callouts/controller.js';
 import { openSheetCutting } from './sheet-cutting/controller.js';
+import { openPlanProductionExport } from './plan-production-export/controller.js';
 import { openFiberSlackOtdrHelper } from './fiber-slack-otdr-helper/controller.js';
 import { openCrsManager } from './crs-manager/controller.js';
 import { openQuery } from './query/controller.js';
@@ -92,6 +93,14 @@ export const GIS_WIDGETS = [
         icon: '📄',
         tip: 'Generate plan sheet frames along a route with match lines and overview layout.',
         open: openSheetCutting
+    },
+    {
+        type: 'plan-production-export',
+        action: 'openPlanProductionExport',
+        label: 'Plan Production Export',
+        icon: '📦',
+        tip: 'Run plan readiness checks and export a professional procurement or plan set package.',
+        open: openPlanProductionExport
     }
 ];
 
