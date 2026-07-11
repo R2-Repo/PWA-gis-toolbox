@@ -17,14 +17,21 @@ import {
     configureConduitSegment,
     addFiberRoute,
     addPointAsset,
+    placeSpliceEnclosure,
+    configureSplice,
+    addBranchCable,
+    getSpliceSchedule,
     buildSessionExport,
     serializeDesignSession,
     restoreDesignSession,
     applyStationingToDesign,
     validateDesignSession,
     getActiveAlignment,
-    STRUCTURE_TYPES
+    STRUCTURE_TYPES,
+    SPLICE_MODE_OPTIONS,
+    NEAR_FIBER_FT
 } from './engine.js';
+import { findNearestFiber } from './fiber-routing-engine.js';
 import { buildAlignmentGeoJson, buildConduitGeoJson, buildFiberGeoJson, buildPointAssetGeoJson } from './export-builder.js';
 
 const PREVIEW_LAYER_PREFIX = 'fiber_design_preview_';
@@ -144,7 +151,11 @@ export async function openFiberProcurementDesign(ctx, { restoreState = null } = 
         ctx.mapService.startMapClick?.({
             bannerText: mode === 'structure'
                 ? 'Click on or near the planning alignment to place a structure.'
-                : 'Click on the map to place a point asset.',
+                : mode === 'splice'
+                    ? 'Click on or near a fiber cable to place a splice enclosure.'
+                    : mode === 'branch'
+                        ? 'Click to set the branch cable endpoint.'
+                        : 'Click on the map to place a point asset.',
             onClick: handler
         }) || ctx.mapService.once?.('click', handler);
     });
@@ -224,6 +235,46 @@ export async function openFiberProcurementDesign(ctx, { restoreState = null } = 
                 renderDesignPreview(ctx, session);
                 return session;
             },
+            onPlaceSplice: async (fiberId) => {
+                const coordinate = await waitForMapClick('splice');
+                const fibers = session.design?.fibers || [];
+                const targetFiberId = fiberId || findNearestFiber(fibers, coordinate, NEAR_FIBER_FT)?.fiber?.fiberId;
+                if (!targetFiberId) {
+                    throw new Error(`Click within ${NEAR_FIBER_FT} ft of a fiber cable.`);
+                }
+                session = placeSpliceEnclosure(session, targetFiberId, coordinate);
+                persistSession(session);
+                renderDesignPreview(ctx, session);
+                return session;
+            },
+            onConfigureSplice: (enclosureId, patch) => {
+                session = configureSplice(session, enclosureId, patch);
+                persistSession(session);
+                renderDesignPreview(ctx, session);
+                return session;
+            },
+            onAddBranchCable: async (enclosureId, branchInput) => {
+                let input = { ...branchInput };
+                if (!input.geometry) {
+                    const endCoordinate = await waitForMapClick('branch');
+                    const enclosure = session.design?.spliceEnclosures?.find((item) => item.enclosureId === enclosureId);
+                    const start = enclosure?.geometry?.coordinates;
+                    if (!start) throw new Error('Splice enclosure geometry is missing.');
+                    input = {
+                        ...input,
+                        geometry: {
+                            type: 'LineString',
+                            coordinates: [start, endCoordinate]
+                        }
+                    };
+                }
+                session = addBranchCable(session, enclosureId, input);
+                persistSession(session);
+                renderDesignPreview(ctx, session);
+                return session;
+            },
+            onGetSpliceSchedule: () => getSpliceSchedule(session),
+            spliceModeOptions: SPLICE_MODE_OPTIONS,
             onPlacePointAsset: async (assetName) => {
                 const coordinate = await waitForMapClick('point');
                 session = addPointAsset(session, {
@@ -248,6 +299,13 @@ export async function openFiberProcurementDesign(ctx, { restoreState = null } = 
                     exportPackage.quantitySummaryCsv,
                     'text/csv'
                 );
+                if (exportPackage.spliceScheduleCsv) {
+                    downloadTextFile(
+                        `${session.project.projectName.replace(/\s+/g, '_')}_splice_schedule.csv`,
+                        exportPackage.spliceScheduleCsv,
+                        'text/csv'
+                    );
+                }
                 syncDesignLayers(ctx, session);
                 return exportPackage;
             },

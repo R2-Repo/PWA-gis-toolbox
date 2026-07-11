@@ -296,6 +296,26 @@ export function recalculateDesignQuantities(design, catalogItems = [], project =
         }));
     }
 
+    const fusionCatalogItem = catalogItems.find((item) => /fusion splice/i.test(item.description || ''))
+        || catalogItems.find((item) => item.category === 'Splicing');
+    if (fusionCatalogItem) {
+        const totalFusionSplices = (design.spliceEnclosures || []).reduce(
+            (sum, enclosure) => sum + Number(enclosure.fusionSpliceCount || 0),
+            0
+        );
+        if (totalFusionSplices > 0) {
+            quantities.push(buildQuantityRecord({
+                projectId: project.projectId,
+                catalogItem: fusionCatalogItem,
+                designFeatureIds: (design.spliceEnclosures || [])
+                    .filter((enclosure) => enclosure.fusionSpliceCount > 0)
+                    .map((enclosure) => enclosure.enclosureId),
+                pointCount: totalFusionSplices,
+                manualQuantity: totalFusionSplices
+            }));
+        }
+    }
+
     return quantities;
 }
 

@@ -22,6 +22,11 @@ export function FiberProcurementDesignDialog({
     onConfigureSegment,
     onGenerateFiber,
     onPlacePointAsset,
+    onPlaceSplice,
+    onConfigureSplice,
+    onAddBranchCable,
+    onGetSpliceSchedule,
+    spliceModeOptions = [],
     onExportPackage,
     onAddDesignLayers,
     onValidate,
@@ -40,6 +45,13 @@ export function FiberProcurementDesignDialog({
     const [fiberSegmentIds, setFiberSegmentIds] = useState([]);
     const [strandCount, setStrandCount] = useState('144');
     const [cableType, setCableType] = useState('SM');
+    const [selectedFiberId, setSelectedFiberId] = useState('');
+    const [selectedEnclosureId, setSelectedEnclosureId] = useState('');
+    const [spliceMode, setSpliceMode] = useState('pass_through');
+    const [outgoingStrandCount, setOutgoingStrandCount] = useState('144');
+    const [branchStrandCount, setBranchStrandCount] = useState('12');
+    const [branchCableType, setBranchCableType] = useState('SM');
+    const [spliceSchedule, setSpliceSchedule] = useState([]);
     const [busy, setBusy] = useState(false);
     const [message, setMessage] = useState('');
     const [error, setError] = useState('');
@@ -53,6 +65,8 @@ export function FiberProcurementDesignDialog({
     const segments = session?.design?.conduitSegments || [];
     const structures = session?.design?.structures || [];
     const fibers = session?.design?.fibers || [];
+    const spliceEnclosures = session?.design?.spliceEnclosures || [];
+    const fiberSections = session?.design?.fiberSections || [];
     const quantities = session?.design?.quantities || [];
     const catalogCount = session?.catalog?.items?.length || 0;
 
@@ -290,6 +304,141 @@ export function FiberProcurementDesignDialog({
         </>
     );
 
+    const renderSplicingStep = () => (
+        <>
+            <p className="text-xs">
+                Place splice enclosures on fiber routes, configure splice behavior, and add branch or building-drop cables.
+            </p>
+            <div className="form-group">
+                <label>Fiber route</label>
+                <select value={selectedFiberId} onChange={(e) => setSelectedFiberId(e.target.value)}>
+                    <option value="">- choose fiber -</option>
+                    {fibers.map((fiber) => (
+                        <option key={fiber.fiberId} value={fiber.fiberId}>
+                            {fiber.cableName} ({fiber.strandCount}F)
+                        </option>
+                    ))}
+                </select>
+            </div>
+            <div className="gis-widget__btn-row" style={{ marginTop: 8 }}>
+                <button
+                    type="button"
+                    className="gis-widget__link-btn"
+                    disabled={busy || !fibers.length}
+                    onClick={() => run(
+                        () => onPlaceSplice?.(selectedFiberId || undefined),
+                        'Click on or near the selected fiber to place a splice enclosure.'
+                    )}
+                >
+                    Place splice enclosure
+                </button>
+            </div>
+
+            {spliceEnclosures.length ? (
+                <>
+                    <div className="form-group" style={{ marginTop: 12 }}>
+                        <label>Splice enclosure</label>
+                        <select value={selectedEnclosureId} onChange={(e) => setSelectedEnclosureId(e.target.value)}>
+                            <option value="">- choose enclosure -</option>
+                            {spliceEnclosures.map((enclosure, index) => (
+                                <option key={enclosure.enclosureId} value={enclosure.enclosureId}>
+                                    Splice {index + 1} ({enclosure.spliceMode || 'unconfigured'})
+                                </option>
+                            ))}
+                        </select>
+                    </div>
+                    <div className="form-group">
+                        <label>Splice mode</label>
+                        <select value={spliceMode} onChange={(e) => setSpliceMode(e.target.value)}>
+                            {spliceModeOptions.map((option) => (
+                                <option key={option.value} value={option.value}>{option.label}</option>
+                            ))}
+                        </select>
+                    </div>
+                    <div className="form-group">
+                        <label>Outgoing strand count</label>
+                        <input value={outgoingStrandCount} onChange={(e) => setOutgoingStrandCount(e.target.value)} />
+                    </div>
+                    <div className="gis-widget__btn-row">
+                        <button
+                            type="button"
+                            className="gis-widget__link-btn"
+                            disabled={busy || !selectedEnclosureId}
+                            onClick={() => run(() => onConfigureSplice?.(selectedEnclosureId, {
+                                spliceMode,
+                                outgoingStrandCount: Number(outgoingStrandCount) || 0
+                            }), 'Splice configuration updated.')}
+                        >
+                            Apply splice configuration
+                        </button>
+                    </div>
+
+                    <div className="form-group" style={{ marginTop: 12 }}>
+                        <label>Branch / building drop</label>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                            <input value={branchStrandCount} onChange={(e) => setBranchStrandCount(e.target.value)} placeholder="Strand count" />
+                            <input value={branchCableType} onChange={(e) => setBranchCableType(e.target.value)} placeholder="Cable type" />
+                        </div>
+                    </div>
+                    <div className="gis-widget__btn-row">
+                        <button
+                            type="button"
+                            className="gis-widget__link-btn"
+                            disabled={busy || !selectedEnclosureId}
+                            onClick={() => run(() => onAddBranchCable?.(selectedEnclosureId, {
+                                strandCount: Number(branchStrandCount) || 12,
+                                cableType: branchCableType,
+                                buildingDrop: spliceMode === 'building_drop',
+                                spliceMode: spliceMode === 'building_drop' ? 'building_drop' : 'branch'
+                            }), 'Click the map to set the branch cable endpoint.')}
+                        >
+                            Add branch cable
+                        </button>
+                        <button
+                            type="button"
+                            className="gis-widget__link-btn"
+                            disabled={busy}
+                            onClick={() => {
+                                const schedule = onGetSpliceSchedule?.() || [];
+                                setSpliceSchedule(schedule);
+                            }}
+                        >
+                            Refresh splice schedule
+                        </button>
+                    </div>
+                </>
+            ) : null}
+
+            <div className="text-xs" style={{ marginTop: 8 }}>
+                <div><strong>{spliceEnclosures.length}</strong> splice enclosures</div>
+                <div><strong>{fiberSections.length}</strong> internal fiber sections</div>
+            </div>
+
+            {spliceSchedule.length ? (
+                <div style={{ maxHeight: 160, overflow: 'auto', marginTop: 8 }}>
+                    <table className="text-xs" style={{ width: '100%', borderCollapse: 'collapse' }}>
+                        <thead>
+                            <tr>
+                                <th align="left">Mode</th>
+                                <th align="right">Fusion splices</th>
+                                <th align="right">Pass-through</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {spliceSchedule.map((entry) => (
+                                <tr key={entry.enclosureId}>
+                                    <td>{entry.spliceMode}</td>
+                                    <td align="right">{entry.fusionSpliceCount}</td>
+                                    <td align="right">{entry.passThroughStrandCount}</td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            ) : null}
+        </>
+    );
+
     const renderQuantitiesStep = () => (
         <>
             <p className="text-xs">Review calculated procurement quantities. Manual overrides are preserved on recalculation.</p>
@@ -388,6 +537,7 @@ export function FiberProcurementDesignDialog({
         renderStructuresStep,
         renderConduitStep,
         renderFiberStep,
+        renderSplicingStep,
         renderQuantitiesStep,
         renderExportStep
     ][step - 1]();
@@ -397,6 +547,7 @@ export function FiberProcurementDesignDialog({
         step === 2 ? Boolean(stationingLayerId || session?.stationingRoute) :
         step === 3 ? catalogCount > 0 :
         step === 4 ? Boolean(alignment) :
+        step === 7 ? fibers.length > 0 :
         true
     );
 
