@@ -146,7 +146,7 @@ export function buildSheetExportPackage(session) {
     const detailSheets = (sheetSet.sheets || []).filter((sheet) => sheet.sheetType !== 'overview');
 
     return {
-        projectName: session.project?.projectName || 'Sheet Cutting',
+        projectName: session.project?.projectName || 'Sheet Cutter',
         sheetCount: detailSheets.length,
         csv: {
             sheetIndex: buildSheetIndexCsv(detailSheets),

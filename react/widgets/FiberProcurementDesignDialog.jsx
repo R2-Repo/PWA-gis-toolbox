@@ -1,8 +1,8 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { WidgetPanelShell } from './shared/WidgetPanelShell.jsx';
 import { WidgetStepWizard } from './shared/WidgetStepWizard.jsx';
 import { LayerSelect } from './shared/LayerSelect.jsx';
-import { DESIGN_STEPS, STRUCTURE_TYPES } from '../../js/widgets/fiber-procurement-design/engine.js';
+import { DESIGN_STEPS } from '../../js/widgets/fiber-procurement-design/engine.js';
 
 function formatFeet(value) {
     if (value == null || !Number.isFinite(Number(value))) return '—';
@@ -17,8 +17,11 @@ export function FiberProcurementDesignDialog({
     onCreateProject,
     onSelectStationing,
     onLoadCatalog,
+    onImportCatalogFile,
     onDrawAlignment,
     onPlaceStructure,
+    onMoveStructure,
+    onDeleteStructure,
     onConfigureSegment,
     onGenerateFiber,
     onPlacePointAsset,
@@ -44,8 +47,11 @@ export function FiberProcurementDesignDialog({
     onExportPackage,
     onAddDesignLayers,
     onValidate,
-    onSaveSession
+    onSaveSession,
+    onRestoreSession
 }) {
+    const catalogFileRef = useRef(null);
+    const restoreFileRef = useRef(null);
     const [step, setStep] = useState(1);
     const [session, setSession] = useState(initialSession);
     const [projectName, setProjectName] = useState(initialSession?.project?.projectName || '');
@@ -70,6 +76,12 @@ export function FiberProcurementDesignDialog({
     const [customAssemblyName, setCustomAssemblyName] = useState('');
     const [bulkSegmentIds, setBulkSegmentIds] = useState([]);
     const [continueSourceSegmentId, setContinueSourceSegmentId] = useState('');
+    const [copySourceSegmentId, setCopySourceSegmentId] = useState('');
+    const [selectedStructureId, setSelectedStructureId] = useState('');
+    const [mergeAdjoiningOnDelete, setMergeAdjoiningOnDelete] = useState(false);
+    const [overrideQuantityId, setOverrideQuantityId] = useState('');
+    const [overrideQuantityValue, setOverrideQuantityValue] = useState('');
+    const [overrideQuantityReason, setOverrideQuantityReason] = useState('');
     const [inheritanceHint, setInheritanceHint] = useState('');
     const [nonSpatialCatalogItemId, setNonSpatialCatalogItemId] = useState('');
     const [nonSpatialQuantity, setNonSpatialQuantity] = useState('1');
@@ -95,12 +107,23 @@ export function FiberProcurementDesignDialog({
     const catalogCount = session?.catalog?.items?.length || 0;
     const assemblyOptions = assemblies.length ? assemblies : (session?.design?.assemblies || []);
 
+    const syncFormFromSession = (next) => {
+        if (!next) return;
+        setProjectName(next.project?.projectName || '');
+        setProjectNumber(next.project?.projectNumber || '');
+        setStationingLayerId(next.project?.stationingRouteLayerId || '');
+        setActiveAssemblyId(next.project?.activeAssemblyId || '');
+    };
+
     const run = async (fn, successMessage = '') => {
         setBusy(true);
         setError('');
         try {
             const next = await fn();
-            if (next) setSession(next);
+            if (next) {
+                setSession(next);
+                syncFormFromSession(next);
+            }
             if (successMessage) setMessage(successMessage);
         } catch (err) {
             setError(err?.message || 'Operation failed.');
@@ -154,8 +177,38 @@ export function FiberProcurementDesignDialog({
     const renderCatalogStep = () => (
         <>
             <p className="text-xs">
-                Load the sample procurement catalog for Phase 1 design and quantity review.
+                Load the sample catalog or import a procurement spreadsheet (.xlsx, .xls, .csv).
             </p>
+            <div className="gis-widget__btn-row" style={{ marginTop: 12 }}>
+                <button
+                    type="button"
+                    className="gis-widget__link-btn"
+                    disabled={busy}
+                    onClick={() => run(() => onLoadCatalog?.(), 'Sample catalog loaded.')}
+                >
+                    Load sample catalog
+                </button>
+                <button
+                    type="button"
+                    className="gis-widget__link-btn"
+                    disabled={busy}
+                    onClick={() => catalogFileRef.current?.click()}
+                >
+                    Import spreadsheet
+                </button>
+                <input
+                    ref={catalogFileRef}
+                    type="file"
+                    accept=".xlsx,.xls,.csv"
+                    style={{ display: 'none' }}
+                    onChange={(event) => {
+                        const file = event.target.files?.[0];
+                        event.target.value = '';
+                        if (!file) return;
+                        run(() => onImportCatalogFile?.(file), 'Procurement catalog imported.');
+                    }}
+                />
+            </div>
             {catalogCount ? (
                 <div className="text-xs" style={{ marginTop: 8 }}>
                     <strong>{catalogCount}</strong> catalog items loaded.
@@ -288,6 +341,53 @@ export function FiberProcurementDesignDialog({
                     <div><strong>{segments.length}</strong> conduit segments</div>
                 </div>
             ) : null}
+            {structures.length ? (
+                <>
+                    <div className="form-group" style={{ marginTop: 12 }}>
+                        <label>Selected structure</label>
+                        <select value={selectedStructureId} onChange={(e) => setSelectedStructureId(e.target.value)}>
+                            <option value="">- choose structure -</option>
+                            {structures.map((structure, index) => (
+                                <option key={structure.structureId} value={structure.structureId}>
+                                    {structure.structureName || structure.assetType || `Structure ${index + 1}`}
+                                </option>
+                            ))}
+                        </select>
+                    </div>
+                    <div className="gis-widget__btn-row">
+                        <button
+                            type="button"
+                            className="gis-widget__link-btn"
+                            disabled={busy || !selectedStructureId}
+                            onClick={() => run(
+                                () => onMoveStructure?.(selectedStructureId),
+                                'Click on the alignment to move the structure.'
+                            )}
+                        >
+                            Move structure
+                        </button>
+                        <button
+                            type="button"
+                            className="gis-widget__link-btn"
+                            disabled={busy || !selectedStructureId}
+                            onClick={() => run(
+                                () => onDeleteStructure?.(selectedStructureId, mergeAdjoiningOnDelete),
+                                'Structure removed.'
+                            )}
+                        >
+                            Delete structure
+                        </button>
+                    </div>
+                    <label className="text-xs" style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                        <input
+                            type="checkbox"
+                            checked={mergeAdjoiningOnDelete}
+                            onChange={(e) => setMergeAdjoiningOnDelete(e.target.checked)}
+                        />
+                        Merge adjoining conduit segments when deleting
+                    </label>
+                </>
+            ) : null}
         </>
     );
 
@@ -415,6 +515,28 @@ export function FiberProcurementDesignDialog({
                 )}
             >
                 Continue from selected source
+            </button>
+            <div className="form-group" style={{ marginTop: 12 }}>
+                <label>Copy conduit to other segments</label>
+                <select value={copySourceSegmentId} onChange={(e) => setCopySourceSegmentId(e.target.value)}>
+                    <option value="">- source segment -</option>
+                    {segments.map((segment, index) => (
+                        <option key={segment.segmentId} value={segment.segmentId}>
+                            Segment {index + 1}
+                        </option>
+                    ))}
+                </select>
+            </div>
+            <button
+                type="button"
+                className="gis-widget__link-btn"
+                disabled={busy || !copySourceSegmentId || !bulkSegmentIds.length}
+                onClick={() => run(
+                    () => onCopyConduitToSegments?.(copySourceSegmentId, bulkSegmentIds),
+                    'Conduit configuration copied to selected segments.'
+                )}
+            >
+                Copy conduit to selected segments
             </button>
         </>
     );
@@ -716,6 +838,45 @@ export function FiberProcurementDesignDialog({
                     ))}
                 </div>
             ) : null}
+            <div className="form-group" style={{ marginTop: 12 }}>
+                <label>Override calculated quantity</label>
+                <select value={overrideQuantityId} onChange={(e) => setOverrideQuantityId(e.target.value)}>
+                    <option value="">- choose quantity -</option>
+                    {quantities.map((record) => {
+                        const catalogItem = session?.catalog?.items?.find((item) => item.catalogItemId === record.catalogItemId);
+                        return (
+                            <option key={record.quantityId} value={record.quantityId}>
+                                {catalogItem?.shortDescription || catalogItem?.description || record.catalogItemId}
+                            </option>
+                        );
+                    })}
+                </select>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 8 }}>
+                <input
+                    value={overrideQuantityValue}
+                    onChange={(e) => setOverrideQuantityValue(e.target.value)}
+                    placeholder="Final quantity"
+                />
+                <input
+                    value={overrideQuantityReason}
+                    onChange={(e) => setOverrideQuantityReason(e.target.value)}
+                    placeholder="Override reason"
+                />
+            </div>
+            <button
+                type="button"
+                className="gis-widget__link-btn"
+                style={{ marginTop: 8 }}
+                disabled={busy || !overrideQuantityId || overrideQuantityValue === ''}
+                onClick={() => run(() => onOverrideQuantity?.(
+                    overrideQuantityId,
+                    Number(overrideQuantityValue),
+                    overrideQuantityReason
+                ), 'Quantity override applied.')}
+            >
+                Apply quantity override
+            </button>
         </>
     );
 
@@ -736,6 +897,35 @@ export function FiberProcurementDesignDialog({
                 >
                     Save session
                 </button>
+                <button
+                    type="button"
+                    className="gis-widget__link-btn"
+                    disabled={busy}
+                    onClick={() => restoreFileRef.current?.click()}
+                >
+                    Restore session
+                </button>
+                <input
+                    ref={restoreFileRef}
+                    type="file"
+                    accept=".json,.gis-toolbox"
+                    style={{ display: 'none' }}
+                    onChange={(event) => {
+                        const file = event.target.files?.[0];
+                        event.target.value = '';
+                        if (!file) return;
+                        const reader = new FileReader();
+                        reader.onload = () => {
+                            try {
+                                const bundle = JSON.parse(String(reader.result || '{}'));
+                                run(() => onRestoreSession?.(bundle), 'Design session restored.');
+                            } catch {
+                                setError('Invalid session file.');
+                            }
+                        };
+                        reader.readAsText(file);
+                    }}
+                />
                 <button
                     type="button"
                     className="gis-widget__link-btn"

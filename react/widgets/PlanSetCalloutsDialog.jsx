@@ -270,16 +270,16 @@ export function PlanSetCalloutsDialog({
     const renderSheetsStep = () => (
         <>
             <p className="text-xs" style={{ color: 'var(--text-muted)', marginBottom: 12 }}>
-                Link sheet frames from Sheet Cutting or map layers, then place callouts per sheet.
+                Link sheet frames from Sheet Cutter or map layers, then place callouts per sheet.
             </p>
             {hasLinkedSheetWidget ? (
                 <button
                     type="button"
                     className="btn btn-secondary btn-sm"
                     disabled={busy}
-                    onClick={() => run(() => onLinkSheetSetFromWidget?.(), `Linked ${linkedSheets.length || ''} sheet(s) from Sheet Cutting.`)}
+                    onClick={() => run(() => onLinkSheetSetFromWidget?.(), `Linked ${linkedSheets.length || ''} sheet(s) from Sheet Cutter.`)}
                 >
-                    Use Sheet Cutting session
+                    Use Sheet Cutter session
                 </button>
             ) : null}
             <div className="form-group" style={{ marginTop: 12 }}>
@@ -294,7 +294,7 @@ export function PlanSetCalloutsDialog({
                             />
                             {' '}{layer.name} ({layer.featureCount})
                         </label>
-                    )) : <div>No sheet frame layers found. Generate sheets in Sheet Cutting first.</div>}
+                    )) : <div>No sheet frame layers found. Generate sheets in Sheet Cutter first.</div>}
                 </div>
             </div>
             <LayerSelect

@@ -27,7 +27,7 @@ export const EXPORT_STEPS = [
 export const LINKABLE_WIDGETS = [
     { id: 'fiber-procurement-design', label: 'Fiber Procurement Design' },
     { id: 'plan-set-callouts', label: 'Plan Set Callouts' },
-    { id: 'sheet-cutting', label: 'Sheet Cutting' }
+    { id: 'sheet-cutting', label: 'Sheet Cutter' }
 ];
 
 /**

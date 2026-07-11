@@ -264,7 +264,7 @@ export function createSheetSetState(input = {}) {
  */
 export function createSheetCuttingSession(input = {}) {
     const project = createPlanProject({
-        projectName: input.projectName || 'Sheet Cutting',
+        projectName: input.projectName || 'Sheet Cutter',
         projectNumber: input.projectNumber || ''
     });
 

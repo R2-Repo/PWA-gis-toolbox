@@ -10,7 +10,7 @@ import { validateSheetSession } from '../sheet-cutting/engine.js';
 const WIDGET_LABELS = {
     'fiber-procurement-design': 'Fiber Procurement Design',
     'plan-set-callouts': 'Plan Set Callouts',
-    'sheet-cutting': 'Sheet Cutting'
+    'sheet-cutting': 'Sheet Cutter'
 };
 
 /**
@@ -183,7 +183,7 @@ export function runPlanReadinessCheck(assembly = {}) {
         findings.push(tagFinding({
             severity: 'info',
             code: 'missing_sheet_session',
-            message: 'Sheet Cutting session not linked.',
+            message: 'Sheet Cutter session not linked.',
             step: 'Sheets'
         }, 'sheet-cutting'));
     }

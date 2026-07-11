@@ -7,6 +7,7 @@ import { createCenterlineDrawHandlers } from '../map-draw-helpers.js';
 import { getSpatialLayerOptions } from '../widget-context.js';
 import { isProjectStationingCenterline } from '../project-stationing/route-profile.js';
 import { markWidgetClosed, upsertWidgetState } from '../widget-state-store.js';
+import { normalizeProcurementCatalog } from './catalog-adapter.js';
 import {
     WIDGET_ID,
     createFiberDesignSession,
@@ -14,6 +15,8 @@ import {
     loadProcurementCatalog,
     addPlanningAlignment,
     placeStructure,
+    moveStructure,
+    deleteStructure,
     configureConduitSegment,
     addFiberRoute,
     addPointAsset,
@@ -121,6 +124,25 @@ function downloadTextFile(filename, content, mimeType = 'text/plain') {
 }
 
 /**
+ * Re-select stationing route after session restore when layer id is persisted.
+ * @param {object} session
+ * @param {import('../widget-types.js').WidgetContext} ctx
+ * @returns {object}
+ */
+function rehydrateSessionStationing(session, ctx) {
+    const layerId = session.project?.stationingRouteLayerId;
+    if (!layerId) return session;
+
+    try {
+        let next = selectStationingSource(session, ctx.getLayers(), layerId);
+        next = applyStationingToDesign(next);
+        return next;
+    } catch {
+        return session;
+    }
+}
+
+/**
  * @param {import('../widget-types.js').WidgetContext} ctx
  * @param {{ restoreState?: object }} [options]
  */
@@ -128,6 +150,11 @@ export async function openFiberProcurementDesign(ctx, { restoreState = null } = 
     let session = restoreState
         ? restoreDesignSession(restoreState)
         : createFiberDesignSession();
+
+    if (restoreState) {
+        session = rehydrateSessionStationing(session, ctx);
+        persistSession(session);
+    }
 
     const centerlineHandlers = createCenterlineDrawHandlers(ctx);
     let placementMode = null;
@@ -207,6 +234,27 @@ export async function openFiberProcurementDesign(ctx, { restoreState = null } = 
             onLoadCatalog: () => {
                 session = loadProcurementCatalog(session);
                 persistSession(session);
+                return session;
+            },
+            onImportCatalogFile: async (file) => {
+                const XLSX = globalThis.XLSX;
+                if (!XLSX?.read) {
+                    throw new Error('Spreadsheet library unavailable.');
+                }
+                const buffer = await file.arrayBuffer();
+                const workbook = XLSX.read(new Uint8Array(buffer), { type: 'array' });
+                const sheet = workbook.Sheets[workbook.SheetNames[0]];
+                const rows = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+                const catalog = normalizeProcurementCatalog(rows);
+                if (!catalog.items?.length) {
+                    throw new Error(catalog.warnings?.[0] || 'No catalog items found in spreadsheet.');
+                }
+                session = loadProcurementCatalog(session, catalog);
+                persistSession(session);
+                renderDesignPreview(ctx, session);
+                if (catalog.warnings?.length) {
+                    ctx.showToast(catalog.warnings[0], 'warning');
+                }
                 return session;
             },
             assemblies: getAvailableAssemblies(session),
@@ -289,6 +337,29 @@ export async function openFiberProcurementDesign(ctx, { restoreState = null } = 
                     throw new Error(`Click within ${NEAR_LINE_FT} ft of the planning alignment.`);
                 }
                 session = placeStructure(session, assetType, coordinate);
+                persistSession(session);
+                renderDesignPreview(ctx, session);
+                return session;
+            },
+            onMoveStructure: async (structureId) => {
+                const coordinate = await waitForMapClick('structure');
+                const alignment = getActiveAlignment(session);
+                if (!alignment?.geometry) {
+                    throw new Error('Draw a planning alignment before moving structures.');
+                }
+                const lineFeature = ctx.turf.feature(alignment.geometry);
+                const point = ctx.turf.point(coordinate);
+                const distance = ctx.turf.pointToLineDistance(point, lineFeature, { units: 'feet' });
+                if (distance > NEAR_LINE_FT) {
+                    throw new Error(`Click within ${NEAR_LINE_FT} ft of the planning alignment.`);
+                }
+                session = moveStructure(session, structureId, coordinate);
+                persistSession(session);
+                renderDesignPreview(ctx, session);
+                return session;
+            },
+            onDeleteStructure: (structureId, mergeAdjoining = false) => {
+                session = deleteStructure(session, structureId, mergeAdjoining);
                 persistSession(session);
                 renderDesignPreview(ctx, session);
                 return session;
@@ -402,6 +473,7 @@ export async function openFiberProcurementDesign(ctx, { restoreState = null } = 
             },
             onRestoreSession: (bundle) => {
                 session = restoreDesignSession(bundle);
+                session = rehydrateSessionStationing(session, ctx);
                 persistSession(session);
                 renderDesignPreview(ctx, session);
                 return session;

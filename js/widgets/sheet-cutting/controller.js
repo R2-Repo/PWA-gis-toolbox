@@ -85,7 +85,7 @@ export async function openSheetCutting(ctx, { restoreState = null } = {}) {
         : createSheetCuttingSession();
 
     await openReactIsland({
-        title: 'Sheet Cutting',
+        title: 'Sheet Cutter',
         width: '600px',
         mountPath: '../../../react/widgets/mountSheetCuttingDialog.jsx',
         mountExport: 'mountSheetCuttingDialog',

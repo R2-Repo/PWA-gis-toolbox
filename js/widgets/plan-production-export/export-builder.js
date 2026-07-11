@@ -138,7 +138,7 @@ export function buildProfessionalPlanExport(assembly = {}, profileId = 'procurem
     const files = [];
 
     if (profile.requireSheets && !assembly.sheetSession) {
-        throw new Error('Plan set profile requires a Sheet Cutting session.');
+        throw new Error('Plan set profile requires a Sheet Cutter session.');
     }
     if (profile.requireCallouts && !assembly.calloutSession) {
         throw new Error('Plan set profile requires a Plan Set Callouts session.');

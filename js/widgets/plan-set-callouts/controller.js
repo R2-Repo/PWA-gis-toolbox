@@ -230,7 +230,7 @@ export async function openPlanSetCallouts(ctx, { restoreState = null } = {}) {
             onLinkSheetSetFromWidget: () => {
                 const entry = getWidgetEntry('sheet-cutting');
                 if (!entry?.state) {
-                    throw new Error('Open Sheet Cutting and generate sheets first, or link sheet layers from the map.');
+                    throw new Error('Open Sheet Cutter and generate sheets first, or link sheet layers from the map.');
                 }
                 session = linkSheetSetFromBundle(session, entry.state);
                 persistSession(session);

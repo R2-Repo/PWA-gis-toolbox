@@ -478,6 +478,103 @@ export function placeStructure(session, assetType, coordinate, meta = {}) {
 
 /**
  * @param {object} session
+ * @param {string} structureId
+ * @param {[number, number]} coordinate
+ * @returns {object}
+ */
+export function moveStructure(session, structureId, coordinate) {
+    const alignment = getActiveAlignment(session);
+    if (!alignment) throw new Error('Draw a planning alignment first.');
+
+    const stationing = session.stationingRoute
+        ? getStationAtCoordinate(session.stationingRoute, coordinate)
+        : null;
+
+    const result = moveStructureOnAlignment({
+        alignment,
+        structureId,
+        coordinate,
+        structures: session.design.structures || [],
+        segments: session.design.conduitSegments || [],
+        relationships: session.project.relationships || [],
+        projectId: session.project.projectId,
+        projectDefaults: session.project,
+        stationing
+    });
+
+    const fibers = synchronizeAllFiberRoutes({
+        ...session.design,
+        conduitSegments: result.segments
+    });
+
+    return recalculateSessionQuantities({
+        ...session,
+        design: {
+            ...session.design,
+            structures: result.structures,
+            conduitSegments: result.segments,
+            fibers,
+            fiberSections: rebuildFiberSectionsForFibers({
+                fibers,
+                projectId: session.project.projectId,
+                enclosures: session.design.spliceEnclosures || [],
+                existingSections: session.design.fiberSections || []
+            })
+        },
+        project: updatePlanProject(session.project, { relationships: result.relationships })
+    });
+}
+
+/**
+ * @param {object} session
+ * @param {string} structureId
+ * @param {boolean} [mergeAdjoining]
+ * @returns {object}
+ */
+export function deleteStructure(session, structureId, mergeAdjoining = false) {
+    const alignment = getActiveAlignment(session);
+    if (!alignment) throw new Error('Draw a planning alignment first.');
+
+    const result = deleteStructureFromAlignment({
+        alignment,
+        structureId,
+        structures: session.design.structures || [],
+        segments: session.design.conduitSegments || [],
+        relationships: session.project.relationships || [],
+        mergeAdjoining,
+        projectId: session.project.projectId,
+        projectDefaults: session.project
+    });
+
+    if (result.merged === false && result.reason) {
+        throw new Error(result.reason);
+    }
+
+    const fibers = synchronizeAllFiberRoutes({
+        ...session.design,
+        conduitSegments: result.segments
+    });
+
+    return recalculateSessionQuantities({
+        ...session,
+        design: {
+            ...session.design,
+            structures: result.structures,
+            conduitSegments: result.segments,
+            fibers,
+            fiberSections: rebuildFiberSectionsForFibers({
+                fibers,
+                projectId: session.project.projectId,
+                enclosures: session.design.spliceEnclosures || [],
+                existingSections: session.design.fiberSections || []
+            })
+        },
+        project: updatePlanProject(session.project, { relationships: result.relationships })
+    });
+}
+
+/**
+ * @param {object} session
  * @param {string} segmentId
  * @param {object} patch
  * @returns {object}

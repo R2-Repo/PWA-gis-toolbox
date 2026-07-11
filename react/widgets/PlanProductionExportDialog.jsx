@@ -76,7 +76,7 @@ export function PlanProductionExportDialog({
     const renderLinkStep = () => (
         <>
             <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                Link open widget sessions from Fiber Procurement Design, Plan Set Callouts, and Sheet Cutting.
+                Link open widget sessions from Fiber Procurement Design, Plan Set Callouts, and Sheet Cutter.
             </p>
             <div className="text-xs" style={{ marginTop: 12 }}>
                 {linkableWidgets.map((widget) => (
