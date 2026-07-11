@@ -7,10 +7,15 @@ import {
     placeStructure,
     configureConduitSegment,
     addFiberRoute,
+    placeSpliceEnclosure,
+    configureSplice,
+    addBranchCable,
+    getSpliceSchedule,
     serializeDesignSession,
     restoreDesignSession,
     validateDesignSession,
-    STRUCTURE_TYPES
+    STRUCTURE_TYPES,
+    SPLICE_MODES
 } from '../js/widgets/fiber-procurement-design/engine.js';
 import { splitLineAtDistances } from '../js/widgets/fiber-procurement-design/relationship-engine.js';
 
@@ -48,6 +53,53 @@ describe('fiber procurement design engine', () => {
         session = placeStructure(session, STRUCTURE_TYPES.JUNCTION_BOX, midpoint);
         expect(session.design.structures).toHaveLength(1);
         expect(session.design.conduitSegments.length).toBeGreaterThanOrEqual(2);
+    });
+
+    it('places splice enclosures and configures fusion splices', () => {
+        let session = createFiberDesignSession();
+        session = addPlanningAlignment(session, sampleAlignment);
+        session = addFiberRoute(session, {
+            segmentIds: [session.design.conduitSegments[0].segmentId],
+            strandCount: 144,
+            cableType: 'SM'
+        });
+        const fiberId = session.design.fibers[0].fiberId;
+        session = placeSpliceEnclosure(session, fiberId, sampleAlignment.coordinates[1]);
+        expect(session.design.spliceEnclosures).toHaveLength(1);
+        expect(session.design.fiberSections.length).toBeGreaterThanOrEqual(2);
+
+        const enclosureId = session.design.spliceEnclosures[0].enclosureId;
+        session = configureSplice(session, enclosureId, {
+            spliceMode: SPLICE_MODES.FULL_SPLICE,
+            outgoingStrandCount: 144
+        });
+        expect(session.design.spliceEnclosures[0].fusionSpliceCount).toBe(144);
+
+        const schedule = getSpliceSchedule(session);
+        expect(schedule[0].fusionSpliceCount).toBe(144);
+    });
+
+    it('creates a branch cable at a splice enclosure', () => {
+        let session = createFiberDesignSession();
+        session = addPlanningAlignment(session, sampleAlignment);
+        session = addFiberRoute(session, {
+            segmentIds: [session.design.conduitSegments[0].segmentId],
+            strandCount: 144
+        });
+        const fiberId = session.design.fibers[0].fiberId;
+        session = placeSpliceEnclosure(session, fiberId, sampleAlignment.coordinates[1]);
+        const enclosureId = session.design.spliceEnclosures[0].enclosureId;
+        session = addBranchCable(session, enclosureId, {
+            strandCount: 12,
+            cableType: 'SM',
+            geometry: {
+                type: 'LineString',
+                coordinates: [sampleAlignment.coordinates[1], sampleAlignment.coordinates[2]]
+            }
+        });
+        expect(session.design.fibers.length).toBe(2);
+        expect(session.design.fibers.some((fiber) => fiber.isBranch)).toBe(true);
+        expect(session.design.spliceEnclosures[0].fusionSpliceCount).toBe(12);
     });
 
     it('configures conduit products and recalculates quantities', () => {

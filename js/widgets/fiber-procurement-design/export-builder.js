@@ -3,6 +3,7 @@
  */
 
 import { buildFeatureLabel } from '../../plan-project/symbology-registry.js';
+import { buildSpliceSchedule } from './splice-engine.js';
 
 /**
  * @param {object} design
@@ -109,9 +110,25 @@ export function buildPointAssetGeoJson(design) {
         geometry: asset.geometry
     }));
 
+    const spliceFeatures = (design.spliceEnclosures || []).map((enclosure) => ({
+        type: 'Feature',
+        properties: {
+            feature_type: 'splice_enclosure',
+            enclosure_id: enclosure.enclosureId,
+            enclosure_type: enclosure.enclosureType,
+            splice_mode: enclosure.spliceMode,
+            fusion_splice_count: enclosure.fusionSpliceCount,
+            host_fiber_id: enclosure.hostFiberId,
+            station: enclosure.station,
+            symbol_key: enclosure.symbolKey,
+            label: enclosure.enclosureType || 'Splice enclosure'
+        },
+        geometry: enclosure.geometry
+    }));
+
     return {
         type: 'FeatureCollection',
-        features: [...structureFeatures, ...pointAssets]
+        features: [...structureFeatures, ...pointAssets, ...spliceFeatures]
     };
 }
 
@@ -158,6 +175,49 @@ export function buildQuantitySummaryCsv(quantities = [], catalogItems = []) {
 }
 
 /**
+ * @param {object} design
+ * @returns {string}
+ */
+export function buildSpliceScheduleCsv(design = {}) {
+    const schedule = buildSpliceSchedule(design);
+    const header = [
+        'enclosure_id',
+        'enclosure_type',
+        'splice_mode',
+        'host_fiber_id',
+        'station',
+        'milepost',
+        'incoming_strand_count',
+        'outgoing_strand_count',
+        'pass_through_strand_count',
+        'fusion_splice_count',
+        'unused_strand_count',
+        'connected_fiber_section_ids',
+        'notes'
+    ];
+
+    const rows = schedule.map((entry) => [
+        entry.enclosureId,
+        entry.enclosureType,
+        entry.spliceMode,
+        entry.hostFiberId,
+        entry.station,
+        entry.milepost,
+        entry.incomingStrandCount,
+        entry.outgoingStrandCount,
+        entry.passThroughStrandCount,
+        entry.fusionSpliceCount,
+        entry.unusedStrandCount,
+        (entry.connectedFiberSectionIds || []).join(';'),
+        entry.notes
+    ]);
+
+    return [header, ...rows]
+        .map((row) => row.map((cell) => `"${String(cell ?? '').replace(/"/g, '""')}"`).join(','))
+        .join('\n');
+}
+
+/**
  * @param {object} project
  * @param {object} design
  * @param {object[]} catalogItems
@@ -178,6 +238,8 @@ export function buildProjectExportPackage(project, design, catalogItems = []) {
             fiber: buildFiberGeoJson(design),
             points: buildPointAssetGeoJson(design)
         },
-        quantitySummaryCsv: buildQuantitySummaryCsv(design.quantities || [], catalogItems)
+        quantitySummaryCsv: buildQuantitySummaryCsv(design.quantities || [], catalogItems),
+        spliceScheduleCsv: buildSpliceScheduleCsv(design),
+        spliceSchedule: buildSpliceSchedule(design)
     };
 }

@@ -218,3 +218,35 @@ export function synchronizeAllFiberRoutes(design) {
     );
     return fibers;
 }
+
+/**
+ * @param {object[]} fibers
+ * @param {[number, number]} coordinate
+ * @param {number} [toleranceFt]
+ * @returns {{ fiber: object, distanceFt: number, snapCoordinate: [number, number] }|null}
+ */
+export function findNearestFiber(fibers = [], coordinate, toleranceFt = 50) {
+    if (!coordinate || typeof turf === 'undefined') return null;
+    const point = turf.point(coordinate);
+    let best = null;
+    let bestDistance = Infinity;
+
+    for (const fiber of fibers) {
+        if (!fiber?.geometry) continue;
+        const lineFeature = turf.feature(fiber.geometry);
+        const snap = turf.nearestPointOnLine(lineFeature, point, { units: FEET_UNITS });
+        const dist = Number(snap?.properties?.dist ?? Infinity);
+        if (dist < bestDistance) {
+            bestDistance = dist;
+            best = {
+                fiber,
+                distanceFt: dist,
+                snapCoordinate: snap.geometry.coordinates,
+                distanceAlongFt: Number(snap.properties?.location ?? 0)
+            };
+        }
+    }
+
+    if (!best || best.distanceFt > toleranceFt) return null;
+    return best;
+}

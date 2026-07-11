@@ -22,6 +22,17 @@ import {
     updateConduitSegment
 } from './relationship-engine.js';
 import { generateFiberRoute, synchronizeAllFiberRoutes } from './fiber-routing-engine.js';
+import {
+    placeSpliceEnclosureOnFiber,
+    configureSpliceEnclosure,
+    createBranchCableAtEnclosure,
+    rebuildFiberSectionsForFibers,
+    buildSpliceSchedule,
+    validateSpliceConfiguration,
+    SPLICE_MODES,
+    SPLICE_MODE_OPTIONS,
+    NEAR_FIBER_FT
+} from './splice-engine.js';
 import { recalculateDesignQuantities, mergeQuantityOverrides } from './quantity-rules.js';
 import { buildProjectExportPackage } from './export-builder.js';
 import { lineLengthAny } from '../../tools/line-geojson.js';
@@ -36,6 +47,7 @@ export const DESIGN_STEPS = [
     'Structures',
     'Conduit',
     'Fiber',
+    'Splicing',
     'Quantities',
     'Export'
 ];
@@ -208,7 +220,13 @@ export function placeStructure(session, assetType, coordinate, meta = {}) {
             ...session.design,
             structures,
             conduitSegments: regen.segments,
-            fibers
+            fibers,
+            fiberSections: rebuildFiberSectionsForFibers({
+                fibers,
+                projectId: session.project.projectId,
+                enclosures: session.design.spliceEnclosures || [],
+                existingSections: session.design.fiberSections || []
+            })
         },
         project: updatePlanProject(session.project, { relationships: regen.relationships })
     });
@@ -261,9 +279,127 @@ export function addFiberRoute(session, input = {}) {
         ...session,
         design: {
             ...session.design,
-            fibers: [...(session.design.fibers || []), fiber]
+            fibers: [...(session.design.fibers || []), fiber],
+            fiberSections: rebuildFiberSectionsForFibers({
+                fibers: [...(session.design.fibers || []), fiber],
+                projectId: session.project.projectId,
+                enclosures: session.design.spliceEnclosures || [],
+                existingSections: session.design.fiberSections || []
+            })
         }
     });
+}
+
+/**
+ * @param {object} session
+ * @param {string} fiberId
+ * @param {[number, number]} coordinate
+ * @param {object} [meta]
+ * @returns {object}
+ */
+export function placeSpliceEnclosure(session, fiberId, coordinate, meta = {}) {
+    const fiber = (session.design.fibers || []).find((item) => item.fiberId === fiberId);
+    if (!fiber) throw new Error('Fiber route not found.');
+
+    const stationing = session.stationingRoute
+        ? getStationAtCoordinate(session.stationingRoute, coordinate)
+        : null;
+
+    const result = placeSpliceEnclosureOnFiber({
+        fiber,
+        coordinate,
+        projectId: session.project.projectId,
+        existingEnclosures: session.design.spliceEnclosures || [],
+        existingSections: session.design.fiberSections || [],
+        stationing,
+        enclosureType: meta.enclosureType || 'splice_enclosure'
+    });
+
+    return recalculateSessionQuantities({
+        ...session,
+        design: {
+            ...session.design,
+            spliceEnclosures: [...(session.design.spliceEnclosures || []), result.enclosure],
+            fiberSections: result.fiberSections,
+            fibers: session.design.fibers || []
+        }
+    });
+}
+
+/**
+ * @param {object} session
+ * @param {string} enclosureId
+ * @param {object} patch
+ * @returns {object}
+ */
+export function configureSplice(session, enclosureId, patch = {}) {
+    const enclosures = (session.design.spliceEnclosures || []).map((enclosure) =>
+        enclosure.enclosureId === enclosureId
+            ? configureSpliceEnclosure(enclosure, patch)
+            : enclosure
+    );
+
+    return recalculateSessionQuantities({
+        ...session,
+        design: {
+            ...session.design,
+            spliceEnclosures: enclosures
+        }
+    });
+}
+
+/**
+ * @param {object} session
+ * @param {string} enclosureId
+ * @param {object} branchInput
+ * @returns {object}
+ */
+export function addBranchCable(session, enclosureId, branchInput = {}) {
+    const enclosure = (session.design.spliceEnclosures || []).find((item) => item.enclosureId === enclosureId);
+    if (!enclosure) throw new Error('Splice enclosure not found.');
+
+    const sourceFiber = (session.design.fibers || []).find((item) => item.fiberId === enclosure.hostFiberId);
+    if (!sourceFiber) throw new Error('Source fiber not found for branch cable.');
+
+    const result = createBranchCableAtEnclosure({
+        enclosure,
+        sourceFiber,
+        branchInput,
+        projectId: session.project.projectId,
+        projectDefaults: session.project
+    });
+
+    const fibers = [
+        ...(session.design.fibers || []).filter((item) => item.fiberId !== result.branchFiber.fiberId),
+        result.branchFiber
+    ];
+
+    const spliceEnclosures = (session.design.spliceEnclosures || []).map((item) =>
+        item.enclosureId === enclosureId ? result.enclosure : item
+    );
+
+    return recalculateSessionQuantities({
+        ...session,
+        design: {
+            ...session.design,
+            fibers,
+            spliceEnclosures,
+            fiberSections: rebuildFiberSectionsForFibers({
+                fibers,
+                projectId: session.project.projectId,
+                enclosures: spliceEnclosures,
+                existingSections: session.design.fiberSections || []
+            })
+        }
+    });
+}
+
+/**
+ * @param {object} session
+ * @returns {object[]}
+ */
+export function getSpliceSchedule(session) {
+    return buildSpliceSchedule(session.design || {});
 }
 
 /**
@@ -342,6 +478,14 @@ export function validateDesignSession(session) {
     for (const fiber of session.design.fibers || []) {
         if (!fiber.sourceSegmentIds?.length) {
             warnings.push(`Fiber ${fiber.fiberId} has no source conduit segments.`);
+        }
+    }
+
+    warnings.push(...validateSpliceConfiguration(session.design));
+
+    for (const enclosure of session.design.spliceEnclosures || []) {
+        if (!enclosure.spliceMode) {
+            warnings.push(`Splice enclosure ${enclosure.enclosureId} is missing splice configuration.`);
         }
     }
 
@@ -487,5 +631,8 @@ export {
     deleteStructureFromAlignment,
     getStationingRoutes,
     createSampleProcurementCatalog,
-    STRUCTURE_TYPES
+    STRUCTURE_TYPES,
+    SPLICE_MODES,
+    SPLICE_MODE_OPTIONS,
+    NEAR_FIBER_FT
 };

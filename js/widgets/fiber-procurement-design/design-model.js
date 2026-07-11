@@ -154,6 +154,36 @@ export function createFiberRoute(input = {}) {
         startMilepost: input.startMilepost ?? null,
         endMilepost: input.endMilepost ?? null,
         symbolKey: input.symbolKey || 'fiber-proposed',
+        notes: input.notes || '',
+        parentFiberId: input.parentFiberId || null,
+        isBranch: !!input.isBranch,
+        branchSourceEnclosureId: input.branchSourceEnclosureId || null,
+        branchSourceFiberId: input.branchSourceFiberId || null,
+        hiddenOnMap: !!input.hiddenOnMap
+    };
+}
+
+/**
+ * Logical fiber section created when a splice divides a cable internally.
+ * @param {object} input
+ * @returns {object}
+ */
+export function createFiberSection(input = {}) {
+    return {
+        sectionId: input.sectionId || createStableId('fsec'),
+        projectId: input.projectId,
+        parentFiberId: input.parentFiberId,
+        geometry: input.geometry || null,
+        sequenceIndex: Number(input.sequenceIndex ?? 0),
+        strandCount: Number(input.strandCount ?? 0),
+        cableType: input.cableType || 'SM',
+        cableName: input.cableName || '',
+        fromEnclosureId: input.fromEnclosureId || null,
+        toEnclosureId: input.toEnclosureId || null,
+        measuredLength: input.measuredLength ?? 0,
+        stationingRouteId: input.stationingRouteId || '',
+        startStation: input.startStation ?? null,
+        endStation: input.endStation ?? null,
         notes: input.notes || ''
     };
 }
@@ -168,6 +198,7 @@ export function createDesignState(input = {}) {
         structures: Array.isArray(input.structures) ? [...input.structures] : [],
         conduitSegments: Array.isArray(input.conduitSegments) ? [...input.conduitSegments] : [],
         fibers: Array.isArray(input.fibers) ? [...input.fibers] : [],
+        fiberSections: Array.isArray(input.fiberSections) ? [...input.fiberSections] : [],
         spliceEnclosures: Array.isArray(input.spliceEnclosures) ? [...input.spliceEnclosures] : [],
         pointAssets: Array.isArray(input.pointAssets) ? [...input.pointAssets] : [],
         nonSpatialItems: Array.isArray(input.nonSpatialItems) ? [...input.nonSpatialItems] : [],
@@ -188,11 +219,13 @@ export function indexDesignFeatures(design) {
         design.structures,
         design.conduitSegments,
         design.fibers,
+        design.fiberSections,
         design.spliceEnclosures,
         design.pointAssets
     ]) {
         for (const item of list || []) {
-            const id = item.alignmentId || item.structureId || item.segmentId || item.fiberId || item.enclosureId || item.itemId;
+            const id = item.alignmentId || item.structureId || item.segmentId || item.fiberId
+                || item.sectionId || item.enclosureId || item.itemId;
             if (id) map[id] = item;
         }
     }
