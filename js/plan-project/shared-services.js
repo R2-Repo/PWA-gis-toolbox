@@ -48,3 +48,11 @@ export {
     buildMasterCalloutLegend,
     evaluateCalloutRule
 } from '../widgets/plan-set-callouts/engine.js';
+
+export {
+    generateSheetAwarePlacements,
+    buildSheetCalloutMarkersGeoJson,
+    buildPerSheetCalloutTablesCsv,
+    validateSheetAwarePlacements,
+    resolveFeatureDistanceAlongRoute
+} from '../widgets/plan-set-callouts/sheet-placement-engine.js';

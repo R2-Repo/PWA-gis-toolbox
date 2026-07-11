@@ -7,6 +7,9 @@ export function PlanSetCalloutsDialog({
     steps = [],
     ruleOperators = [],
     designLayers = [],
+    sheetLayers = [],
+    stationingLayers = [],
+    hasLinkedSheetWidget = false,
     initialSession,
     onCancel,
     onCreateProject,
@@ -19,7 +22,11 @@ export function PlanSetCalloutsDialog({
     onRemoveRule,
     onSelectDesignLayers,
     onRunAssignment,
+    onLinkSheetSetFromWidget,
+    onLinkSheetSetFromLayers,
+    onRunSheetPlacement,
     onGetLegend,
+    onGetSheetPlacements,
     onValidate,
     onExportPackage,
     onAddResultLayers,
@@ -37,6 +44,8 @@ export function PlanSetCalloutsDialog({
     const [newRuleField, setNewRuleField] = useState('strand_count');
     const [newRuleOperator, setNewRuleOperator] = useState('equals');
     const [newRuleValue, setNewRuleValue] = useState('');
+    const [selectedSheetLayerIds, setSelectedSheetLayerIds] = useState(initialSession?.callouts?.sheetLayerIds || []);
+    const [routeLayerId, setRouteLayerId] = useState(initialSession?.project?.stationingRouteLayerId || '');
     const [legend, setLegend] = useState([]);
     const [busy, setBusy] = useState(false);
     const [message, setMessage] = useState('');
@@ -46,6 +55,8 @@ export function PlanSetCalloutsDialog({
     const definitions = session?.callouts?.definitions || [];
     const rules = session?.callouts?.rules || [];
     const assignments = session?.callouts?.assignments || [];
+    const linkedSheets = session?.callouts?.sheets || [];
+    const sheetPlacements = session?.callouts?.sheetPlacements || [];
     const featureCount = session?.designFeatures?.length || 0;
 
     const run = async (fn, successMessage = '') => {
@@ -248,6 +259,87 @@ export function PlanSetCalloutsDialog({
         </>
     );
 
+    const toggleSheetLayer = (layerId) => {
+        setSelectedSheetLayerIds((current) =>
+            current.includes(layerId)
+                ? current.filter((id) => id !== layerId)
+                : [...current, layerId]
+        );
+    };
+
+    const renderSheetsStep = () => (
+        <>
+            <p className="text-xs" style={{ color: 'var(--text-muted)', marginBottom: 12 }}>
+                Link sheet frames from Sheet Cutting or map layers, then place callouts per sheet.
+            </p>
+            {hasLinkedSheetWidget ? (
+                <button
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    disabled={busy}
+                    onClick={() => run(() => onLinkSheetSetFromWidget?.(), `Linked ${linkedSheets.length || ''} sheet(s) from Sheet Cutting.`)}
+                >
+                    Use Sheet Cutting session
+                </button>
+            ) : null}
+            <div className="form-group" style={{ marginTop: 12 }}>
+                <label>Sheet frame layers</label>
+                <div className="text-xs" style={{ maxHeight: 120, overflow: 'auto' }}>
+                    {sheetLayers.length ? sheetLayers.map((layer) => (
+                        <label key={layer.id} style={{ display: 'block', marginBottom: 4 }}>
+                            <input
+                                type="checkbox"
+                                checked={selectedSheetLayerIds.includes(layer.id)}
+                                onChange={() => toggleSheetLayer(layer.id)}
+                            />
+                            {' '}{layer.name} ({layer.featureCount})
+                        </label>
+                    )) : <div>No sheet frame layers found. Generate sheets in Sheet Cutting first.</div>}
+                </div>
+            </div>
+            <LayerSelect
+                label="Route centerline"
+                layers={stationingLayers}
+                value={routeLayerId}
+                onChange={setRouteLayerId}
+                emptyLabel="No stationing centerline layers found"
+            />
+            <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                style={{ marginTop: 8 }}
+                disabled={busy || (!selectedSheetLayerIds.length && !hasLinkedSheetWidget)}
+                onClick={() => run(
+                    () => onLinkSheetSetFromLayers?.(selectedSheetLayerIds, routeLayerId),
+                    'Sheet set linked.'
+                )}
+            >
+                Link sheet layers
+            </button>
+            {linkedSheets.length > 0 ? (
+                <p className="text-xs" style={{ marginTop: 8 }}>{linkedSheets.length} detail sheet(s) linked.</p>
+            ) : null}
+            <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                style={{ marginTop: 12 }}
+                disabled={busy || !linkedSheets.length || !assignments.length}
+                onClick={() => run(() => onRunSheetPlacement?.(), `Placed callouts on ${sheetPlacements.length || linkedSheets.length} sheet(s).`)}
+            >
+                Run sheet-aware placement
+            </button>
+            {sheetPlacements.length > 0 ? (
+                <div className="text-xs" style={{ marginTop: 12, maxHeight: 160, overflow: 'auto' }}>
+                    {sheetPlacements.map((sheet) => (
+                        <div key={sheet.sheetId}>
+                            Sheet {sheet.sheetNumber}: {sheet.placements?.length || 0} callout(s), {sheet.calloutTable?.length || 0} unique code(s)
+                        </div>
+                    ))}
+                </div>
+            ) : null}
+        </>
+    );
+
     const renderReviewStep = () => (
         <>
             <button
@@ -282,6 +374,14 @@ export function PlanSetCalloutsDialog({
                     ))}
                 </div>
             ) : null}
+            {sheetPlacements.length > 0 ? (
+                <div className="text-xs" style={{ marginTop: 12 }}>
+                    <strong>Per-sheet summary</strong>
+                    {(onGetSheetPlacements?.() || sheetPlacements).slice(0, 8).map((sheet) => (
+                        <div key={sheet.sheetId}>Sheet {sheet.sheetNumber}: {(sheet.calloutTable || []).map((c) => c.code).join(', ')}</div>
+                    ))}
+                </div>
+            ) : null}
         </>
     );
 
@@ -292,7 +392,7 @@ export function PlanSetCalloutsDialog({
                     Download export package
                 </button>
                 <button type="button" className="btn btn-secondary btn-sm" disabled={busy} onClick={() => onAddResultLayers?.()}>
-                    Add assignment layer to map
+                    Add callout layers to map
                 </button>
                 <button type="button" className="gis-widget__link-btn" disabled={busy} onClick={() => onSaveSession?.()}>
                     Save session JSON
@@ -307,6 +407,7 @@ export function PlanSetCalloutsDialog({
         renderRulesStep,
         renderDesignLayersStep,
         renderAssignStep,
+        renderSheetsStep,
         renderReviewStep,
         renderExportStep
     ][step - 1]();
@@ -317,6 +418,7 @@ export function PlanSetCalloutsDialog({
         step === 3 ? rules.length > 0 :
         step === 4 ? featureCount > 0 :
         step === 5 ? assignments.length > 0 :
+        step === 6 ? linkedSheets.length > 0 && sheetPlacements.length > 0 :
         true
     );
 
@@ -329,6 +431,15 @@ export function PlanSetCalloutsDialog({
             await run(() => onSelectDesignLayers?.(selectedLayerIds), 'Features loaded.');
         } else if (step === 5 && !assignments.length) {
             await run(() => onRunAssignment?.(), 'Assignment complete.');
+        } else if (step === 6) {
+            if (!linkedSheets.length && hasLinkedSheetWidget) {
+                await run(() => onLinkSheetSetFromWidget?.());
+            } else if (!linkedSheets.length && selectedSheetLayerIds.length) {
+                await run(() => onLinkSheetSetFromLayers?.(selectedSheetLayerIds, routeLayerId));
+            }
+            if (!sheetPlacements.length) {
+                await run(() => onRunSheetPlacement?.(), 'Sheet placement complete.');
+            }
         }
         if (canGoNext) setStep((current) => Math.min(current + 1, steps.length));
     };

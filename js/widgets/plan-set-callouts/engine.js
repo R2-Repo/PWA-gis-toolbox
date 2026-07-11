@@ -11,6 +11,14 @@ import {
     BUILT_IN_CALLOUT_RULES_RAW
 } from './callout-profile.js';
 import { buildCalloutExportPackage } from './export-builder.js';
+import {
+    generateSheetAwarePlacements,
+    parseSheetsFromLayerFeatures,
+    parseRouteFromLayerFeatures,
+    validateSheetAwarePlacements,
+    buildPerSheetCalloutTables
+} from './sheet-placement-engine.js';
+import { restoreSheetSession } from '../sheet-cutting/engine.js';
 
 /**
  * @returns {object}
@@ -194,6 +202,7 @@ export const CALLOUT_STEPS = [
     'Rules',
     'Design Layers',
     'Assign',
+    'Sheets',
     'Review',
     'Export'
 ];
@@ -221,7 +230,11 @@ export function createCalloutState(input = {}) {
         rules: profile.rules || [],
         designLayerIds: Array.isArray(input.designLayerIds) ? [...input.designLayerIds] : [],
         assignments: Array.isArray(input.assignments) ? [...input.assignments] : [],
-        placements: Array.isArray(input.placements) ? [...input.placements] : []
+        placements: Array.isArray(input.placements) ? [...input.placements] : [],
+        sheetSetId: input.sheetSetId || '',
+        sheetLayerIds: Array.isArray(input.sheetLayerIds) ? [...input.sheetLayerIds] : [],
+        sheets: Array.isArray(input.sheets) ? [...input.sheets] : [],
+        sheetPlacements: Array.isArray(input.sheetPlacements) ? [...input.sheetPlacements] : []
     };
 }
 
@@ -240,7 +253,9 @@ export function createCalloutSession(input = {}) {
         project,
         callouts: createCalloutState(),
         designFeatures: [],
-        stationingRoute: null
+        stationingRoute: null,
+        routeLine: null,
+        sheetSource: null
     };
 }
 
@@ -450,6 +465,105 @@ export function runCalloutAssignment(session) {
 
 /**
  * @param {object} session
+ * @param {object} sheetBundle
+ * @returns {object}
+ */
+export function linkSheetSetFromBundle(session, sheetBundle = {}) {
+    const restored = restoreSheetSession(sheetBundle);
+    const sheets = (restored.sheets?.sheets || []).filter((sheet) => sheet.sheetType !== 'overview');
+    if (!sheets.length) {
+        throw new Error('Sheet bundle does not contain detail sheets.');
+    }
+
+    return {
+        ...session,
+        project: updatePlanProject(session.project, {
+            sheetSetIds: [...new Set([...(session.project.sheetSetIds || []), restored.sheets.sheetSetId])]
+        }),
+        routeLine: restored.routeLine || session.routeLine,
+        stationingRoute: restored.stationingRoute || session.stationingRoute,
+        sheetSource: 'bundle',
+        callouts: {
+            ...session.callouts,
+            sheetSetId: restored.sheets.sheetSetId,
+            sheets
+        }
+    };
+}
+
+/**
+ * @param {object} session
+ * @param {object[]} sheetLayerFeatures
+ * @param {object} [routeLine]
+ * @param {string[]} [sheetLayerIds]
+ * @returns {object}
+ */
+export function linkSheetSetFromLayers(session, sheetLayerFeatures = [], routeLine = null, sheetLayerIds = []) {
+    const sheets = parseSheetsFromLayerFeatures(sheetLayerFeatures);
+    if (!sheets.length) {
+        throw new Error('Selected layers do not contain sheet frame features.');
+    }
+
+    const resolvedRoute = routeLine || parseRouteFromLayerFeatures(sheetLayerFeatures);
+
+    return {
+        ...session,
+        routeLine: resolvedRoute || session.routeLine,
+        sheetSource: 'layers',
+        callouts: {
+            ...session.callouts,
+            sheetSetId: session.callouts.sheetSetId || createStableId('sheetset'),
+            sheetLayerIds: [...sheetLayerIds],
+            sheets
+        }
+    };
+}
+
+/**
+ * @param {object} session
+ * @returns {object}
+ */
+export function runSheetAwarePlacement(session) {
+    const assignments = session.callouts?.assignments || [];
+    const sheets = session.callouts?.sheets || [];
+
+    if (!assignments.length) {
+        throw new Error('Run callout assignment before sheet placement.');
+    }
+    if (!sheets.length) {
+        throw new Error('Link a sheet set before running sheet-aware placement.');
+    }
+    if (!session.routeLine?.geometry) {
+        throw new Error('Route centerline is required for sheet-aware placement.');
+    }
+
+    const sheetPlacements = generateSheetAwarePlacements({
+        assignments,
+        sheets,
+        features: session.designFeatures || [],
+        routeLine: session.routeLine
+    });
+
+    return {
+        ...session,
+        callouts: {
+            ...session.callouts,
+            sheetPlacements,
+            perSheetTables: buildPerSheetCalloutTables(sheetPlacements)
+        }
+    };
+}
+
+/**
+ * @param {object} session
+ * @returns {object[]}
+ */
+export function getSheetPlacements(session) {
+    return session.callouts?.sheetPlacements || [];
+}
+
+/**
+ * @param {object} session
  * @returns {object[]}
  */
 export function getCalloutLegend(session) {
@@ -477,7 +591,11 @@ export function serializeCalloutSession(session) {
         metadata: {
             widget: WIDGET_ID,
             designLayerIds: session.callouts?.designLayerIds || [],
-            designFeatureCount: session.designFeatures?.length || 0
+            designFeatureCount: session.designFeatures?.length || 0,
+            sheetSetId: session.callouts?.sheetSetId || '',
+            sheetSource: session.sheetSource || '',
+            hasRouteLine: Boolean(session.routeLine?.geometry),
+            routeGeometry: session.routeLine?.geometry || null
         }
     });
 }
@@ -496,7 +614,11 @@ export function restoreCalloutSession(bundle) {
         project: restored.project,
         callouts: createCalloutState(restored.callouts || {}),
         designFeatures: [],
-        stationingRoute: null
+        stationingRoute: null,
+        routeLine: bundle.metadata?.routeGeometry
+            ? { type: 'Feature', geometry: bundle.metadata.routeGeometry, properties: {} }
+            : null,
+        sheetSource: bundle.metadata?.sheetSource || null
     };
 }
 
@@ -551,6 +673,35 @@ export function validateCalloutSession(session) {
             message: 'Run callout assignment before export.',
             step: 'Assign'
         });
+    }
+
+    if (!(callouts.sheets || []).length) {
+        findings.push({
+            severity: 'warning',
+            code: 'missing_sheet_set',
+            message: 'Link a sheet set for sheet-aware callouts.',
+            step: 'Sheets'
+        });
+    }
+
+    if ((callouts.sheets || []).length && !(callouts.sheetPlacements || []).length) {
+        findings.push({
+            severity: 'warning',
+            code: 'missing_sheet_placements',
+            message: 'Run sheet-aware placement before export.',
+            step: 'Sheets'
+        });
+    }
+
+    if ((callouts.sheetPlacements || []).length) {
+        const sheetValidation = validateSheetAwarePlacements(
+            callouts.sheetPlacements,
+            callouts.assignments || [],
+            callouts.sheets || []
+        );
+        for (const finding of sheetValidation.findings || []) {
+            findings.push({ ...finding, step: 'Sheets' });
+        }
     }
 
     const errors = findings.filter((entry) => entry.severity === 'error').map((entry) => entry.message);

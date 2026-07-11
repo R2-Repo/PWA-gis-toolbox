@@ -3,6 +3,10 @@
  */
 
 import { buildMasterCalloutLegend, buildSheetCalloutTable } from './engine.js';
+import {
+    buildSheetCalloutMarkersGeoJson,
+    buildPerSheetCalloutTablesCsv
+} from './sheet-placement-engine.js';
 
 /**
  * @param {object[]} assignments
@@ -57,8 +61,10 @@ export function buildCalloutExportPackage(session) {
     const profile = session.callouts || {};
     const assignments = profile.assignments || [];
     const placements = profile.placements || [];
+    const sheetPlacements = profile.sheetPlacements || [];
     const legend = buildMasterCalloutLegend([
         buildSheetCalloutTable(placements),
+        ...sheetPlacements.map((sheet) => sheet.calloutTable || []),
         profile.definitions || []
     ]);
 
@@ -66,11 +72,17 @@ export function buildCalloutExportPackage(session) {
         projectName: session.project?.projectName || 'Plan Set Callouts',
         legend,
         assignments,
+        sheetPlacements,
+        sheetCount: sheetPlacements.length,
         csv: {
             assignments: buildCalloutAssignmentCsv(assignments, profile.definitions || []),
-            legend: buildCalloutLegendCsv(legend)
+            legend: buildCalloutLegendCsv(legend),
+            perSheetTables: buildPerSheetCalloutTablesCsv(sheetPlacements)
         },
-        geojson: buildAssignedFeaturesGeoJson(assignments, session.designFeatures || [])
+        geojson: {
+            assignments: buildAssignedFeaturesGeoJson(assignments, session.designFeatures || []),
+            calloutMarkers: buildSheetCalloutMarkersGeoJson(sheetPlacements)
+        }
     };
 }
 

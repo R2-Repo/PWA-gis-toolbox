@@ -448,6 +448,8 @@ export function serializeSheetSession(session) {
         metadata: {
             widget: WIDGET_ID,
             stationingRouteLayerId: session.stationingRoute?.layerId || '',
+            stationingRouteName: session.stationingRoute?.routeName || '',
+            routeGeometry: session.routeLine?.geometry || null,
             designFeatureCount: session.designFeatures?.length || 0
         }
     });
@@ -466,8 +468,15 @@ export function restoreSheetSession(bundle) {
     return {
         project: restored.project,
         sheets: createSheetSetState(restored.sheets || {}),
-        routeLine: null,
-        stationingRoute: null,
+        routeLine: bundle.metadata?.routeGeometry
+            ? { type: 'Feature', geometry: bundle.metadata.routeGeometry, properties: {} }
+            : null,
+        stationingRoute: bundle.metadata?.stationingRouteLayerId
+            ? {
+                layerId: bundle.metadata.stationingRouteLayerId,
+                routeName: bundle.metadata.stationingRouteName || ''
+            }
+            : null,
         designFeatures: []
     };
 }
