@@ -13,6 +13,7 @@ import { openCrsManager } from './crs-manager/controller.js';
 import { openQuery } from './query/controller.js';
 import { openWirelessSitePlanning } from './wireless-site-planning/controller.js';
 import { openPresentationLinkBuilder } from './presentation-link-builder/controller.js';
+import { openCalloutBuilder } from './callout-builder/controller.js';
 import logger from '../core/logger.js';
 
 /** @typedef {import('./widget-types.js').WidgetContext} WidgetContext */
@@ -93,6 +94,14 @@ export const GIS_WIDGETS = [
         icon: '📄',
         tip: 'Generate plan sheet frames along a route with match lines and overview layout.',
         open: openSheetCutting
+    },
+    {
+        type: 'callout-builder',
+        action: 'openCalloutBuilder',
+        label: 'Callout Builder',
+        icon: '🔢',
+        tip: 'Create numbered callouts, leader lines, and legends from feature attributes.',
+        open: openCalloutBuilder
     },
     {
         type: 'plan-production-export',
