@@ -48,6 +48,7 @@ import {
 } from './route-profile.js';
 import { importFile } from '../../import/importer.js';
 import { createTableDataset } from '../../core/data-model.js';
+import { createLayerGroup, assignLayersToGroup } from '../../core/layer-groups.js';
 import { detectStationTableColumns, getOffsetEmbeddedSideForMapping, normalizeColumnMapping } from './table-import/station-table-detect.js';
 import { validateStationTableRows, buildUnplottedRowsReport } from './table-import/station-table-validation.js';
 import { enrichRouteProfileTravelDirection, suggestSideDirectionMapping } from './table-import/station-locator-name.js';
@@ -531,6 +532,21 @@ function addDerivedLayer(ctx, name, fc, options = {}) {
     return dataset;
 }
 
+function groupOutputLayers(groupName, datasets) {
+    const layers = (datasets || []).filter(Boolean);
+    if (layers.length < 2) return null;
+
+    const group = createLayerGroup(
+        groupName,
+        layers.map((ds) => ds.id),
+        { collapsed: true, source: 'manual' }
+    );
+    if (!group) return null;
+
+    assignLayersToGroup(group.id, layers);
+    return group;
+}
+
 function extractRowsFromImportResult(result) {
     const ds = Array.isArray(result) ? result[0] : result;
     if (!ds) return { rows: [], fields: [] };
@@ -558,9 +574,10 @@ async function plotStationTableOutput(ctx, routeLayer, routeProfile, importState
     );
     const baseName = routeProfile.route_name || routeLayer.name || 'Stationing';
     const eventName = `${baseName} Imported Events`;
+    const importOutputLayers = [];
 
     if (output.eventPoints.length > 0) {
-        addDerivedLayer(
+        importOutputLayers.push(addDerivedLayer(
             ctx,
             eventName,
             { type: 'FeatureCollection', features: output.eventPoints },
@@ -577,11 +594,11 @@ async function plotStationTableOutput(ctx, routeLayer, routeProfile, importState
                 },
                 source: { stationingTable: importState.datasetName }
             }
-        );
+        ));
     }
 
     if (output.connectorLines.length > 0) {
-        addDerivedLayer(
+        importOutputLayers.push(addDerivedLayer(
             ctx,
             `${baseName} Offset Connectors`,
             { type: 'FeatureCollection', features: output.connectorLines },
@@ -595,11 +612,11 @@ async function plotStationTableOutput(ctx, routeLayer, routeProfile, importState
                 },
                 source: { stationingTable: importState.datasetName }
             }
-        );
+        ));
     }
 
     if (options.includeQaLines && output.qaLines.length > 0) {
-        addDerivedLayer(
+        importOutputLayers.push(addDerivedLayer(
             ctx,
             `${baseName} Coordinate QA Lines`,
             { type: 'FeatureCollection', features: output.qaLines },
@@ -613,7 +630,7 @@ async function plotStationTableOutput(ctx, routeLayer, routeProfile, importState
                 },
                 source: { stationingTable: importState.datasetName }
             }
-        );
+        ));
     }
 
     if (output.unplottedRows.length > 0) {
@@ -624,7 +641,10 @@ async function plotStationTableOutput(ctx, routeLayer, routeProfile, importState
             { format: 'station-table-report', stationingTable: importState.datasetName }
         );
         ctx.addLayer(report);
+        importOutputLayers.push(report);
     }
+
+    groupOutputLayers(`${baseName} Station Table`, importOutputLayers);
 
     ctx.refreshUI?.();
     ctx.showToast?.(
@@ -1003,6 +1023,8 @@ export async function openProjectStationing(ctx) {
                     ...routeProfileToProperties(routeProfile)
                 };
 
+                const outputLayers = [];
+
                 const centerlineDataset = addDerivedLayer(
                     ctx,
                     `${baseName} Centerline`,
@@ -1018,6 +1040,7 @@ export async function openProjectStationing(ctx) {
                         }
                     }
                 );
+                outputLayers.push(centerlineDataset);
                 routeProfile.stationed_centerline_layer_id = centerlineDataset.id;
                 centerlineDataset._stationingProfile = routeProfile;
                 centerlineDataset.geojson.features[0].properties = {
@@ -1025,7 +1048,7 @@ export async function openProjectStationing(ctx) {
                     stationed_centerline_layer_id: centerlineDataset.id
                 };
 
-                addDerivedLayer(
+                outputLayers.push(addDerivedLayer(
                     ctx,
                     `${baseName} Station Ticks`,
                     { type: 'FeatureCollection', features: stationResult.stationTicks },
@@ -1038,9 +1061,9 @@ export async function openProjectStationing(ctx) {
                             strokeOpacity: 1
                         }
                     }
-                );
+                ));
 
-                addDerivedLayer(
+                outputLayers.push(addDerivedLayer(
                     ctx,
                     `${baseName} Station Labels`,
                     { type: 'FeatureCollection', features: stationResult.stationLabels },
@@ -1058,7 +1081,7 @@ export async function openProjectStationing(ctx) {
                             strokeOpacity: 0
                         }
                     }
-                );
+                ));
 
                 let milepostCount = 0;
                 if (input.includeMilepostTenths) {
@@ -1069,7 +1092,7 @@ export async function openProjectStationing(ctx) {
                     );
                     milepostCount = milepostPoints.length;
                     if (milepostCount > 0) {
-                        addDerivedLayer(
+                        outputLayers.push(addDerivedLayer(
                             ctx,
                             `${baseName} Mileposts (tenth)`,
                             { type: 'FeatureCollection', features: milepostPoints },
@@ -1086,9 +1109,11 @@ export async function openProjectStationing(ctx) {
                                     fillOpacity: 1
                                 }
                             }
-                        );
+                        ));
                     }
                 }
+
+                groupOutputLayers(baseName, outputLayers);
 
                 ctx.refreshUI?.();
                 cleanup();
