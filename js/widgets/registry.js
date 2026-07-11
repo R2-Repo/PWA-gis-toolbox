@@ -5,6 +5,8 @@ import { openRouteMilepostSegment } from './route-milepost-segment/controller.js
 import { openProjectStationing } from './project-stationing/controller.js';
 import { openLayerMatchAssistant } from './layer-match-assistant/controller.js';
 import { openFiberProcurementDesign } from './fiber-procurement-design/controller.js';
+import { openPlanSetCallouts } from './plan-set-callouts/controller.js';
+import { openSheetCutting } from './sheet-cutting/controller.js';
 import { openFiberSlackOtdrHelper } from './fiber-slack-otdr-helper/controller.js';
 import { openCrsManager } from './crs-manager/controller.js';
 import { openQuery } from './query/controller.js';
@@ -74,6 +76,22 @@ export const GIS_WIDGETS = [
         icon: '🧵',
         tip: 'Design fiber infrastructure, generate conduit segments, route fiber, and calculate procurement quantities.',
         open: openFiberProcurementDesign
+    },
+    {
+        type: 'plan-set-callouts',
+        action: 'openPlanSetCallouts',
+        label: 'Plan Set Callouts',
+        icon: '🔺',
+        tip: 'Manage callout definitions, rules, and automated feature assignments for plan sets.',
+        open: openPlanSetCallouts
+    },
+    {
+        type: 'sheet-cutting',
+        action: 'openSheetCutting',
+        label: 'Sheet Cutting',
+        icon: '📄',
+        tip: 'Generate plan sheet frames along a route with match lines and overview layout.',
+        open: openSheetCutting
     }
 ];
 

@@ -1,0 +1,213 @@
+/**
+ * Plan Set Callouts controller.
+ */
+
+import { openReactIsland } from '../../ui/open-react-island.js';
+import { getSpatialLayerOptions } from '../widget-context.js';
+import { markWidgetClosed, upsertWidgetState } from '../widget-state-store.js';
+import {
+    WIDGET_ID,
+    CALLOUT_STEPS,
+    RULE_OPERATORS,
+    createCalloutSession,
+    loadDefaultCalloutProfile,
+    updateCalloutProject,
+    addCalloutDefinition,
+    updateCalloutDefinition,
+    removeCalloutDefinition,
+    addCalloutRule,
+    updateCalloutRule,
+    removeCalloutRule,
+    selectDesignLayers,
+    setDesignFeatures,
+    runCalloutAssignment,
+    getCalloutLegend,
+    buildSessionExport,
+    serializeCalloutSession,
+    restoreCalloutSession,
+    validateCalloutSession
+} from './engine.js';
+
+const PREVIEW_LAYER_PREFIX = 'callout_preview_';
+
+function persistSession(session, open = true) {
+    upsertWidgetState(WIDGET_ID, {
+        open,
+        state: serializeCalloutSession(session)
+    });
+}
+
+function downloadTextFile(filename, content, mimeType = 'text/plain') {
+    const blob = new Blob([content], { type: mimeType });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = filename;
+    anchor.click();
+    URL.revokeObjectURL(url);
+}
+
+function clearPreviewLayers(ctx) {
+    ctx.mapService.removeTempLayer?.(`${PREVIEW_LAYER_PREFIX}assigned`);
+}
+
+function renderAssignmentPreview(ctx, session) {
+    clearPreviewLayers(ctx);
+    const exportPackage = buildSessionExport(session);
+    if (exportPackage.geojson?.features?.length) {
+        ctx.mapService.showTempFeature?.(exportPackage.geojson, 0, `${PREVIEW_LAYER_PREFIX}assigned`);
+    }
+}
+
+function collectFeaturesFromLayers(ctx, layerIds = []) {
+    const features = [];
+    for (const layerId of layerIds) {
+        const layer = ctx.getLayerById?.(layerId) || ctx.getLayers().find((entry) => entry.id === layerId);
+        if (!layer?.geojson?.features?.length) continue;
+        for (const feature of layer.geojson.features) {
+            features.push({
+                ...feature,
+                properties: {
+                    ...(feature.properties || {}),
+                    source_layer: layer.name
+                }
+            });
+        }
+    }
+    return features;
+}
+
+/**
+ * @param {import('../widget-types.js').WidgetContext} ctx
+ * @param {{ restoreState?: object }} [options]
+ */
+export async function openPlanSetCallouts(ctx, { restoreState = null } = {}) {
+    let session = restoreState
+        ? restoreCalloutSession(restoreState)
+        : createCalloutSession();
+
+    await openReactIsland({
+        title: 'Plan Set Callouts',
+        width: '600px',
+        mountPath: '../../../react/widgets/mountPlanSetCalloutsDialog.jsx',
+        mountExport: 'mountPlanSetCalloutsDialog',
+        onClose: () => {
+            clearPreviewLayers(ctx);
+            markWidgetClosed(WIDGET_ID);
+        },
+        getProps: (close) => ({
+            steps: CALLOUT_STEPS,
+            ruleOperators: RULE_OPERATORS,
+            designLayers: getSpatialLayerOptions(ctx),
+            initialSession: session,
+            onCancel: () => {
+                clearPreviewLayers(ctx);
+                markWidgetClosed(WIDGET_ID);
+                close();
+            },
+            onCreateProject: (input) => {
+                session = createCalloutSession(input);
+                session = loadDefaultCalloutProfile(session);
+                persistSession(session);
+                return session;
+            },
+            onLoadProfile: () => {
+                session = loadDefaultCalloutProfile(session);
+                persistSession(session);
+                return session;
+            },
+            onUpdateProject: (patch) => {
+                session = updateCalloutProject(session, patch);
+                persistSession(session);
+                return session;
+            },
+            onAddDefinition: (input) => {
+                session = addCalloutDefinition(session, input);
+                persistSession(session);
+                return session;
+            },
+            onUpdateDefinition: (calloutId, patch) => {
+                session = updateCalloutDefinition(session, calloutId, patch);
+                persistSession(session);
+                return session;
+            },
+            onRemoveDefinition: (calloutId) => {
+                session = removeCalloutDefinition(session, calloutId);
+                persistSession(session);
+                return session;
+            },
+            onAddRule: (input) => {
+                session = addCalloutRule(session, input);
+                persistSession(session);
+                return session;
+            },
+            onUpdateRule: (ruleId, patch) => {
+                session = updateCalloutRule(session, ruleId, patch);
+                persistSession(session);
+                return session;
+            },
+            onRemoveRule: (ruleId) => {
+                session = removeCalloutRule(session, ruleId);
+                persistSession(session);
+                return session;
+            },
+            onSelectDesignLayers: (layerIds) => {
+                session = selectDesignLayers(session, layerIds);
+                const features = collectFeaturesFromLayers(ctx, layerIds);
+                session = setDesignFeatures(session, features);
+                persistSession(session);
+                return session;
+            },
+            onRunAssignment: () => {
+                session = runCalloutAssignment(session);
+                renderAssignmentPreview(ctx, session);
+                persistSession(session);
+                return session;
+            },
+            onGetLegend: () => getCalloutLegend(session),
+            onValidate: () => validateCalloutSession(session),
+            onExportPackage: () => {
+                const exportPackage = buildSessionExport(session);
+                const base = session.project.projectName || 'plan_callouts';
+                downloadTextFile(`${base}_assignments.csv`, exportPackage.csv.assignments, 'text/csv');
+                downloadTextFile(`${base}_legend.csv`, exportPackage.csv.legend, 'text/csv');
+                downloadTextFile(`${base}_callouts.json`, JSON.stringify(exportPackage, null, 2), 'application/json');
+                ctx.showToast('Callout export files downloaded', 'success');
+                return exportPackage;
+            },
+            onAddResultLayers: () => {
+                const exportPackage = buildSessionExport(session);
+                const created = [];
+
+                if (exportPackage.geojson?.features?.length) {
+                    const dataset = ctx.createSpatialDataset(
+                        `${session.project.projectName}_Callout_Assignments`,
+                        exportPackage.geojson,
+                        { format: 'derived' }
+                    );
+                    ctx.addLayer(dataset);
+                    ctx.mapService.addLayer(dataset, ctx.getLayers().indexOf(dataset));
+                    created.push(dataset);
+                }
+
+                if (created.length) {
+                    ctx.refreshUI();
+                    ctx.showToast(`Added ${created.length} callout layer(s)`, 'success');
+                } else {
+                    ctx.showToast('No assigned features to add', 'warning');
+                }
+
+                renderAssignmentPreview(ctx, session);
+                return created;
+            },
+            onSaveSession: () => {
+                persistSession(session);
+                downloadTextFile(
+                    `${session.project.projectName || 'plan_callouts'}.json`,
+                    JSON.stringify(serializeCalloutSession(session), null, 2),
+                    'application/json'
+                );
+            }
+        })
+    });
+}
