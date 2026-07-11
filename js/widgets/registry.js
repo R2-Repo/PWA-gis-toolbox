@@ -4,6 +4,7 @@ import { openProximityJoin } from './proximity-join/controller.js';
 import { openRouteMilepostSegment } from './route-milepost-segment/controller.js';
 import { openProjectStationing } from './project-stationing/controller.js';
 import { openLayerMatchAssistant } from './layer-match-assistant/controller.js';
+import { openFiberProcurementDesign } from './fiber-procurement-design/controller.js';
 import { openFiberSlackOtdrHelper } from './fiber-slack-otdr-helper/controller.js';
 import { openCrsManager } from './crs-manager/controller.js';
 import { openQuery } from './query/controller.js';
@@ -65,6 +66,14 @@ export const GIS_WIDGETS = [
         icon: '🔗',
         tip: 'Compare two layers using location and fuzzy name matching; review and export matched and unmatched results.',
         open: openLayerMatchAssistant
+    },
+    {
+        type: 'fiber-procurement-design',
+        action: 'openFiberProcurementDesign',
+        label: 'Fiber Procurement Design',
+        icon: '🧵',
+        tip: 'Design fiber infrastructure, generate conduit segments, route fiber, and calculate procurement quantities.',
+        open: openFiberProcurementDesign
     }
 ];
 
