@@ -734,7 +734,7 @@ html, body {
     color: var(--text-muted);
     margin-bottom: 4px;
 }
-input[type="text"], input[type="number"], input[type="url"],
+input:not([type]), input[type="text"], input[type="number"], input[type="url"],
 input[type="search"], select, textarea {
     width: 100%;
     padding: 8px 12px;
@@ -1352,6 +1352,29 @@ textarea { resize: vertical; min-height: 60px; }
 .modal--panel-dock .gis-widget .form-group {
     margin-bottom: 8px;
 }
+.gis-widget input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="hidden"]):not([type="button"]):not([type="submit"]),
+.gis-widget select,
+.gis-widget textarea {
+    width: 100%;
+    padding: 6px 10px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    font-size: 12px;
+    font-family: var(--font);
+    color: var(--text);
+    background: rgba(0, 0, 0, 0.4);
+    transition: border var(--transition), box-shadow var(--transition);
+}
+.gis-widget input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="hidden"]):not([type="button"]):not([type="submit"]):focus,
+.gis-widget select:focus,
+.gis-widget textarea:focus {
+    outline: none;
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px rgba(10, 132, 255, 0.2);
+}
+.gis-widget select {
+    cursor: pointer;
+}
 .modal--panel-dock .gis-widget .warning-box,
 .modal--panel-dock .gis-widget .info-box {
     padding: 6px 8px;
@@ -1396,6 +1419,120 @@ textarea { resize: vertical; min-height: 60px; }
 }
 .gis-widget__link-btn:hover {
     color: var(--primary-hover, var(--primary));
+}
+.gis-widget__primary-btn {
+    appearance: none;
+    background: var(--primary);
+    border: 1px solid var(--primary);
+    border-radius: 6px;
+    color: #000;
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 600;
+    padding: 6px 14px;
+}
+.gis-widget__primary-btn:hover:not(:disabled) {
+    background: var(--primary-hover, var(--primary));
+    border-color: var(--primary-hover, var(--primary));
+}
+.gis-widget__primary-btn:disabled {
+    cursor: not-allowed;
+    opacity: 0.5;
+}
+.gis-widget__step-wizard--compact {
+    margin-bottom: 10px;
+}
+.gis-widget__step-wizard-label {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text);
+    margin-bottom: 6px;
+}
+.gis-widget__progress {
+    background: var(--bg-surface);
+    border-radius: 4px;
+    height: 4px;
+    overflow: hidden;
+    width: 100%;
+}
+.gis-widget__progress-bar {
+    background: var(--primary);
+    border-radius: 4px;
+    height: 100%;
+    transition: width 0.2s ease;
+}
+.gis-widget__step-header {
+    margin-bottom: 10px;
+}
+.gis-widget__step-header-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text);
+    margin: 0 0 4px;
+}
+.gis-widget__step-header-desc {
+    color: var(--text-muted);
+    font-size: 11px;
+    line-height: 1.4;
+    margin: 0;
+}
+.gis-widget__summary {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 10px;
+}
+.gis-widget__summary-chip {
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text-muted);
+    font-size: 10px;
+    line-height: 1.3;
+    padding: 3px 7px;
+}
+.gis-widget__summary-chip strong {
+    color: var(--text);
+    font-weight: 600;
+}
+.gis-widget__section {
+    margin-bottom: 12px;
+}
+.gis-widget__section-title {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text);
+    margin: 0 0 6px;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+.gis-widget__details {
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    margin-bottom: 8px;
+}
+.gis-widget__details > summary {
+    cursor: pointer;
+    font-size: 11px;
+    font-weight: 600;
+    list-style: none;
+    padding: 8px 10px;
+    user-select: none;
+}
+.gis-widget__details > summary::-webkit-details-marker {
+    display: none;
+}
+.gis-widget__details > summary::before {
+    content: '▸ ';
+    display: inline-block;
+    transition: transform 0.15s ease;
+}
+.gis-widget__details[open] > summary::before {
+    transform: rotate(90deg);
+}
+.gis-widget__details-body {
+    border-top: 1px solid var(--border);
+    padding: 8px 10px;
 }
 .gis-widget__running {
     display: flex;

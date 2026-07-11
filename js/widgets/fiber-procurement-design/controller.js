@@ -8,6 +8,7 @@ import { getSpatialLayerOptions } from '../widget-context.js';
 import { isProjectStationingCenterline } from '../project-stationing/route-profile.js';
 import { markWidgetClosed, upsertWidgetState } from '../widget-state-store.js';
 import { openPlanProductionExport } from '../plan-production-export/controller.js';
+import { openProjectStationing } from '../project-stationing/controller.js';
 import { normalizeProcurementCatalog } from './catalog-adapter.js';
 import {
     WIDGET_ID,
@@ -52,6 +53,13 @@ import { buildAlignmentGeoJson, buildConduitGeoJson, buildFiberGeoJson, buildPoi
 
 const PREVIEW_LAYER_PREFIX = 'fiber_design_preview_';
 const NEAR_LINE_FT = 50;
+
+function getStationingLayerOptions(ctx) {
+    return getSpatialLayerOptions(ctx).filter((layer) => {
+        const full = ctx.getLayerById?.(layer.id) || ctx.getLayers().find((entry) => entry.id === layer.id);
+        return isProjectStationingCenterline(full);
+    });
+}
 
 function persistSession(session, open = true) {
     upsertWidgetState(WIDGET_ID, {
@@ -210,10 +218,7 @@ export async function openFiberProcurementDesign(ctx, { restoreState = null } = 
             markWidgetClosed(WIDGET_ID);
         },
         getProps: (close) => ({
-            stationingLayers: getSpatialLayerOptions(ctx).filter((layer) => {
-                const full = ctx.getLayerById?.(layer.id) || ctx.getLayers().find((entry) => entry.id === layer.id);
-                return isProjectStationingCenterline(full);
-            }),
+            stationingLayers: getStationingLayerOptions(ctx),
             initialSession: session,
             onCancel: () => {
                 cleanupMapModes();
@@ -231,6 +236,10 @@ export async function openFiberProcurementDesign(ctx, { restoreState = null } = 
                 persistSession(session);
                 renderDesignPreview(ctx, session);
                 return session;
+            },
+            onRefreshStationingLayers: () => getStationingLayerOptions(ctx),
+            onOpenProjectStationing: () => {
+                openProjectStationing(ctx);
             },
             onLoadCatalog: () => {
                 session = loadProcurementCatalog(session);
