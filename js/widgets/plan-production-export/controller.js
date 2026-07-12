@@ -137,10 +137,10 @@ export async function openPlanProductionExport(ctx, { restoreState = null } = {}
                         data: assembly.calloutExport.geojson.calloutMarkers
                     });
                 }
-                if (assembly.sheetExport?.geojson?.sheetFrames?.features?.length) {
+                if (assembly.sheetExport?.layers?.sheetFrames?.features?.length) {
                     layerDefs.push({
                         name: `${baseName}_Sheet_Frames`,
-                        data: assembly.sheetExport.geojson.sheetFrames
+                        data: assembly.sheetExport.layers.sheetFrames
                     });
                 }
 

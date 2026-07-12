@@ -118,7 +118,7 @@ export function buildLayerManifestCsv(assembly = {}) {
         rows.push(['callout_markers', 'callout_marker', String(calloutMarkers.features.length), 'plan-set-callouts']);
     }
 
-    const sheetFrames = assembly.sheetExport?.geojson?.sheetFrames;
+    const sheetFrames = assembly.sheetExport?.layers?.sheetFrames;
     if (sheetFrames?.features?.length) {
         rows.push(['sheet_frames', 'sheet_frame', String(sheetFrames.features.length), 'sheet-cutting']);
     }
@@ -225,18 +225,6 @@ export function buildProfessionalPlanExport(assembly = {}, profileId = 'procurem
         }
     }
 
-    if (profile.includeCsv && assembly.sheetExport?.csv) {
-        for (const [name, content] of Object.entries(assembly.sheetExport.csv)) {
-            if (!content) continue;
-            files.push({
-                filename: `${safeName}_sheets_${name}.csv`,
-                content,
-                mimeType: 'text/csv',
-                category: 'csv'
-            });
-        }
-    }
-
     if (profile.includeSymbology) {
         files.push({
             filename: `${safeName}_symbology_manifest.csv`,
@@ -264,12 +252,27 @@ export function buildProfessionalPlanExport(assembly = {}, profileId = 'procurem
         }
     }
 
-    if (profile.includeGeoJson && assembly.sheetExport?.geojson) {
-        for (const [layerName, geojson] of Object.entries(assembly.sheetExport.geojson)) {
+    if (profile.includeGeoJson && assembly.sheetExport?.layers) {
+        for (const [layerName, geojson] of Object.entries({
+            route: assembly.sheetExport.layers.route,
+            sheet_frames: assembly.sheetExport.layers.sheetFrames,
+            overview: assembly.sheetExport.layers.overview
+        })) {
             if (!geojson?.features?.length) continue;
             files.push({
                 filename: `${safeName}_sheets_${layerName}.geojson`,
                 content: JSON.stringify(geojson, null, 2),
+                mimeType: 'application/geo+json',
+                category: 'geojson'
+            });
+        }
+
+        for (const sheetLayer of assembly.sheetExport.layers.perSheet || []) {
+            if (!sheetLayer.contents?.features?.length) continue;
+            const sheetLabel = String(sheetLayer.sheetNumber).padStart(2, '0');
+            files.push({
+                filename: `${safeName}_sheet_${sheetLabel}.geojson`,
+                content: JSON.stringify(sheetLayer.contents, null, 2),
                 mimeType: 'application/geo+json',
                 category: 'geojson'
             });

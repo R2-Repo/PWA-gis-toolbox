@@ -25,8 +25,8 @@ import {
     restoreSheetSession,
     validateSheetSession
 } from './engine.js';
-
-const PREVIEW_LAYER_PREFIX = 'sheet_cutting_preview_';
+import { clearSheetPreview, showSheetPreview } from './sheet-preview.js';
+import { exportSheetPlanPdf } from './sheet-pdf-export.js';
 
 function persistSession(session, open = true) {
     upsertWidgetState(WIDGET_ID, {
@@ -46,24 +46,12 @@ function downloadTextFile(filename, content, mimeType = 'text/plain') {
 }
 
 function clearPreviewLayers(ctx) {
-    for (const key of ['route', 'frames', 'overview']) {
-        ctx.mapService.removeTempLayer?.(`${PREVIEW_LAYER_PREFIX}${key}`);
-    }
+    clearSheetPreview(ctx.mapService);
 }
 
 function renderSheetPreview(ctx, session) {
-    clearPreviewLayers(ctx);
     const exportPackage = buildSessionExport(session);
-
-    if (session.routeLine?.geometry) {
-        ctx.mapService.showTempFeature?.(exportPackage.geojson.route, 0, `${PREVIEW_LAYER_PREFIX}route`);
-    }
-    if (exportPackage.geojson.sheetFrames?.features?.length) {
-        ctx.mapService.showTempFeature?.(exportPackage.geojson.sheetFrames, 0, `${PREVIEW_LAYER_PREFIX}frames`);
-    }
-    if (exportPackage.geojson.overview?.features?.length) {
-        ctx.mapService.showTempFeature?.(exportPackage.geojson.overview, 0, `${PREVIEW_LAYER_PREFIX}overview`);
-    }
+    showSheetPreview(ctx.mapService, exportPackage.layers || {});
 }
 
 function collectFeaturesFromLayers(ctx, layerIds = []) {
@@ -146,24 +134,65 @@ export async function openSheetCutting(ctx, { restoreState = null } = {}) {
                 return session;
             },
             onValidate: () => validateSheetSession(session),
+            onExportPdf: async () => {
+                const exportPackage = buildSessionExport(session);
+                return exportSheetPlanPdf({
+                    mapService: ctx.mapService,
+                    exportPackage,
+                    session,
+                    onProgress: (text) => ctx.showToast(text, 'info')
+                });
+            },
             onExportPackage: () => {
                 const exportPackage = buildSessionExport(session);
-                const base = session.project.projectName || 'sheet_cutting';
-                downloadTextFile(`${base}_sheet_index.csv`, exportPackage.csv.sheetIndex, 'text/csv');
-                downloadTextFile(`${base}_match_lines.csv`, exportPackage.csv.matchLines, 'text/csv');
-                downloadTextFile(`${base}_sheets.json`, JSON.stringify(exportPackage, null, 2), 'application/json');
-                ctx.showToast('Sheet export files downloaded', 'success');
+                const base = (session.project.projectName || 'sheet_cutting').replace(/\s+/g, '_');
+                const layers = exportPackage.layers || {};
+
+                if (layers.sheetFrames?.features?.length) {
+                    downloadTextFile(
+                        `${base}_sheet_frames.geojson`,
+                        JSON.stringify(layers.sheetFrames, null, 2),
+                        'application/geo+json'
+                    );
+                }
+                if (layers.overview?.features?.length) {
+                    downloadTextFile(
+                        `${base}_overview.geojson`,
+                        JSON.stringify(layers.overview, null, 2),
+                        'application/geo+json'
+                    );
+                }
+                for (const sheetLayer of layers.perSheet || []) {
+                    if (!sheetLayer.contents?.features?.length) continue;
+                    const sheetLabel = String(sheetLayer.sheetNumber).padStart(2, '0');
+                    downloadTextFile(
+                        `${base}_sheet_${sheetLabel}.geojson`,
+                        JSON.stringify(sheetLayer.contents, null, 2),
+                        'application/geo+json'
+                    );
+                }
+
+                ctx.showToast('GIS sheet layers downloaded', 'success');
                 return exportPackage;
             },
             onAddResultLayers: () => {
                 const exportPackage = buildSessionExport(session);
+                const layers = exportPackage.layers || {};
                 const created = [];
                 const baseName = session.project.projectName || 'Sheet_Cutting';
 
                 const layerDefs = [
-                    { name: `${baseName}_Sheet_Frames`, data: exportPackage.geojson.sheetFrames },
-                    { name: `${baseName}_Overview`, data: exportPackage.geojson.overview }
+                    { name: `${baseName}_Sheet_Frames`, data: layers.sheetFrames },
+                    { name: `${baseName}_Overview`, data: layers.overview }
                 ];
+
+                for (const sheetLayer of layers.perSheet || []) {
+                    if (!sheetLayer.contents?.features?.length) continue;
+                    layerDefs.push({
+                        name: `${baseName}_Sheet_${String(sheetLayer.sheetNumber).padStart(2, '0')}`,
+                        data: sheetLayer.contents
+                    });
+                }
 
                 for (const def of layerDefs) {
                     if (!def.data?.features?.length) continue;

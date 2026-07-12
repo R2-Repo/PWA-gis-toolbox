@@ -6,9 +6,12 @@ import { createStableId } from '../../plan-project/id-utils.js';
 import { createPlanProject, updatePlanProject } from '../../plan-project/plan-project-model.js';
 import { serializePlanProject, restorePlanProject } from '../../plan-project/serialization.js';
 import { getStationingRoutes } from '../../plan-project/stationing-adapter.js';
-import { buildSheetExportPackage } from './export-builder.js';
+import { getLocalTangentBearing } from '../project-stationing/engine.js';
+import { buildSheetExportPackage, buildSheetFramesGeoJson } from './export-builder.js';
 
 export const PAPER_SIZES = {
+    TABLOID: { widthIn: 11, heightIn: 17 },
+    ANSI_B: { widthIn: 11, heightIn: 17 },
     ANSI_D: { widthIn: 22, heightIn: 34 },
     ANSI_E: { widthIn: 34, heightIn: 44 },
     ARCH_D: { widthIn: 24, heightIn: 36 }
@@ -53,22 +56,33 @@ export function calculateMapFrameGroundDimensions({
 }
 
 /**
+ * Printable PDF page size in points from sheet template.
+ * @param {object} template
+ * @returns {[number, number]}
+ */
+export function computePdfPageSizePt(template = {}) {
+    const sheet = PAPER_SIZES[template.paperSize] || PAPER_SIZES.TABLOID;
+    const landscape = (template.orientation || PAGE_ORIENTATIONS.LANDSCAPE) === PAGE_ORIENTATIONS.LANDSCAPE;
+    const widthIn = landscape ? sheet.heightIn : sheet.widthIn;
+    const heightIn = landscape ? sheet.widthIn : sheet.heightIn;
+    return [widthIn * 72, heightIn * 72];
+}
+
+/**
  * @param {object} input
  * @returns {object[]}
  */
 export function generateSheetFramesAlongRoute({
     routeLine,
     mapFrameWidthFt,
-    overlapFt = 100,
     direction = 'increasing',
     sheetTemplate = {},
     stationingRoute = null
 }) {
     if (!routeLine?.geometry || typeof turf === 'undefined') return [];
     const totalLengthFt = turf.length(routeLine, { units: 'feet' });
-    if (totalLengthFt <= 0) return [];
+    if (totalLengthFt <= 0 || mapFrameWidthFt <= 0) return [];
 
-    const step = Math.max(1, mapFrameWidthFt - overlapFt);
     const sheets = [];
     let distance = 0;
     let sheetNumber = 1;
@@ -76,12 +90,7 @@ export function generateSheetFramesAlongRoute({
     while (distance < totalLengthFt - 0.01) {
         const endDistance = Math.min(distance + mapFrameWidthFt, totalLengthFt);
         const centerDistance = (distance + endDistance) / 2;
-        const centerPoint = turf.along(routeLine, centerDistance, { units: 'feet' });
-        const lookAhead = Math.min(centerDistance + 10, totalLengthFt);
-        const lookBehind = Math.max(centerDistance - 10, 0);
-        const ahead = turf.along(routeLine, lookAhead, { units: 'feet' });
-        const behind = turf.along(routeLine, lookBehind, { units: 'feet' });
-        const bearing = turf.bearing(behind, ahead);
+        const bearing = getLocalTangentBearing(routeLine, centerDistance);
 
         sheets.push({
             sheetId: createStableId('sheet'),
@@ -104,7 +113,7 @@ export function generateSheetFramesAlongRoute({
         }
 
         if (endDistance >= totalLengthFt - 0.01) break;
-        distance += step;
+        distance = endDistance;
         sheetNumber += 1;
     }
 
@@ -128,6 +137,7 @@ export function assignFeaturesToSheets(features = [], sheets = [], routeLine = n
     }
 
     const hasRoute = routeLine?.geometry && typeof turf !== 'undefined';
+    const sortedSheets = [...sheets].sort((a, b) => a.startDistanceFt - b.startDistanceFt);
 
     for (const feature of features) {
         if (!feature?.geometry) continue;
@@ -155,9 +165,13 @@ export function assignFeaturesToSheets(features = [], sheets = [], routeLine = n
             }
         }
 
-        for (const sheet of sheets) {
+        for (let i = 0; i < sortedSheets.length; i++) {
+            const sheet = sortedSheets[i];
             if (distanceAlongFt != null) {
-                if (distanceAlongFt >= sheet.startDistanceFt && distanceAlongFt <= sheet.endDistanceFt) {
+                const isLast = i === sortedSheets.length - 1;
+                const inRange = distanceAlongFt >= sheet.startDistanceFt
+                    && (isLast ? distanceAlongFt <= sheet.endDistanceFt : distanceAlongFt < sheet.endDistanceFt);
+                if (inRange) {
                     assignments[sheet.sheetId].push(featureId);
                     break;
                 }
@@ -172,16 +186,41 @@ export function assignFeaturesToSheets(features = [], sheets = [], routeLine = n
 
 /**
  * @param {object} sheet
- * @param {number} nextSheetNumber
+ * @param {'start'|'end'} position
+ * @param {number} adjacentSheetNumber
+ * @param {string} adjacentSheetId
  * @returns {object}
  */
-export function generateMatchLine(sheet, nextSheetNumber) {
+export function generateMatchLine(sheet, position, adjacentSheetNumber, adjacentSheetId) {
+    const station = position === 'start' ? sheet.startDistanceFt : sheet.endDistanceFt;
     return {
         sheetId: sheet.sheetId,
-        matchLineStation: sheet.endDistanceFt,
-        adjacentSheetNumber: nextSheetNumber,
-        label: `MATCH LINE – SEE SHEET ${String(nextSheetNumber).padStart(2, '0')}`
+        position,
+        matchLineStation: station,
+        adjacentSheetId,
+        adjacentSheetNumber,
+        label: `MATCH LINE – SEE SHEET ${String(adjacentSheetNumber).padStart(2, '0')}`
     };
+}
+
+/**
+ * @param {object[]} sheets
+ * @returns {object[]}
+ */
+export function generateSheetMatchLines(sheets = []) {
+    const matchLines = [];
+    for (let i = 0; i < sheets.length; i++) {
+        const sheet = sheets[i];
+        if (i > 0) {
+            const prev = sheets[i - 1];
+            matchLines.push(generateMatchLine(sheet, 'start', prev.sheetNumber, prev.sheetId));
+        }
+        if (i < sheets.length - 1) {
+            const next = sheets[i + 1];
+            matchLines.push(generateMatchLine(sheet, 'end', next.sheetNumber, next.sheetId));
+        }
+    }
+    return matchLines;
 }
 
 /**
@@ -207,13 +246,147 @@ export function buildOverviewSheet(sheets = [], routeLine = null) {
 
 /**
  * @param {object[]} sheets
- * @param {object[]} features
+ * @param {number|null} [routeLengthFt]
  * @returns {{ valid: boolean, warnings: string[] }}
  */
-export function validateSheetCoverage(sheets = [], features = []) {
+export function validateSheetTiling(sheets = [], routeLengthFt = null) {
     const warnings = [];
-    if (!sheets.length) warnings.push('No sheet boxes generated.');
+    const detail = sheets.filter((sheet) => sheet.sheetType !== 'overview');
+    if (!detail.length) {
+        return { valid: false, warnings: ['No sheet boxes generated.'] };
+    }
+
+    if (detail[0].startDistanceFt > 0.01) {
+        warnings.push('First sheet does not start at route beginning.');
+    }
+
+    for (let i = 0; i < detail.length - 1; i++) {
+        if (Math.abs(detail[i].endDistanceFt - detail[i + 1].startDistanceFt) > 0.01) {
+            warnings.push(`Gap or overlap between sheet ${detail[i].sheetNumber} and ${detail[i + 1].sheetNumber}.`);
+        }
+    }
+
+    if (routeLengthFt != null && Math.abs(detail[detail.length - 1].endDistanceFt - routeLengthFt) > 0.01) {
+        warnings.push('Last sheet does not reach route end.');
+    }
+
+    if (routeLengthFt != null) {
+        const totalCoverage = detail.reduce((sum, sheet) => sum + (sheet.endDistanceFt - sheet.startDistanceFt), 0);
+        if (Math.abs(totalCoverage - routeLengthFt) > 0.01) {
+            warnings.push('Sheet station ranges do not fully cover the route.');
+        }
+    }
+
+    const lastSheet = detail[detail.length - 1];
+    const frameWidth = lastSheet.mapFrameWidthFt || 0;
+    const lastSegment = lastSheet.endDistanceFt - lastSheet.startDistanceFt;
+    if (frameWidth > 0 && lastSegment < frameWidth * 0.5 && detail.length > 1) {
+        warnings.push(`Last sheet covers only ${Math.round(lastSegment)} ft (shorter than map frame width).`);
+    }
+
+    return { valid: warnings.length === 0, warnings };
+}
+
+/**
+ * @param {object[]} sheets
+ * @param {object} [routeLine]
+ * @returns {{ valid: boolean, warnings: string[] }}
+ */
+export function validateClippedSheetOverlap(sheets = [], routeLine = null) {
+    const warnings = [];
+    if (!routeLine?.geometry || typeof turf === 'undefined' || sheets.length < 2) {
+        return { valid: true, warnings };
+    }
+
+    const frames = buildSheetFramesGeoJson(
+        sheets.filter((sheet) => sheet.sheetType !== 'overview'),
+        routeLine
+    ).features;
+
+    for (let i = 0; i < frames.length - 1; i++) {
+        try {
+            const intersection = turf.intersect(turf.featureCollection([frames[i], frames[i + 1]]));
+            if (intersection && turf.area(intersection) > 1) {
+                warnings.push(`Clipped polygons for sheets ${i + 1} and ${i + 2} overlap.`);
+            }
+        } catch (_) { /* skip invalid geometry pairs */ }
+    }
+
+    return { valid: warnings.length === 0, warnings };
+}
+
+/**
+ * Verify clipped sheet polygons tile the route centerline with no gaps.
+ * @param {object[]} sheets
+ * @param {object} [routeLine]
+ * @param {number} [sampleStepFt]
+ * @returns {{ valid: boolean, warnings: string[] }}
+ */
+export function validateCenterlinePolygonCoverage(sheets = [], routeLine = null, sampleStepFt = 25) {
+    const warnings = [];
+    if (!routeLine?.geometry || typeof turf === 'undefined' || sheets.length === 0) {
+        return { valid: true, warnings };
+    }
+
+    const detail = sheets.filter((sheet) => sheet.sheetType !== 'overview');
+    const frames = buildSheetFramesGeoJson(detail, routeLine).features;
+    if (!frames.length) {
+        return { valid: false, warnings: ['No clipped sheet polygons generated.'] };
+    }
+
+    const routeLengthFt = turf.length(routeLine, { units: 'feet' });
+    const step = Math.max(5, sampleStepFt);
+    const halfHeight = (detail[0]?.mapFrameHeightFt || 75) / 2;
+
+    for (let distance = 0; distance <= routeLengthFt + 0.01; distance += step) {
+        const clamped = Math.min(distance, routeLengthFt);
+        const centerPoint = turf.along(routeLine, clamped, { units: 'feet' });
+        const bearing = getLocalTangentBearing(routeLine, clamped);
+        const offsets = [0, halfHeight * 0.5, -halfHeight * 0.5];
+
+        for (const offset of offsets) {
+            const sample = offset === 0
+                ? centerPoint
+                : turf.destination(centerPoint, Math.abs(offset), bearing + (offset > 0 ? 90 : -90), { units: 'feet' });
+            const containing = frames.filter((frame) => turf.booleanPointInPolygon(sample, frame));
+
+            if (containing.length === 0) {
+                warnings.push(`Gap in sheet coverage near ${Math.round(clamped)} ft along route.`);
+                return { valid: false, warnings };
+            }
+            if (containing.length > 1) {
+                warnings.push(`Overlapping sheet coverage near ${Math.round(clamped)} ft along route.`);
+                return { valid: false, warnings };
+            }
+        }
+    }
+
+    return { valid: warnings.length === 0, warnings };
+}
+
+/**
+ * @param {object[]} sheets
+ * @param {object[]} features
+ * @param {object} [routeLine]
+ * @returns {{ valid: boolean, warnings: string[] }}
+ */
+export function validateSheetCoverage(sheets = [], features = [], routeLine = null) {
+    const warnings = [];
+    const routeLengthFt = routeLine?.geometry && typeof turf !== 'undefined'
+        ? turf.length(routeLine, { units: 'feet' })
+        : null;
+
+    const tiling = validateSheetTiling(sheets, routeLengthFt);
+    warnings.push(...tiling.warnings);
+
     if (!features.length) warnings.push('No design features available for sheet assignment.');
+
+    const overlap = validateClippedSheetOverlap(sheets, routeLine);
+    warnings.push(...overlap.warnings);
+
+    const centerline = validateCenterlinePolygonCoverage(sheets, routeLine);
+    warnings.push(...centerline.warnings);
+
     return { valid: warnings.length === 0, warnings };
 }
 
@@ -229,10 +402,9 @@ export const SHEET_STEPS = [
 ];
 
 export const DEFAULT_SHEET_TEMPLATE = {
-    paperSize: 'ANSI_D',
+    paperSize: 'TABLOID',
     orientation: PAGE_ORIENTATIONS.LANDSCAPE,
     scale: 200,
-    overlapFt: 100,
     direction: 'increasing',
     marginsIn: { top: 0.5, right: 0.5, bottom: 0.5, left: 0.5 },
     titleBlockIn: { width: 4, height: 2 },
@@ -390,16 +562,12 @@ export function generateSheetSet(session) {
     const sheets = generateSheetFramesAlongRoute({
         routeLine: session.routeLine,
         mapFrameWidthFt: frameDims.mapFrameWidthFt,
-        mapFrameHeightFt: frameDims.mapFrameHeightFt,
-        overlapFt: template.overlapFt,
         direction: template.direction,
         sheetTemplate: frameDims,
         stationingRoute: session.stationingRoute
     });
 
-    const matchLines = sheets.slice(0, -1).map((sheet, index) =>
-        generateMatchLine(sheet, sheets[index + 1].sheetNumber)
-    );
+    const matchLines = generateSheetMatchLines(sheets);
 
     const overviewSheet = template.includeOverview
         ? buildOverviewSheet(sheets, session.routeLine)
@@ -507,7 +675,7 @@ export function validateSheetSession(session) {
         });
     }
 
-    const coverage = validateSheetCoverage(sheetSet.sheets || [], session.designFeatures || []);
+    const coverage = validateSheetCoverage(sheetSet.sheets || [], session.designFeatures || [], session.routeLine);
     for (const warning of coverage.warnings) {
         findings.push({
             severity: 'warning',

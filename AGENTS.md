@@ -73,6 +73,8 @@ When the user wants to **add or change a GIS Widget** (left panel → **GIS Widg
 
 Do not put widget logic inline in `js/tools/tool-handlers.js`. Copy the closest existing widget under `js/widgets/` (simplest: `spatial-analyzer/`).
 
+**Sheet Cutter clipped polygons:** follow [`docs/SHEET_CUTTING.md`](docs/SHEET_CUTTING.md) — the **clean sheet cutting** model (buffer corridor + perpendicular match lines + along-route clip). Do not change geometry without reading that doc first.
+
 ## Project layout (quick reference)
 
 | Path | Purpose |
@@ -84,7 +86,7 @@ Do not put widget logic inline in `js/tools/tool-handlers.js`. Copy the closest 
 | `css/` | Stylesheets |
 | `pipelines/` | Saved workflow pipeline JSON |
 | `public/` | Static assets |
-| `docs/` | Development guide, widget playbook, authoring checklist, feature plans |
+| `docs/` | Development guide, widget playbook, authoring checklist, **sheet cutting geometry** (`SHEET_CUTTING.md`) |
 
 ## Local development
 

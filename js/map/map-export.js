@@ -126,7 +126,7 @@ export function suspendMapInteractions(map) {
     };
 }
 
-function canvasToPngBlob(canvas) {
+export function canvasToPngBlob(canvas) {
     return new Promise((resolve, reject) => {
         try {
             canvas.toBlob((blob) => {

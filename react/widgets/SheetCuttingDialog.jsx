@@ -25,6 +25,7 @@ export function SheetCuttingDialog({
     onGenerateSheets,
     onValidate,
     onExportPackage,
+    onExportPdf,
     onAddResultLayers,
     onSaveSession,
     onOpenFullPlanExport
@@ -37,7 +38,6 @@ export function SheetCuttingDialog({
     const [paperSize, setPaperSize] = useState(initialSession?.sheets?.template?.paperSize || defaultTemplate.paperSize || 'ANSI_D');
     const [orientation, setOrientation] = useState(initialSession?.sheets?.template?.orientation || defaultTemplate.orientation || 'landscape');
     const [scale, setScale] = useState(String(initialSession?.sheets?.template?.scale || defaultTemplate.scale || 200));
-    const [overlapFt, setOverlapFt] = useState(String(initialSession?.sheets?.template?.overlapFt || defaultTemplate.overlapFt || 100));
     const [includeOverview, setIncludeOverview] = useState(initialSession?.sheets?.template?.includeOverview !== false);
     const [selectedLayerIds, setSelectedLayerIds] = useState(initialSession?.sheets?.designLayerIds || []);
     const [busy, setBusy] = useState(false);
@@ -137,10 +137,6 @@ export function SheetCuttingDialog({
                 <label>Scale (1:n)</label>
                 <input value={scale} onChange={(e) => setScale(e.target.value)} />
             </div>
-            <div className="form-group">
-                <label>Overlap (ft)</label>
-                <input value={overlapFt} onChange={(e) => setOverlapFt(e.target.value)} />
-            </div>
             <label className="text-xs" style={{ display: 'block', marginBottom: 12 }}>
                 <input type="checkbox" checked={includeOverview} onChange={(e) => setIncludeOverview(e.target.checked)} />
                 {' '}Include overview sheet
@@ -153,7 +149,6 @@ export function SheetCuttingDialog({
                     paperSize,
                     orientation,
                     scale: Number(scale) || 200,
-                    overlapFt: Number(overlapFt) || 100,
                     includeOverview
                 }), 'Template saved.')}
             >
@@ -192,7 +187,7 @@ export function SheetCuttingDialog({
     const renderGenerateStep = () => (
         <>
             <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                Generate sequential sheet frames along the route with match lines.
+                Generate non-overlapping sheet frames tiled along the route with match-line boundaries.
             </p>
             <button
                 type="button"
@@ -247,9 +242,20 @@ export function SheetCuttingDialog({
 
     const renderExportStep = () => (
         <>
+            <p className="text-xs" style={{ color: 'var(--text-muted)', marginBottom: 12 }}>
+                PDF pages are captured from the live map (basemap, layers, and sheet outlines) so the export matches what you see on screen.
+            </p>
             <div className="gis-widget__btn-row" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 8 }}>
+                <button
+                    type="button"
+                    className="gis-widget__primary-btn"
+                    disabled={busy || sheets.length === 0}
+                    onClick={() => run(() => onExportPdf?.(), 'Sheet plan PDF downloaded.')}
+                >
+                    Export sheet plan PDF
+                </button>
                 <button type="button" className="btn btn-secondary btn-sm" disabled={busy} onClick={() => onExportPackage?.()}>
-                    Download export package
+                    Download GIS layers (GeoJSON)
                 </button>
                 <button type="button" className="btn btn-secondary btn-sm" disabled={busy} onClick={() => onAddResultLayers?.()}>
                     Add sheet layers to map
@@ -261,7 +267,7 @@ export function SheetCuttingDialog({
             <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid var(--border)' }}>
                 <button
                     type="button"
-                    className="gis-widget__primary-btn"
+                    className="btn btn-secondary btn-sm"
                     disabled={busy}
                     onClick={() => onOpenFullPlanExport?.()}
                 >
@@ -298,7 +304,6 @@ export function SheetCuttingDialog({
                 paperSize,
                 orientation,
                 scale: Number(scale) || 200,
-                overlapFt: Number(overlapFt) || 100,
                 includeOverview
             }), 'Template saved.');
             if (selectedLayerIds.length) {

@@ -24,6 +24,7 @@ In **gis-toolbox**, a "widget" is **not** an ArcGIS Experience Builder widget. I
 | **Authoring checklist** | [`docs/WIDGET_AUTHORING.md`](WIDGET_AUTHORING.md) | Present | Step-by-step build checklist, smoke test list, anti-patterns |
 | **Agent guide** | [`AGENTS.md`](../AGENTS.md) | Present | Git workflow, repo layout, links to widget docs |
 | **Development / deploy** | [`docs/DEVELOPMENT.md`](DEVELOPMENT.md) | Present | Local setup, GitHub Desktop workflow, deployment |
+| **Sheet cutting geometry** | [`docs/SHEET_CUTTING.md`](SHEET_CUTTING.md) | Present | **Clean sheet cutting** — canonical clipped-polygon model |
 | **Human overview** | [`README.md`](../README.md) | Present | Project summary + branch workflow |
 
 **Not in this repo yet** (do not assume these paths exist):

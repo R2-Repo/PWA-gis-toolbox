@@ -115,7 +115,7 @@ describe('sheet cutting widget engine', () => {
     it('creates a session with default template', () => {
         const session = createSheetCuttingSession({ projectName: 'Sheet Test' });
         expect(session.project.projectName).toBe('Sheet Test');
-        expect(session.sheets.template.paperSize).toBe('ANSI_D');
+        expect(session.sheets.template.paperSize).toBe('TABLOID');
     });
 
     it('generates sheet set along route', () => {
@@ -125,10 +125,13 @@ describe('sheet cutting widget engine', () => {
             routeLine: sampleRoute,
             stationingRoute: { routeId: 'route-1', routeName: 'Main' }
         };
-        session = configureSheetTemplate(session, { scale: 200, overlapFt: 100 });
+        session = configureSheetTemplate(session, { scale: 200 });
         session = generateSheetSet(session);
         expect(session.sheets.sheets.length).toBeGreaterThan(0);
         expect(session.sheets.matchLines.length).toBeGreaterThanOrEqual(0);
+        if (session.sheets.sheets.length > 1) {
+            expect(session.sheets.matchLines.length).toBe(2 * (session.sheets.sheets.length - 1));
+        }
         expect(session.sheets.overviewSheet).toBeTruthy();
     });
 
@@ -136,7 +139,7 @@ describe('sheet cutting widget engine', () => {
         const routeLengthFt = turf.length(sampleRoute, { units: 'feet' });
         const sheets = [
             { sheetId: 's1', startDistanceFt: 0, endDistanceFt: routeLengthFt / 2 },
-            { sheetId: 's2', startDistanceFt: routeLengthFt / 2 - 100, endDistanceFt: routeLengthFt }
+            { sheetId: 's2', startDistanceFt: routeLengthFt / 2, endDistanceFt: routeLengthFt }
         ];
         const assignments = assignFeaturesToSheets(sampleFeatures, sheets, sampleRoute);
         expect(assignments.s1.length + assignments.s2.length).toBeGreaterThan(0);
