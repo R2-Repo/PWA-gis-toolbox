@@ -56,6 +56,33 @@ export function computeExportPixelRatio(map) {
     return target;
 }
 
+/**
+ * Pixel ratio needed so the map canvas reaches at least targetWidthPx (clamped to GPU limits).
+ * @param {import('maplibre-gl').Map} map
+ * @param {number} targetWidthPx
+ * @returns {number}
+ */
+export function computePixelRatioForTargetWidth(map, targetWidthPx) {
+    const container = map.getContainer();
+    const cssW = Math.max(1, container?.clientWidth || 1);
+    const cssH = Math.max(1, container?.clientHeight || 1);
+    const currentRatio = getMapPixelRatio(map);
+    const gpuMaxRatio = getMaxSafePixelRatio(map);
+
+    const canvas = map.getCanvas();
+    const gl = canvas?.getContext('webgl2') || canvas?.getContext('webgl');
+    let maxDim = GPU_MAX_RENDERBUFFER_FALLBACK;
+    if (gl) {
+        maxDim = gl.getParameter(gl.MAX_RENDERBUFFER_SIZE) || maxDim;
+    }
+    maxDim = Math.floor(maxDim * GPU_MARGIN);
+
+    const ratioForWidth = targetWidthPx / cssW;
+    const ratioForHeightCap = maxDim / cssH;
+    const target = Math.min(gpuMaxRatio, ratioForWidth, ratioForHeightCap);
+    return Math.max(currentRatio, Math.min(MAX_EXPORT_PIXEL_RATIO, target));
+}
+
 export function willUseHighResExport(mapService) {
     const map = mapService?.getMap?.();
     if (!map?.loaded?.()) return false;
@@ -201,7 +228,12 @@ export function buildMapExportFilename(ext) {
     return `gis-toolbox-map-${stamp}.${ext}`;
 }
 
-export async function captureMapCanvas(mapService) {
+/**
+ * @param {object} mapService
+ * @param {{ targetWidthPx?: number }} [options]
+ * @returns {Promise<HTMLCanvasElement>}
+ */
+export async function captureMapCanvas(mapService, options = {}) {
     const map = mapService?.getMap?.();
     if (!map) {
         throw new Error('Map is not ready');
@@ -211,7 +243,9 @@ export async function captureMapCanvas(mapService) {
     }
 
     const originalRatio = getMapPixelRatio(map);
-    const exportRatio = computeExportPixelRatio(map);
+    const exportRatio = options.targetWidthPx
+        ? computePixelRatioForTargetWidth(map, options.targetWidthPx)
+        : computeExportPixelRatio(map);
     const bumped = exportRatio > originalRatio;
 
     if (bumped) {

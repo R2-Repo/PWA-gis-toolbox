@@ -136,12 +136,16 @@ export async function openSheetCutting(ctx, { restoreState = null } = {}) {
             onValidate: () => validateSheetSession(session),
             onExportPdf: async () => {
                 const exportPackage = buildSessionExport(session);
-                return exportSheetPlanPdf({
+                const result = await exportSheetPlanPdf({
                     mapService: ctx.mapService,
                     exportPackage,
                     session,
                     onProgress: (text) => ctx.showToast(text, 'info')
                 });
+                const count = result?.pageCount ?? 0;
+                const folder = result?.folderName ? ` in “${result.folderName}”` : '';
+                ctx.showToast(`Saved ${count} sheet PDF(s)${folder}.`, 'success');
+                return result;
             },
             onExportPackage: () => {
                 const exportPackage = buildSessionExport(session);

@@ -22,6 +22,62 @@ export const PAGE_ORIENTATIONS = {
     PORTRAIT: 'portrait'
 };
 
+/** Default print resolution for sheet PDF export (balance of quality vs memory). */
+export const DEFAULT_SHEET_EXPORT_DPI = 150;
+
+/**
+ * Printable page dimensions in inches from a sheet template.
+ * @param {object} template
+ * @returns {{ pageWidthIn: number, pageHeightIn: number, printableWidthIn: number, printableHeightIn: number, marginsIn: object }}
+ */
+export function computePrintablePageDimensionsIn(template = {}) {
+    const sheet = PAPER_SIZES[template.paperSize] || PAPER_SIZES.TABLOID;
+    const landscape = (template.orientation || PAGE_ORIENTATIONS.LANDSCAPE) === PAGE_ORIENTATIONS.LANDSCAPE;
+    const pageWidthIn = landscape ? sheet.heightIn : sheet.widthIn;
+    const pageHeightIn = landscape ? sheet.widthIn : sheet.heightIn;
+    const marginsIn = {
+        top: 0.5,
+        right: 0.5,
+        bottom: 0.5,
+        left: 0.5,
+        ...(template.marginsIn || {})
+    };
+
+    return {
+        pageWidthIn,
+        pageHeightIn,
+        printableWidthIn: Math.max(1, pageWidthIn - marginsIn.left - marginsIn.right),
+        printableHeightIn: Math.max(1, pageHeightIn - marginsIn.top - marginsIn.bottom),
+        marginsIn
+    };
+}
+
+/**
+ * Target map-capture pixel size for sheet PDF export at a given DPI.
+ * @param {object} template
+ * @param {number} [dpi]
+ * @returns {{ widthPx: number, heightPx: number, dpi: number, marginsPt: object, printableWidthIn: number, printableHeightIn: number }}
+ */
+export function computeSheetExportPixelDimensions(template = {}, dpi = DEFAULT_SHEET_EXPORT_DPI) {
+    const resolvedDpi = Math.max(72, Math.min(300, Number(dpi) || DEFAULT_SHEET_EXPORT_DPI));
+    const page = computePrintablePageDimensionsIn(template);
+    const marginsPt = {
+        top: page.marginsIn.top * 72,
+        right: page.marginsIn.right * 72,
+        bottom: page.marginsIn.bottom * 72,
+        left: page.marginsIn.left * 72
+    };
+
+    return {
+        widthPx: Math.round(page.printableWidthIn * resolvedDpi),
+        heightPx: Math.round(page.printableHeightIn * resolvedDpi),
+        dpi: resolvedDpi,
+        marginsPt,
+        printableWidthIn: page.printableWidthIn,
+        printableHeightIn: page.printableHeightIn
+    };
+}
+
 /**
  * @param {object} input
  * @returns {{ mapFrameWidthFt: number, mapFrameHeightFt: number, explanation: string }}
