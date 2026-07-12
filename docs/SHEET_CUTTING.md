@@ -125,17 +125,17 @@ Sheet Cutter produces **two deliverable types** only:
 
 Feature assignment for export uses **polygon intersection** (`clipFeaturesToSheetFrame`), not station distance alone.
 
-### PDF (map capture + jsPDF)
+### PDF (polygon-clipped map capture + folder export)
 
-Sheet plan PDFs are **literal MapLibre screenshots** assembled with **jsPDF** (already in the project):
+Sheet PDFs are **MapLibre map captures** clipped to each sheet polygon, placed on tabloid (or template) pages with modest margins, and written **one file at a time** to a folder the user picks (File System Access API — Chrome/Edge).
 
-1. **Overview page** — `fitBounds` to all sheet frames, capture the live map (basemap + visible layers + sheet outlines).
-2. **Detail pages** — one sheet at a time: `fitBounds` to that sheet polygon, capture the same map view.
-3. **Assembly** — each capture is letterboxed onto a tabloid (or template) landscape page in jsPDF.
+1. **Overview** (optional) — `fitBounds` to all sheet frames; rectangular capture saved as `{project}_overview.pdf`.
+2. **Detail pages** — per sheet: camera aligned to `rotationDeg`, map captured at **150 DPI**, **polygon clip mask** applied, fitted into printable margins on tabloid landscape, saved as `{project}_sheet_01.pdf`, etc.
+3. **No multipage PDF** — each page is written immediately so memory stays flat on long routes.
 
-Implementation: `js/widgets/sheet-cutting/sheet-pdf-export.js`
+Implementation: `js/widgets/sheet-cutting/sheet-pdf-export.js`, `js/export/folder-export.js`
 
-The map camera is restored after export. Captures use the same high-resolution path as the header **Download PDF** map export (`captureMapCanvas`).
+The map camera and 3D state are restored after export. 3D is temporarily flattened for consistent plan-sheet output.
 
 **Not used for PDF:** Canvas 2D GeoJSON drawing or pdf-lib — those would not match on-screen symbology.
 
@@ -149,3 +149,5 @@ The map camera is restored after export. Captures use the same high-resolution p
 | `js/widgets/sheet-cutting/export-builder.js` | **Clean polygon geometry** |
 | `js/widgets/sheet-cutting/controller.js` | Preview wiring |
 | `react/widgets/SheetCuttingDialog.jsx` | Wizard UI |
+| `js/widgets/sheet-cutting/sheet-pdf-export.js` | Polygon-clipped PDF export to folder |
+| `js/export/folder-export.js` | File System Access API folder writer |

@@ -243,16 +243,17 @@ export function SheetCuttingDialog({
     const renderExportStep = () => (
         <>
             <p className="text-xs" style={{ color: 'var(--text-muted)', marginBottom: 12 }}>
-                PDF pages are captured from the live map (basemap, layers, and sheet outlines) so the export matches what you see on screen.
+                Each sheet is rendered from the live map, clipped to the sheet polygon, and saved as its own PDF
+                (150&nbsp;DPI) in a folder you choose. Requires Chrome or Edge. Overview (if enabled) is saved as a separate PDF.
             </p>
             <div className="gis-widget__btn-row" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 8 }}>
                 <button
                     type="button"
                     className="gis-widget__primary-btn"
                     disabled={busy || sheets.length === 0}
-                    onClick={() => run(() => onExportPdf?.(), 'Sheet plan PDF downloaded.')}
+                    onClick={() => run(() => onExportPdf?.(), 'Sheet PDFs saved to folder.')}
                 >
-                    Export sheet plan PDF
+                    Export sheet PDFs to folder…
                 </button>
                 <button type="button" className="btn btn-secondary btn-sm" disabled={busy} onClick={() => onExportPackage?.()}>
                     Download GIS layers (GeoJSON)
