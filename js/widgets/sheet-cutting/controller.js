@@ -9,7 +9,6 @@ import { markWidgetClosed, upsertWidgetState } from '../widget-state-store.js';
 import { openPlanProductionExport } from '../plan-production-export/controller.js';
 import {
     WIDGET_ID,
-    SHEET_STEPS,
     PAPER_SIZES,
     PAGE_ORIENTATIONS,
     DEFAULT_SHEET_TEMPLATE,
@@ -83,7 +82,6 @@ export async function openSheetCutting(ctx, { restoreState = null } = {}) {
             markWidgetClosed(WIDGET_ID);
         },
         getProps: (close) => ({
-            steps: SHEET_STEPS,
             paperSizes: Object.keys(PAPER_SIZES),
             orientations: Object.values(PAGE_ORIENTATIONS),
             defaultTemplate: DEFAULT_SHEET_TEMPLATE,
