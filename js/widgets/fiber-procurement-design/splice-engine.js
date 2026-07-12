@@ -62,7 +62,7 @@ export function createSpliceEnclosure(input = {}) {
         station: input.station ?? null,
         milepost: input.milepost ?? null,
         procurementItemIds: Array.isArray(input.procurementItemIds) ? [...input.procurementItemIds] : [],
-        symbolKey: input.symbolKey || 'structure-splice',
+        symbolKey: input.symbolKey || 'splice-enclosure',
         spliceMode: input.spliceMode || SPLICE_MODES.PASS_THROUGH,
         strandMappings: Array.isArray(input.strandMappings) ? [...input.strandMappings] : [],
         distanceAlongFiberFt: input.distanceAlongFiberFt ?? null,

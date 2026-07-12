@@ -3,8 +3,10 @@
  * Features store symbolKey values; MapLibre expressions resolve display styles.
  */
 
+import { PROCUREMENT_SYMBOL_DEFINITIONS } from '../widgets/fiber-procurement-design/procurement-symbology.js';
+
 /** @type {Record<string, object>} */
-export const SYMBOL_REGISTRY = {
+const BASE_SYMBOL_REGISTRY = {
     'conduit-proposed': {
         kind: 'line',
         color: '#2563eb',
@@ -43,14 +45,14 @@ export const SYMBOL_REGISTRY = {
     },
     'structure-junction-box': {
         kind: 'point',
-        icon: 'junction-box',
+        icon: 'handhole-type-1',
         size: 1,
         labelTemplate: '{assetType} – {size}'
     },
     'structure-vault': {
         kind: 'point',
-        icon: 'vault',
-        size: 1.1,
+        icon: 'handhole-vault',
+        size: 1.15,
         labelTemplate: '{assetType} – {size}'
     },
     'structure-splice': {
@@ -79,12 +81,28 @@ export const SYMBOL_REGISTRY = {
     }
 };
 
+/** @type {Record<string, object>} */
+export const SYMBOL_REGISTRY = {
+    ...BASE_SYMBOL_REGISTRY,
+    ...PROCUREMENT_SYMBOL_DEFINITIONS
+};
+
 /**
  * @param {string} symbolKey
  * @returns {object|null}
  */
 export function getSymbolDefinition(symbolKey) {
     return SYMBOL_REGISTRY[symbolKey] || null;
+}
+
+/**
+ * @param {string} [categoryId]
+ * @returns {Record<string, object>}
+ */
+export function getSymbolsByCategory(categoryId) {
+    const entries = Object.entries(SYMBOL_REGISTRY);
+    if (!categoryId) return Object.fromEntries(entries);
+    return Object.fromEntries(entries.filter(([, def]) => def.category === categoryId));
 }
 
 /**

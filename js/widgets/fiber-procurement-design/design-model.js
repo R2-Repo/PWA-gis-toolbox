@@ -3,6 +3,11 @@
  */
 
 import { createStableId } from '../../plan-project/id-utils.js';
+import {
+    resolveConduitSymbolKey,
+    resolveFiberSymbolKey,
+    resolveHandholeSymbolKey
+} from './procurement-symbology.js';
 
 export const ASSET_CATEGORIES = {
     ALIGNMENT: 'alignment',
@@ -65,9 +70,7 @@ export function createStructure(input = {}) {
         stationingRouteId: input.stationingRouteId || '',
         station: input.station ?? null,
         milepost: input.milepost ?? null,
-        symbolKey: input.symbolKey || (
-            input.assetType === STRUCTURE_TYPES.VAULT ? 'structure-vault' : 'structure-junction-box'
-        ),
+        symbolKey: input.symbolKey || resolveHandholeSymbolKey(input.assetType, input.size),
         notes: input.notes || ''
     };
 }
@@ -96,7 +99,7 @@ export function createConduitSegment(input = {}) {
         endStation: input.endStation ?? null,
         startMilepost: input.startMilepost ?? null,
         endMilepost: input.endMilepost ?? null,
-        symbolKey: input.symbolKey || 'conduit-proposed',
+        symbolKey: input.symbolKey || resolveConduitSymbolKey(input.diameter || input.defaultDiameter || '2'),
         assemblyId: input.assemblyId || '',
         displayLabel: input.displayLabel || '',
         notes: input.notes || ''
@@ -121,7 +124,7 @@ export function createConduitComponent(input = {}) {
         occupancyStatus: input.occupancyStatus || 'proposed',
         lengthMultiplier: Number(input.lengthMultiplier ?? 1),
         wasteFactor: input.wasteFactor ?? null,
-        symbolKey: input.symbolKey || '',
+        symbolKey: input.symbolKey || resolveConduitSymbolKey(input.diameter),
         notes: input.notes || ''
     };
 }
@@ -155,7 +158,7 @@ export function createFiberRoute(input = {}) {
         endStation: input.endStation ?? null,
         startMilepost: input.startMilepost ?? null,
         endMilepost: input.endMilepost ?? null,
-        symbolKey: input.symbolKey || 'fiber-proposed',
+        symbolKey: input.symbolKey || resolveFiberSymbolKey(input.strandCount || 144),
         notes: input.notes || '',
         parentFiberId: input.parentFiberId || null,
         isBranch: !!input.isBranch,

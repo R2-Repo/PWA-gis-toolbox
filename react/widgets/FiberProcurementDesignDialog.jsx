@@ -2,6 +2,7 @@ import { useMemo, useRef, useState } from 'react';
 import { WidgetPanelShell } from './shared/WidgetPanelShell.jsx';
 import { WidgetStepWizard } from './shared/WidgetStepWizard.jsx';
 import { LayerSelect } from './shared/LayerSelect.jsx';
+import { ProcurementSymbologyLegend } from './shared/ProcurementSymbologyLegend.jsx';
 import { DESIGN_STEPS } from '../../js/widgets/fiber-procurement-design/engine.js';
 
 const STEP_HELP = {
@@ -282,6 +283,7 @@ export function FiberProcurementDesignDialog({
                     <strong>{catalogCount}</strong> catalog items loaded.
                 </div>
             ) : null}
+            <ProcurementSymbologyLegend compact />
         </>
     );
 

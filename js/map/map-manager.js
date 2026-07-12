@@ -31,6 +31,7 @@ import {
     materializeServiceLayerViewport,
     getServiceLayerRuntime
 } from '../live-layers/live-layer-engine.js';
+import { renderProcurementIcon } from '../plan-project/symbol-icons.js';
 
 const POINT_CLUSTER_THRESHOLD = 10000;
 
@@ -144,6 +145,13 @@ function _geomTypesFilter(types) {
 
 /** Create an SVG string for a given point symbol shape */
 function _makeSymbolSVG(shape, color, fillColor, size, opacity) {
+    const procurementSvg = renderProcurementIcon(shape, {
+        stroke: color,
+        fill: fillColor,
+        opacity
+    });
+    if (procurementSvg) return procurementSvg;
+
     const s = size * 2;
     switch (shape) {
         case 'square':

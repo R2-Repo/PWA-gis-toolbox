@@ -1401,6 +1401,96 @@ textarea { resize: vertical; min-height: 60px; }
     flex-wrap: wrap;
     margin-bottom: 6px;
 }
+
+.proc-symbology {
+    margin-top: 10px;
+    padding: 10px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: linear-gradient(180deg, rgba(248, 250, 252, 0.95), rgba(241, 245, 249, 0.85));
+}
+
+.proc-symbology--compact .proc-symbology__group {
+    margin-bottom: 8px;
+}
+
+.proc-symbology__header {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin-bottom: 8px;
+}
+
+.proc-symbology__header strong {
+    font-size: 12px;
+}
+
+.proc-symbology__subtitle {
+    font-size: 10px;
+    color: var(--text-muted, #64748b);
+    line-height: 1.35;
+}
+
+.proc-symbology__group-title {
+    margin: 0 0 6px;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-secondary, #475569);
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+}
+
+.proc-symbology__grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(118px, 1fr));
+    gap: 6px;
+}
+
+.proc-symbology__item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 28px;
+    padding: 4px 6px;
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.72);
+    border: 1px solid rgba(148, 163, 184, 0.25);
+}
+
+.proc-symbology__line-swatch {
+    width: 44px;
+    height: 16px;
+    flex: 0 0 44px;
+}
+
+.proc-symbology__point-swatch {
+    display: inline-flex;
+    width: 22px;
+    height: 22px;
+    flex: 0 0 22px;
+    align-items: center;
+    justify-content: center;
+}
+
+.proc-symbology__point-swatch svg {
+    width: 22px;
+    height: 22px;
+}
+
+.proc-symbology__point-fallback {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: #94a3b8;
+    flex: 0 0 14px;
+}
+
+.proc-symbology__label {
+    font-size: 10px;
+    line-height: 1.25;
+    color: var(--text-primary, #1e293b);
+}
+
 .gis-widget__preview-table {
     max-height: 120px;
     overflow: auto;
