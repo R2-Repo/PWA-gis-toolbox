@@ -3,6 +3,7 @@
  */
 
 import { createStableId } from '../../plan-project/id-utils.js';
+import { resolveSymbolKeyFromCatalogItem } from './procurement-symbology.js';
 
 export const MEASUREMENT_RULES = {
     ROUTE_LINEAR: 'route_linear',
@@ -109,6 +110,13 @@ export function normalizeCatalogRow(row, columnMap = {}, rowIndex = 0) {
     }
 
     const catalogItemId = createStableId('cat');
+    const defaultSymbolKey = resolveSymbolKeyFromCatalogItem({
+        description,
+        shortDescription: String(read('shortDescription', description)).trim() || description,
+        category,
+        subcategory: String(read('subcategory', '')).trim(),
+        productType
+    }) || '';
 
     return {
         catalogItemId,
@@ -125,7 +133,7 @@ export function normalizeCatalogRow(row, columnMap = {}, rowIndex = 0) {
         productType,
         installationMethod,
         materialSpecification: String(read('materialSpecification', '')).trim(),
-        defaultSymbolKey: '',
+        defaultSymbolKey,
         defaultAttributes: {},
         allowsManualQuantity: measurementRule === MEASUREMENT_RULES.MANUAL,
         requiresRoute: measurementRule !== MEASUREMENT_RULES.MANUAL && measurementRule !== MEASUREMENT_RULES.POINT_COUNT,
