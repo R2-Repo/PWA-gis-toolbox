@@ -3647,13 +3647,14 @@ class MapManager {
 
     get hasImportFence() { return !!this._importFence; }
 
-    showTempFeature(geojson, duration = 10000) {
+    showTempFeature(geojson, duration = 10000, options = {}) {
         const srcId = this._nextId('temp');
         this.map.addSource(srcId, { type: 'geojson', data: geojson });
         const layerIds = [];
+        const fillOpacity = options.fillOpacity ?? 0.25;
 
         const fillId = srcId + '-fill';
-        this.map.addLayer({ id: fillId, type: 'fill', source: srcId, filter: _geomTypesFilter(['Polygon', 'MultiPolygon']), paint: { 'fill-color': '#d4a24e', 'fill-opacity': 0.25 } });
+        this.map.addLayer({ id: fillId, type: 'fill', source: srcId, filter: _geomTypesFilter(['Polygon', 'MultiPolygon']), paint: { 'fill-color': '#d4a24e', 'fill-opacity': fillOpacity } });
         layerIds.push(fillId);
 
         const outlineId = srcId + '-outline';

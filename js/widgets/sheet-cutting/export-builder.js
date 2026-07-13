@@ -7,6 +7,10 @@
 
 import { lineSliceAlongRoute } from '../../tools/line-geojson.js';
 import { getLocalTangentBearing } from '../project-stationing/engine.js';
+import {
+    buildSheetContinuationLabels,
+    resolveSheetPdfBearing
+} from './sheet-pdf-orientation.js';
 
 const STATION_KEY_SCALE = 1000;
 const COORD_EPSILON = 1e-8;
@@ -894,22 +898,41 @@ export function buildSheetPdfPagePlan(session) {
     const sheetSet = session.sheets || {};
     const template = sheetSet.template || {};
     const detailSheets = (sheetSet.sheets || []).filter((sheet) => sheet.sheetType !== 'overview');
+    const routeLine = session.routeLine || null;
+    const totalSheets = detailSheets.length;
     const pages = [];
 
     if (sheetSet.overviewSheet) {
         pages.push({
             pageType: 'overview',
             sheetNumber: 0,
-            title: 'Sheet Index / Overview'
+            title: 'Sheet Index / Overview',
+            exportBearingDeg: 0
         });
     }
 
-    for (const sheet of detailSheets) {
+    for (let i = 0; i < detailSheets.length; i++) {
+        const sheet = detailSheets[i];
+        const prev = i > 0 ? detailSheets[i - 1] : null;
+        const next = i < detailSheets.length - 1 ? detailSheets[i + 1] : null;
+        const labels = buildSheetContinuationLabels(sheet, totalSheets);
+
         pages.push({
             pageType: 'detail',
             sheetId: sheet.sheetId,
             sheetNumber: sheet.sheetNumber,
-            title: `Sheet ${String(sheet.sheetNumber).padStart(2, '0')}`
+            title: `Sheet ${String(sheet.sheetNumber).padStart(2, '0')}`,
+            exportBearingDeg: resolveSheetPdfBearing(sheet, routeLine, {
+                mode: template.pdfMapBearingMode
+            }),
+            stationStartFt: sheet.startDistanceFt,
+            stationEndFt: sheet.endDistanceFt,
+            continueFromSheet: prev?.sheetNumber ?? null,
+            continueToSheet: next?.sheetNumber ?? null,
+            sheetLabel: labels.sheetLabel,
+            stationRange: labels.stationRange,
+            continueFrom: labels.continueFrom,
+            continueTo: labels.continueTo
         });
     }
 

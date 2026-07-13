@@ -222,9 +222,9 @@ export function installDualScreenMapServiceDecorator(mapApi, coordinator) {
         return originals.getImportFenceEsriEnvelope?.();
     };
 
-    mapApi.showTempFeature = function showTempFeature(geojson, duration = 10000) {
-        if (!coordinator.isActive) return originals.showTempFeature?.(geojson, duration);
-        coordinator.broadcastMapCmd('showTempFeature', { geojson: cloneJson(geojson), duration });
+    mapApi.showTempFeature = function showTempFeature(geojson, duration = 10000, options = {}) {
+        if (!coordinator.isActive) return originals.showTempFeature?.(geojson, duration, options);
+        coordinator.broadcastMapCmd('showTempFeature', { geojson: cloneJson(geojson), duration, options: cloneJson(options) });
         return { dualScreenRemote: true };
     };
 

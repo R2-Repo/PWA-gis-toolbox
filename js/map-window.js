@@ -218,10 +218,10 @@ function onMapReady() {
 }
 
 function applyMapCmd(payload) {
-    const { action, geojson, duration, layerId, range, latitude, style, dataset } = payload || {};
+    const { action, geojson, duration, options, layerId, range, latitude, style, dataset } = payload || {};
     switch (action) {
         case 'showTempFeature':
-            mapService.showTempFeature(geojson, duration ?? 10000);
+            mapService.showTempFeature(geojson, duration ?? 10000, options);
             break;
         case 'showRouteMilepostPreview':
             mapService.showRouteMilepostPreview?.(geojson, duration ?? 0);

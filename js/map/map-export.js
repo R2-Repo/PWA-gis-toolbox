@@ -230,7 +230,7 @@ export function buildMapExportFilename(ext) {
 
 /**
  * @param {object} mapService
- * @param {{ targetWidthPx?: number }} [options]
+ * @param {{ targetWidthPx?: number, beforeCapture?: (map: import('maplibre-gl').Map) => void }} [options]
  * @returns {Promise<HTMLCanvasElement>}
  */
 export async function captureMapCanvas(mapService, options = {}) {
@@ -255,6 +255,7 @@ export async function captureMapCanvas(mapService, options = {}) {
     await ensureMapFrameReady(map);
 
     try {
+        options.beforeCapture?.(map);
         return captureLiveFrame(map, mapService);
     } finally {
         if (bumped) {

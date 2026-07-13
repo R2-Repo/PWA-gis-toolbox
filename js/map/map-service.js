@@ -299,8 +299,8 @@ export function createMapService({ mapAdapter = mapManager } = {}) {
         getActivePopupHit() {
             return mapAdapter.getActivePopupHit?.();
         },
-        showTempFeature(geojson, duration) {
-            return mapAdapter.showTempFeature(geojson, duration);
+        showTempFeature(geojson, duration, options) {
+            return mapAdapter.showTempFeature(geojson, duration, options);
         },
         showQueryResults(layerId, indices) {
             return mapAdapter.showQueryResults?.(layerId, indices);

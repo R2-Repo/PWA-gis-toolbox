@@ -23,23 +23,25 @@ export function clearSheetPreview(mapService) {
 export function showSheetPreview(mapService, layers = {}, options = {}) {
     clearSheetPreview(mapService);
 
-    const push = (geojson) => {
+    const push = (geojson, previewOptions = {}) => {
         if (!geojson?.features?.length && geojson?.type !== 'Feature') return;
-        const entry = mapService.showTempFeature?.(geojson, 0);
+        const entry = mapService.showTempFeature?.(geojson, 0, previewOptions);
         if (entry) activePreviewEntries.push(entry);
     };
+
+    const sheetPreviewStyle = { fillOpacity: 0 };
 
     if (layers.route?.features?.length) {
         push(layers.route);
     }
 
     if (options.singleFrame) {
-        push(options.singleFrame);
+        push(options.singleFrame, sheetPreviewStyle);
         return;
     }
 
     if (layers.sheetFrames?.features?.length) {
-        push(layers.sheetFrames);
+        push(layers.sheetFrames, sheetPreviewStyle);
     }
 }
 

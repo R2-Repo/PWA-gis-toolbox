@@ -137,15 +137,35 @@ Feature assignment for export uses **polygon intersection** (`clipFeaturesToShee
 
 Sheet PDFs are **MapLibre map captures** clipped to each sheet polygon, placed on tabloid (or template) pages with modest margins, and written **one file at a time** to a folder the user picks (File System Access API — Chrome/Edge).
 
-1. **Overview** (optional) — `fitBounds` to all sheet frames; rectangular capture saved as `{project}_overview.pdf`.
-2. **Detail pages** — per sheet: camera aligned to `rotationDeg`, map captured at **150 DPI**, **polygon clip mask** applied, fitted into printable margins on tabloid landscape, saved as `{project}_sheet_01.pdf`, etc.
+1. **Overview** (optional) — `fitBounds` to all sheet frames; **north-up** (`bearing: 0`); saved as `{project}_overview.pdf`.
+2. **Detail pages** — per sheet: camera aligned to **export bearing** (match-line flow), map captured at **150 DPI**, **polygon clip mask** applied, fitted length-wise into printable margins on tabloid landscape, saved as `{project}_sheet_01.pdf`, etc.
 3. **No multipage PDF** — each page is written immediately so memory stays flat on long routes.
 
-Implementation: `js/widgets/sheet-cutting/sheet-pdf-export.js`, `js/export/folder-export.js`
+Implementation: `js/widgets/sheet-cutting/sheet-pdf-export.js`, `js/widgets/sheet-cutting/sheet-pdf-orientation.js`, `js/export/folder-export.js`
 
 The map camera and 3D state are restored after export. 3D is temporarily flattened for consistent plan-sheet output.
 
 **Not used for PDF:** Canvas 2D GeoJSON drawing or pdf-lib — those would not match on-screen symbology.
+
+### PDF orientation
+
+Detail pages default to **landscape-align**: each sheet polygon is rotated so its **long axis runs along the tabloid landscape width**, while **north stays upright** (never flipped 180°). The north arrow rotates on every sheet to show true north for that view.
+
+| Mode | Template key | Behavior |
+|------|----------------|----------|
+| **Landscape-align** (default) | `pdfMapBearingMode: 'landscape-align'` | Route along page length; north upright; compass adjusts per sheet. |
+| **North-up** | `pdfMapBearingMode: 'north-up'` | Same orientation as the map preview (bearing 0). |
+| **Match-line flow** (optional) | `pdfMapBearingMode: 'match-line-flow'` | Forces left → right station flow; may flip 180° (north can point down). |
+
+| Rule | Behavior |
+|------|----------|
+| **North arrow** | Top-right margin; rotated **−exportBearingDeg** from page up so it shows true north relative to the map. |
+| **Continuation footer** | Bottom margin: sheet number, station range (`0+000 – 1+100`), and `← Sheet NN` / `Sheet NN →` links. |
+| **Overview** | Always north-up. |
+
+Landscape-align picks between two bearings 180° apart (`tangent − 90°` and `tangent + 90°`), keeps the one where north points up, and prefers left → right when both qualify.
+
+Key functions: `resolveSheetPdfBearing()`, `resolveLandscapeAlignBearing()`, `resolveSheetPdfBearings()`, `buildSheetContinuationLabels()` in `sheet-pdf-orientation.js`.
 
 ---
 
@@ -158,4 +178,5 @@ The map camera and 3D state are restored after export. 3D is temporarily flatten
 | `js/widgets/sheet-cutting/controller.js` | Preview wiring |
 | `react/widgets/SheetCuttingDialog.jsx` | Wizard UI |
 | `js/widgets/sheet-cutting/sheet-pdf-export.js` | Polygon-clipped PDF export to folder |
+| `js/widgets/sheet-cutting/sheet-pdf-orientation.js` | PDF export bearing + continuation labels |
 | `js/export/folder-export.js` | File System Access API folder writer |

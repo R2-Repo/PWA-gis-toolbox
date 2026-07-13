@@ -8,6 +8,7 @@ import { serializePlanProject, restorePlanProject } from '../../plan-project/ser
 import { getStationingRoutes } from '../../plan-project/stationing-adapter.js';
 import { getLocalTangentBearing } from '../project-stationing/engine.js';
 import { buildSheetExportPackage, buildSheetFramesGeoJson } from './export-builder.js';
+import { DEFAULT_PDF_MAP_BEARING_MODE } from './sheet-pdf-orientation.js';
 
 export const PAPER_SIZES = {
     TABLOID: { widthIn: 11, heightIn: 17 },
@@ -24,6 +25,22 @@ export const PAGE_ORIENTATIONS = {
 
 /** Default print resolution for sheet PDF export (balance of quality vs memory). */
 export const DEFAULT_SHEET_EXPORT_DPI = 150;
+
+export {
+    PDF_MAP_BEARING_MODES,
+    DEFAULT_PDF_MAP_BEARING_MODE,
+    PDF_EXPORT_STATION_EPS_FT,
+    PDF_DETAIL_FOOTER_BAND_IN,
+    resolveSheetPdfBearing,
+    resolveSheetPdfBearings,
+    formatRouteStationFt,
+    buildSheetContinuationLabels,
+    tangentToLandscapeMapBearing,
+    landscapeBearingCandidates,
+    northPointsUpOnPage,
+    resolveLandscapeAlignBearing,
+    normalizeMapBearingForLeftToRight
+} from './sheet-pdf-orientation.js';
 
 /**
  * Printable page dimensions in inches from a sheet template.
@@ -493,6 +510,7 @@ export const SHEET_STEPS = [
 export const DEFAULT_SHEET_TEMPLATE = {
     paperSize: 'TABLOID',
     orientation: PAGE_ORIENTATIONS.LANDSCAPE,
+    pdfMapBearingMode: DEFAULT_PDF_MAP_BEARING_MODE,
     sheetLengthFt: DEFAULT_SHEET_LENGTH_FT,
     corridorWidthFt: DEFAULT_CORRIDOR_WIDTH_FT,
     direction: 'increasing',
