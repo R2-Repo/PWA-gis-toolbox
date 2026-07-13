@@ -2,7 +2,10 @@ import * as turf from '@turf/turf';
 import { describe, expect, it } from 'vitest';
 import {
     DEFAULT_SHEET_TEMPLATE,
+    DEFAULT_SHEET_LENGTH_FT,
+    DEFAULT_CORRIDOR_WIDTH_FT,
     calculateMapFrameGroundDimensions,
+    resolveSheetFrameDimensions,
     computePdfPageSizePt,
     generateSheetFramesAlongRoute,
     generateMatchLine,
@@ -19,11 +22,13 @@ import {
     buildPaperFrameRectangle,
     buildSheetFramesGeoJson,
     buildCorridorMatchLineRegistry,
+    enforceCapVerticesOnRing,
     stationKey,
     coordsEqual,
     sharedBoundaryEdgesOverlap,
     buildSheetExportPackage
 } from '../js/widgets/sheet-cutting/export-builder.js';
+import { getLocalTangentBearing } from '../js/widgets/project-stationing/engine.js';
 
 globalThis.turf = turf;
 
@@ -35,6 +40,31 @@ describe('sheet cutting engine', () => {
         [-111.87, 40.752]
     ]);
 
+    it('resolves direct foot dimensions from template', () => {
+        const dims = resolveSheetFrameDimensions({
+            sheetLengthFt: 1100,
+            corridorWidthFt: 350
+        });
+        expect(dims.mapFrameWidthFt).toBe(1100);
+        expect(dims.mapFrameHeightFt).toBe(350);
+    });
+
+    it('uses default foot dimensions when template has no legacy scale', () => {
+        const dims = resolveSheetFrameDimensions({});
+        expect(dims.mapFrameWidthFt).toBe(DEFAULT_SHEET_LENGTH_FT);
+        expect(dims.mapFrameHeightFt).toBe(DEFAULT_CORRIDOR_WIDTH_FT);
+    });
+
+    it('falls back to scale-based dimensions for legacy sessions', () => {
+        const dims = resolveSheetFrameDimensions({
+            paperSize: 'TABLOID',
+            orientation: 'landscape',
+            scale: 200
+        });
+        expect(dims.mapFrameWidthFt).toBeGreaterThan(0);
+        expect(dims.mapFrameHeightFt).toBeGreaterThan(0);
+    });
+
     it('calculates map-frame ground dimensions from paper and scale', () => {
         const dims = calculateMapFrameGroundDimensions({
             paperSize: 'ANSI_D',
@@ -45,8 +75,10 @@ describe('sheet cutting engine', () => {
         expect(dims.mapFrameHeightFt).toBeGreaterThan(0);
     });
 
-    it('default template uses tabloid landscape paper', () => {
+    it('default template uses tabloid landscape with foot dimensions', () => {
         expect(DEFAULT_SHEET_TEMPLATE.paperSize).toBe('TABLOID');
+        expect(DEFAULT_SHEET_TEMPLATE.sheetLengthFt).toBe(1100);
+        expect(DEFAULT_SHEET_TEMPLATE.corridorWidthFt).toBe(350);
         expect(DEFAULT_SHEET_TEMPLATE.overlapFt).toBeUndefined();
     });
 
@@ -234,6 +266,71 @@ describe('sheet cutting geometry', () => {
         expect(vertexCount).toBeGreaterThanOrEqual(4);
     });
 
+    it('keeps shared match-line corners on wide sheets along curved routes', () => {
+        const sheets = generateSheetFramesAlongRoute({
+            routeLine: curvedRoute,
+            mapFrameWidthFt: 1100,
+            sheetTemplate: { mapFrameHeightFt: 350 }
+        }).map((sheet) => ({
+            ...sheet,
+            mapFrameWidthFt: 1100,
+            mapFrameHeightFt: 350
+        }));
+
+        expect(sheets.length).toBeGreaterThan(1);
+
+        const frames = buildSheetFramesGeoJson(sheets, curvedRoute).features;
+        const corridorCaps = buildCorridorMatchLineRegistry(sheets, curvedRoute);
+
+        for (let i = 0; i < frames.length - 1; i++) {
+            expect(sharedBoundaryEdgesOverlap(frames[i], frames[i + 1])).toBe(true);
+
+            const boundaryCap = corridorCaps.get(stationKey(sheets[i].endDistanceFt));
+            expect(boundaryCap).toBeTruthy();
+            const ringA = frames[i].geometry.coordinates[0];
+            const ringB = frames[i + 1].geometry.coordinates[0];
+            expect(ringA.some((coord) => coordsEqual(coord, boundaryCap.left))).toBe(true);
+            expect(ringA.some((coord) => coordsEqual(coord, boundaryCap.right))).toBe(true);
+            expect(ringB.some((coord) => coordsEqual(coord, boundaryCap.left))).toBe(true);
+            expect(ringB.some((coord) => coordsEqual(coord, boundaryCap.right))).toBe(true);
+        }
+    });
+
+    it('mirrors corridor half-width equally on both sides of centerline', () => {
+        const sheets = generateSheetFramesAlongRoute({
+            routeLine: curvedRoute,
+            mapFrameWidthFt: 1100,
+            sheetTemplate: { mapFrameHeightFt: 350 }
+        }).map((sheet) => ({
+            ...sheet,
+            mapFrameWidthFt: 1100,
+            mapFrameHeightFt: 350
+        }));
+
+        const frames = buildSheetFramesGeoJson(sheets, curvedRoute).features;
+        const halfHeightFt = 175;
+
+        for (let i = 0; i < sheets.length; i++) {
+            const sheet = sheets[i];
+            const frame = frames[i];
+
+            for (let stationFt = sheet.startDistanceFt + 25; stationFt < sheet.endDistanceFt - 25; stationFt += 75) {
+                const center = turf.along(curvedRoute, stationFt, { units: 'feet' });
+                const bearing = getLocalTangentBearing(curvedRoute, stationFt);
+                const probeDistFt = Math.max(halfHeightFt - 20, halfHeightFt * 0.85);
+                const leftInside = turf.destination(center, probeDistFt, bearing - 90, { units: 'feet' });
+                const rightInside = turf.destination(center, probeDistFt, bearing + 90, { units: 'feet' });
+                const leftOutside = turf.destination(center, halfHeightFt + 10, bearing - 90, { units: 'feet' });
+                const rightOutside = turf.destination(center, halfHeightFt + 10, bearing + 90, { units: 'feet' });
+
+                expect(turf.booleanPointInPolygon(leftInside, frame)).toBe(true);
+                expect(turf.booleanPointInPolygon(rightInside, frame)).toBe(true);
+                expect(turf.booleanPointInPolygon(leftOutside, frame)).toBe(false);
+                expect(turf.booleanPointInPolygon(rightOutside, frame)).toBe(false);
+            }
+        }
+    });
+
     it('builds GIS layer export package with PDF page plan and no CSV sidecars', () => {
         const dims = calculateMapFrameGroundDimensions({ scale: 200, paperSize: 'TABLOID' });
         const sheets = generateSheetFramesAlongRoute({
@@ -257,7 +354,13 @@ describe('sheet cutting geometry', () => {
                 geometry: pointInside.geometry
             }],
             sheets: {
-                template: { paperSize: 'TABLOID', orientation: 'landscape', scale: 200, includeOverview: true },
+                template: {
+                    paperSize: 'TABLOID',
+                    orientation: 'landscape',
+                    sheetLengthFt: 1100,
+                    corridorWidthFt: 350,
+                    includeOverview: true
+                },
                 sheets,
                 overviewSheet: { sheetBoxes: sheets.map((sheet) => ({ sheetId: sheet.sheetId, sheetNumber: sheet.sheetNumber, centerDistanceFt: sheet.centerDistanceFt })) },
                 matchLines: []
@@ -270,6 +373,8 @@ describe('sheet cutting geometry', () => {
         expect(exportPackage.pdf.pages[0].pageType).toBe('overview');
         expect(exportPackage.pdf.pages[1].pageType).toBe('detail');
         expect(exportPackage.pdf.paperSize).toBe('TABLOID');
+        expect(exportPackage.pdf.sheetLengthFt).toBe(1100);
+        expect(exportPackage.pdf.corridorWidthFt).toBe(350);
     });
 
     it('resolves tabloid landscape PDF page size in points', () => {

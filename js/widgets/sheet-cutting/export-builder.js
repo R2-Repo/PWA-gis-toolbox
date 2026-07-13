@@ -105,6 +105,122 @@ function ringHasKinks(openRing) {
 }
 
 /**
+ * @param {number} toleranceFt
+ * @returns {number}
+ */
+function feetToSimplifyTolerance(toleranceFt) {
+    return toleranceFt / 3280.84;
+}
+
+/** Simplify tolerances (feet) tried when offset rings self-intersect on tight curves. */
+const OFFSET_SIMPLIFY_TOLERANCES_FT = [0, 1, 2, 5, 10, 20];
+
+/**
+ * Station list for sampling symmetric corridor sides along a sheet span.
+ * @param {number} startFt
+ * @param {number} endFt
+ * @param {number} stepFt
+ * @returns {number[]}
+ */
+function sampleSheetStations(startFt, endFt, stepFt) {
+    const stations = [startFt];
+    for (let distanceFt = startFt + stepFt; distanceFt < endFt - 0.01; distanceFt += stepFt) {
+        stations.push(distanceFt);
+    }
+    if (stations[stations.length - 1] !== endFt) {
+        stations.push(endFt);
+    }
+    return stations;
+}
+
+/**
+ * Offset a single centerline station perpendicular to local tangent.
+ * @param {import('geojson').Feature<import('geojson').LineString>} routeLine
+ * @param {number} stationFt
+ * @param {number} halfHeightFt
+ * @param {'left'|'right'} side
+ * @returns {number[]}
+ */
+function offsetPointAtStation(routeLine, stationFt, halfHeightFt, side) {
+    const totalLength = turf.length(routeLine, { units: 'feet' });
+    const clampedStation = Math.max(0, Math.min(stationFt, totalLength));
+    const station = turf.along(routeLine, clampedStation, { units: 'feet' });
+    const bearing = getLocalTangentBearing(routeLine, clampedStation);
+    const perpBearing = side === 'left' ? bearing - 90 : bearing + 90;
+    return turf.destination(station, halfHeightFt, perpBearing, { units: 'feet' }).geometry.coordinates;
+}
+
+/**
+ * Build left/right side vertices at equal half-width along a sheet span.
+ * @param {import('geojson').Feature<import('geojson').LineString>} routeLine
+ * @param {number} startFt
+ * @param {number} endFt
+ * @param {number} halfHeightFt
+ * @param {number} stepFt
+ * @returns {{ leftCoords: number[][], rightCoords: number[][] }}
+ */
+function buildStationOffsetSides(routeLine, startFt, endFt, halfHeightFt, stepFt) {
+    const stations = sampleSheetStations(startFt, endFt, stepFt);
+    const leftCoords = [];
+    const rightCoords = [];
+    for (const stationFt of stations) {
+        leftCoords.push(offsetPointAtStation(routeLine, stationFt, halfHeightFt, 'left'));
+        rightCoords.push(offsetPointAtStation(routeLine, stationFt, halfHeightFt, 'right'));
+    }
+    return { leftCoords, rightCoords };
+}
+
+/**
+ * @param {number[][]} coords
+ * @param {number} simplifyFt
+ * @returns {number[][]}
+ */
+function simplifyCoordLine(coords, simplifyFt) {
+    if (simplifyFt <= 0 || coords.length < 3) {
+        return coords.map((coord) => [...coord]);
+    }
+    const simplified = turf.simplify(turf.lineString(coords), {
+        tolerance: feetToSimplifyTolerance(simplifyFt),
+        highQuality: true
+    });
+    return simplified.geometry.coordinates.map((coord) => [...coord]);
+}
+
+/**
+ * @param {number[][]} ring
+ * @param {import('geojson').Feature<import('geojson').LineString>} routeLine
+ * @param {number} startFt
+ * @param {number} endFt
+ * @param {number} halfHeightFt
+ * @returns {boolean}
+ */
+function ringIsSymmetricAboutCenterline(ring, routeLine, startFt, endFt, halfHeightFt) {
+    const sampleStations = sampleSheetStations(startFt + 10, endFt - 10, Math.max(50, (endFt - startFt) / 6));
+    const polygon = turf.polygon([[...ring, ring[0]]]);
+    const probeDistFt = Math.max(halfHeightFt - 15, halfHeightFt * 0.9);
+
+    for (const stationFt of sampleStations) {
+        const center = turf.along(routeLine, stationFt, { units: 'feet' });
+        const bearing = getLocalTangentBearing(routeLine, stationFt);
+        const left = turf.destination(center, probeDistFt, bearing - 90, { units: 'feet' });
+        const right = turf.destination(center, probeDistFt, bearing + 90, { units: 'feet' });
+        if (!turf.booleanPointInPolygon(left, polygon) || !turf.booleanPointInPolygon(right, polygon)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+/**
+ * @param {number} spanFt
+ * @returns {number[]}
+ */
+function corridorSampleStepsFt(spanFt) {
+    const baseStep = Math.min(40, Math.max(20, spanFt / 35));
+    return [baseStep, baseStep * 1.5, baseStep * 2, baseStep * 3];
+}
+
+/**
  * @param {object[]} sheets
  * @returns {number}
  */
@@ -136,26 +252,92 @@ export function buildMatchLineSegment(routeLine, stationFt, spanHalfWidthFt) {
 }
 
 /**
+ * Symmetric perpendicular cap at a station (equal half-width each side of centerline).
+ * @param {import('geojson').Feature<import('geojson').LineString>} routeLine
+ * @param {number} stationFt
+ * @param {number} halfHeightFt
+ * @returns {{ stationFt: number, left: number[], right: number[] }}
+ */
+export function buildSymmetricCorridorCap(routeLine, stationFt, halfHeightFt) {
+    const segment = buildMatchLineSegment(routeLine, stationFt, halfHeightFt);
+    return {
+        stationFt,
+        left: [...segment.geometry.coordinates[0]],
+        right: [...segment.geometry.coordinates[1]]
+    };
+}
+
+/**
+ * @deprecated Use buildSymmetricCorridorCap — boundary-derived caps skew symmetry on curves.
+ */
+export function buildCapFromCorridorBoundary(routeLine, stationFt, fullCorridor, halfHeightFt) {
+    const searchSpan = Math.max(halfHeightFt * 3, halfHeightFt + 50);
+    const segment = buildMatchLineSegment(routeLine, stationFt, searchSpan);
+    const boundary = turf.polygonToLine(fullCorridor);
+    const boundaryLines = boundary.geometry.type === 'LineString'
+        ? [boundary]
+        : (boundary.geometry.coordinates || []).map((lineCoords) => turf.lineString(lineCoords));
+
+    const coords = [];
+    for (const boundaryLine of boundaryLines) {
+        const hits = turf.lineIntersect(segment, boundaryLine);
+        for (const feature of hits.features || []) {
+            if (feature.geometry?.coordinates) coords.push(feature.geometry.coordinates);
+        }
+    }
+
+    const uniqueCoords = [];
+    for (const coord of coords) {
+        if (!uniqueCoords.some((entry) => coordsEqual(entry, coord, 1e-6))) {
+            uniqueCoords.push(coord);
+        }
+    }
+
+    if (uniqueCoords.length < 2) {
+        const fallback = buildMatchLineSegment(routeLine, stationFt, halfHeightFt);
+        return {
+            stationFt,
+            left: [...fallback.geometry.coordinates[0]],
+            right: [...fallback.geometry.coordinates[1]]
+        };
+    }
+
+    const totalLength = turf.length(routeLine, { units: 'feet' });
+    const clampedStation = Math.max(0, Math.min(stationFt, totalLength));
+    const station = turf.along(routeLine, clampedStation, { units: 'feet' });
+    const bearing = getLocalTangentBearing(routeLine, clampedStation);
+
+    const sorted = [...uniqueCoords].sort((a, b) => {
+        const diffA = ((turf.bearing(station, turf.point(a)) - bearing + 540) % 360) - 180;
+        const diffB = ((turf.bearing(station, turf.point(b)) - bearing + 540) % 360) - 180;
+        return diffA - diffB;
+    });
+
+    return {
+        stationFt,
+        left: [...sorted[0]],
+        right: [...sorted[sorted.length - 1]]
+    };
+}
+
+/**
  * Shared perpendicular cap segments used for clipped sheet geometry.
  * @param {object[]} sheets
  * @param {object} routeLine
+ * @param {import('geojson').Feature<import('geojson').Polygon>|null} [fullCorridor]
  * @returns {Map<string, { stationFt: number, left: number[], right: number[] }>}
  */
-export function buildCorridorMatchLineRegistry(sheets = [], routeLine = null) {
+export function buildCorridorMatchLineRegistry(sheets = [], routeLine = null, _fullCorridor = null) {
     const registry = new Map();
     if (!routeLine?.geometry || typeof turf === 'undefined') return registry;
 
+    const halfHeightFt = (sheets[0]?.mapFrameHeightFt || 75) / 2;
+
     for (const sheet of sheets) {
-        const halfHeightFt = (sheet.mapFrameHeightFt || 75) / 2;
         for (const stationFt of [sheet.startDistanceFt, sheet.endDistanceFt]) {
             const key = stationKey(stationFt);
             if (registry.has(key)) continue;
-            const segment = buildMatchLineSegment(routeLine, stationFt, halfHeightFt);
-            registry.set(key, {
-                stationFt,
-                left: [...segment.geometry.coordinates[0]],
-                right: [...segment.geometry.coordinates[1]]
-            });
+            registry.set(key, buildSymmetricCorridorCap(routeLine, stationFt, halfHeightFt));
         }
     }
     return registry;
@@ -265,7 +447,19 @@ export function buildBufferedStationCorridor(routeLine, startFt, endFt, halfHeig
     const segment = lineSliceAlongRoute(routeLine, start, end, 'feet');
     if (!segment?.geometry?.coordinates?.length) return null;
 
-    return turf.buffer(segment, halfHeightFt, { units: 'feet', steps: 32, endCapStyle: 'flat' });
+    return turf.buffer(segment, halfHeightFt, { units: 'feet', steps: 64, endCapStyle: 'flat' });
+}
+
+/**
+ * Buffer the full route once so offset sides stay smooth on curves.
+ * @param {import('geojson').Feature<import('geojson').LineString>} routeLine
+ * @param {number} halfHeightFt
+ * @returns {import('geojson').Feature<import('geojson').Polygon>|null}
+ */
+export function buildFullRouteCorridor(routeLine, halfHeightFt) {
+    if (!routeLine?.geometry || halfHeightFt <= 0) return null;
+    const totalLength = turf.length(routeLine, { units: 'feet' });
+    return buildBufferedStationCorridor(routeLine, 0, totalLength, halfHeightFt);
 }
 
 /**
@@ -283,79 +477,131 @@ export function intersectPolygons(polygon, clipRegion) {
 }
 
 /**
- * Build the clipped sheet footprint along the route.
- *
- * Geometry model:
- * 1. Buffer the route segment by half the map-frame height (corridor width).
- * 2. Cut flat perpendicular match lines at sheet start/end stations.
- * 3. Limit along-route extent to the map-frame clip width (centered on the sheet).
- *
- * Match-line corners are shared because every sheet uses the same perpendicular cut
- * at each station and the same corridor half-width — not a per-sheet rotated rectangle.
- *
+ * Replace the nearest distinct ring vertices with exact shared cap corners.
+ * @param {number[][]} openRing
+ * @param {Array<{ left: number[], right: number[] }|null|undefined>} caps
+ * @returns {number[][]}
+ */
+export function enforceCapVerticesOnRing(openRing, caps = [], maxReplaceDistFt = 25) {
+    const ring = openRing.map((coord) => [...coord]);
+    const usedIndices = new Set();
+
+    const replaceClosestDistinct = (target) => {
+        let bestIdx = -1;
+        let bestDist = Infinity;
+        for (let i = 0; i < ring.length; i++) {
+            if (usedIndices.has(i)) continue;
+            const dist = turf.distance(turf.point(ring[i]), turf.point(target), { units: 'feet' });
+            if (dist < bestDist) {
+                bestDist = dist;
+                bestIdx = i;
+            }
+        }
+        if (bestIdx < 0 || bestDist > maxReplaceDistFt) return;
+        usedIndices.add(bestIdx);
+        ring[bestIdx] = [...target];
+    };
+
+    for (const cap of caps) {
+        if (!cap) continue;
+        replaceClosestDistinct(cap.left);
+        replaceClosestDistinct(cap.right);
+    }
+
+    return ring;
+}
+
+/**
+ * Build a closed ring with flat perpendicular caps (two corners joined by a straight line).
+ * @param {number[][]} leftCoords
+ * @param {number[][]} rightCoords
+ * @param {{ left: number[], right: number[] }} start
+ * @param {{ left: number[], right: number[] }} end
+ * @returns {number[][]|null}
+ */
+function buildFlatCappedOffsetRing(leftCoords, rightCoords, start, end) {
+    if (leftCoords.length < 2 || rightCoords.length < 2) return null;
+
+    const ring = dedupeConsecutiveRingPoints([
+        [...start.left],
+        ...leftCoords.slice(1, -1),
+        [...end.left],
+        [...end.right],
+        ...rightCoords.slice(1, -1).reverse(),
+        [...start.right]
+    ]);
+
+    if (ring.length < 3) return null;
+    return ring;
+}
+
+/**
+ * Build a sheet polygon from mirrored left/right line offsets at equal half-width.
  * @param {object} sheet
  * @param {object} routeLine
- * @param {{ left: number[], right: number[] }|null} [_startCap]
- * @param {{ left: number[], right: number[] }|null} [_endCap]
+ * @param {{ left: number[], right: number[] }|null} [startCap]
+ * @param {{ left: number[], right: number[] }|null} [endCap]
  * @returns {import('geojson').Feature<import('geojson').Polygon>|null}
  */
-export function buildClippedSheetPolygon(sheet, routeLine, _startCap = null, _endCap = null) {
+export function buildSymmetricSheetPolygon(sheet, routeLine, startCap = null, endCap = null) {
     if (!routeLine?.geometry || typeof turf === 'undefined') return null;
 
     const routeLength = turf.length(routeLine, { units: 'feet' });
     const startFt = sheet.startDistanceFt ?? 0;
     const endFt = sheet.endDistanceFt ?? routeLength;
-    const widthFt = sheet.mapFrameWidthFt || 100;
-    const heightFt = sheet.mapFrameHeightFt || 75;
-    const halfHeightFt = heightFt / 2;
-    const clipWidthFt = widthFt + heightFt;
+    const halfHeightFt = (sheet.mapFrameHeightFt || 75) / 2;
+    const spanFt = endFt - startFt;
+    if (halfHeightFt <= 0 || spanFt < 0.01) return null;
 
-    const isFirst = startFt <= 0.01;
-    const isLast = endFt >= routeLength - 0.01;
-    const spanHalf = halfHeightFt * 2;
-    const depthFt = clipWidthFt * 2;
+    const start = startCap || buildSymmetricCorridorCap(routeLine, startFt, halfHeightFt);
+    const end = endCap || buildSymmetricCorridorCap(routeLine, endFt, halfHeightFt);
+    const minSideVertices = spanFt > 300 ? 3 : 2;
 
-    let corridor = buildBufferedStationCorridor(routeLine, startFt, endFt, halfHeightFt);
-    if (!corridor) return null;
+    for (const stepFt of corridorSampleStepsFt(spanFt)) {
+        for (const simplifyFt of OFFSET_SIMPLIFY_TOLERANCES_FT) {
+            let { leftCoords, rightCoords } = buildStationOffsetSides(
+                routeLine,
+                startFt,
+                endFt,
+                halfHeightFt,
+                stepFt
+            );
 
-    if (!isFirst) {
-        const startPlane = buildStationHalfPlanePolygon(routeLine, startFt, true, spanHalf, depthFt);
-        corridor = intersectPolygons(corridor, startPlane);
-        if (!corridor) return null;
-    }
-    if (!isLast) {
-        const endPlane = buildStationHalfPlanePolygon(routeLine, endFt, false, spanHalf, depthFt);
-        corridor = intersectPolygons(corridor, endPlane);
-        if (!corridor) return null;
-    }
+            if (simplifyFt > 0) {
+                leftCoords = simplifyCoordLine(leftCoords, simplifyFt);
+                rightCoords = simplifyCoordLine(rightCoords, simplifyFt);
+            }
 
-    const centerDistance = sheet.centerDistanceFt ?? ((startFt + endFt) / 2);
-    const backLimit = Math.max(0, centerDistance - clipWidthFt / 2);
-    const forwardLimit = Math.min(routeLength, centerDistance + clipWidthFt / 2);
+            if (leftCoords.length < minSideVertices || rightCoords.length < minSideVertices) {
+                continue;
+            }
 
-    const backPlane = buildStationHalfPlanePolygon(routeLine, backLimit, true, spanHalf, depthFt);
-    corridor = intersectPolygons(corridor, backPlane);
-    if (!corridor) return null;
+            const ring = buildFlatCappedOffsetRing(leftCoords, rightCoords, start, end);
+            if (!ring || ring.length <= 6 || ringHasKinks(ring)) continue;
+            if (!ringIsSymmetricAboutCenterline(ring, routeLine, startFt, endFt, halfHeightFt)) continue;
 
-    const forwardPlane = buildStationHalfPlanePolygon(routeLine, forwardLimit, false, spanHalf, depthFt);
-    corridor = intersectPolygons(corridor, forwardPlane);
-    if (!corridor) return null;
-
-    const cleaned = turf.cleanCoords(corridor);
-    const primaryRing = extractPrimaryRing(cleaned);
-    if (!primaryRing?.length) {
-        return cleaned.geometry.type === 'Polygon' ? cleaned : null;
-    }
-
-    const openRing = dedupeConsecutiveRingPoints(primaryRing);
-    if (openRing.length < 3 || ringHasKinks(openRing)) {
-        if (cleaned.geometry.type === 'Polygon' && !ringHasKinks(dedupeConsecutiveRingPoints(cleaned.geometry.coordinates[0]))) {
-            return cleaned;
+            return turf.polygon([[...ring, ring[0]]]);
         }
-        return null;
     }
 
-    return turf.polygon([[...openRing, openRing[0]]]);
+    return null;
+}
+
+/**
+ *
+ * Geometry model:
+ * 1. Mirror the route segment with equal left/right line offsets at corridor half-width.
+ * 2. Close with flat perpendicular caps — a single straight line across each narrow end.
+ *
+ * @param {object} sheet
+ * @param {object} routeLine
+ * @param {{ left: number[], right: number[] }|null} [startCap]
+ * @param {{ left: number[], right: number[] }|null} [endCap]
+ * @param {import('geojson').Feature<import('geojson').Polygon>|null} [_fullCorridor]
+ * @returns {import('geojson').Feature<import('geojson').Polygon>|null}
+ */
+export function buildClippedSheetPolygon(sheet, routeLine, startCap = null, endCap = null, _fullCorridor = null) {
+    return buildSymmetricSheetPolygon(sheet, routeLine, startCap, endCap);
 }
 
 /**
@@ -364,7 +610,7 @@ export function buildClippedSheetPolygon(sheet, routeLine, _startCap = null, _en
  * @param {Map<string, { left: number[], right: number[] }>} [sharedCaps]
  * @returns {object|null}
  */
-export function buildSheetFramePolygon(sheet, routeLine, sharedCaps = null) {
+export function buildSheetFramePolygon(sheet, routeLine, sharedCaps = null, _fullCorridor = null) {
     const routeLength = routeLine?.geometry ? turf.length(routeLine, { units: 'feet' }) : 0;
     const isFirst = (sheet.startDistanceFt ?? 0) <= 0.01;
     const isLast = (sheet.endDistanceFt ?? 0) >= routeLength - 0.01;
@@ -406,7 +652,7 @@ export function buildSheetFramePolygon(sheet, routeLine, sharedCaps = null) {
  */
 export function buildSheetFramesGeoJson(sheets = [], routeLine = null) {
     const detailSheets = sheets.filter((sheet) => sheet.sheetType !== 'overview');
-    const sharedCaps = buildSharedMatchLineRegistry(detailSheets, routeLine);
+    const sharedCaps = buildCorridorMatchLineRegistry(detailSheets, routeLine);
     const features = detailSheets
         .map((sheet) => buildSheetFramePolygon(sheet, routeLine, sharedCaps))
         .filter(Boolean);
@@ -670,7 +916,8 @@ export function buildSheetPdfPagePlan(session) {
     return {
         paperSize: template.paperSize || 'TABLOID',
         orientation: template.orientation || 'landscape',
-        scale: template.scale || 200,
+        sheetLengthFt: template.sheetLengthFt ?? 1100,
+        corridorWidthFt: template.corridorWidthFt ?? 350,
         pages
     };
 }

@@ -11,8 +11,6 @@ import { openRouteMilepostSegment } from '../route-milepost-segment/controller.j
 import { openProjectStationing } from '../project-stationing/controller.js';
 import {
     WIDGET_ID,
-    PAPER_SIZES,
-    PAGE_ORIENTATIONS,
     DEFAULT_SHEET_TEMPLATE,
     createSheetCuttingSession,
     updateSheetProject,
@@ -91,8 +89,6 @@ export async function openSheetCutting(ctx, { restoreState = null } = {}) {
             markWidgetClosed(WIDGET_ID);
         },
         getProps: (close) => ({
-            paperSizes: Object.keys(PAPER_SIZES),
-            orientations: Object.values(PAGE_ORIENTATIONS),
             defaultTemplate: DEFAULT_SHEET_TEMPLATE,
             stationingLayers: getStationingLayerOptions(ctx),
             designLayers: getSpatialLayerOptions(ctx),

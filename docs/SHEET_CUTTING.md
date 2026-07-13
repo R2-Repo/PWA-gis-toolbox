@@ -2,7 +2,7 @@
 
 This document defines **clean sheet cutting** — the canonical way clipped sheet polygons are built in the Sheet Cutter widget.
 
-**Implementation:** `js/widgets/sheet-cutting/export-builder.js` (`buildClippedSheetPolygon`, `buildBufferedStationCorridor`, `buildStationHalfPlanePolygon`).
+**Implementation:** `js/widgets/sheet-cutting/export-builder.js` (`buildSymmetricSheetPolygon`, `buildSymmetricCorridorCap`, `buildClippedSheetPolygon`).
 
 **Tests:** `tests/sheet-cutting-engine.test.js` (geometry section).
 
@@ -14,11 +14,11 @@ Each detail sheet is a **single valid polygon** that:
 
 1. **Tiles along the route** — contiguous station ranges, no overlap between neighbors.
 2. **Shares exact match-line corners** — adjacent sheets use the **same left/right vertices** at every interior boundary.
-3. **Has smooth curved sides on bends** — outer/inner edges follow the route (buffer), not jagged sawteeth.
+3. **Mirrors corridor width about the centerline** — left and right sides are equal `lineOffset` distances from the route (symmetric on curves).
 4. **Uses flat match lines** — interior boundaries are perpendicular cuts at sheet stations, not round buffer end caps.
 5. **Shows clipped coverage only in preview** — no dashed paper frames or match-line linework in the map preview layer.
 
-If a future change breaks corner alignment, introduces self-intersections (kinks), or reintroduces overlap, it is **not** clean sheet cutting.
+If a future change breaks corner alignment, introduces self-intersections (kinks), breaks mirror symmetry, or reintroduces overlap, it is **not** clean sheet cutting.
 
 ---
 
@@ -26,27 +26,26 @@ If a future change breaks corner alignment, introduces self-intersections (kinks
 
 For each detail sheet with station range `[startFt, endFt)`:
 
-### 1. Corridor — buffer the centerline segment
+### 1. Corridor sides — perpendicular offsets at each station
 
-- Slice the route from `startFt` to `endFt` (`lineSliceAlongRoute`).
-- Buffer by **half the map-frame height** (`mapFrameHeightFt / 2`).
-- Use **flat end caps** (`endCapStyle: 'flat'`) so route ends are not semicircles.
+- Sample the route at regular stations across `[startFt, endFt]` (typically every 20–40 ft).
+- At each station, offset **±halfHeight** perpendicular to the local route tangent (`getLocalTangentBearing`).
+- This keeps the centerline centered in the corridor on curves (equal half-width each side).
 
-This sets the **perpendicular width** of the sheet footprint. All sheets use the same corridor half-width, so offset sides are consistent on curves.
+Do **not** rely on sparse `turf.lineOffset` + simplify alone — on curves that collapses to a trapezoid with straight chords and uneven inner/outer width.
 
-### 2. Match lines — perpendicular cuts at sheet boundaries
+### 2. Match lines — perpendicular caps at sheet boundaries
 
-- At **interior** `startFt` (not route start): keep the forward side of a half-plane perpendicular to the route tangent at that station.
-- At **interior** `endFt` (not route end): keep the backward side of the same kind of half-plane.
+- At each sheet `startFt` and `endFt`, build a flat perpendicular segment through the centerline at **halfHeight** (`buildSymmetricCorridorCap`).
+- Interior boundaries use one registry entry per station so neighbors share identical cap vertices.
 
-Adjacent sheets share the same cut at the boundary station, so **both polygons include the same cap edge** (same `left` and `right` corner coordinates). Corridor caps are registered in `buildCorridorMatchLineRegistry()` at corridor half-width.
+**Do not** derive cap corners from the buffer outer boundary (`buildCapFromCorridorBoundary`) — that widens unevenly on curves and breaks mirror symmetry.
 
-### 3. Along-route limit — map-frame clip width
+### 3. Close the ring with square caps
 
-- Center on the sheet center station (`centerDistanceFt`).
-- Clip with half-planes at `center ± (mapFrameWidthFt + mapFrameHeightFt) / 2` along the route.
-
-This limits how far **along the route** the polygon extends (the printable map-frame clip width). It does **not** use a per-sheet rotated paper rectangle for perpendicular clipping.
+- Each narrow end is exactly **one straight line** from `left` to `right` at the station (perpendicular to the route).
+- Offset curve endpoints are not used for caps — only interior side vertices are kept.
+- Do **not** build sheet polygons from `turf.buffer()` output; Turf ignores `endCapStyle: 'flat'` in this stack and produces round ends.
 
 ---
 
@@ -57,10 +56,14 @@ These approaches were tried and produce **non-clean** results:
 | Anti-pattern | Why it fails |
 |--------------|--------------|
 | **Per-sheet rotated paper ∩ corridor** | Each sheet’s paper frame is rotated to its own center tangent; on curves, match-line corners drift and edges step. |
-| **Manual left/right offset stitching** | Self-intersecting rings on curves (bow-tie polygons, sawtooth gaps). |
+| **Full-route buffer + half-plane clip** | Half-plane wedge skews on curves; one corridor side clips away entirely. |
+| **Per-segment buffer for sheet polygons** | Produces round end caps (Turf `endCapStyle: 'flat'` not honored); overlapping capsule shapes at interior boundaries. |
+| **Boundary-derived cap corners** (`buildCapFromCorridorBoundary`) | Extends caps to buffer outer edge; widens one side more than the other on bends. |
 | **Snapping / forcing cap vertices after intersect** | Masks bad source geometry; creates spikes when the ring is already invalid. |
 | **Overlap stepping** (`overlapFt`) | Duplicate coverage; sheets are no longer a partition of the route. |
 | **Round buffer end caps on interior cuts** | Match lines must be flat perpendicular cuts, not semicircles. |
+
+`buildFullRouteCorridor()` and `buildBufferedStationCorridor()` remain for legacy helpers and validation; **sheet frame polygons** are built from symmetric offsets.
 
 Wide match-line segments in `buildSharedMatchLineRegistry()` are for **labels and export metadata only**, not for building clipped polygons.
 
@@ -70,10 +73,13 @@ Wide match-line segments in `buildSharedMatchLineRegistry()` are for **labels an
 
 | Function | Role |
 |----------|------|
-| `buildBufferedStationCorridor()` | Buffer route slice at corridor half-width |
-| `buildStationHalfPlanePolygon()` | Perpendicular clip at a station |
-| `buildClippedSheetPolygon()` | Full clean sheet footprint for one sheet |
-| `buildCorridorMatchLineRegistry()` | Shared cap corners at corridor width (geometry) |
+| `buildSymmetricSheetPolygon()` | Mirrored offset sides + perpendicular caps |
+| `buildSymmetricCorridorCap()` | Shared left/right cap corners at a station |
+| `buildClippedSheetPolygon()` | Public entry — delegates to symmetric builder |
+| `buildCorridorMatchLineRegistry()` | Shared cap corners for all interior sheet boundaries |
+| `buildMatchLineSegment()` | Perpendicular segment at a station |
+| `buildBufferedStationCorridor()` | Legacy per-segment buffer helper |
+| `buildFullRouteCorridor()` | Legacy full-route buffer helper |
 | `buildSharedMatchLineRegistry()` | Wide match lines for labels / PDF annotations (metadata) |
 | `buildSheetFramesGeoJson()` | Preview/export `sheet_frame` features |
 | `buildPerSheetLayerExports()` | Per-sheet outline + clipped design features |
@@ -91,6 +97,7 @@ Clean sheet cutting should satisfy:
 - `validateCenterlinePolygonCoverage()` — every sample along the centerline (and offset samples) lies in exactly one sheet.
 - Adjacent frames share corridor cap `left` and `right` vertices (`buildCorridorMatchLineRegistry` + `coordsEqual`).
 - `sharedBoundaryEdgesOverlap()` — shared edge length along match lines.
+- Probes at `halfHeight − ε` inside and `halfHeight + ε` outside on **both** sides of the centerline.
 
 ---
 
@@ -110,7 +117,8 @@ Sheet Cutter produces **two deliverable types** only:
 ### Paper target
 
 - Default template: **Tabloid landscape** (`TABLOID`, 11×17 in).
-- Map-frame ground dimensions come from `calculateMapFrameGroundDimensions()` (paper, margins, title block, legend, scale).
+- Map-frame ground dimensions come from **`sheetLengthFt`** (along-route sheet length) and **`corridorWidthFt`** (perpendicular corridor width), defaulting to **1100 ft × 350 ft**.
+- Legacy sessions that only store `scale` still resolve dimensions via `calculateMapFrameGroundDimensions()` (paper, margins, title block, legend, scale).
 - Clean sheet polygons define the **map clipping boundary** in ground feet; PDF rendering maps that boundary onto the printable map frame on tabloid paper.
 
 ### GIS layer package (`buildSheetExportPackage`)

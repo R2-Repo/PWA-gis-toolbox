@@ -78,6 +78,39 @@ export function computeSheetExportPixelDimensions(template = {}, dpi = DEFAULT_S
     };
 }
 
+/** Default along-route sheet length and perpendicular corridor width (ground feet). */
+export const DEFAULT_SHEET_LENGTH_FT = 1100;
+export const DEFAULT_CORRIDOR_WIDTH_FT = 350;
+
+/**
+ * Resolve map-frame ground dimensions from template foot fields or legacy scale.
+ * @param {object} template
+ * @returns {{ mapFrameWidthFt: number, mapFrameHeightFt: number, explanation: string }}
+ */
+export function resolveSheetFrameDimensions(template = {}) {
+    const hasFootFields = template.sheetLengthFt != null || template.corridorWidthFt != null;
+
+    if (hasFootFields || template.scale == null) {
+        const mapFrameWidthFt = Math.max(1, Number(template.sheetLengthFt) || DEFAULT_SHEET_LENGTH_FT);
+        const mapFrameHeightFt = Math.max(1, Number(template.corridorWidthFt) || DEFAULT_CORRIDOR_WIDTH_FT);
+        return {
+            mapFrameWidthFt,
+            mapFrameHeightFt,
+            explanation: `${Math.round(mapFrameWidthFt).toLocaleString()} ft along route × ${Math.round(mapFrameHeightFt).toLocaleString()} ft corridor`
+        };
+    }
+
+    return calculateMapFrameGroundDimensions({
+        paperSize: template.paperSize,
+        orientation: template.orientation,
+        scale: template.scale,
+        marginsIn: template.marginsIn,
+        titleBlockIn: template.titleBlockIn,
+        legendIn: template.legendIn,
+        notesIn: template.notesIn
+    });
+}
+
 /**
  * @param {object} input
  * @returns {{ mapFrameWidthFt: number, mapFrameHeightFt: number, explanation: string }}
@@ -404,7 +437,7 @@ export function validateCenterlinePolygonCoverage(sheets = [], routeLine = null,
             const sample = offset === 0
                 ? centerPoint
                 : turf.destination(centerPoint, Math.abs(offset), bearing + (offset > 0 ? 90 : -90), { units: 'feet' });
-            const containing = frames.filter((frame) => turf.booleanPointInPolygon(sample, frame));
+            const containing = frames.filter((frame) => turf.booleanPointInPolygon(sample, frame, { ignoreBoundary: true }));
 
             if (containing.length === 0) {
                 warnings.push(`Gap in sheet coverage near ${Math.round(clamped)} ft along route.`);
@@ -460,7 +493,8 @@ export const SHEET_STEPS = [
 export const DEFAULT_SHEET_TEMPLATE = {
     paperSize: 'TABLOID',
     orientation: PAGE_ORIENTATIONS.LANDSCAPE,
-    scale: 200,
+    sheetLengthFt: DEFAULT_SHEET_LENGTH_FT,
+    corridorWidthFt: DEFAULT_CORRIDOR_WIDTH_FT,
     direction: 'increasing',
     marginsIn: { top: 0.5, right: 0.5, bottom: 0.5, left: 0.5 },
     titleBlockIn: { width: 4, height: 2 },
@@ -605,15 +639,7 @@ export function generateSheetSet(session) {
     }
 
     const template = session.sheets.template || DEFAULT_SHEET_TEMPLATE;
-    const frameDims = calculateMapFrameGroundDimensions({
-        paperSize: template.paperSize,
-        orientation: template.orientation,
-        scale: template.scale,
-        marginsIn: template.marginsIn,
-        titleBlockIn: template.titleBlockIn,
-        legendIn: template.legendIn,
-        notesIn: template.notesIn
-    });
+    const frameDims = resolveSheetFrameDimensions(template);
 
     const sheets = generateSheetFramesAlongRoute({
         routeLine: session.routeLine,

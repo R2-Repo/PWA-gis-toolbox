@@ -7,9 +7,12 @@ function formatFeet(value) {
     return `${Math.round(Number(value)).toLocaleString()} ft`;
 }
 
+const SHEET_PAPER_SIZE = 'TABLOID';
+const SHEET_ORIENTATION = 'landscape';
+const DEFAULT_SHEET_LENGTH_FT = 1100;
+const DEFAULT_CORRIDOR_WIDTH_FT = 350;
+
 export function SheetCuttingDialog({
-    paperSizes = [],
-    orientations = [],
     defaultTemplate = {},
     stationingLayers = [],
     designLayers = [],
@@ -35,9 +38,12 @@ export function SheetCuttingDialog({
     const [projectName, setProjectName] = useState(initialSession?.project?.projectName || '');
     const [projectNumber, setProjectNumber] = useState(initialSession?.project?.projectNumber || '');
     const [stationingLayerId, setStationingLayerId] = useState(initialSession?.project?.stationingRouteLayerId || '');
-    const [paperSize, setPaperSize] = useState(initialSession?.sheets?.template?.paperSize || defaultTemplate.paperSize || 'ANSI_D');
-    const [orientation, setOrientation] = useState(initialSession?.sheets?.template?.orientation || defaultTemplate.orientation || 'landscape');
-    const [scale, setScale] = useState(String(initialSession?.sheets?.template?.scale || defaultTemplate.scale || 200));
+    const [sheetLengthFt, setSheetLengthFt] = useState(
+        String(initialSession?.sheets?.template?.sheetLengthFt ?? defaultTemplate.sheetLengthFt ?? DEFAULT_SHEET_LENGTH_FT)
+    );
+    const [corridorWidthFt, setCorridorWidthFt] = useState(
+        String(initialSession?.sheets?.template?.corridorWidthFt ?? defaultTemplate.corridorWidthFt ?? DEFAULT_CORRIDOR_WIDTH_FT)
+    );
     const [includeOverview, setIncludeOverview] = useState(initialSession?.sheets?.template?.includeOverview !== false);
     const [selectedLayerIds, setSelectedLayerIds] = useState(initialSession?.sheets?.designLayerIds || []);
     const [busy, setBusy] = useState(false);
@@ -122,9 +128,10 @@ export function SheetCuttingDialog({
             }
 
             current = await onConfigureTemplate?.({
-                paperSize,
-                orientation,
-                scale: Number(scale) || 200,
+                paperSize: SHEET_PAPER_SIZE,
+                orientation: SHEET_ORIENTATION,
+                sheetLengthFt: Number(sheetLengthFt) || DEFAULT_SHEET_LENGTH_FT,
+                corridorWidthFt: Number(corridorWidthFt) || DEFAULT_CORRIDOR_WIDTH_FT,
                 includeOverview
             }) || current;
 
@@ -213,28 +220,14 @@ export function SheetCuttingDialog({
                 </button>
             </div>
 
-            <div className="gis-widget__row" style={{ gap: 12 }}>
-                <div className="form-group" style={{ flex: 1 }}>
-                    <label>Paper size</label>
-                    <select value={paperSize} onChange={(e) => setPaperSize(e.target.value)}>
-                        {paperSizes.map((size) => (
-                            <option key={size} value={size}>{size.replace('_', ' ')}</option>
-                        ))}
-                    </select>
-                </div>
-                <div className="form-group" style={{ flex: 1 }}>
-                    <label>Orientation</label>
-                    <select value={orientation} onChange={(e) => setOrientation(e.target.value)}>
-                        {orientations.map((entry) => (
-                            <option key={entry} value={entry}>{entry}</option>
-                        ))}
-                    </select>
-                </div>
+            <div className="form-group">
+                <label>Sheet length along route (ft)</label>
+                <input value={sheetLengthFt} onChange={(e) => setSheetLengthFt(e.target.value)} />
             </div>
 
             <div className="form-group">
-                <label>Scale (1:n)</label>
-                <input value={scale} onChange={(e) => setScale(e.target.value)} />
+                <label>Corridor width (ft)</label>
+                <input value={corridorWidthFt} onChange={(e) => setCorridorWidthFt(e.target.value)} />
             </div>
 
             <label className="text-xs" style={{ display: 'block', marginBottom: 12 }}>
