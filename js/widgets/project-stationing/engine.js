@@ -1,7 +1,9 @@
 import { lineSliceAlong } from '../../tools/gis-tools.js';
+import { nearestPointOnLineAny } from '../../tools/line-geojson.js';
 import { validateMilepostValue, validateMilepostRange } from '../route-milepost-segment/engine.js';
 
 export const DEFAULT_INTERVAL_FT = 100;
+const FEET_PER_MILE = 5280;
 
 export const DEFAULT_STATIONING_GRAPHICS = {
     tickLengthFt: 30,
@@ -11,7 +13,9 @@ export const DEFAULT_STATIONING_GRAPHICS = {
     labelSide: 'right',
     labelIntervalFt: null,
     tangentSampleFt: 10,
-    includeBeginEndMarkers: false
+    includeBeginEndMarkers: false,
+    centerlineOffsetFt: 0,
+    centerlineOffsetSide: 'right'
 };
 
 export const CLIP_METHODS = {
@@ -747,6 +751,26 @@ export function resolveLabelBearing(tangentBearing, side = 'right') {
 }
 
 /**
+ * Build a label point anchored to the tick end on the label side, with optional extra offset.
+ * @param {import('geojson').Feature} tickFeature
+ * @param {number} tangentBearing
+ * @param {number} labelOffsetFt
+ * @param {'left'|'right'} [side]
+ */
+export function buildStationLabelFromTick(tickFeature, tangentBearing, labelOffsetFt, side = 'right') {
+    const normalizedSide = normalizeOffsetSide(side);
+    const coords = tickFeature?.geometry?.coordinates;
+    if (!coords || coords.length < 2) {
+        throw new Error('Tick feature is required for label placement.');
+    }
+    const tickEndpoint = normalizedSide === 'left' ? coords[0] : coords[1];
+    const anchor = turf.point(tickEndpoint);
+    const offset = Math.max(0, Number(labelOffsetFt) || 0);
+    if (offset < 0.001) return anchor;
+    return buildStationLabelPoint(anchor, tangentBearing, offset, normalizedSide);
+}
+
+/**
  * @param {number} stationFeet
  * @param {number} beginSta
  * @param {number} majorIntervalFt
@@ -766,6 +790,132 @@ export function isMajorStation(stationFeet, beginSta, majorIntervalFt = DEFAULT_
  * @param {number} tickLengthFt
  * @param {object} [properties]
  */
+/**
+ * @param {string} [side]
+ * @returns {'left'|'right'}
+ */
+export function normalizeOffsetSide(side) {
+    return String(side || 'right').toLowerCase() === 'left' ? 'left' : 'right';
+}
+
+/**
+ * Parallel-offset a centerline feature perpendicular to its direction.
+ * @param {import('geojson').Feature} line
+ * @param {number} offsetFt
+ * @param {'left'|'right'} [side]
+ */
+export function offsetCenterlineFeature(line, offsetFt, side = 'right') {
+    if (!line?.geometry) {
+        return { feature: line, warning: '' };
+    }
+    const offset = Math.max(0, Number(offsetFt) || 0);
+    if (offset < 0.001) {
+        return { feature: line, warning: '' };
+    }
+    if (typeof turf === 'undefined') throw new Error('Turf.js not loaded');
+
+    const normalizedSide = normalizeOffsetSide(side);
+    const miles = offset / FEET_PER_MILE;
+    const signedMiles = normalizedSide === 'right' ? miles : -miles;
+
+    try {
+        const offsetLine = turf.lineOffset(line, signedMiles, { units: 'miles' });
+        return {
+            feature: {
+                ...line,
+                geometry: offsetLine.geometry,
+                properties: { ...line.properties }
+            },
+            warning: ''
+        };
+    } catch (err) {
+        return {
+            feature: line,
+            warning: err?.message || 'Centerline offset failed.'
+        };
+    }
+}
+
+/**
+ * Offset point features perpendicular to a centerline for shared label placement.
+ * @param {import('geojson').Feature[]} features
+ * @param {import('geojson').Feature} centerline
+ * @param {object} [options]
+ */
+export function offsetPointLabelsAlongCenterline(features, centerline, options = {}) {
+    if (!centerline?.geometry || !features?.length) return features || [];
+
+    const offsetFt = Math.max(0, Number(options.offsetFt) || 0);
+    if (offsetFt < 0.001) return features;
+
+    const side = normalizeOffsetSide(options.side);
+    const tangentSampleFt = Number(options.tangentSampleFt) || DEFAULT_STATIONING_GRAPHICS.tangentSampleFt;
+
+    return features.map((feature) => {
+        if (!feature?.geometry) return feature;
+        try {
+            const snapped = nearestPointOnLineAny(feature, centerline, 'feet');
+            const distAlong = Number(snapped.properties?.location ?? snapped.properties?.loc ?? 0);
+            const tangent = getLocalTangentBearing(centerline, distAlong, tangentSampleFt);
+            const labelPt = buildStationLabelPoint(snapped, tangent, offsetFt, side);
+            return {
+                ...feature,
+                geometry: labelPt.geometry,
+                properties: {
+                    ...feature.properties,
+                    label_side: side,
+                    label_offset_ft: offsetFt
+                }
+            };
+        } catch (_) {
+            return feature;
+        }
+    });
+}
+
+/**
+ * Snap mileposts to a project centerline using distance along a reference centerline.
+ * @param {import('geojson').Feature[]} features
+ * @param {import('geojson').Feature} referenceCenterline
+ * @param {import('geojson').Feature} projectCenterline
+ */
+export function snapMilepostsAlongCenterline(features, referenceCenterline, projectCenterline) {
+    if (!projectCenterline?.geometry) return features || [];
+    return (features || []).map((feature) => {
+        if (!feature?.geometry) return feature;
+        try {
+            const refLine = referenceCenterline?.geometry ? referenceCenterline : projectCenterline;
+            const onRef = nearestPointOnLineAny(feature, refLine, 'feet');
+            const distAlong = Number(onRef.properties?.location ?? 0);
+            const onProject = turf.along(projectCenterline, distAlong, { units: 'feet' });
+            return {
+                ...feature,
+                geometry: onProject.geometry,
+                properties: {
+                    ...feature.properties,
+                    snapped_to_centerline: true,
+                    distance_along_ft: Math.round(distAlong * 100) / 100
+                }
+            };
+        } catch (_) {
+            return feature;
+        }
+    });
+}
+
+export function buildMilepostLabelFeatures(milepostPoints, centerline, options = {}) {
+    if (!centerline?.geometry || !milepostPoints?.length) return [];
+
+    const offsetFt = Math.max(0, Number(options.offsetFt ?? options.labelOffsetFt) || 0);
+    if (offsetFt < 0.001) return [];
+
+    return offsetPointLabelsAlongCenterline(milepostPoints, centerline, {
+        offsetFt,
+        side: options.side ?? options.labelSide,
+        tangentSampleFt: options.tangentSampleFt
+    });
+}
+
 export function buildStationTick(stationPoint, tangentBearing, tickLengthFt, properties = {}) {
     if (typeof turf === 'undefined') throw new Error('Turf.js not loaded');
     const half = Math.max(0.1, Number(tickLengthFt) || 30) / 2;
@@ -820,7 +970,7 @@ export function generateStationingGraphics(options = {}) {
         const isBegin = i === 0;
         const isEnd = i === breaks.length - 1;
 
-        stationTicks.push(buildStationTick(stationPoint, tangent, tickLen, {
+        const tickFeature = buildStationTick(stationPoint, tangent, tickLen, {
             name: stationLabel,
             station_label: stationLabel,
             station_feet: sta,
@@ -832,14 +982,15 @@ export function generateStationingGraphics(options = {}) {
             route_alias: routeMeta.routeAlias || '',
             clip_method: clipMeta.clipMethod || CLIP_METHODS.FULL_ROUTE,
             station_index: i
-        }));
+        });
+        stationTicks.push(tickFeature);
 
-        // Offset label point beside the tick (same station as the tick)
+        // Offset label point from the tick end on the label side
         const offsetMod = distAlong % labelInterval;
         const labelAtInterval = isBegin || isEnd || offsetMod < 0.01 || Math.abs(offsetMod - labelInterval) < 0.01;
         if (labelAtInterval) {
-            const labelPt = buildStationLabelPoint(
-                stationPoint,
+            const labelPt = buildStationLabelFromTick(
+                tickFeature,
                 tangent,
                 graphics.labelOffsetFt,
                 graphics.labelSide
@@ -896,6 +1047,10 @@ export function generateStationingGraphics(options = {}) {
             end_station: formatStation(endSta),
             station_interval_ft: intervalFeet,
             label_interval_ft: labelInterval,
+            centerline_offset_ft: Math.max(0, Number(graphics.centerlineOffsetFt) || 0),
+            centerline_offset_side: normalizeOffsetSide(graphics.centerlineOffsetSide),
+            label_offset_ft: Math.max(0, Number(graphics.labelOffsetFt) || 0),
+            label_side: normalizeOffsetSide(graphics.labelSide),
             created_by_widget: 'project-stationing',
             created_at: now
         }
@@ -934,6 +1089,9 @@ export function computeProjectStationing(input = {}) {
         intervalFt = DEFAULT_INTERVAL_FT,
         startOffsetFt = 0,
         endOffsetFt = 0,
+        centerlineOffsetFt = 0,
+        centerlineOffsetSide = 'right',
+        graphics = {},
         routeMeta = {},
         clipMeta = {}
     } = input;
@@ -966,14 +1124,43 @@ export function computeProjectStationing(input = {}) {
         return { ok: false, errors: ['Trim offsets produce an empty centerline.'] };
     }
 
-    return generateStationingGraphics({
-        centerline: trimmed,
+    const mergedGraphics = {
+        ...DEFAULT_STATIONING_GRAPHICS,
+        ...graphics,
+        centerlineOffsetFt: Math.max(0, Number(centerlineOffsetFt ?? graphics.centerlineOffsetFt) || 0),
+        centerlineOffsetSide: normalizeOffsetSide(centerlineOffsetSide || graphics.centerlineOffsetSide)
+    };
+
+    const warnings = [];
+    let workingCenterline = trimmed;
+    if (mergedGraphics.centerlineOffsetFt > 0) {
+        const offsetResult = offsetCenterlineFeature(
+            trimmed,
+            mergedGraphics.centerlineOffsetFt,
+            mergedGraphics.centerlineOffsetSide
+        );
+        workingCenterline = offsetResult.feature;
+        if (offsetResult.warning) warnings.push(offsetResult.warning);
+    }
+
+    const result = generateStationingGraphics({
+        centerline: workingCenterline,
         beginStationFeet: stationResult.value,
         endStationFeet: parsedEndStation,
         intervalFeet: intervalFt,
         routeMeta,
-        clipMeta
+        clipMeta,
+        graphics: mergedGraphics
     });
+
+    if (!result.ok) return result;
+
+    result.baseCenterline = trimmed;
+    if (warnings.length) {
+        result.warnings = [...(result.warnings || []), ...warnings];
+    }
+
+    return result;
 }
 
 /**

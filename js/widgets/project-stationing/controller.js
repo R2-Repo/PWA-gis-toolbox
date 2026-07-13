@@ -22,6 +22,7 @@ import {
 import { nearestPointOnLineAny, nearestPointOnRouteLine, lineSliceAlongRoute } from '../../tools/line-geojson.js';
 import {
     DEFAULT_INTERVAL_FT,
+    DEFAULT_STATIONING_GRAPHICS,
     CLIP_METHODS,
     ROUTE_SOURCE_DRAWN,
     ROUTE_SOURCE_IMPORTED,
@@ -35,7 +36,9 @@ import {
     parseRouteMileage,
     resolvePartialMilepostClipInputs,
     resolveClipMilepostRange,
-    resolveClipMilepostEndpoints
+    resolveClipMilepostEndpoints,
+    snapMilepostsAlongCenterline,
+    buildMilepostLabelFeatures
 } from './engine.js';
 import { createCenterlineDrawHandlers } from '../map-draw-helpers.js';
 import { getSpatialLayerOptions } from '../widget-context.js';
@@ -58,6 +61,14 @@ const activeConfig = { ...UDOT_ROUTE_SEGMENT_CONFIG };
 let layersValidated = false;
 
 const NEAR_LINE_FT = 50;
+
+const STATIONING_LABEL_STYLE = {
+    placement: 'point',
+    anchor: 'center',
+    offset: [0, 0],
+    allowOverlap: true,
+    ignorePlacement: true
+};
 
 function isCustomRouteContext(routeContext) {
     const source = routeContext?.source || routeContext?.routeRecord?.source;
@@ -140,7 +151,7 @@ function readRouteMileage(routeContext) {
     };
 }
 
-function buildClipPreviewGeojson(clipResult, routeSelection, stationResult = null, milepostPoints = []) {
+function buildClipPreviewGeojson(clipResult, routeSelection, stationResult = null, milepostOutput = null) {
     const features = [];
     if (routeSelection?.positiveLine) {
         features.push({
@@ -197,10 +208,19 @@ function buildClipPreviewGeojson(clipResult, routeSelection, stationResult = nul
             });
         }
     }
+    const milepostPoints = milepostOutput?.points ?? [];
+    const milepostLabels = milepostOutput?.labels ?? [];
+    const milepostLabelFeatures = milepostLabels.length ? milepostLabels : milepostPoints;
     for (const pt of milepostPoints) {
         features.push({
             ...pt,
             properties: { ...pt.properties, _preview: 'milepost' }
+        });
+    }
+    for (const lbl of milepostLabelFeatures) {
+        features.push({
+            ...lbl,
+            properties: { ...lbl.properties, _preview: 'milepost_label' }
         });
     }
     return { type: 'FeatureCollection', features };
@@ -445,22 +465,10 @@ function decorateMilepostFeatures(features) {
 
 const MILEPOST_POINT_COLOR = '#00ff66';
 
-function snapMilepostsToCenterline(features, centerline) {
-    if (!centerline?.geometry) return features || [];
-    return (features || []).map((feature) => {
-        const snapped = nearestPointOnLineAny(feature, centerline, 'feet');
-        return {
-            ...feature,
-            geometry: snapped.geometry,
-            properties: {
-                ...feature.properties,
-                snapped_to_centerline: true
-            }
-        };
-    });
-}
-
-async function fetchMilepostTenths(clip, routeContext, centerline) {
+async function fetchMilepostTenths(clip, routeContext, offsetCenterline, options = {}) {
+    const filterCenterline = options.filterCenterline || offsetCenterline;
+    const centerlineOffsetFt = Math.max(0, Number(options.centerlineOffsetFt) || 0);
+    const nearTolerance = NEAR_LINE_FT + centerlineOffsetFt;
     const mpRange = resolveClipMilepostRange(clip, routeContext, activeConfig);
     let features = [];
 
@@ -479,19 +487,39 @@ async function fetchMilepostTenths(clip, routeContext, centerline) {
 
     features = filterPositiveMileposts(features);
 
-    if (mpRange.needsSpatialFilter && centerline) {
-        features = filterPointsNearLine(features, centerline, NEAR_LINE_FT);
+    if (filterCenterline) {
+        features = filterPointsNearLine(features, filterCenterline, nearTolerance);
     }
 
-    if (centerline) {
-        features = snapMilepostsToCenterline(features, centerline);
+    if (offsetCenterline) {
+        features = snapMilepostsAlongCenterline(features, filterCenterline, offsetCenterline);
     }
 
-    return decorateMilepostFeatures(features);
+    features = decorateMilepostFeatures(features);
+
+    return features;
+}
+
+function buildMilepostOutput(milepostPoints, centerline, options = {}) {
+    const points = milepostPoints || [];
+    const labels = buildMilepostLabelFeatures(points, centerline, options);
+    return { points, labels };
 }
 
 function buildStationingInput(input, clip, routeContext) {
     const milepostEndpoints = resolveClipMilepostEndpoints(clip, routeContext, activeConfig);
+    const centerlineOffsetFt = Math.max(0, Number(input.centerlineOffsetFt) || 0);
+    const centerlineOffsetSide = String(input.centerlineOffsetSide || 'right').toLowerCase() === 'left'
+        ? 'left'
+        : 'right';
+    const labelOffsetFt = Math.max(
+        0,
+        Number(input.labelOffsetFt ?? DEFAULT_STATIONING_GRAPHICS.labelOffsetFt)
+    );
+    const labelSide = String(input.labelSide || DEFAULT_STATIONING_GRAPHICS.labelSide).toLowerCase() === 'left'
+        ? 'left'
+        : 'right';
+
     return {
         centerline: clip.trimmedCenterline || clip.baseCenterline || clip.mpCenterline,
         beginStation: input.beginStation,
@@ -499,6 +527,14 @@ function buildStationingInput(input, clip, routeContext) {
         intervalFt: Number(input.intervalFt) || DEFAULT_INTERVAL_FT,
         startOffsetFt: 0,
         endOffsetFt: 0,
+        centerlineOffsetFt,
+        centerlineOffsetSide,
+        graphics: {
+            labelOffsetFt,
+            labelSide,
+            centerlineOffsetFt,
+            centerlineOffsetSide
+        },
         routeMeta: {
             routeId: routeContext.routeId,
             routeAlias: routeContext.routeAlias,
@@ -510,6 +546,15 @@ function buildStationingInput(input, clip, routeContext) {
             mileposts: milepostEndpoints || {},
             warnings: clip.warnings || []
         }
+    };
+}
+
+function buildMilepostFetchOptions(stationInput, stationResult) {
+    return {
+        filterCenterline: stationResult.baseCenterline || stationInput.centerline,
+        centerlineOffsetFt: stationInput.centerlineOffsetFt,
+        labelOffsetFt: stationInput.graphics?.labelOffsetFt,
+        labelSide: stationInput.graphics?.labelSide
     };
 }
 
@@ -971,12 +1016,19 @@ export async function openProjectStationing(ctx) {
                     throw new Error(stationResult.errors?.[0] || 'Unable to generate stationing.');
                 }
 
-                let milepostPoints = [];
+                let milepostOutput = { points: [], labels: [] };
                 if (input.includeMilepostTenths) {
-                    milepostPoints = await fetchMilepostTenths(
+                    const fetchOptions = buildMilepostFetchOptions(stationInput, stationResult);
+                    const milepostPoints = await fetchMilepostTenths(
                         clip,
                         previewState.routeContext,
-                        stationResult.centerline
+                        stationResult.centerline,
+                        fetchOptions
+                    );
+                    milepostOutput = buildMilepostOutput(
+                        milepostPoints,
+                        stationResult.centerline,
+                        fetchOptions
                     );
                 }
 
@@ -984,10 +1036,9 @@ export async function openProjectStationing(ctx) {
                     clip,
                     previewState.routeContext.routeSelection,
                     stationResult,
-                    milepostPoints
+                    milepostOutput
                 );
                 showPreview(ctx, previewState, geojson);
-                fitPreviewBounds(ctx, geojson);
 
                 return {
                     summary: stationResult.summary,
@@ -1070,7 +1121,12 @@ export async function openProjectStationing(ctx) {
                     {
                         fit: false,
                         _kmlExport: { labelOnly: true },
-                        _mapLabels: { field: 'station_label', placement: 'point', minZoom: 10, size: 11 },
+                        _mapLabels: {
+                            field: 'station_label',
+                            minZoom: 10,
+                            size: 11,
+                            ...STATIONING_LABEL_STYLE
+                        },
                         style: {
                             mode: 'simple',
                             strokeColor: '#111111',
@@ -1085,21 +1141,36 @@ export async function openProjectStationing(ctx) {
 
                 let milepostCount = 0;
                 if (input.includeMilepostTenths) {
+                    const fetchOptions = buildMilepostFetchOptions(stationInput, stationResult);
                     const milepostPoints = await fetchMilepostTenths(
                         clip,
                         previewState.routeContext,
-                        stationResult.centerline
+                        stationResult.centerline,
+                        fetchOptions
                     );
-                    milepostCount = milepostPoints.length;
+                    const milepostOutput = buildMilepostOutput(
+                        milepostPoints,
+                        stationResult.centerline,
+                        fetchOptions
+                    );
+                    milepostCount = milepostOutput.points.length;
                     if (milepostCount > 0) {
+                        const useSeparateLabels = milepostOutput.labels.length > 0;
                         outputLayers.push(addDerivedLayer(
                             ctx,
                             `${baseName} Mileposts (tenth)`,
-                            { type: 'FeatureCollection', features: milepostPoints },
+                            { type: 'FeatureCollection', features: milepostOutput.points },
                             {
                                 fit: false,
-                                _kmlExport: { milepost: true, labelField: 'milepost' },
-                                _mapLabels: { field: 'milepost', placement: 'point', minZoom: 10, size: 10 },
+                                _kmlExport: { milepost: true, labelField: useSeparateLabels ? '' : 'milepost' },
+                                ...(useSeparateLabels ? {} : {
+                                    _mapLabels: {
+                                        field: 'milepost',
+                                        minZoom: 10,
+                                        size: 10,
+                                        ...STATIONING_LABEL_STYLE
+                                    }
+                                }),
                                 style: {
                                     mode: 'simple',
                                     strokeColor: MILEPOST_POINT_COLOR,
@@ -1110,6 +1181,32 @@ export async function openProjectStationing(ctx) {
                                 }
                             }
                         ));
+                        if (useSeparateLabels) {
+                            outputLayers.push(addDerivedLayer(
+                                ctx,
+                                `${baseName} Milepost Labels`,
+                                { type: 'FeatureCollection', features: milepostOutput.labels },
+                                {
+                                    fit: false,
+                                    _kmlExport: { labelOnly: true },
+                                    _mapLabels: {
+                                        field: 'milepost',
+                                        minZoom: 10,
+                                        size: 10,
+                                        ...STATIONING_LABEL_STYLE
+                                    },
+                                    style: {
+                                        mode: 'simple',
+                                        strokeColor: '#111111',
+                                        fillColor: '#111111',
+                                        pointSize: 0,
+                                        strokeWidth: 0,
+                                        fillOpacity: 0,
+                                        strokeOpacity: 0
+                                    }
+                                }
+                            ));
+                        }
                     }
                 }
 

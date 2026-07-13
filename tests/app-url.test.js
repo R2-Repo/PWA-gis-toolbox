@@ -23,6 +23,16 @@ describe('app-url parser', () => {
         expect(config.panel).toBe('none');
     });
 
+    it('parses alternate basemap keys', () => {
+        const config = parseAppUrl('?basemap=dark-matter');
+        expect(config.basemap).toBe('dark-matter');
+    });
+
+    it('normalizes unknown basemap keys to voyager', () => {
+        const config = parseAppUrl('?basemap=not-a-real-basemap');
+        expect(config.basemap).toBe('voyager');
+    });
+
     it('parses live param without map preset bootstrap', () => {
         const config = parseAppUrl('?live=firewatch');
         expect(config.map).toBeUndefined();

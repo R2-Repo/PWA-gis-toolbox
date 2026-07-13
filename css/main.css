@@ -703,6 +703,65 @@ html, body {
     font-weight: 600;
 }
 
+/* Basemap toggle segments with caret dropdowns */
+.header-basemap-toggle {
+    overflow: visible;
+}
+
+.header-toggle-segment {
+    position: relative;
+    display: inline-flex;
+    align-items: stretch;
+}
+
+.header-toggle-segment + .header-toggle-segment {
+    border-left: 1px solid rgba(255,255,255,0.15);
+}
+
+.header-toggle-option-main,
+.header-toggle-caret {
+    background: transparent;
+    color: rgba(255,255,255,0.6);
+    border: none;
+    padding: 5px 12px;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background 0.2s, color 0.2s;
+    white-space: nowrap;
+    font-family: var(--font);
+    letter-spacing: -0.1px;
+}
+
+.header-toggle-caret {
+    padding: 5px 8px 5px 6px;
+    border-left: 1px solid rgba(255,255,255,0.12);
+    line-height: 1;
+}
+
+.header-toggle-segment:hover:not(.active) .header-toggle-option-main,
+.header-toggle-segment:hover:not(.active) .header-toggle-caret {
+    background: rgba(255,255,255,0.08);
+    color: rgba(255,255,255,0.85);
+}
+
+.header-toggle-segment.active .header-toggle-option-main,
+.header-toggle-segment.active .header-toggle-caret {
+    background: var(--gold-light);
+    color: #1c1c1e;
+    font-weight: 600;
+}
+
+.header-basemap-dropdown {
+    left: 0;
+    right: auto;
+    min-width: 180px;
+}
+
+.header-basemap-item.active {
+    background: rgba(255, 255, 255, 0.04);
+}
+
 .map-overlay-msg,
 .map-overlay {
     position: absolute;

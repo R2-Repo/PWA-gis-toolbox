@@ -26,7 +26,11 @@ import {
     stationKey,
     coordsEqual,
     sharedBoundaryEdgesOverlap,
-    buildSheetExportPackage
+    buildSheetExportPackage,
+    buildOverviewGeoJson,
+    clipFeatureToSheetFrame,
+    clipFeaturesToSheetFrame,
+    featureIntersectsSheetFrame
 } from '../js/widgets/sheet-cutting/export-builder.js';
 import { getLocalTangentBearing } from '../js/widgets/project-stationing/engine.js';
 
@@ -380,5 +384,66 @@ describe('sheet cutting geometry', () => {
     it('resolves tabloid landscape PDF page size in points', () => {
         const format = computePdfPageSizePt({ paperSize: 'TABLOID', orientation: 'landscape' });
         expect(format).toEqual([17 * 72, 11 * 72]);
+    });
+
+    it('detects line intersections with sheet frames', () => {
+        const frame = turf.bboxPolygon([-111.905, 40.748, -111.885, 40.752]);
+        const centerline = turf.lineString([[-111.91, 40.75], [-111.88, 40.75]]);
+        const tick = turf.lineString([[-111.895, 40.749], [-111.895, 40.751]]);
+
+        expect(featureIntersectsSheetFrame(centerline, frame)).toBe(true);
+        expect(featureIntersectsSheetFrame(tick, frame)).toBe(true);
+    });
+
+    it('includes vector overview sheet labels above sheet outlines', () => {
+        const dims = calculateMapFrameGroundDimensions({ scale: 200 });
+        const sheets = generateSheetFramesAlongRoute({
+            routeLine: curvedRoute,
+            mapFrameWidthFt: dims.mapFrameWidthFt,
+            sheetTemplate: dims
+        }).map((sheet) => ({
+            ...sheet,
+            mapFrameWidthFt: dims.mapFrameWidthFt,
+            mapFrameHeightFt: dims.mapFrameHeightFt
+        }));
+        const sheetFrames = buildSheetFramesGeoJson(sheets, curvedRoute);
+        const overview = buildOverviewGeoJson(
+            { sheetBoxes: sheets.map((sheet) => ({ sheetId: sheet.sheetId, sheetNumber: sheet.sheetNumber, centerDistanceFt: sheet.centerDistanceFt })) },
+            curvedRoute,
+            sheetFrames
+        );
+
+        const outlines = overview.features.filter((feature) => feature.properties?.feature_type === 'overview_sheet_outline');
+        const labels = overview.features.filter((feature) => feature.properties?.feature_type === 'overview_sheet_label');
+        expect(outlines.length).toBe(sheets.length);
+        expect(labels.length).toBe(sheets.length);
+        expect(labels[0].properties.sheet_label).toMatch(/^Sheet \d{2}$/);
+    });
+
+    it('clips centerlines and station ticks to sheet frames for vector export', () => {
+        const frame = turf.bboxPolygon([-111.905, 40.748, -111.885, 40.752]);
+        const centerline = {
+            type: 'Feature',
+            properties: { name: 'Centerline' },
+            geometry: turf.lineString([[-111.91, 40.75], [-111.88, 40.75]]).geometry
+        };
+        const tick = {
+            type: 'Feature',
+            properties: { station_label: '10+00' },
+            geometry: turf.lineString([[-111.895, 40.749], [-111.895, 40.751]]).geometry
+        };
+
+        const clippedCenterline = clipFeatureToSheetFrame(centerline, frame);
+        expect(clippedCenterline?.geometry?.type).toBe('LineString');
+        expect(clippedCenterline.geometry.coordinates.length).toBeGreaterThan(1);
+        expect(turf.length(clippedCenterline, { units: 'feet' })).toBeGreaterThan(100);
+
+        const clippedTick = clipFeatureToSheetFrame(tick, frame);
+        expect(clippedTick?.geometry?.type).toBe('LineString');
+        expect(clippedTick.geometry.coordinates).toHaveLength(2);
+
+        const clipped = clipFeaturesToSheetFrame(frame, [centerline, tick]);
+        expect(clipped).toHaveLength(2);
+        expect(clipped.every((feature) => feature.properties?.clipped_to_sheet)).toBe(true);
     });
 });

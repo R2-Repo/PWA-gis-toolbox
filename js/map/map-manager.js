@@ -93,25 +93,7 @@ import {
     resolveFeaturesForZoom,
     startQueryResultPulse
 } from './query-result-overlay.js';
-
-const BASEMAPS = {
-    voyager: {
-        name: 'Voyager',
-        tiles: [
-            'https://a.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}@2x.png',
-            'https://b.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}@2x.png',
-            'https://c.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}@2x.png'
-        ],
-        attribution: '&copy; <a href="https://openstreetmap.org/copyright">OSM</a> &copy; <a href="https://carto.com/">CARTO</a>',
-        maxZoom: 20
-    },
-    satellite: {
-        name: 'Satellite',
-        tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'],
-        attribution: '&copy; Esri, Maxar, Earthstar Geographics',
-        maxZoom: 19
-    }
-};
+import { getBasemapConfig, getBasemapRegistry, isSatelliteBasemap } from './basemap-catalog.js';
 
 const LAYER_COLORS = ['#2563eb', '#dc2626', '#16a34a', '#d97706', '#7c3aed', '#0891b2', '#be185d', '#65a30d'];
 
@@ -459,7 +441,7 @@ class MapManager {
     // ==========================================
 
     _buildStyle(basemapKey) {
-        const bm = BASEMAPS[basemapKey] || BASEMAPS.voyager;
+        const bm = getBasemapConfig(basemapKey) || getBasemapConfig('voyager');
         const sources = {};
         const layers = [];
 
@@ -507,7 +489,7 @@ class MapManager {
     }
 
     setBasemap(key) {
-        const bm = BASEMAPS[key];
+        const bm = getBasemapConfig(key);
         if (!bm) {
             logger.warn('Map', 'Unknown basemap key', { key });
             return;
@@ -576,7 +558,7 @@ class MapManager {
         bus.emit('map:basemap', key);
     }
 
-    getBasemaps() { return BASEMAPS; }
+    getBasemaps() { return getBasemapRegistry(); }
 
     getLayerStyle(layerId) {
         return this._layerStyles.get(layerId) || null;
@@ -2370,7 +2352,7 @@ class MapManager {
 
     /** Append hillshade, sky, and buildings to a style object (basemap switch carry-over). */
     _append3DStyleLayers(style, basemapKey = this.currentBasemap) {
-        if (basemapKey !== 'satellite') {
+        if (!isSatelliteBasemap(basemapKey)) {
             style.layers.push({
                 id: 'hillshade',
                 type: 'hillshade',
@@ -2404,7 +2386,7 @@ class MapManager {
         this._terrainEnabled = true;
 
         // Only add hillshade on non-satellite basemaps
-        if (this.currentBasemap !== 'satellite' && !this.map.getLayer('hillshade')) {
+        if (!isSatelliteBasemap(this.currentBasemap) && !this.map.getLayer('hillshade')) {
             // Find the first non-basemap layer to insert hillshade above basemap but below data
             const layers = this.map.getStyle().layers;
             let beforeId;
@@ -2426,7 +2408,7 @@ class MapManager {
                     'hillshade-accent-color': '#6e6e6e'
                 }
             }, beforeId);
-        } else if (this.currentBasemap === 'satellite' && this.map.getLayer('hillshade')) {
+        } else if (isSatelliteBasemap(this.currentBasemap) && this.map.getLayer('hillshade')) {
             this.map.removeLayer('hillshade');
         }
 
@@ -3955,7 +3937,11 @@ class MapManager {
         const stationLabelSpec = buildMapLabelLayerSpec(srcId + '-station-labels', srcId, {
             field: 'station_label',
             minZoom: 0,
-            size: 11
+            size: 11,
+            anchor: 'center',
+            offset: [0, 0],
+            allowOverlap: true,
+            ignorePlacement: true
         });
         if (stationLabelSpec) {
             stationLabelSpec.id = srcId + '-station-label-text';
@@ -4005,6 +3991,22 @@ class MapManager {
             }
         });
         layerIds.push(milepostId);
+
+        const milepostLabelSpec = buildMapLabelLayerSpec(srcId + '-milepost-labels', srcId, {
+            field: 'milepost',
+            minZoom: 0,
+            size: 10,
+            anchor: 'center',
+            offset: [0, 0],
+            allowOverlap: true,
+            ignorePlacement: true
+        });
+        if (milepostLabelSpec) {
+            milepostLabelSpec.id = srcId + '-milepost-label-text';
+            milepostLabelSpec.filter = ['==', ['get', '_preview'], 'milepost_label'];
+            this.map.addLayer(milepostLabelSpec);
+            layerIds.push(milepostLabelSpec.id);
+        }
 
         const clipAreaId = srcId + '-clip-area';
         this.map.addLayer({

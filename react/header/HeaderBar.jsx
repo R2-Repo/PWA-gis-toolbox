@@ -2,6 +2,7 @@ import { PipelineIcon } from '../ui/PipelineIcon.jsx';
 import { SelectionBar } from '../map/SelectionBar.jsx';
 import { MapPrintMenu } from './MapPrintMenu.jsx';
 import { PopupModeMenu } from './PopupModeMenu.jsx';
+import { BasemapToggle } from './BasemapToggle.jsx';
 
 const faviconUrl = `${import.meta.env.BASE_URL}icons/favicon.png`;
 
@@ -70,10 +71,7 @@ export function HeaderBar({
                 </div>
             </div>
             <div className="header-right">
-                <div className="header-toggle" id="basemap-toggle">
-                    <button className={`header-toggle-option${basemap === 'voyager' ? ' active' : ''}`} data-value="voyager" onClick={() => onBasemapChange?.('voyager')}>🗺️ Map</button>
-                    <button className={`header-toggle-option${basemap === 'satellite' ? ' active' : ''}`} data-value="satellite" onClick={() => onBasemapChange?.('satellite')}>🛰️ Satellite</button>
-                </div>
+                <BasemapToggle basemap={basemap} onBasemapChange={onBasemapChange} />
                 <div className="header-toggle" id="dimension-toggle">
                     <button className={`header-toggle-option${dimension === '2d' ? ' active' : ''}`} data-value="2d" onClick={() => onDimensionChange?.('2d')}>2D</button>
                     <button className={`header-toggle-option${dimension === '3d' ? ' active' : ''}`} data-value="3d" onClick={() => onDimensionChange?.('3d')}>3D</button>

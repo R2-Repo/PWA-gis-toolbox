@@ -24,7 +24,7 @@ import {
     isSecondaryMapWindowOpen,
     openSecondaryMapWindow
 } from './window-open.js';
-import bus from '../core/event-bus.js';
+import { syncBasemapToggleActive } from '../map/basemap-catalog.js';
 
 const POLL_MS = 500;
 const ACTIVATE_HANDSHAKE_MS = 5000;
@@ -326,9 +326,7 @@ class DualScreenCoordinator {
         if (!payload) return;
         if (payload.basemap && payload.basemap !== mapService.getCurrentBasemap()) {
             mapService.setCurrentBasemap(payload.basemap);
-            document.querySelectorAll('#basemap-toggle .header-toggle-option').forEach(btn => {
-                btn.classList.toggle('active', btn.dataset.value === payload.basemap);
-            });
+            syncBasemapToggleActive(payload.basemap);
         }
         if (payload.is3d !== undefined) {
             mapService.set3DEnabled(!!payload.is3d);

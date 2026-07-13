@@ -6,7 +6,8 @@
  */
 
 import { lineSliceAlongRoute } from '../../tools/line-geojson.js';
-import { getLocalTangentBearing } from '../project-stationing/engine.js';
+import { extractLineStringGeometries, getLocalTangentBearing } from '../project-stationing/engine.js';
+import { buildSheetLabelCollection } from './sheet-labels.js';
 import {
     buildSheetContinuationLabels,
     resolveSheetPdfBearing
@@ -14,6 +15,7 @@ import {
 
 const STATION_KEY_SCALE = 1000;
 const COORD_EPSILON = 1e-8;
+const MIN_CLIP_LINE_FEET = 1e-4;
 
 /**
  * @param {number} stationFt
@@ -738,6 +740,17 @@ export function buildOverviewGeoJson(overviewSheet, routeLine = null, sheetFrame
                 geometry: frame.geometry
             });
         }
+
+        const labelCollection = buildSheetLabelCollection(sheetFrames, routeLine);
+        for (const label of labelCollection.features || []) {
+            features.push({
+                ...label,
+                properties: {
+                    ...(label.properties || {}),
+                    feature_type: 'overview_sheet_label'
+                }
+            });
+        }
     } else {
         for (const box of overviewSheet?.sheetBoxes || []) {
             features.push({
@@ -762,6 +775,87 @@ export function buildOverviewGeoJson(overviewSheet, routeLine = null, sheetFrame
 }
 
 /**
+ * @param {object} lineFeature
+ * @param {object} frameFeature
+ * @returns {number[][]}
+ */
+function collectLinePartsInsideSheetFrame(lineFeature, frameFeature) {
+    const frame = frameFeature?.type === 'Feature' ? frameFeature : turf.feature(frameFeature);
+    const insideCoords = [];
+
+    const considerPart = (part) => {
+        if (!part?.geometry || part.geometry.type !== 'LineString') return;
+        let len = 0;
+        try {
+            len = turf.length(part, { units: 'feet' });
+        } catch (_) {
+            return;
+        }
+        if (len < MIN_CLIP_LINE_FEET) return;
+        try {
+            const mid = turf.along(part, len / 2, { units: 'feet' });
+            if (turf.booleanPointInPolygon(mid, frame)) {
+                insideCoords.push(part.geometry.coordinates);
+            }
+        } catch (_) {
+            // ignore invalid segment
+        }
+    };
+
+    try {
+        const boundary = turf.polygonToLine(frame);
+        const split = turf.lineSplit(lineFeature, boundary);
+        const parts = split.features?.length ? split.features : [lineFeature];
+        for (const part of parts) {
+            considerPart(part);
+        }
+    } catch (_) {
+        considerPart(lineFeature);
+    }
+
+    if (insideCoords.length === 0) {
+        considerPart(lineFeature);
+    }
+
+    return insideCoords;
+}
+
+/**
+ * @param {object} feature
+ * @param {object} frameFeature
+ * @returns {object|null}
+ */
+function clipLineGeometryToSheetFrame(feature, frameFeature) {
+    const lineGeoms = extractLineStringGeometries(feature.geometry);
+    if (!lineGeoms.length) return null;
+
+    const insideCoords = [];
+    for (const geom of lineGeoms) {
+        const lineFeature = {
+            type: 'Feature',
+            geometry: geom,
+            properties: feature.properties || {}
+        };
+        insideCoords.push(...collectLinePartsInsideSheetFrame(lineFeature, frameFeature));
+    }
+
+    if (!insideCoords.length) return null;
+
+    const clippedGeometry = insideCoords.length === 1
+        ? { type: 'LineString', coordinates: insideCoords[0] }
+        : { type: 'MultiLineString', coordinates: insideCoords };
+
+    return {
+        ...feature,
+        geometry: clippedGeometry,
+        properties: {
+            ...(feature.properties || {}),
+            clipped_to_sheet: true
+        }
+    };
+}
+
+/**
  * @param {object} feature
  * @param {object} frameFeature
  * @returns {boolean}
@@ -780,12 +874,7 @@ export function featureIntersectsSheetFrame(feature, frameFeature) {
             return geometry.coordinates.some((coord) => turf.booleanPointInPolygon(turf.point(coord), frameFeature));
         }
 
-        const clipped = turf.intersect(turf.featureCollection([feature, frameFeature]));
-        if (!clipped?.geometry) return false;
-        if (clipped.geometry.type === 'GeometryCollection') {
-            return (clipped.geometry.geometries || []).length > 0;
-        }
-        return true;
+        return turf.booleanIntersects(feature, frameFeature);
     } catch (_) {
         return false;
     }
@@ -812,20 +901,20 @@ export function clipFeatureToSheetFrame(feature, frameFeature) {
         };
     }
 
-    try {
-        const clipped = turf.intersect(turf.featureCollection([feature, frameFeature]));
-        if (!clipped?.geometry) return null;
-        return {
-            ...feature,
-            geometry: clipped.geometry,
-            properties: {
-                ...(feature.properties || {}),
-                clipped_to_sheet: true
-            }
-        };
-    } catch (_) {
-        return null;
+    if (geometry.type === 'LineString' || geometry.type === 'MultiLineString') {
+        return clipLineGeometryToSheetFrame(feature, frameFeature);
     }
+
+    const clipped = intersectPolygons(feature, frameFeature);
+    if (!clipped?.geometry) return null;
+    return {
+        ...feature,
+        geometry: clipped.geometry,
+        properties: {
+            ...(feature.properties || {}),
+            clipped_to_sheet: true
+        }
+    };
 }
 
 /**
@@ -870,10 +959,22 @@ export function buildPerSheetLayerExports(detailSheets = [], routeLine = null, d
             }
             : null;
 
+        const clippedRoute = routeLine?.geometry && frameFeature
+            ? clipFeatureToSheetFrame(
+                {
+                    type: 'Feature',
+                    properties: { feature_type: 'route' },
+                    geometry: routeLine.geometry
+                },
+                frameFeature
+            )
+            : null;
+
         const contents = {
             type: 'FeatureCollection',
             features: [
                 ...(outlineFeature ? [outlineFeature] : []),
+                ...(clippedRoute ? [clippedRoute] : []),
                 ...clippedFeatures
             ]
         };

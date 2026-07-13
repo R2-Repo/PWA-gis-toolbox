@@ -9,6 +9,7 @@ import { validateMilepostRange } from '../../js/widgets/route-milepost-segment/e
 import {
     validateStation,
     DEFAULT_INTERVAL_FT,
+    DEFAULT_STATIONING_GRAPHICS,
     ROUTE_SOURCE_DRAWN,
     ROUTE_SOURCE_IMPORTED,
     isCustomRouteSource
@@ -21,6 +22,11 @@ const CLIP_PREVIEW_DEBOUNCE_MS = 400;
 const OUTPUT_OPTIONS = [
     { value: 'segments_only', label: 'Stationing only' },
     { value: 'with_mileposts', label: 'Stationing + LM tenth mileposts' }
+];
+
+const OFFSET_SIDE_OPTIONS = [
+    { value: 'left', label: 'Left' },
+    { value: 'right', label: 'Right' }
 ];
 
 function formatFeet(value) {
@@ -71,6 +77,10 @@ export function ProjectStationingDialog({
     const [showEndStationField, setShowEndStationField] = useState(false);
     const [intervalFt, setIntervalFt] = useState(String(DEFAULT_INTERVAL_FT));
     const [outputMode, setOutputMode] = useState('segments_only');
+    const [centerlineOffsetFt, setCenterlineOffsetFt] = useState('0');
+    const [centerlineOffsetSide, setCenterlineOffsetSide] = useState(DEFAULT_STATIONING_GRAPHICS.centerlineOffsetSide);
+    const [labelOffsetFt, setLabelOffsetFt] = useState(String(DEFAULT_STATIONING_GRAPHICS.labelOffsetFt));
+    const [labelSide, setLabelSide] = useState(DEFAULT_STATIONING_GRAPHICS.labelSide);
 
     const [preview, setPreview] = useState(null);
     const [previewing, setPreviewing] = useState(false);
@@ -131,7 +141,11 @@ export function ProjectStationingDialog({
         beginStation,
         endStation: showEndStationField ? endStation : '',
         intervalFt: Number(intervalFt) || DEFAULT_INTERVAL_FT,
-        includeMilepostTenths: isCustomRoute ? false : includeMilepostTenths
+        includeMilepostTenths: isCustomRoute ? false : includeMilepostTenths,
+        centerlineOffsetFt: Math.max(0, Number(centerlineOffsetFt) || 0),
+        centerlineOffsetSide,
+        labelOffsetFt: Math.max(0, Number(labelOffsetFt) ?? DEFAULT_STATIONING_GRAPHICS.labelOffsetFt),
+        labelSide
     }), [
         selectedRoute,
         isCustomRoute,
@@ -143,7 +157,11 @@ export function ProjectStationingDialog({
         endStation,
         showEndStationField,
         intervalFt,
-        includeMilepostTenths
+        includeMilepostTenths,
+        centerlineOffsetFt,
+        centerlineOffsetSide,
+        labelOffsetFt,
+        labelSide
     ]);
 
     const canPreview = Boolean(
@@ -176,6 +194,10 @@ export function ProjectStationingDialog({
         setBeginStation('');
         setEndStation('');
         setShowEndStationField(false);
+        setCenterlineOffsetFt('0');
+        setCenterlineOffsetSide(DEFAULT_STATIONING_GRAPHICS.centerlineOffsetSide);
+        setLabelOffsetFt(String(DEFAULT_STATIONING_GRAPHICS.labelOffsetFt));
+        setLabelSide(DEFAULT_STATIONING_GRAPHICS.labelSide);
     };
 
     const resetAllAfterRoute = () => {
@@ -1064,6 +1086,88 @@ export function ProjectStationingDialog({
                         </div>
                     </div>
                     ) : null}
+
+                    <details className="form-group mb-8">
+                        <summary style={{ cursor: 'pointer', fontWeight: 600, fontSize: 13 }}>
+                            Layout options
+                        </summary>
+                        <div className="text-xs text-muted mt-4 mb-8">
+                            Left and right are relative to the centerline direction.
+                        </div>
+                        <div className="route-mp-widget__mp-grid mb-8">
+                            <div>
+                                <label className="text-xs text-muted" htmlFor="ps-centerline-offset">
+                                    Centerline offset (ft)
+                                </label>
+                                <input
+                                    id="ps-centerline-offset"
+                                    type="number"
+                                    min="0"
+                                    step="1"
+                                    value={centerlineOffsetFt}
+                                    onChange={(e) => { setCenterlineOffsetFt(e.target.value); setPreview(null); }}
+                                    disabled={running}
+                                    className="route-mp-widget__input"
+                                />
+                            </div>
+                            <div>
+                                <div className="text-xs text-muted mb-4">Centerline offset side</div>
+                                <div style={{ display: 'flex', gap: 12 }}>
+                                    {OFFSET_SIDE_OPTIONS.map((opt) => (
+                                        <label key={opt.value} className="text-xs" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                            <input
+                                                type="radio"
+                                                name="ps-centerline-offset-side"
+                                                value={opt.value}
+                                                checked={centerlineOffsetSide === opt.value}
+                                                onChange={() => { setCenterlineOffsetSide(opt.value); setPreview(null); }}
+                                                disabled={running}
+                                            />
+                                            {opt.label}
+                                        </label>
+                                    ))}
+                                </div>
+                            </div>
+                        </div>
+                        <div className="route-mp-widget__mp-grid mb-8">
+                            <div>
+                                <label className="text-xs text-muted" htmlFor="ps-label-offset">
+                                    Label offset (ft)
+                                </label>
+                                <input
+                                    id="ps-label-offset"
+                                    type="number"
+                                    min="0"
+                                    step="1"
+                                    value={labelOffsetFt}
+                                    onChange={(e) => { setLabelOffsetFt(e.target.value); setPreview(null); }}
+                                    disabled={running}
+                                    className="route-mp-widget__input"
+                                />
+                            </div>
+                            <div>
+                                <div className="text-xs text-muted mb-4">Label side</div>
+                                <div style={{ display: 'flex', gap: 12 }}>
+                                    {OFFSET_SIDE_OPTIONS.map((opt) => (
+                                        <label key={opt.value} className="text-xs" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                            <input
+                                                type="radio"
+                                                name="ps-label-side"
+                                                value={opt.value}
+                                                checked={labelSide === opt.value}
+                                                onChange={() => { setLabelSide(opt.value); setPreview(null); }}
+                                                disabled={running}
+                                            />
+                                            {opt.label}
+                                        </label>
+                                    ))}
+                                </div>
+                                <div className="text-xs text-muted mt-4">
+                                    Applies to station labels and milepost labels. Station labels sit beyond tick marks.
+                                </div>
+                            </div>
+                        </div>
+                    </details>
                 </>
             ) : null}
 

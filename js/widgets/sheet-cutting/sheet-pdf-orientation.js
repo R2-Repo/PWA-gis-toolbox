@@ -225,3 +225,43 @@ export function buildSheetContinuationLabels(sheet, totalSheets) {
 
     return { sheetLabel, stationRange, continueFrom, continueTo };
 }
+
+/**
+ * @param {number} sheetNumber
+ * @returns {string}
+ */
+export function formatSeeSheetLabel(sheetNumber) {
+    const num = Number(sheetNumber);
+    if (!Number.isFinite(num) || num <= 0) return '';
+    return `SEE SHEET ${String(num).padStart(2, '0')}`;
+}
+
+/**
+ * @param {object} sheet
+ * @param {number} totalSheets
+ * @returns {Array<{ position: 'start'|'end', adjacentSheetNumber: number, text: string, stationFt: number }>}
+ */
+export function buildSheetEdgeSeeLabelSpecs(sheet, totalSheets) {
+    const num = sheet?.sheetNumber ?? 0;
+    const specs = [];
+
+    if (num > 1) {
+        specs.push({
+            position: 'start',
+            adjacentSheetNumber: num - 1,
+            text: formatSeeSheetLabel(num - 1),
+            stationFt: sheet.startDistanceFt ?? 0
+        });
+    }
+
+    if (num < totalSheets) {
+        specs.push({
+            position: 'end',
+            adjacentSheetNumber: num + 1,
+            text: formatSeeSheetLabel(num + 1),
+            stationFt: sheet.endDistanceFt ?? 0
+        });
+    }
+
+    return specs;
+}

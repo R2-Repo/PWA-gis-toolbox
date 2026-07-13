@@ -42,6 +42,21 @@ export function buildRouteProfile(input = {}, generatedOutput = {}) {
         ?? centerline?.properties?.route_direction
         ?? centerline?.properties?.ROUTE_DIRECTION
         ?? '';
+    const centerlineOffsetFt = Number(
+        centerline?.properties?.centerline_offset_ft ?? input.centerlineOffsetFt ?? 0
+    );
+    const centerlineOffsetSide = String(
+        centerline?.properties?.centerline_offset_side ?? input.centerlineOffsetSide ?? 'right'
+    ).toLowerCase() === 'left' ? 'left' : 'right';
+    const labelOffsetFt = Number(
+        centerline?.properties?.label_offset_ft
+        ?? input.graphics?.labelOffsetFt
+        ?? input.labelOffsetFt
+        ?? 35
+    );
+    const labelSide = String(
+        centerline?.properties?.label_side ?? input.graphics?.labelSide ?? input.labelSide ?? 'right'
+    ).toLowerCase() === 'left' ? 'left' : 'right';
 
     return {
         route_id: routeId,
@@ -65,6 +80,10 @@ export function buildRouteProfile(input = {}, generatedOutput = {}) {
         station_direction: input.stationDirection || 'geometry',
         station_interval_ft: stationIntervalFt,
         label_interval_ft: labelIntervalFt,
+        centerline_offset_ft: centerlineOffsetFt,
+        centerline_offset_side: centerlineOffsetSide,
+        label_offset_ft: labelOffsetFt,
+        label_side: labelSide,
         units: 'feet',
         clip_method: clipMeta.clipMethod || centerline?.properties?.clip_method || '',
         created_date: new Date().toISOString(),
@@ -88,6 +107,10 @@ export function routeProfileToProperties(profile = {}) {
         station_direction: profile.station_direction || 'geometry',
         station_interval_ft: profile.station_interval_ft ?? null,
         label_interval_ft: profile.label_interval_ft ?? null,
+        centerline_offset_ft: profile.centerline_offset_ft ?? null,
+        centerline_offset_side: profile.centerline_offset_side || '',
+        label_offset_ft: profile.label_offset_ft ?? null,
+        label_side: profile.label_side || '',
         clip_method: profile.clip_method || '',
         route_geometry_hash: profile.route_geometry_hash || '',
         created_by_widget: PROJECT_STATIONING_WIDGET_ID
@@ -122,6 +145,12 @@ export function readRouteProfile(layer) {
         station_direction: props.station_direction || 'geometry',
         station_interval_ft: Number(props.station_interval_ft ?? props.interval_ft ?? 100),
         label_interval_ft: Number(props.label_interval_ft ?? props.interval_ft ?? 100),
+        centerline_offset_ft: Number(props.centerline_offset_ft ?? 0),
+        centerline_offset_side: String(props.centerline_offset_side || 'right').toLowerCase() === 'left'
+            ? 'left'
+            : 'right',
+        label_offset_ft: Number(props.label_offset_ft ?? 35),
+        label_side: String(props.label_side || 'right').toLowerCase() === 'left' ? 'left' : 'right',
         clip_method: props.clip_method || '',
         units: props.units || 'feet',
         created_date: props.created_date || props.created_at || '',

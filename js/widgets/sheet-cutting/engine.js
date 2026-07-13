@@ -23,8 +23,23 @@ export const PAGE_ORIENTATIONS = {
     PORTRAIT: 'portrait'
 };
 
-/** Default print resolution for sheet PDF export (balance of quality vs memory). */
-export const DEFAULT_SHEET_EXPORT_DPI = 150;
+/** Default basemap underlay resolution for hybrid sheet PDF export. */
+export const DEFAULT_BASEMAP_DPI = 150;
+
+/** Maximum basemap DPI — vector linework is independent of this cap. */
+export const MAX_BASEMAP_DPI = 200;
+
+/** @deprecated Use basemapDpi; kept for session backward compatibility. */
+export const DEFAULT_SHEET_EXPORT_DPI = DEFAULT_BASEMAP_DPI;
+
+/**
+ * @param {object} [template]
+ * @returns {number}
+ */
+export function resolveBasemapDpi(template = {}) {
+    const raw = template.basemapDpi ?? template.exportDpi ?? DEFAULT_BASEMAP_DPI;
+    return Math.max(72, Math.min(MAX_BASEMAP_DPI, Number(raw) || DEFAULT_BASEMAP_DPI));
+}
 
 export {
     PDF_MAP_BEARING_MODES,
@@ -75,8 +90,8 @@ export function computePrintablePageDimensionsIn(template = {}) {
  * @param {number} [dpi]
  * @returns {{ widthPx: number, heightPx: number, dpi: number, marginsPt: object, printableWidthIn: number, printableHeightIn: number }}
  */
-export function computeSheetExportPixelDimensions(template = {}, dpi = DEFAULT_SHEET_EXPORT_DPI) {
-    const resolvedDpi = Math.max(72, Math.min(300, Number(dpi) || DEFAULT_SHEET_EXPORT_DPI));
+export function computeSheetExportPixelDimensions(template = {}, dpi = null) {
+    const resolvedDpi = resolveBasemapDpi({ ...template, basemapDpi: dpi ?? template.basemapDpi ?? template.exportDpi });
     const page = computePrintablePageDimensionsIn(template);
     const marginsPt = {
         top: page.marginsIn.top * 72,
@@ -511,6 +526,8 @@ export const DEFAULT_SHEET_TEMPLATE = {
     paperSize: 'TABLOID',
     orientation: PAGE_ORIENTATIONS.LANDSCAPE,
     pdfMapBearingMode: DEFAULT_PDF_MAP_BEARING_MODE,
+    basemapDpi: DEFAULT_BASEMAP_DPI,
+    exportDpi: DEFAULT_BASEMAP_DPI,
     sheetLengthFt: DEFAULT_SHEET_LENGTH_FT,
     corridorWidthFt: DEFAULT_CORRIDOR_WIDTH_FT,
     direction: 'increasing',

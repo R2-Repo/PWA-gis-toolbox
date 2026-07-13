@@ -129,6 +129,54 @@
     color: #fff;
 }
 
+.map-window-header .header-basemap-toggle {
+    overflow: visible;
+}
+
+.map-window-header .header-toggle-segment {
+    position: relative;
+    display: inline-flex;
+    align-items: stretch;
+}
+
+.map-window-header .header-toggle-segment + .header-toggle-segment {
+    border-left: 1px solid #3d3d42;
+}
+
+.map-window-header .header-toggle-option-main,
+.map-window-header .header-toggle-caret {
+    border: none;
+    background: transparent;
+    color: #9aa0a6;
+    padding: 6px 10px;
+    font-size: 12px;
+    cursor: pointer;
+}
+
+.map-window-header .header-toggle-caret {
+    padding: 6px 8px 6px 6px;
+    border-left: 1px solid #3d3d42;
+    line-height: 1;
+}
+
+.map-window-header .header-toggle-segment:hover:not(.active) .header-toggle-option-main,
+.map-window-header .header-toggle-segment:hover:not(.active) .header-toggle-caret {
+    background: #3d3d42;
+    color: #e8eaed;
+}
+
+.map-window-header .header-toggle-segment.active .header-toggle-option-main,
+.map-window-header .header-toggle-segment.active .header-toggle-caret {
+    background: #2563eb;
+    color: #fff;
+}
+
+.map-window-header .header-basemap-dropdown {
+    left: 0;
+    right: auto;
+    min-width: 180px;
+}
+
 .map-window-header .btn {
     border: 1px solid #3d3d42;
     background: #2d2d30;

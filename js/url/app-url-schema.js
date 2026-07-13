@@ -1,4 +1,7 @@
-/** @typedef {'voyager' | 'satellite'} BasemapKey */
+import { getAllBasemapKeys } from '../map/basemap-catalog.js';
+
+/** @typedef {import('../map/basemap-catalog.js').BasemapCategory} BasemapCategory */
+/** @typedef {ReturnType<typeof getAllBasemapKeys>[number]} BasemapKey */
 /** @typedef {'2d' | '3d'} DimensionMode */
 /** @typedef {'both' | 'left' | 'right' | 'none'} PanelMode */
 
@@ -22,7 +25,7 @@
  * @property {string[]} [live] - catalog layer ids or url: entries
  */
 
-export const BASEMAP_KEYS = ['voyager', 'satellite'];
+export const BASEMAP_KEYS = getAllBasemapKeys();
 export const DIMENSION_MODES = ['2d', '3d'];
 export const PANEL_MODES = ['both', 'left', 'right', 'none'];
 

@@ -6,21 +6,56 @@ const MAX_EXPORT_PIXEL_RATIO = 4;
 const GPU_MAX_RENDERBUFFER_FALLBACK = 8192;
 const GPU_MARGIN = 0.95;
 
+/** Higher cap for sheet PDF export so small map panels can still reach print DPI. */
+export const SHEET_EXPORT_MAX_PIXEL_RATIO = 12;
+
 export const GIF_MAX_WIDTH = 1280;
 
-function waitForMapIdle(map) {
+function waitForMapIdle(map, timeoutMs = 12000) {
     return new Promise((resolve) => {
         if (!map) {
             resolve();
             return;
         }
-        map.once('idle', resolve);
+        let settled = false;
+        const finish = () => {
+            if (settled) return;
+            settled = true;
+            map.off('idle', finish);
+            resolve();
+        };
+        map.once('idle', finish);
         map.triggerRepaint();
+        window.setTimeout(finish, timeoutMs);
     });
 }
 
 export async function ensureMapFrameReady(map) {
     await waitForMapIdle(map);
+}
+
+/**
+ * Wait for tiles and a stable GL frame after bumping pixel ratio (sheet PDF export).
+ * @param {import('maplibre-gl').Map} map
+ * @param {{ maxWaitMs?: number }} [options]
+ */
+export async function ensureHighResCaptureReady(map, options = {}) {
+    const maxWaitMs = options.maxWaitMs ?? 8000;
+    await ensureMapFrameReady(map);
+
+    const start = Date.now();
+    while (Date.now() - start < maxWaitMs) {
+        if (typeof map.areTilesLoaded !== 'function' || map.areTilesLoaded()) {
+            break;
+        }
+        await new Promise((resolve) => window.setTimeout(resolve, 50));
+        map.triggerRepaint();
+    }
+
+    await ensureMapFrameReady(map);
+    await new Promise((resolve) => {
+        requestAnimationFrame(() => requestAnimationFrame(resolve));
+    });
 }
 
 function getMapPixelRatio(map) {
@@ -30,7 +65,7 @@ function getMapPixelRatio(map) {
     return window.devicePixelRatio || 1;
 }
 
-function getMaxSafePixelRatio(map) {
+function getMaxSafePixelRatio(map, maxRatioCap = MAX_EXPORT_PIXEL_RATIO) {
     const container = map.getContainer();
     const cssW = Math.max(1, container?.clientWidth || 1);
     const cssH = Math.max(1, container?.clientHeight || 1);
@@ -43,7 +78,7 @@ function getMaxSafePixelRatio(map) {
     }
     maxDim = Math.floor(maxDim * GPU_MARGIN);
 
-    return Math.min(maxDim / cssW, maxDim / cssH, MAX_EXPORT_PIXEL_RATIO);
+    return Math.min(maxDim / cssW, maxDim / cssH, maxRatioCap);
 }
 
 export function computeExportPixelRatio(map) {
@@ -60,14 +95,28 @@ export function computeExportPixelRatio(map) {
  * Pixel ratio needed so the map canvas reaches at least targetWidthPx (clamped to GPU limits).
  * @param {import('maplibre-gl').Map} map
  * @param {number} targetWidthPx
+ * @param {object} [options]
  * @returns {number}
  */
-export function computePixelRatioForTargetWidth(map, targetWidthPx) {
+export function computePixelRatioForTargetWidth(map, targetWidthPx, options = {}) {
+    return computePixelRatioForTargetDimensions(map, targetWidthPx, null, options);
+}
+
+/**
+ * Pixel ratio to reach target capture dimensions (clamped to GPU limits).
+ * @param {import('maplibre-gl').Map} map
+ * @param {number} targetWidthPx
+ * @param {number|null} targetHeightPx
+ * @param {object} [options]
+ * @returns {number}
+ */
+export function computePixelRatioForTargetDimensions(map, targetWidthPx, targetHeightPx = null, options = {}) {
     const container = map.getContainer();
     const cssW = Math.max(1, container?.clientWidth || 1);
     const cssH = Math.max(1, container?.clientHeight || 1);
     const currentRatio = getMapPixelRatio(map);
-    const gpuMaxRatio = getMaxSafePixelRatio(map);
+    const maxRatioCap = options.maxPixelRatio ?? MAX_EXPORT_PIXEL_RATIO;
+    const gpuMaxRatio = getMaxSafePixelRatio(map, maxRatioCap);
 
     const canvas = map.getCanvas();
     const gl = canvas?.getContext('webgl2') || canvas?.getContext('webgl');
@@ -78,9 +127,39 @@ export function computePixelRatioForTargetWidth(map, targetWidthPx) {
     maxDim = Math.floor(maxDim * GPU_MARGIN);
 
     const ratioForWidth = targetWidthPx / cssW;
+    const ratioForHeight = targetHeightPx ? targetHeightPx / cssH : ratioForWidth;
     const ratioForHeightCap = maxDim / cssH;
-    const target = Math.min(gpuMaxRatio, ratioForWidth, ratioForHeightCap);
-    return Math.max(currentRatio, Math.min(MAX_EXPORT_PIXEL_RATIO, target));
+    const ratioForWidthCap = maxDim / cssW;
+    const target = Math.min(
+        gpuMaxRatio,
+        ratioForWidth,
+        ratioForHeight,
+        ratioForHeightCap,
+        ratioForWidthCap
+    );
+    return Math.max(currentRatio, Math.min(maxRatioCap, target));
+}
+
+/**
+ * @param {import('maplibre-gl').Map} map
+ * @param {number} targetWidthPx
+ * @param {number|null} targetHeightPx
+ * @param {object} [options]
+ * @returns {{ exportRatio: number, canvasWidthPx: number, canvasHeightPx: number, meetsWidthTarget: boolean, meetsHeightTarget: boolean }}
+ */
+export function resolveCapturePixelDimensions(map, targetWidthPx, targetHeightPx = null, options = {}) {
+    const cssW = Math.max(1, map.getContainer()?.clientWidth || 1);
+    const cssH = Math.max(1, map.getContainer()?.clientHeight || 1);
+    const exportRatio = computePixelRatioForTargetDimensions(map, targetWidthPx, targetHeightPx, options);
+    const canvasWidthPx = Math.round(cssW * exportRatio);
+    const canvasHeightPx = Math.round(cssH * exportRatio);
+    return {
+        exportRatio,
+        canvasWidthPx,
+        canvasHeightPx,
+        meetsWidthTarget: canvasWidthPx >= targetWidthPx,
+        meetsHeightTarget: !targetHeightPx || canvasHeightPx >= targetHeightPx
+    };
 }
 
 export function willUseHighResExport(mapService) {
@@ -230,7 +309,7 @@ export function buildMapExportFilename(ext) {
 
 /**
  * @param {object} mapService
- * @param {{ targetWidthPx?: number, beforeCapture?: (map: import('maplibre-gl').Map) => void }} [options]
+ * @param {{ targetWidthPx?: number, targetHeightPx?: number, maxPixelRatio?: number, highResCapture?: boolean, beforeCapture?: (map: import('maplibre-gl').Map) => void }} [options]
  * @returns {Promise<HTMLCanvasElement>}
  */
 export async function captureMapCanvas(mapService, options = {}) {
@@ -243,8 +322,14 @@ export async function captureMapCanvas(mapService, options = {}) {
     }
 
     const originalRatio = getMapPixelRatio(map);
+    const ratioOptions = { maxPixelRatio: options.maxPixelRatio };
     const exportRatio = options.targetWidthPx
-        ? computePixelRatioForTargetWidth(map, options.targetWidthPx)
+        ? computePixelRatioForTargetDimensions(
+            map,
+            options.targetWidthPx,
+            options.targetHeightPx ?? null,
+            ratioOptions
+        )
         : computeExportPixelRatio(map);
     const bumped = exportRatio > originalRatio;
 
@@ -252,10 +337,14 @@ export async function captureMapCanvas(mapService, options = {}) {
         map.setPixelRatio(exportRatio);
     }
 
-    await ensureMapFrameReady(map);
+    const waitForCapture = options.highResCapture ? ensureHighResCaptureReady : ensureMapFrameReady;
+    await waitForCapture(map);
 
     try {
         options.beforeCapture?.(map);
+        if (options.beforeCapture) {
+            await waitForCapture(map);
+        }
         return captureLiveFrame(map, mapService);
     } finally {
         if (bumped) {

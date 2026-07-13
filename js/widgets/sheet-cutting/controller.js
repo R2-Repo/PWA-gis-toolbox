@@ -65,7 +65,15 @@ function collectFeaturesFromLayers(ctx, layerIds = []) {
     for (const layerId of layerIds) {
         const layer = ctx.getLayerById?.(layerId) || ctx.getLayers().find((entry) => entry.id === layerId);
         if (!layer?.geojson?.features?.length) continue;
-        features.push(...layer.geojson.features);
+        for (const feature of layer.geojson.features) {
+            features.push({
+                ...feature,
+                properties: {
+                    ...(feature.properties || {}),
+                    _sourceLayerId: layerId
+                }
+            });
+        }
     }
     return features;
 }
@@ -136,16 +144,21 @@ export async function openSheetCutting(ctx, { restoreState = null } = {}) {
             onValidate: () => validateSheetSession(session),
             onExportPdf: async () => {
                 const exportPackage = buildSessionExport(session);
-                const result = await exportSheetPlanPdf({
-                    mapService: ctx.mapService,
-                    exportPackage,
-                    session,
-                    onProgress: (text) => ctx.showToast(text, 'info')
-                });
-                const count = result?.pageCount ?? 0;
-                const folder = result?.folderName ? ` in “${result.folderName}”` : '';
-                ctx.showToast(`Saved ${count} sheet PDF(s)${folder}.`, 'success');
-                return result;
+                try {
+                    const result = await exportSheetPlanPdf({
+                        mapService: ctx.mapService,
+                        exportPackage,
+                        session,
+                        onProgress: (text) => ctx.showToast(text, 'info')
+                    });
+                    const count = result?.pageCount ?? 0;
+                    const folder = result?.folderName ? ` in “${result.folderName}”` : '';
+                    ctx.showToast(`Saved ${count} sheet PDF(s)${folder}.`, 'success');
+                    return result;
+                } catch (err) {
+                    ctx.showToast(err?.message || 'Sheet PDF export failed.', 'error');
+                    throw err;
+                }
             },
             onExportPackage: () => {
                 const exportPackage = buildSessionExport(session);

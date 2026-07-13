@@ -46,6 +46,7 @@ import {
     clearQuickDrawLayerFlag
 } from './quick-draw.js';
 import mapService, { formatElevationLabel } from '../map/map-service.js';
+import { syncBasemapToggleActive } from '../map/basemap-catalog.js';
 import { isSmartStyleActive } from '../map/style-engine.js';
 import dualScreenCoordinator from '../dual-screen/coordinator.js';
 import { isPresentationMode } from '../presentation/presentation-mode-detector.js';
@@ -1324,9 +1325,7 @@ export async function openImportForFiles(files, fenceBbox = null) {
 }
 
 function setBasemapToggleActive(value) {
-    document.querySelectorAll('#basemap-toggle .header-toggle-option').forEach((button) => {
-        button.classList.toggle('active', button.dataset.value === value);
-    });
+    syncBasemapToggleActive(value);
 }
 
 function setDimensionToggleActive(value) {

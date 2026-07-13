@@ -128,24 +128,32 @@ Sheet Cutter produces **two deliverable types** only:
 | `layers.route` | Route centerline |
 | `layers.sheetFrames` | Clean clipped `sheet_frame` polygons |
 | `layers.overview` | Route + all sheet outlines (for overview page) |
-| `layers.perSheet[]` | Per-sheet GeoJSON: `sheet_outline` + design features **clipped to the sheet polygon** |
+| `layers.perSheet[]` | Per-sheet GeoJSON: `sheet_outline`, clipped **route** segment, and design features **clipped to the sheet polygon** |
 | `pdf` | Page plan (overview + detail pages) — renderer not yet implemented |
 
 Feature assignment for export uses **polygon intersection** (`clipFeaturesToSheetFrame`), not station distance alone.
 
-### PDF (polygon-clipped map capture + folder export)
+### PDF (hybrid vector + basemap underlay)
 
-Sheet PDFs are **MapLibre map captures** clipped to each sheet polygon, placed on tabloid (or template) pages with modest margins, and written **one file at a time** to a folder the user picks (File System Access API — Chrome/Edge).
+Sheet PDFs combine a **modest-resolution basemap image** (whatever basemap is active on the map, including future basemaps) with **vector-drawn linework, labels, route, and sheet outlines** on top. Pages are written **one file at a time** to a folder the user picks (File System Access API — Chrome/Edge).
 
-1. **Overview** (optional) — `fitBounds` to all sheet frames; **north-up** (`bearing: 0`); saved as `{project}_overview.pdf`.
-2. **Detail pages** — per sheet: camera aligned to **export bearing** (match-line flow), map captured at **150 DPI**, **polygon clip mask** applied, fitted length-wise into printable margins on tabloid landscape, saved as `{project}_sheet_01.pdf`, etc.
+1. **Overview** (optional) — `fitBounds` to all sheet frames; **north-up** (`bearing: 0`); basemap captured at **basemap DPI** (default 150); sheet frames and route drawn as vector; saved as `{project}_overview.pdf`.
+2. **Detail pages** — per sheet: camera aligned to **export bearing** (landscape-align by default); design layers hidden; **basemap-only** capture clipped to the sheet polygon at **basemap DPI** (120–200); selected design layers + clipped route + sheet outline drawn as **vector PDF** on top; saved as `{project}_sheet_01.pdf`, etc.
 3. **No multipage PDF** — each page is written immediately so memory stays flat on long routes.
 
-Implementation: `js/widgets/sheet-cutting/sheet-pdf-export.js`, `js/widgets/sheet-cutting/sheet-pdf-orientation.js`, `js/export/folder-export.js`
+| Layer | Technology | Zoom behavior |
+|-------|------------|---------------|
+| Basemap underlay | MapLibre capture at basemap DPI | Soft when zoomed far (background context) |
+| Design + stationing + route + sheet outline | jsPDF vector paths + text | Infinite zoom — always crisp |
+| North arrow / footer | jsPDF vector | Crisp |
+
+**Basemap quality** (`basemapDpi`, default 150) affects only the background image and file size. Linework and labels are vector regardless of this setting.
+
+**Design layers must be selected** in the Sheet Cutter wizard for their features to appear in vector export. Layer styles are resolved from `mapService.getLayerStyle()` using `_sourceLayerId` stamped at collection time.
+
+Implementation: `js/widgets/sheet-cutting/sheet-pdf-export.js`, `js/widgets/sheet-cutting/sheet-pdf-vector.js`, `js/widgets/sheet-cutting/sheet-pdf-placement.js`, `js/widgets/sheet-cutting/sheet-pdf-orientation.js`, `js/export/folder-export.js`
 
 The map camera and 3D state are restored after export. 3D is temporarily flattened for consistent plan-sheet output.
-
-**Not used for PDF:** Canvas 2D GeoJSON drawing or pdf-lib — those would not match on-screen symbology.
 
 ### PDF orientation
 
@@ -161,6 +169,7 @@ Detail pages default to **landscape-align**: each sheet polygon is rotated so it
 |------|----------|
 | **North arrow** | Top-right margin; rotated **−exportBearingDeg** from page up so it shows true north relative to the map. |
 | **Continuation footer** | Bottom margin: sheet number, station range (`0+000 – 1+100`), and `← Sheet NN` / `Sheet NN →` links. |
+| **Edge SEE SHEET labels** | Detail pages only: `SEE SHEET NN` on start/end polygon caps pointing to the previous/next sheet (no match-line station text). |
 | **Overview** | Always north-up. |
 
 Landscape-align picks between two bearings 180° apart (`tangent − 90°` and `tangent + 90°`), keeps the one where north points up, and prefers left → right when both qualify.
@@ -177,6 +186,8 @@ Key functions: `resolveSheetPdfBearing()`, `resolveLandscapeAlignBearing()`, `re
 | `js/widgets/sheet-cutting/export-builder.js` | **Clean polygon geometry** |
 | `js/widgets/sheet-cutting/controller.js` | Preview wiring |
 | `react/widgets/SheetCuttingDialog.jsx` | Wizard UI |
-| `js/widgets/sheet-cutting/sheet-pdf-export.js` | Polygon-clipped PDF export to folder |
+| `js/widgets/sheet-cutting/sheet-pdf-export.js` | Hybrid PDF export to folder |
+| `js/widgets/sheet-cutting/sheet-pdf-vector.js` | Vector GeoJSON → jsPDF renderer |
+| `js/widgets/sheet-cutting/sheet-pdf-placement.js` | Shared map-pixel → PDF-point placement |
 | `js/widgets/sheet-cutting/sheet-pdf-orientation.js` | PDF export bearing + continuation labels |
 | `js/export/folder-export.js` | File System Access API folder writer |

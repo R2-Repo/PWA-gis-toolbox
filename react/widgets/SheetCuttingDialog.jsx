@@ -11,6 +11,7 @@ const SHEET_PAPER_SIZE = 'TABLOID';
 const SHEET_ORIENTATION = 'landscape';
 const DEFAULT_SHEET_LENGTH_FT = 1100;
 const DEFAULT_CORRIDOR_WIDTH_FT = 350;
+const BASEMAP_DPI_OPTIONS = [120, 150, 200];
 
 export function SheetCuttingDialog({
     defaultTemplate = {},
@@ -45,6 +46,9 @@ export function SheetCuttingDialog({
         String(initialSession?.sheets?.template?.corridorWidthFt ?? defaultTemplate.corridorWidthFt ?? DEFAULT_CORRIDOR_WIDTH_FT)
     );
     const [includeOverview, setIncludeOverview] = useState(initialSession?.sheets?.template?.includeOverview !== false);
+    const [basemapDpi, setBasemapDpi] = useState(
+        String(initialSession?.sheets?.template?.basemapDpi ?? initialSession?.sheets?.template?.exportDpi ?? defaultTemplate.basemapDpi ?? 150)
+    );
     const [selectedLayerIds, setSelectedLayerIds] = useState(initialSession?.sheets?.designLayerIds || []);
     const [busy, setBusy] = useState(false);
     const [message, setMessage] = useState('');
@@ -278,12 +282,35 @@ export function SheetCuttingDialog({
                         </div>
                     ) : null}
 
+                    <div className="form-group" style={{ marginBottom: 12 }}>
+                        <label>Basemap quality</label>
+                        <select
+                            value={basemapDpi}
+                            onChange={(e) => setBasemapDpi(e.target.value)}
+                            disabled={busy}
+                        >
+                            {BASEMAP_DPI_OPTIONS.map((dpi) => (
+                                <option key={dpi} value={String(dpi)}>{dpi} DPI{dpi === 150 ? ' (recommended)' : ''}</option>
+                            ))}
+                        </select>
+                        <p className="text-xs" style={{ marginTop: 4, color: 'var(--text-muted)' }}>
+                            Linework and labels export as vector PDF and stay sharp when zoomed. Basemap quality affects only the background image and file size.
+                        </p>
+                    </div>
+
                     <div className="gis-widget__btn-row" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 8 }}>
                         <button
                             type="button"
                             className="gis-widget__primary-btn"
                             disabled={busy}
-                            onClick={() => run(() => onExportPdf?.(), 'Sheet PDFs saved to folder.')}
+                            onClick={() => run(async () => {
+                                const next = await onConfigureTemplate?.({
+                                    basemapDpi: Number(basemapDpi) || 150,
+                                    exportDpi: Number(basemapDpi) || 150
+                                });
+                                await onExportPdf?.();
+                                return next;
+                            }, 'Sheet PDFs saved to folder.')}
                         >
                             Export sheet PDFs to folder…
                         </button>

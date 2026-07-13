@@ -17,6 +17,7 @@ import {
     applyRemoteSelection
 } from './dual-screen/secondary-client.js';
 import { setupMapPrintMenu } from './map/map-export.js';
+import { mountBasemapToggle, syncBasemapToggleActive } from './map/basemap-catalog.js';
 
 const ROLE = 'secondary';
 const QUEUED_MESSAGE_TYPES = new Set([
@@ -181,9 +182,7 @@ function applyViewport(payload) {
 }
 
 function syncBasemapToggle(basemap) {
-    document.querySelectorAll('#basemap-toggle .header-toggle-option').forEach(b => {
-        b.classList.toggle('active', b.dataset.value === basemap);
-    });
+    syncBasemapToggleActive(basemap);
 }
 
 function syncDimensionToggle(is3d) {
@@ -354,12 +353,13 @@ function setupHeaderControls() {
         window.close();
     });
 
-    document.getElementById('basemap-toggle')?.addEventListener('click', (e) => {
-        const btn = e.target.closest('[data-value]');
-        if (!btn) return;
-        syncBasemapToggle(btn.dataset.value);
-        mapService.setBasemap(btn.dataset.value);
-        post(MessageType.MAP_CHROME, { basemap: btn.dataset.value });
+    mountBasemapToggle(document.getElementById('basemap-toggle'), {
+        getCurrentKey: () => mapService.getCurrentBasemap?.() || 'voyager',
+        onSelect: (key) => {
+            syncBasemapToggle(key);
+            mapService.setBasemap(key);
+            post(MessageType.MAP_CHROME, { basemap: key });
+        }
     });
 
     document.getElementById('dimension-toggle')?.addEventListener('click', (e) => {
