@@ -25,9 +25,13 @@ export function SheetCuttingDialog({
     onExportPdf,
     onAddResultLayers,
     onSaveSession,
-    onOpenFullPlanExport
+    onOpenFullPlanExport,
+    onOpenRouteCenterline,
+    onOpenProjectStationing,
+    onRefreshStationingLayers
 }) {
     const [session, setSession] = useState(initialSession);
+    const [stationingLayerOptions, setStationingLayerOptions] = useState(stationingLayers);
     const [projectName, setProjectName] = useState(initialSession?.project?.projectName || '');
     const [projectNumber, setProjectNumber] = useState(initialSession?.project?.projectNumber || '');
     const [stationingLayerId, setStationingLayerId] = useState(initialSession?.project?.stationingRouteLayerId || '');
@@ -161,11 +165,16 @@ export function SheetCuttingDialog({
 
             <LayerSelect
                 label="Route centerline (Project Stationing)"
-                layers={stationingLayers}
+                layers={stationingLayerOptions}
                 value={stationingLayerId}
                 onChange={setStationingLayerId}
                 emptyLabel="No Project Stationing centerline layers found"
             />
+            {!stationingLayerOptions.length ? (
+                <div className="info-box text-xs" style={{ marginBottom: 12 }}>
+                    Build a route centerline, run Project Stationing to create station segments, then refresh the list below.
+                </div>
+            ) : null}
             {session?.stationingRoute ? (
                 <div className="text-xs" style={{ marginTop: -8, marginBottom: 12, color: 'var(--text-muted)' }}>
                     <div>{session.stationingRoute.routeName}</div>
@@ -174,6 +183,35 @@ export function SheetCuttingDialog({
                     </div>
                 </div>
             ) : null}
+            <div className="gis-widget__btn-row" style={{ marginBottom: 16 }}>
+                <button
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    disabled={busy}
+                    onClick={() => onOpenRouteCenterline?.()}
+                >
+                    Open Route Centerline
+                </button>
+                <button
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    disabled={busy}
+                    onClick={() => onOpenProjectStationing?.()}
+                >
+                    Open Project Stationing
+                </button>
+                <button
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    disabled={busy}
+                    onClick={() => {
+                        const next = onRefreshStationingLayers?.();
+                        if (next) setStationingLayerOptions(next);
+                    }}
+                >
+                    Refresh layer list
+                </button>
+            </div>
 
             <div className="gis-widget__row" style={{ gap: 12 }}>
                 <div className="form-group" style={{ flex: 1 }}>

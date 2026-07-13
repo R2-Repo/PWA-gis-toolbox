@@ -7,6 +7,8 @@ import { getSpatialLayerOptions } from '../widget-context.js';
 import { isProjectStationingCenterline } from '../project-stationing/route-profile.js';
 import { markWidgetClosed, upsertWidgetState } from '../widget-state-store.js';
 import { openPlanProductionExport } from '../plan-production-export/controller.js';
+import { openRouteMilepostSegment } from '../route-milepost-segment/controller.js';
+import { openProjectStationing } from '../project-stationing/controller.js';
 import {
     WIDGET_ID,
     PAPER_SIZES,
@@ -53,6 +55,13 @@ function renderSheetPreview(ctx, session) {
     showSheetPreview(ctx.mapService, exportPackage.layers || {});
 }
 
+function getStationingLayerOptions(ctx) {
+    return getSpatialLayerOptions(ctx).filter((layer) => {
+        const full = ctx.getLayerById?.(layer.id) || ctx.getLayers().find((entry) => entry.id === layer.id);
+        return isProjectStationingCenterline(full);
+    });
+}
+
 function collectFeaturesFromLayers(ctx, layerIds = []) {
     const features = [];
     for (const layerId of layerIds) {
@@ -85,10 +94,7 @@ export async function openSheetCutting(ctx, { restoreState = null } = {}) {
             paperSizes: Object.keys(PAPER_SIZES),
             orientations: Object.values(PAGE_ORIENTATIONS),
             defaultTemplate: DEFAULT_SHEET_TEMPLATE,
-            stationingLayers: getSpatialLayerOptions(ctx).filter((layer) => {
-                const full = ctx.getLayerById?.(layer.id) || ctx.getLayers().find((entry) => entry.id === layer.id);
-                return isProjectStationingCenterline(full);
-            }),
+            stationingLayers: getStationingLayerOptions(ctx),
             designLayers: getSpatialLayerOptions(ctx),
             initialSession: session,
             onCancel: () => {
@@ -222,6 +228,13 @@ export async function openSheetCutting(ctx, { restoreState = null } = {}) {
                     'application/json'
                 );
             },
+            onOpenRouteCenterline: () => {
+                openRouteMilepostSegment(ctx);
+            },
+            onOpenProjectStationing: () => {
+                openProjectStationing(ctx);
+            },
+            onRefreshStationingLayers: () => getStationingLayerOptions(ctx),
             onOpenFullPlanExport: () => {
                 openPlanProductionExport(ctx);
             }
