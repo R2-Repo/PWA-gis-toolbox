@@ -445,7 +445,7 @@ export function buildMapExportFilename(ext) {
 
 /**
  * @param {object} mapService
- * @param {{ targetWidthPx?: number, targetHeightPx?: number, maxPixelRatio?: number, highResCapture?: boolean, beforeCapture?: (map: import('maplibre-gl').Map) => void }} [options]
+ * @param {{ targetWidthPx?: number, targetHeightPx?: number, maxPixelRatio?: number, highResCapture?: boolean, captureReadyOptions?: { maxWaitMs?: number, stableFrames?: number, styleTimeoutMs?: number }, rewaitAfterBeforeCapture?: boolean, beforeCapture?: (map: import('maplibre-gl').Map) => void, preservePixelRatio?: boolean }} [options]
  * @returns {Promise<HTMLCanvasElement>}
  */
 export async function captureMapCanvas(mapService, options = {}) {
@@ -475,12 +475,14 @@ export async function captureMapCanvas(mapService, options = {}) {
         applyMapPixelRatio(map, exportRatio);
     }
 
-    const waitForCapture = options.highResCapture ? ensureMapCaptureReady : ensureMapFrameReady;
+    const waitForCapture = options.highResCapture
+        ? (captureMap) => ensureMapCaptureReady(captureMap, options.captureReadyOptions)
+        : ensureMapFrameReady;
     await waitForCapture(map);
 
     try {
         options.beforeCapture?.(map);
-        if (options.beforeCapture) {
+        if (options.beforeCapture && options.rewaitAfterBeforeCapture !== false) {
             await waitForCapture(map);
         }
         return captureLiveFrame(map, mapService);

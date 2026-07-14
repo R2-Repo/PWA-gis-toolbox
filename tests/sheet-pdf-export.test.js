@@ -1,5 +1,6 @@
+// @vitest-environment jsdom
 import * as turf from '@turf/turf';
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
     DEFAULT_BASEMAP_DPI,
     DEFAULT_SHEET_EXPORT_DPI,
@@ -17,6 +18,8 @@ import {
     computeSheetExportProgress,
     computeSheetEdgeSeeLabelPlacement,
     EDGE_SEE_LABEL_OFFSET_PT,
+    measureProjectedRingSpan,
+    pickLandscapeAlignCaptureBearing,
     pixelRingInsideCanvas,
     pixelRingOverlapsCanvas,
     polygonRingFitsViewport,
@@ -597,6 +600,58 @@ describe('sheet PDF edge SEE SHEET labels', () => {
         expect(placement.x).toBeGreaterThan(placement.midX);
     });
 
+    it('mirrors start-cap labels to the exterior side on reversed route flow', () => {
+        const westRoute = turf.lineString([
+            [-111.8, 40.0],
+            [-111.9, 40.0],
+            [-112.0, 40.0]
+        ]);
+        const sheets = [
+            { sheetId: 's1', sheetNumber: 1, startDistanceFt: 0, endDistanceFt: 1100, mapFrameWidthFt: 1100, mapFrameHeightFt: 350 },
+            { sheetId: 's2', sheetNumber: 2, startDistanceFt: 1100, endDistanceFt: 2200, mapFrameWidthFt: 1100, mapFrameHeightFt: 350 }
+        ];
+        const sheet = sheets[1];
+        const registry = buildCorridorMatchLineRegistry(sheets, westRoute);
+        const frames = buildSheetFramesGeoJson(sheets, westRoute).features;
+        const frameRing = frames[1].geometry.coordinates[0];
+        const framePixelRing = frameRing.map(([lng, lat]) => {
+            const point = map.project([lng, lat]);
+            return [point.x, point.y];
+        });
+        const westTransform = buildSheetPageTransform(
+            framePixelRing,
+            marginsPt,
+            pageSize,
+            { preferLandscapeFlow: true }
+        );
+        const pdfRing = buildPdfRingFromPixelRing(framePixelRing, westTransform);
+        const startCap = registry.get(stationKey(sheet.startDistanceFt));
+        const startSpec = buildSheetEdgeSeeLabelSpecs(sheet, sheets.length)[0];
+
+        const placement = computeSheetEdgeSeeLabelPlacement(
+            startSpec,
+            startCap,
+            westRoute,
+            westTransform,
+            map,
+            1,
+            framePixelRing,
+            frameRing
+        );
+
+        const interior = westTransform.projectLngLat(
+            map,
+            ...turf.along(westRoute, sheet.startDistanceFt + 2, { units: 'feet' }).geometry.coordinates,
+            1
+        );
+
+        expect(placement?.text).toBe('SEE SHEET 01');
+        expect(pointInPdfRing(placement.x, placement.y, pdfRing)).toBe(false);
+        expect((placement.x - placement.midX) * (interior.x - placement.midX)
+            + (placement.y - placement.midY) * (interior.y - placement.midY)).toBeLessThan(0);
+        expect(placement.x).toBeGreaterThan(placement.midX);
+    });
+
     it('resolves both edge placements for a middle sheet', () => {
         const sheet = detailSheets[1];
         const exportBearing = resolveSheetPdfBearing(sheet, eastRoute);
@@ -645,6 +700,99 @@ describe('sheet PDF capture safety', () => {
         expect(pixelRingOverlapsCanvas([[20, 20], [180, 20], [180, 180], [20, 180]], canvas)).toBe(true);
         expect(pixelRingInsideCanvas([[-5, 20], [180, 20], [180, 180], [20, 180]], canvas, 2)).toBe(false);
         expect(pixelRingInsideCanvas([[20, 20], [180, 20], [180, 180], [20, 180]], canvas, 2)).toBe(true);
+    });
+});
+
+describe('sheet PDF landscape-align bearing picker', () => {
+    const wideRing = [
+        [-1, -0.5],
+        [1, -0.5],
+        [1, 0.5],
+        [-1, 0.5],
+        [-1, -0.5]
+    ];
+
+    function createBearingCompareMap() {
+        let bearing = 0;
+        const listeners = {};
+
+        const map = {
+            getCenter: () => ({ lng: 0, lat: 0 }),
+            getZoom: () => 10,
+            getBearing: () => bearing,
+            jumpTo: (camera) => {
+                bearing = camera.bearing ?? bearing;
+                window.setTimeout(() => {
+                    map.emit('moveend');
+                    map.emit('idle');
+                }, 0);
+            },
+            loaded: () => true,
+            isStyleLoaded: () => true,
+            isMoving: () => false,
+            areTilesLoaded: () => true,
+            triggerRepaint: () => {},
+            on: (event, handler) => {
+                listeners[event] = listeners[event] || [];
+                listeners[event].push(handler);
+            },
+            off: (event, handler) => {
+                if (!listeners[event]) return;
+                listeners[event] = listeners[event].filter((entry) => entry !== handler);
+            },
+            once: (event, handler) => {
+                const wrapped = (...args) => {
+                    map.off(event, wrapped);
+                    handler(...args);
+                };
+                map.on(event, wrapped);
+            },
+            emit: (event, ...args) => {
+                for (const handler of [...(listeners[event] || [])]) {
+                    handler(...args);
+                }
+            },
+            project: ([lng, lat]) => {
+                const rad = (bearing * Math.PI) / 180;
+                const x = lng * Math.cos(rad) - lat * Math.sin(rad);
+                const y = lng * Math.sin(rad) + lat * Math.cos(rad);
+                return { x: x * 100, y: y * 100 };
+            }
+        };
+
+        return map;
+    }
+
+    beforeEach(() => {
+        vi.stubGlobal('requestAnimationFrame', (callback) => {
+            callback();
+            return 1;
+        });
+    });
+
+    afterEach(() => {
+        vi.unstubAllGlobals();
+    });
+
+    it('keeps the start bearing when the projected ring is already wider than tall', async () => {
+        const map = createBearingCompareMap();
+        const chosen = await pickLandscapeAlignCaptureBearing(map, wideRing, 0, 90);
+        expect(chosen).toBe(0);
+        expect(measureProjectedRingSpan(map, wideRing).width).toBeGreaterThan(
+            measureProjectedRingSpan(map, wideRing).height
+        );
+    });
+
+    it('switches to the end bearing when only that orientation is landscape', async () => {
+        const map = createBearingCompareMap();
+        const chosen = await pickLandscapeAlignCaptureBearing(map, wideRing, 90, 0);
+        expect(chosen).toBe(0);
+    });
+
+    it('falls back to the start bearing when neither orientation is landscape', async () => {
+        const map = createBearingCompareMap();
+        const chosen = await pickLandscapeAlignCaptureBearing(map, wideRing, 90, 270);
+        expect(chosen).toBe(90);
     });
 });
 

@@ -260,6 +260,56 @@ export function measureProjectedRingSpan(map, ring) {
 }
 
 /**
+ * Rotate the map camera without refitting — used to compare landscape-align bearings.
+ * @param {import('maplibre-gl').Map} map
+ * @param {number} bearing
+ * @param {number} [pitch]
+ */
+async function jumpMapToBearing(map, bearing, pitch = 0) {
+    if (!map) return;
+
+    const center = map.getCenter();
+    map.jumpTo({
+        center: [center.lng, center.lat],
+        zoom: map.getZoom(),
+        bearing,
+        pitch,
+        duration: 0
+    });
+    await ensureMapCameraSettled(map, CAMERA_SETTLE_OPTIONS);
+}
+
+/**
+ * Pick the bearing that keeps the sheet polygon wider than tall using projection only.
+ * Width/height ratio is invariant to zoom and pan, so a full fit per candidate is unnecessary.
+ *
+ * @param {import('maplibre-gl').Map} map
+ * @param {number[][]} ring
+ * @param {number} exportBearing
+ * @param {number} endBearing
+ * @returns {Promise<number>}
+ */
+export async function pickLandscapeAlignCaptureBearing(map, ring, exportBearing, endBearing) {
+    await jumpMapToBearing(map, exportBearing);
+    const startSpan = measureProjectedRingSpan(map, ring);
+    if (startSpan.width >= startSpan.height) {
+        return exportBearing;
+    }
+
+    if (Math.abs(endBearing - exportBearing) <= 0.01) {
+        return exportBearing;
+    }
+
+    await jumpMapToBearing(map, endBearing);
+    const endSpan = measureProjectedRingSpan(map, ring);
+    if (endSpan.width >= endSpan.height) {
+        return endBearing;
+    }
+
+    return exportBearing;
+}
+
+/**
  * Center the polygon ring in the map viewport.
  * @param {import('maplibre-gl').Map} map
  * @param {number[][]} ring
@@ -731,8 +781,10 @@ async function captureBasemapAtDpi(mapService, template, beforeCapture, options 
         targetHeightPx: heightPx,
         maxPixelRatio: SHEET_EXPORT_MAX_PIXEL_RATIO,
         highResCapture: true,
+        captureReadyOptions: CAPTURE_READY_OPTIONS,
         beforeCapture,
-        preservePixelRatio: options.preservePixelRatio === true
+        preservePixelRatio: options.preservePixelRatio === true,
+        rewaitAfterBeforeCapture: options.rewaitAfterBeforeCapture !== false
     });
 }
 
@@ -840,12 +892,11 @@ async function captureOverviewBasemap(mapService, template) {
     const map = mapService?.getMap?.();
 
     try {
-        await ensureMapCameraSettled(map, CAMERA_SETTLE_OPTIONS);
         let captureScale = 1;
         const canvas = await captureBasemapAtDpi(mapService, template, (captureMap) => {
             const cssW = Math.max(1, captureMap.getContainer()?.clientWidth || 1);
             captureScale = captureMap.getCanvas().width / cssW;
-        }, { preservePixelRatio: true });
+        }, { preservePixelRatio: true, rewaitAfterBeforeCapture: false });
         return { canvas, captureScale };
     } finally {
         restoreDataLayers();
@@ -871,33 +922,22 @@ async function resolveDetailCaptureBearing(mapService, ring, sheet, routeLine, p
     const exportBearing = pdfBearings.get(sheet.sheetId)
         ?? resolveSheetPdfBearing(sheet, routeLine, { mode: pdfBearingMode });
 
-    if (!map || pdfBearingMode === PDF_MAP_BEARING_MODES.NORTH_UP) {
-        await fitMapToPolygonRing(mapService, ring, { pitch: 0, bearing: exportBearing });
-        return exportBearing;
+    let chosenBearing = exportBearing;
+    if (map && pdfBearingMode !== PDF_MAP_BEARING_MODES.NORTH_UP) {
+        const endBearing = resolveSheetPdfBearing(sheet, routeLine, {
+            mode: pdfBearingMode,
+            sampleAt: 'end'
+        });
+        chosenBearing = await pickLandscapeAlignCaptureBearing(
+            map,
+            ring,
+            exportBearing,
+            endBearing
+        );
     }
 
-    await fitMapToPolygonRing(mapService, ring, { pitch: 0, bearing: exportBearing });
-    let span = measureProjectedRingSpan(map, ring);
-    if (span.width >= span.height) {
-        return exportBearing;
-    }
-
-    const endBearing = resolveSheetPdfBearing(sheet, routeLine, {
-        mode: pdfBearingMode,
-        sampleAt: 'end'
-    });
-    if (Math.abs(endBearing - exportBearing) <= 0.01) {
-        return exportBearing;
-    }
-
-    await fitMapToPolygonRing(mapService, ring, { pitch: 0, bearing: endBearing });
-    span = measureProjectedRingSpan(map, ring);
-    if (span.width >= span.height) {
-        return endBearing;
-    }
-
-    await fitMapToPolygonRing(mapService, ring, { pitch: 0, bearing: exportBearing });
-    return exportBearing;
+    await fitMapToPolygonRing(mapService, ring, { pitch: 0, bearing: chosenBearing });
+    return chosenBearing;
 }
 
 /**
@@ -1250,7 +1290,6 @@ export async function exportSheetPlanPdf({
                 fileIndex: overviewPageIndex,
                 fileName: overviewFile
             });
-            await ensureMapFrameReady(map);
         }
 
         for (let index = 0; index < detailSheets.length; index++) {

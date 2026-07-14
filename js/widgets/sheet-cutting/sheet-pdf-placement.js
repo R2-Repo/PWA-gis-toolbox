@@ -248,24 +248,67 @@ export function computeOutwardNormalFromPdfRing(midX, midY, pdfRing) {
  * @param {number} normY
  * @param {number} offsetPt
  * @param {Array<{ x: number, y: number }>} pdfRing
- * @returns {{ x: number, y: number, distance: number }}
+ * @returns {{ x: number, y: number, distance: number, normX: number, normY: number }}
  */
 export function offsetPointOutsidePdfRing(midX, midY, normX, normY, offsetPt, pdfRing) {
-    let distance = Math.max(0, offsetPt);
-    let x = midX + normX * distance;
-    let y = midY + normY * distance;
+    const tryDirection = (nx, ny) => {
+        let distance = Math.max(0, offsetPt);
+        for (let attempt = 0; attempt < 8; attempt++) {
+            const x = midX + nx * distance;
+            const y = midY + ny * distance;
+            if (!pdfRing?.length || !pointInPdfRing(x, y, pdfRing)) {
+                return { x, y, distance, normX: nx, normY: ny };
+            }
+            distance += offsetPt;
+        }
+        return null;
+    };
 
-    if (!pdfRing?.length) {
-        return { x, y, distance };
+    let result = tryDirection(normX, normY);
+    if (!result) {
+        result = tryDirection(-normX, -normY);
     }
 
-    for (let attempt = 0; attempt < 8 && pointInPdfRing(x, y, pdfRing); attempt++) {
-        distance += offsetPt;
-        x = midX + normX * distance;
-        y = midY + normY * distance;
+    if (result) {
+        return result;
     }
 
-    return { x, y, distance };
+    return {
+        x: midX - normX * offsetPt,
+        y: midY - normY * offsetPt,
+        distance: offsetPt,
+        normX: -normX,
+        normY: -normY
+    };
+}
+
+/**
+ * Mirror a label across the cap midpoint when it sits on the interior side.
+ *
+ * @param {number} midX
+ * @param {number} midY
+ * @param {number} x
+ * @param {number} y
+ * @param {{ x: number, y: number }} interiorRefPdf
+ * @param {Array<{ x: number, y: number }>} [pdfRing]
+ * @returns {{ x: number, y: number }}
+ */
+export function mirrorLabelAcrossCapMidIfInside(midX, midY, x, y, interiorRefPdf, pdfRing = null) {
+    const toInteriorX = interiorRefPdf.x - midX;
+    const toInteriorY = interiorRefPdf.y - midY;
+    const toLabelX = x - midX;
+    const toLabelY = y - midY;
+    const towardInterior = toLabelX * toInteriorX + toLabelY * toInteriorY > 0;
+    const insideRing = pdfRing?.length ? pointInPdfRing(x, y, pdfRing) : false;
+
+    if (!towardInterior && !insideRing) {
+        return { x, y };
+    }
+
+    return {
+        x: midX - toLabelX,
+        y: midY - toLabelY
+    };
 }
 
 /**
@@ -365,8 +408,14 @@ export function computeCapEdgePdfPlacementFromPdfPoints(pLeft, pRight, interiorR
     }
 
     const offset = offsetPointOutsidePdfRing(midX, midY, normX, normY, offsetPt, pdfRing);
-    const x = offset.x;
-    const y = offset.y;
+    let x = offset.x;
+    let y = offset.y;
+    normX = offset.normX;
+    normY = offset.normY;
+
+    if (pdfRing?.length || interiorRefPdf) {
+        ({ x, y } = mirrorLabelAcrossCapMidIfInside(midX, midY, x, y, interiorRefPdf, pdfRing));
+    }
 
     return {
         midX,
