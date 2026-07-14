@@ -620,6 +620,8 @@ export function clipMapCanvasToPolygonRing(sourceCanvas, pixelRing) {
 }
 
 /**
+ * Detail pages reserve the bottom of the page for the title-block footer.
+ * The footer sits flush to the page bottom; map content ends above that band.
  * @param {object} marginsPt
  * @param {boolean} [includeFooterBand]
  * @returns {object}
@@ -629,7 +631,9 @@ export function resolveDetailPageMarginsPt(marginsPt, includeFooterBand = true) 
     return {
         top: marginsPt.top,
         right: marginsPt.right,
-        bottom: marginsPt.bottom + footerPt,
+        // Occupy (at least) the footer band at the page bottom — do not stack
+        // extra space under the title block.
+        bottom: includeFooterBand ? Math.max(marginsPt.bottom, footerPt) : marginsPt.bottom,
         left: marginsPt.left
     };
 }
@@ -687,12 +691,12 @@ export function drawSheetTitleBlockFooter(doc, sheet, totalSheets, marginsPt, op
     });
     const pageW = doc.internal.pageSize.getWidth();
     const pageH = doc.internal.pageSize.getHeight();
-    const footerBandPt = PDF_DETAIL_FOOTER_BAND_IN * 72;
-    const gapAbove = 4;
+    const footerBandPt = Math.max(PDF_DETAIL_FOOTER_BAND_IN * 72, marginsPt.bottom || 0);
     const boxLeft = marginsPt.left;
     const boxWidth = Math.max(1, pageW - marginsPt.left - marginsPt.right);
-    const boxTop = pageH - marginsPt.bottom + gapAbove;
-    const boxHeight = Math.max(18, footerBandPt - gapAbove - 2);
+    const boxHeight = Math.max(18, footerBandPt);
+    // Pin the title block to the bottom of the page (within side margins).
+    const boxTop = pageH - boxHeight;
     const ratios = model.cellRatios;
     const cellXs = [boxLeft];
     for (let i = 0; i < ratios.length - 1; i += 1) {

@@ -20,7 +20,7 @@ export const DEFAULT_PDF_MAP_BEARING_MODE = PDF_MAP_BEARING_MODES.LANDSCAPE_ALIG
 /** Offset into the sheet before sampling the start match-line tangent (feet). */
 export const PDF_EXPORT_STATION_EPS_FT = 2;
 
-/** Extra bottom margin reserved for the title-block footer (inches). */
+/** Bottom-of-page height reserved for the title-block footer (inches). */
 export const PDF_DETAIL_FOOTER_BAND_IN = 0.5;
 
 /** Cell width ratios: Project / Date / Spare / Spare / Sheet. */

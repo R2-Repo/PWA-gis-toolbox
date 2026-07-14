@@ -159,7 +159,10 @@ describe('sheet export sizing', () => {
     it('reserves a footer band on detail page margins', () => {
         const { marginsPt } = computeSheetExportPixelDimensions(DEFAULT_SHEET_TEMPLATE);
         const detail = resolveDetailPageMarginsPt(marginsPt, true);
-        expect(detail.bottom).toBe(marginsPt.bottom + PDF_DETAIL_FOOTER_BAND_IN * 72);
+        expect(detail.bottom).toBe(Math.max(marginsPt.bottom, PDF_DETAIL_FOOTER_BAND_IN * 72));
+        expect(detail.bottom).toBe(marginsPt.bottom);
+        const without = resolveDetailPageMarginsPt(marginsPt, false);
+        expect(without.bottom).toBe(marginsPt.bottom);
     });
 });
 
