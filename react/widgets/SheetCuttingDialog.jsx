@@ -66,8 +66,8 @@ function VerticalDoubleArrowIcon() {
             aria-hidden="true"
         >
             <path d="M12 7V17" />
-            <path d="M9 10L12 7L15 10" />
-            <path d="M9 14L12 17L15 14" />
+            <path d="M9 7L12 4L15 7" />
+            <path d="M9 17L12 20L15 17" />
         </svg>
     );
 }
@@ -171,6 +171,13 @@ export function SheetCuttingDialog({
         );
     };
 
+    const handleSelectAllLayers = () => {
+        setSelectedLayerIds(designLayers.map((layer) => layer.id));
+    };
+
+    const allLayersSelected = designLayers.length > 0
+        && designLayers.every((layer) => selectedLayerIds.includes(layer.id));
+
     const handleGenerate = async () => {
         const next = await run(async () => {
             let current = await onCreateProject?.({
@@ -262,14 +269,6 @@ export function SheetCuttingDialog({
                     Select existing layer or create new layers using the widgets below.
                 </div>
             ) : null}
-            {session?.stationingRoute ? (
-                <div className="text-xs" style={{ marginTop: -8, marginBottom: 12, color: 'var(--text-muted)' }}>
-                    <div>{session.stationingRoute.routeName}</div>
-                    <div>
-                        {session.stationingRoute.profile?.start_station_label} – {session.stationingRoute.profile?.end_station_label}
-                    </div>
-                </div>
-            ) : null}
             <div className="gis-widget__btn-row gis-widget__btn-row--split" style={{ marginBottom: 16 }}>
                 <button
                     type="button"
@@ -329,19 +328,42 @@ export function SheetCuttingDialog({
 
             {designLayers.length > 0 ? (
                 <div className="form-group">
-                    <label>Design layers (optional)</label>
-                    <div className="text-xs" style={{ maxHeight: 120, overflow: 'auto' }}>
-                        {designLayers.map((layer) => (
-                            <label key={layer.id} style={{ display: 'block', marginBottom: 4 }}>
-                                <input
-                                    type="checkbox"
-                                    checked={selectedLayerIds.includes(layer.id)}
-                                    onChange={() => toggleLayer(layer.id)}
-                                />
-                                {' '}{layer.name} ({layer.featureCount})
-                            </label>
-                        ))}
+                    <div
+                        className="gis-widget__row"
+                        style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}
+                    >
+                        <span className="gis-widget__section-title" style={{ marginBottom: 0 }}>Current map layers</span>
+                        <button
+                            type="button"
+                            className="btn btn-secondary btn-sm"
+                            disabled={busy || allLayersSelected}
+                            onClick={handleSelectAllLayers}
+                        >
+                            Select all
+                        </button>
                     </div>
+                    {selectedLayerIds.length > 0 ? (
+                        <p className="text-xs" style={{ marginTop: 0, marginBottom: 6, color: 'var(--text-muted)' }}>
+                            {selectedLayerIds.length} of {designLayers.length} selected
+                        </p>
+                    ) : null}
+                    <details className="gis-widget__details">
+                        <summary>Layers ({designLayers.length})</summary>
+                        <div className="gis-widget__details-body">
+                            <div className="text-xs">
+                                {designLayers.map((layer) => (
+                                    <label key={layer.id} style={{ display: 'block', marginBottom: 4 }}>
+                                        <input
+                                            type="checkbox"
+                                            checked={selectedLayerIds.includes(layer.id)}
+                                            onChange={() => toggleLayer(layer.id)}
+                                        />
+                                        {' '}{layer.name} ({layer.featureCount})
+                                    </label>
+                                ))}
+                            </div>
+                        </div>
+                    </details>
                 </div>
             ) : null}
 

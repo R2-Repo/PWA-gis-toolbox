@@ -47,7 +47,8 @@ export function mountModalHost(element) {
                         fileName: event.fileName ?? p.fileName,
                         fileSize: event.fileSize ?? p.fileSize,
                         fileIndex: event.fileIndex ?? p.fileIndex,
-                        fileCount: event.fileCount ?? p.fileCount
+                        fileCount: event.fileCount ?? p.fileCount,
+                        batchLabelUnit: event.batchLabelUnit ?? p.batchLabelUnit
                     }
                     : p
             ));

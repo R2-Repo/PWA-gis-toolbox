@@ -84,7 +84,7 @@ function applyLayerStyleMessage(payload) {
 
 function applySnapshot(payload) {
     if (!payload) return;
-    const { layers, viewport, basemap, is3d } = payload;
+    const { layers, viewport, basemap, is3d, basemapTone } = payload;
 
     if (basemap && basemap !== mapService.getCurrentBasemap()) {
         mapService.setBasemap(basemap);
@@ -112,7 +112,9 @@ function applySnapshot(payload) {
     syncDimensionToggle(!!is3d);
 
     const map = mapService.getMap();
-    if (viewport && map) {
+    if (payload.preserveViewport) {
+        mapService.reconcile3DState({ emitEvent: true });
+    } else if (viewport && map) {
         suppressViewportBroadcast = true;
         mapService.reconcile3DState({
             camera: {
@@ -130,6 +132,10 @@ function applySnapshot(payload) {
 
     if (payload.activeLayerId) {
         mapService.setActiveLayerId(payload.activeLayerId);
+    }
+
+    if (basemapTone) {
+        mapService.setBasemapTone(basemapTone, { emitEvent: false });
     }
 }
 

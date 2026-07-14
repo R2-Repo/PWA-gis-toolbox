@@ -3,6 +3,8 @@
  */
 
 import { openReactIsland } from '../../ui/open-react-island.js';
+import { showProgressModal } from '../../ui/modals.js';
+import { createLayerGroup, assignLayersToGroup } from '../../core/layer-groups.js';
 import { getSpatialLayerOptions } from '../widget-context.js';
 import { isProjectStationingCenterline } from '../project-stationing/route-profile.js';
 import { markWidgetClosed, upsertWidgetState } from '../widget-state-store.js';
@@ -25,6 +27,7 @@ import {
 } from './engine.js';
 import { clearSheetPreview, showSheetPreview } from './sheet-preview.js';
 import { exportSheetPlanPdf } from './sheet-pdf-export.js';
+import { buildCombinedSheetGeoJson } from './export-builder.js';
 
 function persistSession(session, open = true) {
     upsertWidgetState(WIDGET_ID, {
@@ -41,6 +44,21 @@ function downloadTextFile(filename, content, mimeType = 'text/plain') {
     anchor.download = filename;
     anchor.click();
     URL.revokeObjectURL(url);
+}
+
+function groupOutputLayers(groupName, datasets) {
+    const layers = (datasets || []).filter(Boolean);
+    if (layers.length < 2) return null;
+
+    const group = createLayerGroup(
+        groupName,
+        layers.map((ds) => ds.id),
+        { collapsed: true, source: 'manual' }
+    );
+    if (!group) return null;
+
+    assignLayersToGroup(group.id, layers);
+    return group;
 }
 
 function clearPreviewLayers(ctx) {
@@ -143,52 +161,64 @@ export async function openSheetCutting(ctx, { restoreState = null } = {}) {
             onValidate: () => validateSheetSession(session),
             onExportPdf: async () => {
                 const exportPackage = buildSessionExport(session);
+                const abortController = new AbortController();
+                const progress = showProgressModal('Exporting Sheet PDFs');
+                progress.onCancel(() => abortController.abort());
                 try {
                     const result = await exportSheetPlanPdf({
                         mapService: ctx.mapService,
                         exportPackage,
                         session,
-                        onProgress: (text) => ctx.showToast(text, 'info')
+                        signal: abortController.signal,
+                        onProgress: (data) => {
+                            const payload = typeof data === 'string'
+                                ? { percent: 0, step: data }
+                                : data;
+                            progress.update(
+                                payload.percent ?? 0,
+                                payload.step || 'Working…',
+                                {
+                                    fileIndex: payload.fileIndex,
+                                    fileCount: payload.fileCount,
+                                    fileName: payload.fileName,
+                                    batchLabelUnit: payload.batchLabelUnit
+                                }
+                            );
+                        },
+                        onWarning: (text) => ctx.showToast(text, 'warning')
                     });
                     const count = result?.pageCount ?? 0;
                     const folder = result?.folderName ? ` in “${result.folderName}”` : '';
                     ctx.showToast(`Saved ${count} sheet PDF(s)${folder}.`, 'success');
                     return result;
                 } catch (err) {
+                    if (err?.name === 'AbortError') {
+                        ctx.showToast('Sheet PDF export cancelled.', 'warning');
+                        return null;
+                    }
                     ctx.showToast(err?.message || 'Sheet PDF export failed.', 'error');
                     throw err;
+                } finally {
+                    progress.close();
                 }
             },
             onExportPackage: () => {
                 const exportPackage = buildSessionExport(session);
                 const base = (session.project.projectName || 'sheet_cutting').replace(/\s+/g, '_');
-                const layers = exportPackage.layers || {};
+                const combined = buildCombinedSheetGeoJson(exportPackage);
 
-                if (layers.sheetFrames?.features?.length) {
-                    downloadTextFile(
-                        `${base}_sheet_frames.geojson`,
-                        JSON.stringify(layers.sheetFrames, null, 2),
-                        'application/geo+json'
-                    );
-                }
-                if (layers.overview?.features?.length) {
-                    downloadTextFile(
-                        `${base}_overview.geojson`,
-                        JSON.stringify(layers.overview, null, 2),
-                        'application/geo+json'
-                    );
-                }
-                for (const sheetLayer of layers.perSheet || []) {
-                    if (!sheetLayer.contents?.features?.length) continue;
-                    const sheetLabel = String(sheetLayer.sheetNumber).padStart(2, '0');
-                    downloadTextFile(
-                        `${base}_sheet_${sheetLabel}.geojson`,
-                        JSON.stringify(sheetLayer.contents, null, 2),
-                        'application/geo+json'
-                    );
+                if (!combined.features.length) {
+                    ctx.showToast('Generate sheets before downloading layers', 'warning');
+                    return exportPackage;
                 }
 
-                ctx.showToast('GIS sheet layers downloaded', 'success');
+                downloadTextFile(
+                    `${base}_sheets.geojson`,
+                    JSON.stringify(combined, null, 2),
+                    'application/geo+json'
+                );
+
+                ctx.showToast('Downloaded combined sheet GeoJSON', 'success');
                 return exportPackage;
             },
             onAddResultLayers: () => {
@@ -219,8 +249,10 @@ export async function openSheetCutting(ctx, { restoreState = null } = {}) {
                 }
 
                 if (created.length) {
+                    const groupName = `${baseName} Sheets`;
+                    groupOutputLayers(groupName, created);
                     ctx.refreshUI();
-                    ctx.showToast(`Added ${created.length} sheet layer(s)`, 'success');
+                    ctx.showToast(`Added ${created.length} sheet layer(s) under ${groupName}`, 'success');
                 } else {
                     ctx.showToast('Generate sheets before adding layers', 'warning');
                 }

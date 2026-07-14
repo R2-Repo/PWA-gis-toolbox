@@ -85,8 +85,9 @@ function ProgressModal({ progress }) {
     const fileLabel = progress.fileName
         ? `${progress.fileName}${progress.fileSize != null ? ` (${formatBytes(progress.fileSize)})` : ''}`
         : null;
+    const batchUnit = progress.batchLabelUnit || 'File';
     const batchLabel = progress.fileCount > 1 && progress.fileIndex != null
-        ? `File ${progress.fileIndex + 1} of ${progress.fileCount}`
+        ? `${batchUnit} ${progress.fileIndex + 1} of ${progress.fileCount}`
         : null;
 
     return (

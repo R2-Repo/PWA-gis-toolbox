@@ -16,12 +16,15 @@ import {
     captureLiveFrame,
     captureMapCanvas,
     computePixelRatioForTargetDimensions,
+    ensureHighResCaptureReady,
+    ensureMapCameraSettled,
     ensureMapFrameReady,
+    resolveCapturePixelDimensions,
     restoreMapPixelRatio,
     SHEET_EXPORT_MAX_PIXEL_RATIO,
     suspendMapInteractions
 } from '../../map/map-export.js';
-import { extractPrimaryRing, buildSharedMatchLineRegistry, stationKey } from './export-builder.js';
+import { extractPrimaryRing, buildCorridorMatchLineRegistry, stationKey } from './export-builder.js';
 import {
     boundsFromGeoJson,
     buildSingleSheetFrameCollection,
@@ -42,22 +45,25 @@ import {
     DEFAULT_PDF_MAP_BEARING_MODE,
     buildSheetContinuationLabels,
     buildSheetEdgeSeeLabelSpecs,
-    normalizeDegrees,
     resolveSheetPdfBearing,
     resolveSheetPdfBearings
 } from './sheet-pdf-orientation.js';
-import { getLocalTangentBearing } from '../project-stationing/engine.js';
-import { buildSheetPageTransform, computeSheetImagePlacement } from './sheet-pdf-placement.js';
+import { buildSheetPageTransform, computeCapEdgePdfPlacement, computeCapEdgePdfPlacementFromRing, computeSheetImagePlacement } from './sheet-pdf-placement.js';
 import { renderFeatureCollectionToPdf } from './sheet-pdf-vector.js';
 
 const FIT_PADDING = 48;
 const FIT_MAX_ZOOM = 18;
 /** Safety margin (CSS px) kept between polygon vertices and the map canvas edge. */
 const SHEET_CAPTURE_EDGE_MARGIN_PX = 56;
+/** Camera-only waits (zoom/pan) — skip tile-stability passes. */
+const CAMERA_SETTLE_OPTIONS = { maxWaitMs: 5000, stableFrames: 0, styleTimeoutMs: 4000 };
+/** Single tile pass before reading pixels from the GL canvas. */
+const CAPTURE_READY_OPTIONS = { maxWaitMs: 8000, stableFrames: 1 };
 const NORTH_ARROW_SIZE_PT = 28;
-/** Ground offset from match-line cap to place SEE SHEET labels outside the polygon. */
-const EDGE_SEE_LABEL_OFFSET_FT = 20;
+/** PDF standoff from cap edge to SEE SHEET label center (points). */
+export const EDGE_SEE_LABEL_OFFSET_PT = 5;
 const EDGE_SEE_LABEL_FONT_PT = 7.5;
+const EDGE_SEE_LABEL_INTERIOR_EPS_FT = 2;
 
 /**
  * @param {object} session
@@ -71,28 +77,23 @@ export function resolveExportLayerIds(session) {
 }
 
 /**
+ * Warn when the map panel cannot reach the template basemap DPI (capture will be upscaled).
  * @param {import('maplibre-gl').Map} map
- * @returns {Promise<void>}
+ * @param {object} template
+ * @param {(message: string) => void} [onWarning]
  */
-function waitForMapSettled(map) {
-    return new Promise((resolve) => {
-        if (!map) {
-            resolve();
-            return;
-        }
-        let settled = false;
-        const finish = () => {
-            if (settled) return;
-            settled = true;
-            map.off('moveend', finish);
-            map.off('idle', finish);
-            resolve();
-        };
-        map.once('moveend', finish);
-        map.once('idle', finish);
-        map.triggerRepaint();
-        window.setTimeout(finish, 2000);
+export function warnIfBasemapDpiConstrained(map, template, onWarning) {
+    if (!map || !onWarning) return;
+
+    const dpi = resolveBasemapDpi(template);
+    const { widthPx, heightPx } = computeSheetExportPixelDimensions(template, dpi);
+    const dims = resolveCapturePixelDimensions(map, widthPx, heightPx, {
+        maxPixelRatio: SHEET_EXPORT_MAX_PIXEL_RATIO
     });
+
+    if (!dims.meetsWidthTarget || !dims.meetsHeightTarget) {
+        onWarning('Basemap may look soft — widen the map panel or lower basemap quality for sharper output.');
+    }
 }
 
 /**
@@ -147,8 +148,7 @@ export async function fitMapToBounds(mapService, bounds, options = {}) {
         map.fitBounds(bounds, fitOptions);
     }
 
-    await waitForMapSettled(map);
-    await ensureMapFrameReady(map);
+    await ensureMapCameraSettled(map, CAMERA_SETTLE_OPTIONS);
 }
 
 /**
@@ -247,6 +247,19 @@ function measureRingInCssPixels(map, ring) {
 }
 
 /**
+ * @param {import('maplibre-gl').Map} map
+ * @param {number[][]} ring
+ * @returns {{ width: number, height: number }}
+ */
+export function measureProjectedRingSpan(map, ring) {
+    const bounds = measureRingInCssPixels(map, ring);
+    return {
+        width: Math.max(1, bounds.maxX - bounds.minX),
+        height: Math.max(1, bounds.maxY - bounds.minY)
+    };
+}
+
+/**
  * Center the polygon ring in the map viewport.
  * @param {import('maplibre-gl').Map} map
  * @param {number[][]} ring
@@ -258,7 +271,7 @@ async function centerRingInViewport(map, ring) {
     const polyCenterX = (bounds.minX + bounds.maxX) / 2;
     const polyCenterY = (bounds.minY + bounds.maxY) / 2;
     map.panBy([cssW / 2 - polyCenterX, cssH / 2 - polyCenterY], { duration: 0 });
-    await ensureMapFrameReady(map);
+    await ensureMapCameraSettled(map, CAMERA_SETTLE_OPTIONS);
 }
 
 /**
@@ -297,14 +310,14 @@ export async function ensureRingFitsCaptureViewport(mapService, ring, options = 
         if (!Number.isFinite(scale) || scale >= 0.999) {
             if (!polygonRingFitsViewport(map, ring, marginPx)) {
                 map.zoomTo(map.getZoom() + Math.log2(0.9), { duration: 0 });
-                await ensureMapFrameReady(map);
+                await ensureMapCameraSettled(map, CAMERA_SETTLE_OPTIONS);
                 continue;
             }
             return;
         }
 
         map.zoomTo(map.getZoom() + Math.log2(scale), { duration: 0 });
-        await ensureMapFrameReady(map);
+        await ensureMapCameraSettled(map, CAMERA_SETTLE_OPTIONS);
     }
 }
 
@@ -327,7 +340,7 @@ export async function fitMapToPolygonRing(mapService, ring, options = {}) {
     });
 
     map.jumpTo({ bearing, pitch: options.pitch ?? 0, duration: 0 });
-    await ensureMapFrameReady(map);
+    await ensureMapCameraSettled(map, CAMERA_SETTLE_OPTIONS);
 
     if (bounds) {
         await fitMapToBounds(mapService, bounds, {
@@ -481,9 +494,9 @@ export function drawSheetContinuationFooter(doc, sheet, totalSheets, marginsPt) 
  * @param {object} transform
  * @param {import('maplibre-gl').Map} map
  * @param {number} captureScale
- * @param {number} exportBearingDeg
- * @param {number} [routeTangentDeg]
- * @returns {{ x: number, y: number, angle: number, text: string }|null}
+ * @param {number[][]} [pixelRing]
+ * @param {number[][]} [frameRing]
+ * @returns {{ x: number, y: number, angle: number, text: string, midX?: number, midY?: number, edgeAngleDeg?: number }|null}
  */
 export function computeSheetEdgeSeeLabelPlacement(
     spec,
@@ -492,37 +505,53 @@ export function computeSheetEdgeSeeLabelPlacement(
     transform,
     map,
     captureScale,
-    exportBearingDeg,
-    routeTangentDeg = null
+    pixelRing = null,
+    frameRing = null
 ) {
     if (!spec?.text || !cap?.left?.length || !cap?.right?.length || !transform?.projectLngLat || !map || !routeLine?.geometry) {
         return null;
     }
 
-    const midpoint = turf.point([
-        (cap.left[0] + cap.right[0]) / 2,
-        (cap.left[1] + cap.right[1]) / 2
-    ]);
-    const tangent = Number.isFinite(routeTangentDeg)
-        ? routeTangentDeg
-        : getLocalTangentBearing(routeLine, spec.stationFt);
-    const outsideBearing = spec.position === 'start'
-        ? normalizeDegrees(tangent + 180)
-        : normalizeDegrees(tangent);
-    const anchor = turf.destination(midpoint, EDGE_SEE_LABEL_OFFSET_FT, outsideBearing, { units: 'feet' });
-    const [lng, lat] = anchor.geometry.coordinates;
-    const pdfPoint = transform.projectLngLat(map, lng, lat, captureScale);
+    const totalLength = turf.length(routeLine, { units: 'feet' });
+    const stationFt = spec.stationFt ?? 0;
+    const interiorFt = spec.position === 'start'
+        ? Math.min(stationFt + EDGE_SEE_LABEL_INTERIOR_EPS_FT, totalLength)
+        : Math.max(stationFt - EDGE_SEE_LABEL_INTERIOR_EPS_FT, 0);
+    const interiorCoord = turf.along(routeLine, interiorFt, { units: 'feet' }).geometry.coordinates;
+    const interiorRefPdf = transform.projectLngLat(map, interiorCoord[0], interiorCoord[1], captureScale);
 
-    let angle = normalizeDegrees(tangent - exportBearingDeg);
-    if (angle > 90 && angle < 270) {
-        angle = normalizeDegrees(angle + 180);
+    let placement = null;
+    if (pixelRing?.length && frameRing?.length && transform?.toPdf) {
+        placement = computeCapEdgePdfPlacementFromRing({
+            ring: frameRing,
+            pixelRing,
+            cap,
+            transform,
+            interiorRefPdf,
+            offsetPt: EDGE_SEE_LABEL_OFFSET_PT
+        });
     }
+    if (!placement) {
+        placement = computeCapEdgePdfPlacement(
+            cap,
+            transform,
+            map,
+            captureScale,
+            interiorRefPdf,
+            EDGE_SEE_LABEL_OFFSET_PT,
+            pixelRing
+        );
+    }
+    if (!placement) return null;
 
     return {
-        x: pdfPoint.x,
-        y: pdfPoint.y,
-        angle: -angle,
-        text: spec.text
+        x: placement.x,
+        y: placement.y,
+        angle: placement.angle,
+        text: spec.text,
+        midX: placement.midX,
+        midY: placement.midY,
+        edgeAngleDeg: placement.edgeAngleDeg
     };
 }
 
@@ -535,6 +564,9 @@ export function computeSheetEdgeSeeLabelPlacement(
  * @param {import('maplibre-gl').Map} map
  * @param {number} captureScale
  * @param {number} exportBearingDeg
+ * @param {Map<string, { stationFt: number, left: number[], right: number[] }>|null} [matchLineRegistry]
+ * @param {number[][]} [pixelRing]
+ * @param {number[][]} [frameRing]
  * @returns {Array<{ x: number, y: number, angle: number, text: string }>}
  */
 export function resolveSheetEdgeSeeLabelPlacements(
@@ -545,19 +577,18 @@ export function resolveSheetEdgeSeeLabelPlacements(
     transform,
     map,
     captureScale,
-    exportBearingDeg
+    exportBearingDeg,
+    matchLineRegistry = null,
+    pixelRing = null,
+    frameRing = null
 ) {
     if (!sheet || !routeLine?.geometry || !transform?.projectLngLat || !map) {
         return [];
     }
 
-    const registry = buildSharedMatchLineRegistry(detailSheets, routeLine);
+    const registry = matchLineRegistry ?? buildCorridorMatchLineRegistry(detailSheets, routeLine);
     const specs = buildSheetEdgeSeeLabelSpecs(sheet, totalSheets);
     const placements = [];
-    const routeTangentDeg = getLocalTangentBearing(
-        routeLine,
-        sheet.centerDistanceFt ?? sheet.startDistanceFt ?? specs[0]?.stationFt ?? 0
-    );
 
     for (const spec of specs) {
         const cap = registry.get(stationKey(spec.stationFt));
@@ -568,8 +599,8 @@ export function resolveSheetEdgeSeeLabelPlacements(
             transform,
             map,
             captureScale,
-            exportBearingDeg,
-            routeTangentDeg
+            pixelRing,
+            frameRing
         );
         if (placement) {
             placements.push(placement);
@@ -613,7 +644,10 @@ export function drawSheetEdgeSeeLabels(doc, options = {}) {
         transform = null,
         map = null,
         captureScale = 1,
-        exportBearingDeg = 0
+        exportBearingDeg = 0,
+        matchLineRegistry = null,
+        pixelRing = null,
+        frameRing = null
     } = options;
 
     const placements = resolveSheetEdgeSeeLabelPlacements(
@@ -624,7 +658,10 @@ export function drawSheetEdgeSeeLabels(doc, options = {}) {
         transform,
         map,
         captureScale,
-        exportBearingDeg
+        exportBearingDeg,
+        matchLineRegistry,
+        pixelRing,
+        frameRing
     );
 
     for (const placement of placements) {
@@ -686,15 +723,16 @@ export function resolvePdfPageFormat(template = {}) {
  * @param {(map: import('maplibre-gl').Map) => void} [beforeCapture]
  * @returns {Promise<HTMLCanvasElement>}
  */
-async function captureBasemapAtDpi(mapService, template, beforeCapture) {
+async function captureBasemapAtDpi(mapService, template, beforeCapture, options = {}) {
     const dpi = resolveBasemapDpi(template);
     const { widthPx, heightPx } = computeSheetExportPixelDimensions(template, dpi);
     return captureMapCanvas(mapService, {
         targetWidthPx: widthPx,
         targetHeightPx: heightPx,
         maxPixelRatio: SHEET_EXPORT_MAX_PIXEL_RATIO,
-        highResCapture: false,
-        beforeCapture
+        highResCapture: true,
+        beforeCapture,
+        preservePixelRatio: options.preservePixelRatio === true
     });
 }
 
@@ -713,7 +751,7 @@ function ringFitsCaptureCanvas(map, ring, insetPx = 2) {
 /**
  * @param {import('maplibre-gl').Map} map
  * @param {object} template
- * @returns {Promise<{ exportRatio: number, originalRatio: number }>}
+ * @returns {Promise<number>}
  */
 async function bumpMapToExportRatio(map, template) {
     const dpi = resolveBasemapDpi(template);
@@ -725,58 +763,54 @@ async function bumpMapToExportRatio(map, template) {
 
     if (exportRatio > originalRatio) {
         applyMapPixelRatio(map, exportRatio);
-        await ensureMapFrameReady(map);
+        await ensureHighResCaptureReady(map, CAPTURE_READY_OPTIONS);
     }
 
-    return { exportRatio, originalRatio };
+    return exportRatio;
 }
 
 /**
  * @param {object} mapService
  * @param {object} template
  * @param {number[][]} ring
+ * @param {{ skipViewportFit?: boolean }} [options]
  * @returns {Promise<{ canvas: HTMLCanvasElement, pixelRing: number[][], captureScale: number }>}
  */
-async function captureBasemapUnderlay(mapService, template, ring) {
+async function captureBasemapUnderlay(mapService, template, ring, options = {}) {
     clearSheetPreview(mapService);
     const restoreDataLayers = suppressMapDataLayersForCapture(mapService);
     const map = mapService?.getMap?.();
-    const sessionOriginalRatio = typeof map?.getPixelRatio === 'function' ? map.getPixelRatio() : 1;
 
     try {
         if (!map) {
             throw new Error('Map is not ready');
         }
 
-        let originalRatio = sessionOriginalRatio;
+        const skipViewportFit = options.skipViewportFit === true;
 
-        for (let attempt = 0; attempt < 8; attempt++) {
-            await ensureRingFitsCaptureViewport(mapService, ring, {
-                marginPx: SHEET_CAPTURE_EDGE_MARGIN_PX + attempt * 8,
-                maxPasses: 6
-            });
-            await ensureMapFrameReady(map);
-
-            await restoreMapPixelRatio(map, originalRatio);
-            ({ originalRatio } = await bumpMapToExportRatio(map, template));
+        for (let attempt = 0; attempt < 5; attempt++) {
+            if (!skipViewportFit || attempt > 0 || !polygonRingFitsViewport(map, ring, SHEET_CAPTURE_EDGE_MARGIN_PX)) {
+                await ensureRingFitsCaptureViewport(mapService, ring, {
+                    marginPx: SHEET_CAPTURE_EDGE_MARGIN_PX + attempt * 8,
+                    maxPasses: 4
+                });
+            }
 
             if (!ringFitsCaptureCanvas(map, ring, 2)) {
-                await restoreMapPixelRatio(map, originalRatio);
                 map.zoomTo(map.getZoom() + Math.log2(0.9), { duration: 0 });
-                await ensureMapFrameReady(map);
+                await ensureMapCameraSettled(map, CAMERA_SETTLE_OPTIONS);
                 continue;
             }
 
             const cssW = Math.max(1, map.getContainer()?.clientWidth || 1);
             const captureScale = map.getCanvas().width / cssW;
             const pixelRing = projectRingToDevicePixels(map, ring);
+            await ensureHighResCaptureReady(map, CAPTURE_READY_OPTIONS);
             const mapCanvas = captureLiveFrame(map, mapService);
-
-            await restoreMapPixelRatio(map, originalRatio);
 
             if (!pixelRingInsideCanvas(pixelRing, mapCanvas, 2)) {
                 map.zoomTo(map.getZoom() + Math.log2(0.9), { duration: 0 });
-                await ensureMapFrameReady(map);
+                await ensureMapCameraSettled(map, CAMERA_SETTLE_OPTIONS);
                 continue;
             }
 
@@ -789,9 +823,6 @@ async function captureBasemapUnderlay(mapService, template, ring) {
 
         throw new Error('Sheet polygon extends outside the map capture area — try widening the map panel or lowering basemap quality');
     } finally {
-        if (map) {
-            await restoreMapPixelRatio(map, sessionOriginalRatio);
-        }
         restoreDataLayers();
     }
 }
@@ -809,11 +840,12 @@ async function captureOverviewBasemap(mapService, template) {
     const map = mapService?.getMap?.();
 
     try {
+        await ensureMapCameraSettled(map, CAMERA_SETTLE_OPTIONS);
         let captureScale = 1;
         const canvas = await captureBasemapAtDpi(mapService, template, (captureMap) => {
             const cssW = Math.max(1, captureMap.getContainer()?.clientWidth || 1);
             captureScale = captureMap.getCanvas().width / cssW;
-        });
+        }, { preservePixelRatio: true });
         return { canvas, captureScale };
     } finally {
         restoreDataLayers();
@@ -821,6 +853,51 @@ async function captureOverviewBasemap(mapService, template) {
             await ensureMapFrameReady(map);
         }
     }
+}
+
+/**
+ * Pick the map bearing that keeps the clipped sheet wider than tall on the page.
+ *
+ * @param {object} mapService
+ * @param {number[][]} ring
+ * @param {object} sheet
+ * @param {import('geojson').Feature<import('geojson').LineString>} routeLine
+ * @param {string} pdfBearingMode
+ * @param {Map<string, number>} pdfBearings
+ * @returns {Promise<number>}
+ */
+async function resolveDetailCaptureBearing(mapService, ring, sheet, routeLine, pdfBearingMode, pdfBearings) {
+    const map = mapService?.getMap?.();
+    const exportBearing = pdfBearings.get(sheet.sheetId)
+        ?? resolveSheetPdfBearing(sheet, routeLine, { mode: pdfBearingMode });
+
+    if (!map || pdfBearingMode === PDF_MAP_BEARING_MODES.NORTH_UP) {
+        await fitMapToPolygonRing(mapService, ring, { pitch: 0, bearing: exportBearing });
+        return exportBearing;
+    }
+
+    await fitMapToPolygonRing(mapService, ring, { pitch: 0, bearing: exportBearing });
+    let span = measureProjectedRingSpan(map, ring);
+    if (span.width >= span.height) {
+        return exportBearing;
+    }
+
+    const endBearing = resolveSheetPdfBearing(sheet, routeLine, {
+        mode: pdfBearingMode,
+        sampleAt: 'end'
+    });
+    if (Math.abs(endBearing - exportBearing) <= 0.01) {
+        return exportBearing;
+    }
+
+    await fitMapToPolygonRing(mapService, ring, { pitch: 0, bearing: endBearing });
+    span = measureProjectedRingSpan(map, ring);
+    if (span.width >= span.height) {
+        return endBearing;
+    }
+
+    await fitMapToPolygonRing(mapService, ring, { pitch: 0, bearing: exportBearing });
+    return exportBearing;
 }
 
 /**
@@ -836,7 +913,9 @@ export async function buildHybridPagePdfBlob({
     pixelRing = null,
     captureScale = 1,
     vectorFeatures = null,
-    overviewPlacement = false
+    overviewPlacement = false,
+    JsPDFCtor = null,
+    matchLineRegistry = null
 }) {
     const orientation = template.orientation === PAGE_ORIENTATIONS.PORTRAIT
         ? PAGE_ORIENTATIONS.PORTRAIT
@@ -848,12 +927,12 @@ export async function buildHybridPagePdfBlob({
     const layoutMargins = isDetail
         ? resolveDetailPageMarginsPt(marginsPt, true)
         : marginsPt;
-    const JsPDF = await loadJsPDF();
+    const JsPDF = JsPDFCtor ?? await loadJsPDF();
     const doc = new JsPDF({
         orientation,
         unit: 'pt',
         format,
-        compress: false
+        compress: true
     });
 
     const pageW = doc.internal.pageSize.getWidth();
@@ -913,7 +992,10 @@ export async function buildHybridPagePdfBlob({
                 transform,
                 map,
                 captureScale,
-                exportBearingDeg: mapBearing
+                exportBearingDeg: mapBearing,
+                matchLineRegistry: pageOptions.matchLineRegistry ?? matchLineRegistry,
+                pixelRing,
+                frameRing: pageOptions.frameRing ?? null
             });
         }
         drawNorthArrowOnPdf(
@@ -968,6 +1050,34 @@ export function buildSheetPageFilename(projectName, suffix) {
 }
 
 /**
+ * @param {{ completedPages?: number, totalPages?: number, phase?: 'folder' | 'prep' | 'pages' | 'done' }} params
+ * @returns {number}
+ */
+export function computeSheetExportProgress({ completedPages = 0, totalPages = 1, phase = 'pages' }) {
+    if (phase === 'folder') return 0;
+    if (phase === 'prep') return 2;
+    if (phase === 'done') return 100;
+    if (!totalPages || totalPages < 1) return 2;
+    const capped = Math.min(Math.max(0, completedPages), totalPages);
+    return Math.round(Math.min(95, 2 + (capped / totalPages) * 93));
+}
+
+function emitExportProgress(onProgress, payload) {
+    if (!onProgress) return;
+    if (typeof payload === 'string') {
+        onProgress(payload);
+        return;
+    }
+    onProgress(payload);
+}
+
+function throwIfAborted(signal) {
+    if (signal?.aborted) {
+        throw new DOMException('Export cancelled.', 'AbortError');
+    }
+}
+
+/**
  * @param {object} params
  * @returns {Promise<{ pageCount: number, folderName: string, files: string[] }>}
  */
@@ -976,6 +1086,8 @@ export async function exportSheetPlanPdf({
     exportPackage,
     session,
     onProgress,
+    onWarning,
+    signal = null,
     blockWhenDualScreen = true,
     dualScreenCoordinator: coordinator = null
 }) {
@@ -1013,38 +1125,107 @@ export async function exportSheetPlanPdf({
     const routeLine = session?.routeLine || exportPackage?.layers?.route?.features?.[0] || null;
     const pdfBearingMode = template.pdfMapBearingMode ?? DEFAULT_PDF_MAP_BEARING_MODE;
     const pdfBearings = resolveSheetPdfBearings(detailSheets, routeLine, { mode: pdfBearingMode });
+    const matchLineRegistry = routeLine?.geometry
+        ? buildCorridorMatchLineRegistry(detailSheets, routeLine)
+        : null;
+    const JsPDFCtor = await loadJsPDF();
+    const totalPages = (includeOverview ? 1 : 0) + detailSheets.length;
+    let completedPages = 0;
 
-    onProgress?.('Choose a folder for sheet PDFs…');
+    const reportProgress = ({
+        phase = 'pages',
+        step,
+        fileIndex = null,
+        fileName = null
+    }) => {
+        const percent = computeSheetExportProgress({
+            completedPages: phase === 'pages' ? completedPages : undefined,
+            totalPages,
+            phase
+        });
+        emitExportProgress(onProgress, {
+            percent,
+            step,
+            fileIndex,
+            fileCount: totalPages > 1 ? totalPages : null,
+            fileName,
+            batchLabelUnit: 'Page'
+        });
+    };
+
+    reportProgress({
+        phase: 'folder',
+        step: 'Choose a folder for sheet PDFs…'
+    });
     const folderHandle = await pickExportFolder();
     const folderName = folderHandle.name || 'selected folder';
+
+    throwIfAborted(signal);
+    reportProgress({
+        phase: 'prep',
+        step: 'Preparing map for export…'
+    });
 
     const savedCamera = saveMapCamera(map);
     const sessionOriginalPixelRatio = typeof map?.getPixelRatio === 'function' ? map.getPixelRatio() : 1;
     const was3d = mapService.is3DEnabled?.() ?? false;
     const resumeInteractions = suspendMapInteractions(map);
     const writtenFiles = [];
+    let dpiWarningShown = false;
+    const maybeWarnDpi = () => {
+        if (dpiWarningShown) return;
+        warnIfBasemapDpiConstrained(map, template, (message) => {
+            dpiWarningShown = true;
+            onWarning?.(message);
+        });
+    };
 
     try {
         if (was3d) {
             mapService.disable3D?.({ animate: false });
-            await waitForMapSettled(map);
+            await ensureMapCameraSettled(map, CAMERA_SETTLE_OPTIONS);
         }
 
+        await bumpMapToExportRatio(map, template);
+        maybeWarnDpi();
+
         if (includeOverview) {
-            onProgress?.(`Rendering overview (basemap ${basemapDpi} DPI + sheet index)…`);
+            throwIfAborted(signal);
+            const overviewFile = buildSheetPageFilename(projectName, 'overview');
+            const overviewPageIndex = 0;
+            reportProgress({
+                step: 'Rendering overview (basemap + sheet index)…',
+                fileIndex: overviewPageIndex,
+                fileName: overviewFile
+            });
             clearSheetPreview(mapService);
             mapService.clearTempFeatures?.();
-            await ensureMapFrameReady(map);
+            await ensureMapCameraSettled(map, CAMERA_SETTLE_OPTIONS);
 
             const overviewBounds = boundsFromGeoJson(sheetFrames);
             if (!overviewBounds) {
                 throw new Error('Could not determine overview bounds');
             }
+            reportProgress({
+                step: 'Positioning map for overview…',
+                fileIndex: overviewPageIndex,
+                fileName: overviewFile
+            });
             await fitMapToBounds(mapService, overviewBounds, { pitch: 0, bearing: 0 });
+            reportProgress({
+                step: `Capturing overview basemap at ${basemapDpi} DPI…`,
+                fileIndex: overviewPageIndex,
+                fileName: overviewFile
+            });
             const { canvas: overviewCanvas, captureScale } = await captureOverviewBasemap(
                 mapService,
                 template
             );
+            reportProgress({
+                step: 'Building overview PDF…',
+                fileIndex: overviewPageIndex,
+                fileName: overviewFile
+            });
             const overviewBlob = await buildHybridPagePdfBlob({
                 template,
                 pageOptions: { pageType: 'overview', exportBearingDeg: 0 },
@@ -1053,18 +1234,36 @@ export async function exportSheetPlanPdf({
                 basemapCanvas: overviewCanvas,
                 captureScale,
                 vectorFeatures: layers.overview || null,
-                overviewPlacement: true
+                overviewPlacement: true,
+                JsPDFCtor
             });
-            const overviewFile = buildSheetPageFilename(projectName, 'overview');
+            reportProgress({
+                step: `Writing ${overviewFile}…`,
+                fileIndex: overviewPageIndex,
+                fileName: overviewFile
+            });
             await writeBlobToFolder(folderHandle, overviewFile, overviewBlob);
             writtenFiles.push(overviewFile);
+            completedPages += 1;
+            reportProgress({
+                step: 'Overview saved.',
+                fileIndex: overviewPageIndex,
+                fileName: overviewFile
+            });
             await ensureMapFrameReady(map);
         }
 
         for (let index = 0; index < detailSheets.length; index++) {
+            throwIfAborted(signal);
             const sheet = detailSheets[index];
             const label = String(sheet.sheetNumber).padStart(2, '0');
-            onProgress?.(`Rendering sheet ${label} (${index + 1} of ${detailSheets.length}, vector + basemap ${basemapDpi} DPI)…`);
+            const pageFile = buildSheetPageFilename(projectName, `sheet_${label}`);
+            const pageIndex = (includeOverview ? 1 : 0) + index;
+            reportProgress({
+                step: `Rendering sheet ${label} (${index + 1} of ${detailSheets.length})…`,
+                fileIndex: pageIndex,
+                fileName: pageFile
+            });
 
             const frameCollection = buildSingleSheetFrameCollection(sheetFrames, sheet.sheetId);
             const frameFeature = frameCollection?.features?.[0];
@@ -1077,68 +1276,79 @@ export async function exportSheetPlanPdf({
                 throw new Error(`Sheet ${label} frame polygon is empty`);
             }
 
-            const exportBearing = pdfBearings.get(sheet.sheetId)
-                ?? resolveSheetPdfBearing(sheet, routeLine, { mode: pdfBearingMode });
-
-            await fitMapToPolygonRing(mapService, ring, {
-                pitch: 0,
-                bearing: exportBearing
+            reportProgress({
+                step: `Positioning map for sheet ${label}…`,
+                fileIndex: pageIndex,
+                fileName: pageFile
             });
-            await ensureMapFrameReady(map);
+            const exportBearing = await resolveDetailCaptureBearing(
+                mapService,
+                ring,
+                sheet,
+                routeLine,
+                pdfBearingMode,
+                pdfBearings
+            );
 
-            let underlay = await captureBasemapUnderlay(mapService, template, ring);
-            let captureBearing = exportBearing;
+            reportProgress({
+                step: `Capturing basemap at ${basemapDpi} DPI for sheet ${label}…`,
+                fileIndex: pageIndex,
+                fileName: pageFile
+            });
+            const underlay = await captureBasemapUnderlay(mapService, template, ring, {
+                skipViewportFit: true
+            });
 
-            if (
-                pdfBearingMode !== PDF_MAP_BEARING_MODES.NORTH_UP
-                && underlay.canvas.height > underlay.canvas.width
-            ) {
-                const endBearing = resolveSheetPdfBearing(sheet, routeLine, {
-                    mode: pdfBearingMode,
-                    sampleAt: 'end'
-                });
-                if (Math.abs(endBearing - exportBearing) > 0.01) {
-                    await fitMapToPolygonRing(mapService, ring, {
-                        pitch: 0,
-                        bearing: endBearing
-                    });
-                    await ensureMapFrameReady(map);
-                    const retryUnderlay = await captureBasemapUnderlay(mapService, template, ring);
-                    if (retryUnderlay.canvas.width >= retryUnderlay.canvas.height) {
-                        underlay = retryUnderlay;
-                        captureBearing = endBearing;
-                    }
-                }
-            }
-
+            reportProgress({
+                step: `Building PDF for sheet ${label}…`,
+                fileIndex: pageIndex,
+                fileName: pageFile
+            });
             const sheetLayer = perSheetLayers.find((entry) => entry.sheetId === sheet.sheetId);
             const pageBlob = await buildHybridPagePdfBlob({
                 template,
                 pageOptions: {
                     pageType: 'detail',
-                    exportBearingDeg: captureBearing,
+                    exportBearingDeg: exportBearing,
                     sheet,
                     totalSheets: detailSheets.length,
                     detailSheets,
-                    routeLine
+                    routeLine,
+                    matchLineRegistry,
+                    frameRing: ring
                 },
                 map,
                 mapService,
                 basemapCanvas: underlay.canvas,
                 pixelRing: underlay.pixelRing,
                 captureScale: underlay.captureScale,
-                vectorFeatures: sheetLayer?.contents || null
+                vectorFeatures: sheetLayer?.contents || null,
+                JsPDFCtor,
+                matchLineRegistry
             });
-            const pageFile = buildSheetPageFilename(projectName, `sheet_${label}`);
+            reportProgress({
+                step: `Writing ${pageFile}…`,
+                fileIndex: pageIndex,
+                fileName: pageFile
+            });
             await writeBlobToFolder(folderHandle, pageFile, pageBlob);
             writtenFiles.push(pageFile);
+            completedPages += 1;
+            reportProgress({
+                step: `Sheet ${label} saved.`,
+                fileIndex: pageIndex,
+                fileName: pageFile
+            });
         }
 
         if (writtenFiles.length <= (includeOverview ? 1 : 0)) {
             throw new Error('No detail sheet PDFs were produced');
         }
 
-        onProgress?.(`Saved ${writtenFiles.length} PDF(s) to ${folderName}.`);
+        reportProgress({
+            phase: 'done',
+            step: `Saved ${writtenFiles.length} PDF(s) to ${folderName}.`
+        });
         return { pageCount: writtenFiles.length, folderName, files: writtenFiles };
     } finally {
         try {

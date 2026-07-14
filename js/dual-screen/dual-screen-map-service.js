@@ -57,6 +57,7 @@ export function installDualScreenMapServiceDecorator(mapApi, coordinator) {
         fitToLayers: mapApi.fitToLayers?.bind(mapApi),
         fitBounds: mapApi.fitBounds?.bind(mapApi),
         setBasemap: mapApi.setBasemap?.bind(mapApi),
+        setBasemapTone: mapApi.setBasemapTone?.bind(mapApi),
         enable3D: mapApi.enable3D?.bind(mapApi),
         disable3D: mapApi.disable3D?.bind(mapApi),
         getBounds: mapApi.getBounds?.bind(mapApi),
@@ -185,6 +186,13 @@ export function installDualScreenMapServiceDecorator(mapApi, coordinator) {
         mapApi.setCurrentBasemap?.(key);
         coordinator.syncLayersChanged();
         return undefined;
+    };
+
+    mapApi.setBasemapTone = function setBasemapTone(tone, options = {}) {
+        if (!coordinator.isActive) return originals.setBasemapTone?.(tone, options);
+        const result = originals.setBasemapTone?.(tone, options);
+        coordinator.syncLayersChanged();
+        return result;
     };
 
     mapApi.enable3D = function enable3D() {

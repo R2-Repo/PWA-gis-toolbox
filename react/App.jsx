@@ -17,6 +17,7 @@ import {
     handleRedo,
     handleMergeLayers,
     applyBasemapHeaderSelection,
+    applyBasemapToneSelection,
     applyDimensionHeaderSelection,
     toggleLogs,
     showToolInfo,
@@ -145,6 +146,7 @@ function AppShell() {
     const toggleAgolCompat = useAppStore((s) => s.toggleAgolCompat);
 
     const [basemap, setBasemap] = useState('voyager');
+    const [basemapTone, setBasemapTone] = useState(() => mapService.getBasemapTone?.() || { tint: 'default', opacity: 1 });
     const [dimension, setDimension] = useState('2d');
     const [popupMode, setPopupMode] = useState(() => mapService.getPopupMode?.() || 'full');
     const leftPanel = usePanelCollapse('left');
@@ -214,6 +216,11 @@ function AppShell() {
         applyBasemapHeaderSelection(value);
     }, []);
 
+    const onBasemapToneChange = useCallback((tone) => {
+        const next = applyBasemapToneSelection(tone) ?? mapService.getBasemapTone?.();
+        if (next) setBasemapTone(next);
+    }, []);
+
     const onDimensionChange = useCallback((value) => {
         setDimension(value);
         applyDimensionHeaderSelection(value);
@@ -232,6 +239,15 @@ function AppShell() {
             if (payload?.basemap) {
                 setBasemap(payload.basemap);
             }
+            if (payload?.basemapTone) {
+                setBasemapTone(payload.basemapTone);
+            }
+        });
+    }, []);
+
+    useEffect(() => {
+        return bus.on('map:basemapTone', (tone) => {
+            if (tone) setBasemapTone(tone);
         });
     }, []);
 
@@ -240,6 +256,7 @@ function AppShell() {
             if (!active) {
                 setDimension(mapService.is3DEnabled() ? '3d' : '2d');
                 setBasemap(mapService.getCurrentBasemap() || 'voyager');
+                setBasemapTone(mapService.getBasemapTone?.() || { tint: 'default', opacity: 1 });
             }
         });
     }, []);
@@ -258,6 +275,7 @@ function AppShell() {
                     onRedo={handleRedo}
                     onMergeLayers={handleMergeLayers}
                     onBasemapChange={onBasemapChange}
+                    onBasemapToneChange={onBasemapToneChange}
                     onDimensionChange={onDimensionChange}
                     onLogs={toggleLogs}
                     onInfo={showToolInfo}
@@ -270,6 +288,7 @@ function AppShell() {
                     canRedo={toolbar.canRedo}
                     showMerge={toolbar.showMerge}
                     basemap={basemap}
+                    basemapTone={basemapTone}
                     dimension={dimension}
                     popupMode={popupMode}
                     onPopupModeChange={onPopupModeChange}

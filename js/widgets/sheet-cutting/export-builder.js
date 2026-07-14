@@ -1086,3 +1086,39 @@ export function buildSheetExportPackage(session) {
         pdf: buildSheetPdfPagePlan(session)
     };
 }
+
+/**
+ * Merge sheet export layers into one FeatureCollection for download.
+ * Each feature gets an `export_layer` property for filtering in external GIS tools.
+ *
+ * @param {object} exportPackage
+ * @returns {import('geojson').FeatureCollection}
+ */
+export function buildCombinedSheetGeoJson(exportPackage) {
+    const layers = exportPackage?.layers || {};
+    const features = [];
+
+    const appendFeatures = (collection, exportLayer) => {
+        for (const feature of collection?.features || []) {
+            if (!feature?.geometry) continue;
+            features.push({
+                ...feature,
+                properties: {
+                    ...(feature.properties || {}),
+                    export_layer: exportLayer
+                }
+            });
+        }
+    };
+
+    appendFeatures(layers.sheetFrames, 'sheet_frames');
+    appendFeatures(layers.overview, 'overview');
+
+    for (const sheetLayer of layers.perSheet || []) {
+        if (!sheetLayer.contents?.features?.length) continue;
+        const sheetLabel = `sheet_${String(sheetLayer.sheetNumber).padStart(2, '0')}`;
+        appendFeatures(sheetLayer.contents, sheetLabel);
+    }
+
+    return { type: 'FeatureCollection', features };
+}

@@ -1076,7 +1076,7 @@ export async function handleFileImport(files, fenceBbox = null, options = {}) {
         throwIfTaskCancelled();
 
         if (batchLayerIds.length > 0) {
-            mapService.fitToLayers(batchLayerIds);
+            await mapService.scheduleFitToLayers(batchLayerIds);
         }
 
         if (allExpanded.length > 0) {
@@ -1338,6 +1338,11 @@ export function applyBasemapHeaderSelection(value) {
     if (!value) return;
     mapService.setBasemap(value);
     setBasemapToggleActive(value);
+}
+
+export function applyBasemapToneSelection(tone) {
+    if (!tone) return;
+    return mapService.setBasemapTone(tone);
 }
 
 export function applyDimensionHeaderSelection(value) {
@@ -4188,7 +4193,7 @@ export async function openArcGISImporter() {
                                     progressUi?.onProgress?.({ percent: 98, step: 'Adding layer to map...' });
 
                                     const { ids } = await _addImportedDatasets([dataset], { useWorkspace: false });
-                                    await mapService.fitToLayers(ids);
+                                    await mapService.scheduleFitToLayers(ids);
                                     const count = isWorkspaceLayer(dataset)
                                         ? (dataset.schema?.featureCount || 0)
                                         : dataset.type === 'spatial'

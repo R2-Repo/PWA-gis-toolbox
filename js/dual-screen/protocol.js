@@ -113,7 +113,7 @@ export function serializeMapRpcArgs(args = []) {
     )));
 }
 
-export function buildSnapshotPayload({ layers, viewport, basemap, is3d, layerStyles, activeLayerId }) {
+export function buildSnapshotPayload({ layers, viewport, basemap, is3d, basemapTone, layerStyles, activeLayerId, preserveViewport = false }) {
     return {
         layers: layers.map((l, i) => {
             const entry = serializeLayerForSync(l, i);
@@ -121,9 +121,11 @@ export function buildSnapshotPayload({ layers, viewport, basemap, is3d, layerSty
             if (style) entry.style = style;
             return entry;
         }),
-        viewport: viewport || null,
+        viewport: preserveViewport ? null : (viewport || null),
+        preserveViewport: !!preserveViewport,
         basemap: basemap || 'voyager',
         is3d: !!is3d,
+        basemapTone: basemapTone || { tint: 'default', opacity: 1 },
         activeLayerId: activeLayerId ?? null
     };
 }

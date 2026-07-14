@@ -98,6 +98,12 @@ export function createMapService({ mapAdapter = mapManager } = {}) {
         setBasemap(key) {
             return mapAdapter.setBasemap(key);
         },
+        getBasemapTone() {
+            return mapAdapter.getBasemapTone?.() ?? { tint: 'default', opacity: 1 };
+        },
+        setBasemapTone(tone, options) {
+            return mapAdapter.setBasemapTone?.(tone, options);
+        },
         is3DEnabled() {
             return !!mapAdapter._3dEnabled;
         },
@@ -146,6 +152,12 @@ export function createMapService({ mapAdapter = mapManager } = {}) {
         },
         fitToLayers(layerIds) {
             return mapAdapter.fitToLayers(layerIds);
+        },
+        scheduleMapFit(request) {
+            return mapAdapter.scheduleMapFit(request);
+        },
+        scheduleFitToLayers(layerIds, options) {
+            return mapAdapter.scheduleFitToLayers(layerIds, options);
         },
         fitBounds(bounds, options = {}) {
             const map = mapAdapter.getMap();

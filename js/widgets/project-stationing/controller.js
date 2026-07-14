@@ -572,11 +572,10 @@ function addDerivedLayer(ctx, name, fc, options = {}) {
     const layerStyle = mergeDatasetLabelsIntoStyle(options.style || null, dataset);
     ctx.addLayer(dataset);
     const index = ctx.getLayers().indexOf(dataset);
-    ctx.mapService.addLayer(dataset, index, { fit: options.fit ?? false });
     if (layerStyle && Object.keys(layerStyle).length) {
         ctx.mapService.setLayerStyle(dataset.id, layerStyle);
-        ctx.mapService.restyleLayer?.(dataset.id, dataset, layerStyle);
     }
+    ctx.mapService.addLayer(dataset, index, { fit: options.fit ?? false });
     return dataset;
 }
 

@@ -102,11 +102,10 @@ function addDerivedLayer(ctx, name, fc, options = {}) {
     });
     ctx.addLayer(dataset);
     const index = ctx.getLayers().indexOf(dataset);
-    ctx.mapService.addLayer(dataset, index, { fit: options.fit ?? false, style: options.style });
     if (options.style) {
         ctx.mapService.setLayerStyle?.(dataset.id, options.style);
-        ctx.mapService.restyleLayer?.(dataset.id, dataset, options.style);
     }
+    ctx.mapService.addLayer(dataset, index, { fit: options.fit ?? false });
     ctx.refreshUI();
     return dataset;
 }

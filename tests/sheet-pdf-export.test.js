@@ -14,14 +14,17 @@ import {
 import { sanitizeExportFilename } from '../js/export/folder-export.js';
 import {
     buildSheetPageFilename,
+    computeSheetExportProgress,
     computeSheetEdgeSeeLabelPlacement,
+    EDGE_SEE_LABEL_OFFSET_PT,
     pixelRingInsideCanvas,
     pixelRingOverlapsCanvas,
     polygonRingFitsViewport,
     placeSheetCanvasOnPdfPage,
     resolveDetailPageMarginsPt,
     resolveExportLayerIds,
-    resolveSheetEdgeSeeLabelPlacements
+    resolveSheetEdgeSeeLabelPlacements,
+    warnIfBasemapDpiConstrained
 } from '../js/widgets/sheet-cutting/sheet-pdf-export.js';
 import { prepareExportLayerVisibility } from '../js/widgets/sheet-cutting/sheet-preview.js';
 import {
@@ -40,8 +43,8 @@ import {
     tangentToLandscapeMapBearing
 } from '../js/widgets/sheet-cutting/sheet-pdf-orientation.js';
 import { getLocalTangentBearing } from '../js/widgets/project-stationing/engine.js';
-import { buildSharedMatchLineRegistry, buildSheetPdfPagePlan, buildOverviewGeoJson, stationKey } from '../js/widgets/sheet-cutting/export-builder.js';
-import { buildSheetPageTransform } from '../js/widgets/sheet-cutting/sheet-pdf-placement.js';
+import { buildCorridorMatchLineRegistry, buildSheetFramesGeoJson, buildSheetPdfPagePlan, buildOverviewGeoJson, stationKey } from '../js/widgets/sheet-cutting/export-builder.js';
+import { buildPdfRingFromPixelRing, buildSheetPageTransform, findCapEdgeVertexIndices, pickTextAngleWithBottomTowardInterior, pointInPdfRing } from '../js/widgets/sheet-cutting/sheet-pdf-placement.js';
 
 globalThis.turf = turf;
 
@@ -356,47 +359,242 @@ describe('sheet PDF edge SEE SHEET labels', () => {
 
     const pixelRing = [[100, 100], [900, 100], [900, 700], [100, 700]];
     const marginsPt = { top: 36, right: 36, bottom: 108, left: 36 };
+    const pageSize = { width: 1224, height: 792 };
     const transform = buildSheetPageTransform(
         pixelRing,
         marginsPt,
-        { width: 1224, height: 792 },
+        pageSize,
         { preferLandscapeFlow: true }
     );
 
+    function anglesParallel(aDeg, bDeg, tolerance = 1) {
+        const diff = Math.abs(((aDeg - bDeg + 180) % 360) - 180);
+        return diff <= tolerance || Math.abs(diff - 180) <= tolerance;
+    }
+
+    function interiorRefPdf(routeLine, stationFt, position, captureScale = 1) {
+        const totalLength = turf.length(routeLine, { units: 'feet' });
+        const interiorFt = position === 'start'
+            ? Math.min(stationFt + 2, totalLength)
+            : Math.max(stationFt - 2, 0);
+        const coord = turf.along(routeLine, interiorFt, { units: 'feet' }).geometry.coordinates;
+        return transform.projectLngLat(map, coord[0], coord[1], captureScale);
+    }
+
     it('places edge labels outside the map frame with cap-aligned rotation', () => {
         const sheet = detailSheets[1];
-        const exportBearing = resolveSheetPdfBearing(sheet, eastRoute);
-        const registry = buildSharedMatchLineRegistry(detailSheets, eastRoute);
+        const registry = buildCorridorMatchLineRegistry(detailSheets, eastRoute);
+        const frames = buildSheetFramesGeoJson(detailSheets, eastRoute).features;
+        const frameRing = frames[1].geometry.coordinates[0];
+        const framePixelRing = frameRing.map(([lng, lat]) => {
+            const point = map.project([lng, lat]);
+            return [point.x, point.y];
+        });
         const startCap = registry.get(stationKey(sheet.startDistanceFt));
         const endCap = registry.get(stationKey(sheet.endDistanceFt));
-        const routeTangentDeg = getLocalTangentBearing(eastRoute, sheet.startDistanceFt);
+        const startSpec = buildSheetEdgeSeeLabelSpecs(sheet, detailSheets.length)[0];
+        const endSpec = buildSheetEdgeSeeLabelSpecs(sheet, detailSheets.length)[1];
 
         const startPlacement = computeSheetEdgeSeeLabelPlacement(
-            buildSheetEdgeSeeLabelSpecs(sheet, detailSheets.length)[0],
+            startSpec,
             startCap,
             eastRoute,
             transform,
             map,
             1,
-            exportBearing,
-            routeTangentDeg
+            framePixelRing,
+            frameRing
         );
         const endPlacement = computeSheetEdgeSeeLabelPlacement(
-            buildSheetEdgeSeeLabelSpecs(sheet, detailSheets.length)[1],
+            endSpec,
             endCap,
             eastRoute,
             transform,
             map,
             1,
-            exportBearing,
-            routeTangentDeg
+            framePixelRing,
+            frameRing
         );
 
         expect(startPlacement?.text).toBe('SEE SHEET 01');
         expect(endPlacement?.text).toBe('SEE SHEET 03');
         expect(startPlacement.x).toBeLessThan(endPlacement.x);
-        expect(Math.abs(Math.abs(startPlacement.angle) - 90)).toBeLessThan(5);
-        expect(Math.abs(Math.abs(endPlacement.angle) - 90)).toBeLessThan(5);
+
+        for (const [placement, spec] of [
+            [startPlacement, startSpec],
+            [endPlacement, endSpec]
+        ]) {
+            expect(anglesParallel(placement.angle, pickTextAngleWithBottomTowardInterior(
+                placement.edgeAngleDeg,
+                placement.x,
+                placement.y,
+                interiorRefPdf(eastRoute, spec.stationFt, spec.position)
+            ))).toBe(true);
+            expect(pointInPdfRing(
+                placement.x,
+                placement.y,
+                buildPdfRingFromPixelRing(framePixelRing, transform)
+            )).toBe(false);
+            expect(Math.hypot(placement.x - placement.midX, placement.y - placement.midY))
+                .toBeGreaterThanOrEqual(EDGE_SEE_LABEL_OFFSET_PT - 0.5);
+
+            const interior = interiorRefPdf(eastRoute, spec.stationFt, spec.position);
+            const toLabelX = placement.x - placement.midX;
+            const toLabelY = placement.y - placement.midY;
+            const toInteriorX = interior.x - placement.midX;
+            const toInteriorY = interior.y - placement.midY;
+            expect(toLabelX * toInteriorX + toLabelY * toInteriorY).toBeLessThan(0);
+        }
+    });
+
+    it('finds consecutive cap edge indices in sheet frame rings', () => {
+        const sheet = detailSheets[1];
+        const registry = buildCorridorMatchLineRegistry(detailSheets, eastRoute);
+        const frames = buildSheetFramesGeoJson(detailSheets, eastRoute).features;
+        const frameRing = frames[1].geometry.coordinates[0];
+        const startCap = registry.get(stationKey(sheet.startDistanceFt));
+        const endCap = registry.get(stationKey(sheet.endDistanceFt));
+
+        expect(findCapEdgeVertexIndices(frameRing, startCap)).toEqual({
+            leftIndex: expect.any(Number),
+            rightIndex: expect.any(Number)
+        });
+        expect(findCapEdgeVertexIndices(frameRing, endCap)).toEqual({
+            leftIndex: expect.any(Number),
+            rightIndex: expect.any(Number)
+        });
+    });
+
+    it('tracks cap edge angle on a rotated PDF clip ring via pixelRing', () => {
+        const sheet = detailSheets[1];
+        const registry = buildCorridorMatchLineRegistry(detailSheets, eastRoute);
+        const frames = buildSheetFramesGeoJson(detailSheets, eastRoute).features;
+        const frameRing = frames[1].geometry.coordinates[0];
+        const basePixelRing = frameRing.map(([lng, lat]) => {
+            const point = map.project([lng, lat]);
+            return [point.x, point.y];
+        });
+
+        const cx = basePixelRing.reduce((sum, [x]) => sum + x, 0) / basePixelRing.length;
+        const cy = basePixelRing.reduce((sum, [, y]) => sum + y, 0) / basePixelRing.length;
+        const rad = (18 * Math.PI) / 180;
+        const cos = Math.cos(rad);
+        const sin = Math.sin(rad);
+        const rotatedPixelRing = basePixelRing.map(([x, y]) => {
+            const dx = x - cx;
+            const dy = y - cy;
+            return [cx + dx * cos - dy * sin, cy + dx * sin + dy * cos];
+        });
+
+        const rotatedTransform = buildSheetPageTransform(
+            rotatedPixelRing,
+            marginsPt,
+            pageSize,
+            { preferLandscapeFlow: true }
+        );
+        const startCap = registry.get(stationKey(sheet.startDistanceFt));
+        const startSpec = buildSheetEdgeSeeLabelSpecs(sheet, detailSheets.length)[0];
+        const indices = findCapEdgeVertexIndices(frameRing, startCap);
+        expect(indices).not.toBeNull();
+
+        const placement = computeSheetEdgeSeeLabelPlacement(
+            startSpec,
+            startCap,
+            eastRoute,
+            rotatedTransform,
+            map,
+            1,
+            rotatedPixelRing,
+            frameRing
+        );
+
+        const leftPx = rotatedPixelRing[indices.leftIndex];
+        const rightPx = rotatedPixelRing[indices.rightIndex];
+        const limit = frameRing.length;
+        const isClosed = limit > 1 && frameRing[0][0] === frameRing[limit - 1][0] && frameRing[0][1] === frameRing[limit - 1][1];
+        const vertexCount = isClosed ? limit - 1 : limit;
+        const next = (index) => (index + 1) % vertexCount;
+        const fromPx = next(indices.leftIndex) === indices.rightIndex ? leftPx : rightPx;
+        const toPx = next(indices.leftIndex) === indices.rightIndex ? rightPx : leftPx;
+        const pFrom = rotatedTransform.toPdf(fromPx[0], fromPx[1]);
+        const pTo = rotatedTransform.toPdf(toPx[0], toPx[1]);
+        const edgeAngleDeg = (Math.atan2(pTo.y - pFrom.y, pTo.x - pFrom.x) * 180) / Math.PI;
+
+        expect(placement).not.toBeNull();
+        expect(placement.edgeAngleDeg).toBeCloseTo(edgeAngleDeg, 1);
+        expect(anglesParallel(
+            placement.angle,
+            pickTextAngleWithBottomTowardInterior(
+                edgeAngleDeg,
+                placement.x,
+                placement.y,
+                interiorRefPdf(eastRoute, startSpec.stationFt, startSpec.position)
+            )
+        )).toBe(true);
+        expect(pointInPdfRing(
+            placement.x,
+            placement.y,
+            buildPdfRingFromPixelRing(rotatedPixelRing, rotatedTransform)
+        )).toBe(false);
+        expect(Math.abs(placement.angle)).not.toBeCloseTo(90, 0);
+    });
+
+    it('places the start-cap label outside the polygon on the west edge', () => {
+        const sheet = detailSheets[1];
+        const registry = buildCorridorMatchLineRegistry(detailSheets, eastRoute);
+        const frames = buildSheetFramesGeoJson(detailSheets, eastRoute).features;
+        const frameRing = frames[1].geometry.coordinates[0];
+        const framePixelRing = frameRing.map(([lng, lat]) => {
+            const point = map.project([lng, lat]);
+            return [point.x, point.y];
+        });
+        const pdfRing = buildPdfRingFromPixelRing(framePixelRing, transform);
+        const startCap = registry.get(stationKey(sheet.startDistanceFt));
+        const startSpec = buildSheetEdgeSeeLabelSpecs(sheet, detailSheets.length)[0];
+
+        const placement = computeSheetEdgeSeeLabelPlacement(
+            startSpec,
+            startCap,
+            eastRoute,
+            transform,
+            map,
+            1,
+            framePixelRing,
+            frameRing
+        );
+
+        expect(placement?.text).toBe('SEE SHEET 01');
+        expect(pointInPdfRing(placement.x, placement.y, pdfRing)).toBe(false);
+        expect(placement.x).toBeLessThan(placement.midX);
+    });
+
+    it('places the end-cap label outside the polygon on the east edge', () => {
+        const sheet = detailSheets[1];
+        const registry = buildCorridorMatchLineRegistry(detailSheets, eastRoute);
+        const frames = buildSheetFramesGeoJson(detailSheets, eastRoute).features;
+        const frameRing = frames[1].geometry.coordinates[0];
+        const framePixelRing = frameRing.map(([lng, lat]) => {
+            const point = map.project([lng, lat]);
+            return [point.x, point.y];
+        });
+        const pdfRing = buildPdfRingFromPixelRing(framePixelRing, transform);
+        const endCap = registry.get(stationKey(sheet.endDistanceFt));
+        const endSpec = buildSheetEdgeSeeLabelSpecs(sheet, detailSheets.length)[1];
+
+        const placement = computeSheetEdgeSeeLabelPlacement(
+            endSpec,
+            endCap,
+            eastRoute,
+            transform,
+            map,
+            1,
+            framePixelRing,
+            frameRing
+        );
+
+        expect(placement?.text).toBe('SEE SHEET 03');
+        expect(pointInPdfRing(placement.x, placement.y, pdfRing)).toBe(false);
+        expect(placement.x).toBeGreaterThan(placement.midX);
     });
 
     it('resolves both edge placements for a middle sheet', () => {
@@ -450,6 +648,44 @@ describe('sheet PDF capture safety', () => {
     });
 });
 
+describe('sheet PDF basemap readiness helpers', () => {
+    it('warns when capture pixel dimensions cannot meet the template DPI target', () => {
+        const warnings = [];
+        const map = {
+            getContainer: () => ({ clientWidth: 200, clientHeight: 150 }),
+            getCanvas: () => ({
+                getContext: () => ({
+                    getParameter: () => 8192
+                })
+            }),
+            getPixelRatio: () => 1
+        };
+
+        warnIfBasemapDpiConstrained(map, DEFAULT_SHEET_TEMPLATE, (message) => warnings.push(message));
+
+        expect(warnings).toHaveLength(1);
+        expect(warnings[0]).toMatch(/Basemap may look soft/i);
+    });
+
+    it('does not warn when the map panel can reach the template DPI target', () => {
+        const warnings = [];
+        const { widthPx, heightPx } = computeSheetExportPixelDimensions(DEFAULT_SHEET_TEMPLATE);
+        const map = {
+            getContainer: () => ({ clientWidth: widthPx, clientHeight: heightPx }),
+            getCanvas: () => ({
+                getContext: () => ({
+                    getParameter: () => 8192
+                })
+            }),
+            getPixelRatio: () => 1
+        };
+
+        warnIfBasemapDpiConstrained(map, DEFAULT_SHEET_TEMPLATE, (message) => warnings.push(message));
+
+        expect(warnings).toHaveLength(0);
+    });
+});
+
 describe('sheet PDF placement', () => {
     it('prefers filling printable width for landscape-flow canvases', () => {
         const placed = { width: 0, height: 0 };
@@ -472,5 +708,19 @@ describe('sheet PDF placement', () => {
         const availW = 1224 - 72;
         expect(placed.width).toBeCloseTo(availW, 0);
         expect(placed.height).toBeLessThan(availW);
+    });
+});
+
+describe('sheet PDF export progress', () => {
+    it('returns fixed percentages for folder, prep, and done phases', () => {
+        expect(computeSheetExportProgress({ phase: 'folder' })).toBe(0);
+        expect(computeSheetExportProgress({ phase: 'prep' })).toBe(2);
+        expect(computeSheetExportProgress({ phase: 'done' })).toBe(100);
+    });
+
+    it('scales page completion up to 95% before the done phase', () => {
+        expect(computeSheetExportProgress({ completedPages: 0, totalPages: 10, phase: 'pages' })).toBe(2);
+        expect(computeSheetExportProgress({ completedPages: 5, totalPages: 10, phase: 'pages' })).toBe(49);
+        expect(computeSheetExportProgress({ completedPages: 10, totalPages: 10, phase: 'pages' })).toBe(95);
     });
 });

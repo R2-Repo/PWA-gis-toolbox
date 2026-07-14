@@ -64,7 +64,10 @@ function _tagFeaturesForMap(dataset) {
     }
     return taggedFeatures;
 }
-import { bboxDiagonalMeetsMinDragPx, markMapInteractionHandled, shouldStartBoxSelectDrag, suspendDoubleClickZoom } from './map-interaction-utils.js';
+import { bboxDiagonalMeetsMinDragPx, markMapInteractionHandled, shouldStartBoxSelectDrag, stopMapCamera, suspendDoubleClickZoom } from './map-interaction-utils.js';
+
+const PROGRAMMATIC_FIT_OPTIONS = { padding: 30, maxZoom: 16, duration: 0 };
+const SCHEDULE_FIT_DEBOUNCE_MS = 80;
 import { nearestPointOnRouteLine, lineSliceAlongRoute } from '../tools/line-geojson.js';
 import { normalizeStyle, compilePaint, getBaseFlatStyle } from './style-engine.js';
 import {
@@ -95,6 +98,7 @@ import {
     startQueryResultPulse
 } from './query-result-overlay.js';
 import { getBasemapConfig, getBasemapRegistry, isSatelliteBasemap } from './basemap-catalog.js';
+import { DEFAULT_BASEMAP_TONE, normalizeBasemapTone } from './basemap-tone.js';
 
 const LAYER_COLORS = ['#2563eb', '#dc2626', '#16a34a', '#d97706', '#7c3aed', '#0891b2', '#be185d', '#65a30d'];
 
@@ -171,6 +175,7 @@ class MapManager {
         this._layerStyles = new Map();
         this.clusterGroups = new Map();
         this.currentBasemap = 'voyager';
+        this._basemapTone = { ...DEFAULT_BASEMAP_TONE };
         this.drawLayer = null;
         this.highlightLayer = null;
         this._highlightedInfo = null;
@@ -214,6 +219,9 @@ class MapManager {
         this._lastScaleRangeLat = null;
 
         this._annotationOverlay = null;
+
+        this._scheduleFitTimer = null;
+        this._pendingFitRequest = null;
     }
 
     _layerAddSpec(baseSpec, zoomRange) {
@@ -406,6 +414,8 @@ class MapManager {
         this.map.on('load', () => {
             logger.info('Map', 'Map initialized');
             bus.emit('map:ready', this.map);
+            this._applyBasemapToneToMap();
+            this._syncBasemapToneDom();
             if (this._3dEnabled) {
                 this.reconcile3DState({ emitEvent: false });
             }
@@ -430,6 +440,12 @@ class MapManager {
         this._closePopup?.();
         this._cancelInteraction?.();
         this.clearSelection?.();
+        window.clearTimeout(this._scheduleFitTimer);
+        this._scheduleFitTimer = null;
+        if (this._pendingFitRequest?.resolve) {
+            this._pendingFitRequest.resolve();
+        }
+        this._pendingFitRequest = null;
         this._annotationOverlay?.destroy();
         this._annotationOverlay = null;
         if (this._rectSelectCleanup) { this._rectSelectCleanup(); this._rectSelectCleanup = null; }
@@ -449,12 +465,26 @@ class MapManager {
     // Style builder
     // ==========================================
 
+    _getBasemapRasterPaint() {
+        return {
+            ...BASEMAP_RASTER_PAINT,
+            'raster-opacity': this._basemapTone.opacity
+        };
+    }
+
     _buildStyle(basemapKey) {
         const bm = getBasemapConfig(basemapKey) || getBasemapConfig('voyager');
         const sources = {};
         const layers = [];
+        const tone = normalizeBasemapTone(this._basemapTone);
 
         if (bm.tiles) {
+            layers.push({
+                id: 'basemap-backdrop',
+                type: 'background',
+                paint: { 'background-color': tone.backdrop }
+            });
+
             sources['basemap'] = {
                 type: 'raster',
                 tiles: bm.tiles,
@@ -468,7 +498,7 @@ class MapManager {
                 source: 'basemap',
                 minzoom: 0,
                 maxzoom: 22,
-                paint: BASEMAP_RASTER_PAINT
+                paint: this._getBasemapRasterPaint()
             });
 
             if (bm.overlayTiles) {
@@ -484,7 +514,7 @@ class MapManager {
                     source: 'basemap-overlay',
                     minzoom: 0,
                     maxzoom: 22,
-                    paint: BASEMAP_RASTER_PAINT
+                    paint: this._getBasemapRasterPaint()
                 });
             }
         }
@@ -564,7 +594,70 @@ class MapManager {
             setTimeout(reapply, 200);
         }
 
+        this._scheduleBasemapToneReapply();
+
         bus.emit('map:basemap', key);
+    }
+
+    getBasemapTone() {
+        return normalizeBasemapTone(this._basemapTone);
+    }
+
+    setBasemapTone(input = {}, { emitEvent = true } = {}) {
+        const next = normalizeBasemapTone({
+            tint: input.tint ?? this._basemapTone.tint,
+            opacity: input.opacity ?? this._basemapTone.opacity
+        });
+        const unchanged = next.tint === this._basemapTone.tint
+            && next.opacity === this._basemapTone.opacity;
+        this._basemapTone = { tint: next.tint, opacity: next.opacity };
+        this._applyBasemapToneToMap(next);
+        this._syncBasemapToneDom(next.backdrop);
+        if (emitEvent && !unchanged) {
+            bus.emit('map:basemapTone', this.getBasemapTone());
+        }
+        return this.getBasemapTone();
+    }
+
+    _applyBasemapToneToMap(tone = this.getBasemapTone()) {
+        const map = this.map;
+        if (!map?.getStyle?.()) return;
+        try {
+            if (map.getLayer('basemap-backdrop')) {
+                map.setPaintProperty('basemap-backdrop', 'background-color', tone.backdrop);
+            }
+            if (map.getLayer('basemap-layer')) {
+                map.setPaintProperty('basemap-layer', 'raster-opacity', tone.opacity);
+            }
+            if (map.getLayer('basemap-overlay-layer')) {
+                map.setPaintProperty('basemap-overlay-layer', 'raster-opacity', tone.opacity);
+            }
+        } catch (err) {
+            logger.warn('Map', 'Failed to apply basemap tone', { message: err?.message });
+        }
+    }
+
+    _syncBasemapToneDom(backdrop = this.getBasemapTone().backdrop) {
+        const container = typeof document !== 'undefined'
+            ? document.getElementById('map-container')
+            : null;
+        if (container) {
+            container.style.background = backdrop;
+        }
+    }
+
+    _scheduleBasemapToneReapply() {
+        if (!this.map) return;
+        let applied = false;
+        const reapply = () => {
+            if (applied) return;
+            applied = true;
+            this.map.off('styledata', reapply);
+            this._applyBasemapToneToMap();
+            this._syncBasemapToneDom();
+        };
+        this.map.on('styledata', reapply);
+        setTimeout(reapply, 200);
     }
 
     getBasemaps() { return getBasemapRegistry(); }
@@ -813,7 +906,9 @@ class MapManager {
             try {
                 const bbox = turf.bbox(geojson);
                 if (bbox && isFinite(bbox[0])) {
-                    this.map.fitBounds([[bbox[0], bbox[1]], [bbox[2], bbox[3]]], { padding: 30, maxZoom: 16 });
+                    this.scheduleMapFit({
+                        bounds: [[bbox[0], bbox[1]], [bbox[2], bbox[3]]]
+                    });
                 }
             } catch (e) {
                 logger.warn('Map', 'Could not fit bounds', { error: e.message });
@@ -913,7 +1008,9 @@ class MapManager {
                     ];
                 }, null);
                 if (bbox && isFinite(bbox[0])) {
-                    this.map.fitBounds([[bbox[0], bbox[1]], [bbox[2], bbox[3]]], { padding: 30, maxZoom: 16 });
+                    this.scheduleMapFit({
+                        bounds: [[bbox[0], bbox[1]], [bbox[2], bbox[3]]]
+                    });
                 }
             } catch (e) {
                 logger.warn('Map', 'Could not fit coverage raster bounds', { error: e.message });
@@ -974,7 +1071,9 @@ class MapManager {
                 const turf = await import('@turf/turf');
                 const bbox = turf.bbox(viewportFc);
                 if (bbox && isFinite(bbox[0])) {
-                    this.map.fitBounds([[bbox[0], bbox[1]], [bbox[2], bbox[3]]], { padding: 30, maxZoom: 16 });
+                    this.scheduleMapFit({
+                        bounds: [[bbox[0], bbox[1]], [bbox[2], bbox[3]]]
+                    });
                 }
             } catch (e) {
                 logger.warn('Map', 'Could not fit workspace layer bounds', { error: e.message });
@@ -1374,7 +1473,9 @@ class MapManager {
                 const turf = await import('@turf/turf');
                 const bbox = turf.bbox({ type: 'FeatureCollection', features: savedFeatures });
                 if (bbox && isFinite(bbox[0])) {
-                    this.map.fitBounds([[bbox[0], bbox[1]], [bbox[2], bbox[3]]], { padding: 30, maxZoom: 16 });
+                    this.scheduleMapFit({
+                        bounds: [[bbox[0], bbox[1]], [bbox[2], bbox[3]]]
+                    });
                 }
             } catch (e) {
                 logger.warn('Map', 'Could not fit bounds after incremental load', { error: e.message });
@@ -2143,12 +2244,38 @@ class MapManager {
     }
 
     fitToAll() {
-        this.fitToLayers([...this.dataLayers.keys()]);
+        return this.scheduleFitToLayers([...this.dataLayers.keys()]);
     }
 
-    /** Fit map view to the combined extent of the given layer ids. */
-    async fitToLayers(layerIds) {
-        if (!this.map || !layerIds?.length) return;
+    /**
+     * Debounced programmatic fit — stops in-flight camera moves, waits for layout idle,
+     * then applies an instant fitBounds (duration: 0).
+     * @param {{ layerIds?: string[], bounds?: [[number, number], [number, number]], options?: object }} [request]
+     */
+    scheduleMapFit({ layerIds = null, bounds = null, options = {} } = {}) {
+        return new Promise((resolve) => {
+            if (this._pendingFitRequest?.resolve) {
+                this._pendingFitRequest.resolve();
+            }
+            this._pendingFitRequest = { layerIds, bounds, options, resolve };
+            window.clearTimeout(this._scheduleFitTimer);
+            this._scheduleFitTimer = window.setTimeout(() => {
+                this._scheduleFitTimer = null;
+                const pending = this._pendingFitRequest;
+                this._pendingFitRequest = null;
+                if (!pending) return;
+                void this._runScheduledFit(pending);
+            }, SCHEDULE_FIT_DEBOUNCE_MS);
+        });
+    }
+
+    scheduleFitToLayers(layerIds, options = {}) {
+        if (!layerIds?.length) return Promise.resolve();
+        return this.scheduleMapFit({ layerIds, options });
+    }
+
+    async _computeLayersBounds(layerIds) {
+        if (!layerIds?.length) return null;
 
         let west = Infinity;
         let south = Infinity;
@@ -2186,11 +2313,57 @@ class MapManager {
             }
         }
 
-        if (found && isFinite(west)) {
-            try {
-                this.map.fitBounds([[west, south], [east, north]], { padding: 30, maxZoom: 16 });
-            } catch (_) {}
+        if (!found || !isFinite(west)) return null;
+        return [[west, south], [east, north]];
+    }
+
+    async _runScheduledFit({ layerIds, bounds, options, resolve }) {
+        try {
+            if (!this.map) return;
+
+            stopMapCamera(this.map);
+            await new Promise((r) => requestAnimationFrame(r));
+            this.map.resize();
+
+            await new Promise((r) => {
+                let settled = false;
+                const finish = () => {
+                    if (settled) return;
+                    settled = true;
+                    this.map.off('idle', finish);
+                    this.map.off('moveend', finish);
+                    this.map.off('load', finish);
+                    clearTimeout(timer);
+                    r();
+                };
+                if (typeof this.map.loaded === 'function' && !this.map.loaded()) {
+                    this.map.once('load', finish);
+                } else if (typeof this.map.isMoving === 'function' && this.map.isMoving()) {
+                    this.map.once('moveend', finish);
+                } else {
+                    this.map.once('idle', finish);
+                }
+                const timer = window.setTimeout(finish, 250);
+            });
+
+            let fitBounds = bounds;
+            if (!fitBounds && layerIds?.length) {
+                fitBounds = await this._computeLayersBounds(layerIds);
+            }
+            if (!fitBounds) return;
+
+            const fitOpts = { ...PROGRAMMATIC_FIT_OPTIONS, ...options };
+            this.map.fitBounds(fitBounds, fitOpts);
+        } catch (e) {
+            logger.warn('Map', 'Scheduled fit failed', { error: e.message });
+        } finally {
+            resolve?.();
         }
+    }
+
+    /** Fit map view to the combined extent of the given layer ids. */
+    async fitToLayers(layerIds) {
+        return this.scheduleFitToLayers(layerIds);
     }
 
     getBounds() {

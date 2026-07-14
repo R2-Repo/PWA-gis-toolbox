@@ -169,7 +169,7 @@ Detail pages default to **landscape-align**: each sheet polygon is rotated so it
 |------|----------|
 | **North arrow** | Top-right margin; rotated **−exportBearingDeg** from page up so it shows true north relative to the map. |
 | **Continuation footer** | Bottom margin: sheet number, station range (`0+000 – 1+100`), and `← Sheet NN` / `Sheet NN →` links. |
-| **Edge SEE SHEET labels** | Detail pages only: `SEE SHEET NN` on start/end polygon caps pointing to the previous/next sheet (no match-line station text). |
+| **Edge SEE SHEET labels** | Detail pages only: `SEE SHEET NN` on start/end polygon caps pointing to the previous/next sheet (no match-line station text). Labels align to the cap edge in PDF space with ~8 pt outward standoff. |
 | **Overview** | Always north-up. |
 
 Landscape-align picks between two bearings 180° apart (`tangent − 90°` and `tangent + 90°`), keeps the one where north points up, and prefers left → right when both qualify.

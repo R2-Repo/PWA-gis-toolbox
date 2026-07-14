@@ -72,6 +72,74 @@ export async function ensureMapFrameReady(map) {
     await waitForMapIdle(map);
 }
 
+function waitForMapMoveEnd(map, timeoutMs = 8000) {
+    return new Promise((resolve) => {
+        if (!map) {
+            resolve();
+            return;
+        }
+        if (typeof map.isMoving === 'function' && !map.isMoving()) {
+            resolve();
+            return;
+        }
+        let settled = false;
+        const finish = () => {
+            if (settled) return;
+            settled = true;
+            map.off('moveend', finish);
+            clearTimeout(timer);
+            resolve();
+        };
+        const timer = setTimeout(finish, timeoutMs);
+        map.once('moveend', finish);
+    });
+}
+
+function areMapTilesLoaded(map) {
+    return typeof map.areTilesLoaded !== 'function' || map.areTilesLoaded();
+}
+
+async function waitForTilesLoaded(map, maxWaitMs = 12000) {
+    const start = Date.now();
+    while (Date.now() - start < maxWaitMs) {
+        if (areMapTilesLoaded(map)) {
+            return;
+        }
+        await new Promise((resolve) => window.setTimeout(resolve, 50));
+        map.triggerRepaint();
+    }
+}
+
+async function waitForStableGlFrame() {
+    await new Promise((resolve) => {
+        requestAnimationFrame(() => requestAnimationFrame(resolve));
+    });
+}
+
+/**
+ * Wait for style, camera settle, full tile load, and a stable GL frame before capture.
+ * @param {import('maplibre-gl').Map} map
+ * @param {{ maxWaitMs?: number, stableFrames?: number, styleTimeoutMs?: number }} [options]
+ */
+export async function ensureMapCaptureReady(map, options = {}) {
+    if (!map) return;
+
+    const maxWaitMs = options.maxWaitMs ?? 12000;
+    const stableFrames = options.stableFrames ?? 2;
+    const styleTimeoutMs = options.styleTimeoutMs ?? 8000;
+
+    await ensureMapStyleReady(map, styleTimeoutMs);
+    await waitForMapMoveEnd(map, maxWaitMs);
+    await waitForMapIdle(map, maxWaitMs);
+
+    for (let pass = 0; pass < stableFrames; pass++) {
+        await waitForTilesLoaded(map, maxWaitMs);
+        await waitForMapIdle(map, maxWaitMs);
+    }
+
+    await waitForStableGlFrame();
+}
+
 /**
  * Apply export pixel ratio and resize the map canvas in the same step.
  * MapLibre requires resize after setPixelRatio or WebGL framebuffers can fail.
@@ -106,21 +174,23 @@ export async function restoreMapPixelRatio(map, originalRatio) {
  * @param {{ maxWaitMs?: number }} [options]
  */
 export async function ensureHighResCaptureReady(map, options = {}) {
-    const maxWaitMs = options.maxWaitMs ?? 8000;
-    await ensureMapFrameReady(map);
+    return ensureMapCaptureReady(map, {
+        maxWaitMs: options.maxWaitMs ?? 8000,
+        stableFrames: options.stableFrames ?? 1,
+        styleTimeoutMs: options.styleTimeoutMs
+    });
+}
 
-    const start = Date.now();
-    while (Date.now() - start < maxWaitMs) {
-        if (typeof map.areTilesLoaded !== 'function' || map.areTilesLoaded()) {
-            break;
-        }
-        await new Promise((resolve) => window.setTimeout(resolve, 50));
-        map.triggerRepaint();
-    }
-
-    await ensureMapFrameReady(map);
-    await new Promise((resolve) => {
-        requestAnimationFrame(() => requestAnimationFrame(resolve));
+/**
+ * Wait for camera moves to settle without tile-stability passes (zoom/pan during export).
+ * @param {import('maplibre-gl').Map} map
+ * @param {{ maxWaitMs?: number, styleTimeoutMs?: number }} [options]
+ */
+export async function ensureMapCameraSettled(map, options = {}) {
+    return ensureMapCaptureReady(map, {
+        maxWaitMs: options.maxWaitMs ?? 5000,
+        stableFrames: 0,
+        styleTimeoutMs: options.styleTimeoutMs ?? 4000
     });
 }
 
@@ -398,13 +468,14 @@ export async function captureMapCanvas(mapService, options = {}) {
             ratioOptions
         )
         : computeExportPixelRatio(map);
-    const bumped = exportRatio > originalRatio;
+    const preservePixelRatio = options.preservePixelRatio === true;
+    const bumped = !preservePixelRatio && exportRatio > originalRatio;
 
     if (bumped) {
         applyMapPixelRatio(map, exportRatio);
     }
 
-    const waitForCapture = options.highResCapture ? ensureHighResCaptureReady : ensureMapFrameReady;
+    const waitForCapture = options.highResCapture ? ensureMapCaptureReady : ensureMapFrameReady;
     await waitForCapture(map);
 
     try {

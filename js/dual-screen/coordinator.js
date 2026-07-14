@@ -302,9 +302,12 @@ class DualScreenCoordinator {
                 mapService.reconcile3DState({ emitEvent: true });
             }
 
+            mapService.setBasemapTone(mapService.getBasemapTone(), { emitEvent: false });
+
             bus.emit('map:chrome', {
                 basemap: mapService.getCurrentBasemap(),
-                is3d: mapService.is3DEnabled()
+                is3d: mapService.is3DEnabled(),
+                basemapTone: mapService.getBasemapTone()
             });
 
             scheduleMapResizeAfterLayout(mapService);
@@ -334,9 +337,13 @@ class DualScreenCoordinator {
                 btn.classList.toggle('active', btn.dataset.value === (payload.is3d ? '3d' : '2d'));
             });
         }
+        if (payload.basemapTone) {
+            mapService.setBasemapTone(payload.basemapTone, { emitEvent: false });
+        }
         bus.emit('map:chrome', {
             basemap: payload.basemap,
-            is3d: payload.is3d
+            is3d: payload.is3d,
+            basemapTone: payload.basemapTone ?? mapService.getBasemapTone()
         });
     }
 
@@ -396,24 +403,27 @@ class DualScreenCoordinator {
         }
     }
 
-    sendSnapshot() {
+    sendSnapshot(options = {}) {
         if (!this._channel || !this._secondaryReady) return;
         const layers = getLayers();
         const spatialLayers = layers.filter(isSpatialLayer);
+        const preserveViewport = !!options.preserveViewport;
         const payload = buildSnapshotPayload({
             layers: spatialLayers,
-            viewport: this._lastViewport,
+            viewport: preserveViewport ? null : this._lastViewport,
             basemap: mapService.getCurrentBasemap() || 'voyager',
             is3d: mapService.is3DEnabled(),
+            basemapTone: mapService.getBasemapTone(),
             layerStyles: mapService.getLayerStyles(),
-            activeLayerId: getActiveLayer()?.id ?? null
+            activeLayerId: getActiveLayer()?.id ?? null,
+            preserveViewport
         });
         this._channel.post(createMessage('primary', MessageType.SNAPSHOT, payload));
     }
 
     syncLayersChanged() {
         if (!this.isActive || !this._secondaryReady) return;
-        this.sendSnapshot();
+        this.sendSnapshot({ preserveViewport: true });
     }
 
     broadcastLayerAdd(dataset, colorIndex, options = {}) {
