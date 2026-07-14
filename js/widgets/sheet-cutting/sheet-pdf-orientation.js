@@ -20,8 +20,11 @@ export const DEFAULT_PDF_MAP_BEARING_MODE = PDF_MAP_BEARING_MODES.LANDSCAPE_ALIG
 /** Offset into the sheet before sampling the start match-line tangent (feet). */
 export const PDF_EXPORT_STATION_EPS_FT = 2;
 
-/** Extra bottom margin reserved for continuation labels (inches). */
-export const PDF_DETAIL_FOOTER_BAND_IN = 0.75;
+/** Extra bottom margin reserved for the title-block footer (inches). */
+export const PDF_DETAIL_FOOTER_BAND_IN = 0.5;
+
+/** Cell width ratios: Project / Date / Spare / Spare / Sheet. */
+export const TITLE_BLOCK_CELL_RATIOS = [0.35, 0.12, 0.22, 0.18, 0.13];
 
 /**
  * @param {number} bearingDeg
@@ -224,6 +227,56 @@ export function buildSheetContinuationLabels(sheet, totalSheets) {
         : null;
 
     return { sheetLabel, stationRange, continueFrom, continueTo };
+}
+
+/**
+ * Format an export timestamp as MM/DD/YYYY for the title-block Date cell.
+ * @param {Date|string|number} [date]
+ * @returns {string}
+ */
+export function formatSheetExportDate(date = new Date()) {
+    const d = date instanceof Date ? date : new Date(date);
+    if (Number.isNaN(d.getTime())) return formatSheetExportDate(new Date());
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    const yyyy = d.getFullYear();
+    return `${mm}/${dd}/${yyyy}`;
+}
+
+/**
+ * Pure model for the detail-page title-block footer (Project / Date / spares / Sheet).
+ * @param {object} params
+ * @param {string} [params.projectName]
+ * @param {Date|string|number} [params.exportDate]
+ * @param {object} params.sheet
+ * @param {number} params.totalSheets
+ * @returns {{
+ *   projectLabel: string,
+ *   projectValue: string,
+ *   dateLabel: string,
+ *   dateValue: string,
+ *   sheetLabel: string,
+ *   cellRatios: number[]
+ * }}
+ */
+export function buildSheetTitleBlockFooterModel({
+    projectName = 'Sheet Cutter',
+    exportDate = new Date(),
+    sheet,
+    totalSheets
+} = {}) {
+    const labels = buildSheetContinuationLabels(sheet, totalSheets);
+    const dateValue = typeof exportDate === 'string' && /^\d{2}\/\d{2}\/\d{4}$/.test(exportDate)
+        ? exportDate
+        : formatSheetExportDate(exportDate);
+    return {
+        projectLabel: 'Project:',
+        projectValue: String(projectName || 'Sheet Cutter').trim() || 'Sheet Cutter',
+        dateLabel: 'Date:',
+        dateValue,
+        sheetLabel: labels.sheetLabel,
+        cellRatios: [...TITLE_BLOCK_CELL_RATIOS]
+    };
 }
 
 /**

@@ -43,12 +43,21 @@ import {
     PDF_DETAIL_FOOTER_BAND_IN,
     PDF_MAP_BEARING_MODES,
     DEFAULT_PDF_MAP_BEARING_MODE,
-    buildSheetContinuationLabels,
     buildSheetEdgeSeeLabelSpecs,
+    buildSheetTitleBlockFooterModel,
     resolveSheetPdfBearing,
     resolveSheetPdfBearings
 } from './sheet-pdf-orientation.js';
-import { buildSheetPageTransform, computeCapEdgePdfPlacement, computeCapEdgePdfPlacementFromRing, computeSheetImagePlacement } from './sheet-pdf-placement.js';
+import {
+    buildPdfRingFromPixelRing,
+    buildSheetPageTransform,
+    computeCapEdgePdfPlacement,
+    computeCapEdgePdfPlacementFromRing,
+    computePdfRingCentroid,
+    computeSheetImagePlacement,
+    isRightHandCapMidpoint,
+    pickTextAngleWithBottomTowardInterior
+} from './sheet-pdf-placement.js';
 import { renderFeatureCollectionToPdf } from './sheet-pdf-vector.js';
 
 const FIT_PADDING = 48;
@@ -64,6 +73,154 @@ const NORTH_ARROW_SIZE_PT = 28;
 export const EDGE_SEE_LABEL_OFFSET_PT = 5;
 const EDGE_SEE_LABEL_FONT_PT = 7.5;
 const EDGE_SEE_LABEL_INTERIOR_EPS_FT = 2;
+/** Extra clearance so rotated glyph boxes clear the dashed match line. */
+const EDGE_SEE_LABEL_GLYPH_CLEAR_PT = 6;
+
+/**
+ * Measure SEE SHEET text width in PDF points at the label font size.
+ * @param {import('jspdf').jsPDF} doc
+ * @param {string} text
+ * @returns {number}
+ */
+export function measureSeeLabelWidthPt(doc, text) {
+    doc.setFontSize(EDGE_SEE_LABEL_FONT_PT);
+    if (typeof doc.getTextDimensions === 'function') {
+        const dims = doc.getTextDimensions(String(text ?? ''));
+        if (dims?.w > 0) return dims.w;
+    }
+    if (typeof doc.getTextWidth === 'function') {
+        const width = doc.getTextWidth(String(text ?? ''));
+        if (width > 0) return width;
+    }
+    return String(text ?? '').length * EDGE_SEE_LABEL_FONT_PT * 0.45;
+}
+
+/**
+ * Draw rotated text with its visual midpoint at (cx, cy).
+ * Placement already puts (cx, cy) on the match-line midpoint (plus outward offset).
+ * Do not pre-shift the anchor — with angle set, an extra half-width offset makes the
+ * string *start* sit on the match-line mid instead of the text midpoint.
+ *
+ * @param {import('jspdf').jsPDF} doc
+ * @param {string} text
+ * @param {number} cx
+ * @param {number} cy
+ * @param {number} angleDeg
+ */
+function drawRotatedTextWithHalo(doc, text, cx, cy, angleDeg) {
+    const label = String(text ?? '');
+    const angle = Number(angleDeg) || 0;
+    const options = { align: 'center', baseline: 'middle', angle };
+    doc.setFontSize(EDGE_SEE_LABEL_FONT_PT);
+
+    doc.setTextColor(255, 255, 255);
+    for (const [dx, dy] of [
+        [-0.8, 0], [0.8, 0], [0, -0.8], [0, 0.8],
+        [-0.6, -0.6], [0.6, 0.6], [-0.6, 0.6], [0.6, -0.6]
+    ]) {
+        doc.text(label, cx + dx, cy + dy, options);
+    }
+    doc.setTextColor(20, 20, 20);
+    doc.text(label, cx, cy, options);
+}
+
+/**
+ * Visual center for a right-hand matchline label: past the cutout edge and
+ * far enough that the glyph box cannot sit on the map.
+ *
+ * @param {import('jspdf').jsPDF} doc
+ * @param {{ x: number, y: number, midX?: number, midY?: number, text: string, angle: number, edgeAngleDeg?: number }} placement
+ * @param {Array<{ x: number, y: number }>|null} pdfRing
+ * @param {{ x: number, y: number }|null} ringCentroid
+ * @returns {{ x: number, y: number, angle: number, text: string }}
+ */
+export function resolveRightHandSeeLabelVisualCenter(doc, placement, pdfRing, ringCentroid) {
+    if (!placement?.text || placement.midX == null || placement.midY == null) {
+        return placement;
+    }
+
+    const midX = placement.midX;
+    const midY = placement.midY;
+    const ringMaxX = pdfRing?.length ? Math.max(...pdfRing.map((p) => p.x)) : midX;
+    const clearance = EDGE_SEE_LABEL_OFFSET_PT + EDGE_SEE_LABEL_GLYPH_CLEAR_PT;
+    const x = Math.max(midX, ringMaxX) + clearance;
+    const y = midY;
+    const interior = ringCentroid ?? { x: midX - 1, y: midY };
+
+    return {
+        ...placement,
+        x,
+        y,
+        angle: pickTextAngleWithBottomTowardInterior(
+            placement.edgeAngleDeg ?? 0,
+            x,
+            y,
+            interior
+        )
+    };
+}
+
+/**
+ * @param {import('jspdf').jsPDF} doc
+ * @param {object} options
+ */
+export function drawSheetEdgeSeeLabels(doc, options = {}) {
+    const {
+        sheet,
+        totalSheets = 1,
+        detailSheets = [],
+        routeLine = null,
+        transform = null,
+        map = null,
+        captureScale = 1,
+        exportBearingDeg = 0,
+        matchLineRegistry = null,
+        pixelRing = null,
+        frameRing = null
+    } = options;
+
+    const placements = resolveSheetEdgeSeeLabelPlacements(
+        sheet,
+        totalSheets,
+        detailSheets,
+        routeLine,
+        transform,
+        map,
+        captureScale,
+        exportBearingDeg,
+        matchLineRegistry,
+        pixelRing,
+        frameRing
+    );
+
+    const pdfRing = pixelRing?.length && transform?.toPdf
+        ? buildPdfRingFromPixelRing(pixelRing, transform)
+        : null;
+    const ringCentroid = pdfRing?.length ? computePdfRingCentroid(pdfRing) : null;
+    const ringMinX = pdfRing?.length ? Math.min(...pdfRing.map((p) => p.x)) : null;
+    const ringMaxX = pdfRing?.length ? Math.max(...pdfRing.map((p) => p.x)) : null;
+    const ringCenterX = ringMinX != null && ringMaxX != null
+        ? (ringMinX + ringMaxX) / 2
+        : (transform?.placedRect
+            ? transform.placedRect.x + transform.placedRect.width / 2
+            : null);
+
+    for (const placement of placements) {
+        let drawAt = placement;
+
+        // Right-hand match line only: force visual center into the right margin.
+        // Left-hand labels keep their existing placement (already correct).
+        const isRightHand = drawAt.midX != null && ringCenterX != null
+            ? drawAt.midX >= ringCenterX
+            : isRightHandCapMidpoint(drawAt.midX, transform?.placedRect, pdfRing);
+
+        if (isRightHand) {
+            drawAt = resolveRightHandSeeLabelVisualCenter(doc, drawAt, pdfRing, ringCentroid);
+        }
+
+        drawRotatedTextWithHalo(doc, drawAt.text, drawAt.x, drawAt.y, drawAt.angle);
+    }
+}
 
 /**
  * @param {object} session
@@ -512,29 +669,70 @@ export function drawNorthArrowOnPdf(doc, centerX, centerY, sizePt, mapBearingDeg
 }
 
 /**
+ * Draw the official 5-cell title-block footer on a detail sheet PDF.
+ * Cells: Project | Date | spare | spare | Sheet NN of N
+ *
  * @param {import('jspdf').jsPDF} doc
  * @param {object} sheet
  * @param {number} totalSheets
  * @param {object} marginsPt
+ * @param {{ projectName?: string, exportDate?: Date|string }} [options]
  */
-export function drawSheetContinuationFooter(doc, sheet, totalSheets, marginsPt) {
-    const labels = buildSheetContinuationLabels(sheet, totalSheets);
+export function drawSheetTitleBlockFooter(doc, sheet, totalSheets, marginsPt, options = {}) {
+    const model = buildSheetTitleBlockFooterModel({
+        projectName: options.projectName,
+        exportDate: options.exportDate,
+        sheet,
+        totalSheets
+    });
     const pageW = doc.internal.pageSize.getWidth();
     const pageH = doc.internal.pageSize.getHeight();
-    const footerTop = pageH - marginsPt.bottom + 6;
-    const leftX = marginsPt.left;
-    const rightX = pageW - marginsPt.right;
-    const centerX = pageW / 2;
+    const footerBandPt = PDF_DETAIL_FOOTER_BAND_IN * 72;
+    const gapAbove = 4;
+    const boxLeft = marginsPt.left;
+    const boxWidth = Math.max(1, pageW - marginsPt.left - marginsPt.right);
+    const boxTop = pageH - marginsPt.bottom + gapAbove;
+    const boxHeight = Math.max(18, footerBandPt - gapAbove - 2);
+    const ratios = model.cellRatios;
+    const cellXs = [boxLeft];
+    for (let i = 0; i < ratios.length - 1; i += 1) {
+        cellXs.push(cellXs[i] + boxWidth * ratios[i]);
+    }
+    const cellWidths = ratios.map((r) => boxWidth * r);
+    const padX = 4;
+    const padY = 3.5;
+
+    doc.setDrawColor(0, 0, 0);
+    doc.setLineWidth(1.1);
+    doc.rect(boxLeft, boxTop, boxWidth, boxHeight);
+    doc.setLineWidth(0.6);
+    for (let i = 1; i < cellXs.length; i += 1) {
+        doc.line(cellXs[i], boxTop, cellXs[i], boxTop + boxHeight);
+    }
+
+    doc.setTextColor(20, 20, 20);
+    doc.setFontSize(7.5);
+    const labelBaseline = boxTop + padY + 6.5;
+    doc.text(model.projectLabel, cellXs[0] + padX, labelBaseline, { align: 'left' });
+    doc.text(model.dateLabel, cellXs[1] + padX, labelBaseline, { align: 'left' });
+
+    const projectLabelW = doc.getTextWidth(model.projectLabel);
+    const dateLabelW = doc.getTextWidth(model.dateLabel);
+    doc.setFontSize(8.5);
+    const valueGap = 3;
+    const projectValueX = cellXs[0] + padX + projectLabelW + valueGap;
+    const projectMaxW = Math.max(8, cellWidths[0] - padX * 2 - projectLabelW - valueGap);
+    const dateValueX = cellXs[1] + padX + dateLabelW + valueGap;
+    const dateMaxW = Math.max(8, cellWidths[1] - padX * 2 - dateLabelW - valueGap);
+    const projectLines = doc.splitTextToSize(model.projectValue, projectMaxW);
+    const dateLines = doc.splitTextToSize(model.dateValue, dateMaxW);
+    doc.text(projectLines[0] || '', projectValueX, labelBaseline, { align: 'left' });
+    doc.text(dateLines[0] || '', dateValueX, labelBaseline, { align: 'left' });
 
     doc.setFontSize(9);
-    doc.setTextColor(30, 30, 30);
-    doc.text(labels.sheetLabel, leftX, footerTop, { align: 'left' });
-    doc.text(labels.stationRange, centerX, footerTop, { align: 'center' });
-
-    const continuationParts = [labels.continueFrom, labels.continueTo].filter(Boolean);
-    if (continuationParts.length) {
-        doc.text(continuationParts.join('   '), rightX, footerTop, { align: 'right' });
-    }
+    const sheetCenterX = cellXs[4] + cellWidths[4] / 2;
+    const sheetCenterY = boxTop + boxHeight / 2 + 2.5;
+    doc.text(model.sheetLabel, sheetCenterX, sheetCenterY, { align: 'center' });
 }
 
 /**
@@ -569,6 +767,7 @@ export function computeSheetEdgeSeeLabelPlacement(
         : Math.max(stationFt - EDGE_SEE_LABEL_INTERIOR_EPS_FT, 0);
     const interiorCoord = turf.along(routeLine, interiorFt, { units: 'feet' }).geometry.coordinates;
     const interiorRefPdf = transform.projectLngLat(map, interiorCoord[0], interiorCoord[1], captureScale);
+    const placedRect = transform.placedRect ?? null;
 
     let placement = null;
     if (pixelRing?.length && frameRing?.length && transform?.toPdf) {
@@ -578,7 +777,8 @@ export function computeSheetEdgeSeeLabelPlacement(
             cap,
             transform,
             interiorRefPdf,
-            offsetPt: EDGE_SEE_LABEL_OFFSET_PT
+            offsetPt: EDGE_SEE_LABEL_OFFSET_PT,
+            placedRect
         });
     }
     if (!placement) {
@@ -589,7 +789,8 @@ export function computeSheetEdgeSeeLabelPlacement(
             captureScale,
             interiorRefPdf,
             EDGE_SEE_LABEL_OFFSET_PT,
-            pixelRing
+            pixelRing,
+            placedRect
         );
     }
     if (!placement) return null;
@@ -658,65 +859,6 @@ export function resolveSheetEdgeSeeLabelPlacements(
     }
 
     return placements;
-}
-
-/**
- * @param {import('jspdf').jsPDF} doc
- * @param {string} text
- * @param {number} x
- * @param {number} y
- * @param {number} angle
- */
-function drawRotatedTextWithHalo(doc, text, x, y, angle) {
-    const options = { align: 'center', baseline: 'middle', angle };
-    doc.setFontSize(EDGE_SEE_LABEL_FONT_PT);
-    doc.setTextColor(255, 255, 255);
-    for (const [dx, dy] of [
-        [-0.8, 0], [0.8, 0], [0, -0.8], [0, 0.8],
-        [-0.6, -0.6], [0.6, 0.6], [-0.6, 0.6], [0.6, -0.6]
-    ]) {
-        doc.text(text, x + dx, y + dy, options);
-    }
-    doc.setTextColor(20, 20, 20);
-    doc.text(text, x, y, options);
-}
-
-/**
- * @param {import('jspdf').jsPDF} doc
- * @param {object} options
- */
-export function drawSheetEdgeSeeLabels(doc, options = {}) {
-    const {
-        sheet,
-        totalSheets = 1,
-        detailSheets = [],
-        routeLine = null,
-        transform = null,
-        map = null,
-        captureScale = 1,
-        exportBearingDeg = 0,
-        matchLineRegistry = null,
-        pixelRing = null,
-        frameRing = null
-    } = options;
-
-    const placements = resolveSheetEdgeSeeLabelPlacements(
-        sheet,
-        totalSheets,
-        detailSheets,
-        routeLine,
-        transform,
-        map,
-        captureScale,
-        exportBearingDeg,
-        matchLineRegistry,
-        pixelRing,
-        frameRing
-    );
-
-    for (const placement of placements) {
-        drawRotatedTextWithHalo(doc, placement.text, placement.x, placement.y, placement.angle);
-    }
 }
 
 /**
@@ -1045,11 +1187,15 @@ export async function buildHybridPagePdfBlob({
             NORTH_ARROW_SIZE_PT,
             mapBearing
         );
-        drawSheetContinuationFooter(
+        drawSheetTitleBlockFooter(
             doc,
             pageOptions.sheet,
             pageOptions.totalSheets ?? 1,
-            layoutMargins
+            layoutMargins,
+            {
+                projectName: pageOptions.projectName,
+                exportDate: pageOptions.exportDate
+            }
         );
     } else if (pageOptions.pageType === 'overview') {
         drawNorthArrowOnPdf(
@@ -1162,6 +1308,7 @@ export async function exportSheetPlanPdf({
     const basemapDpi = resolveBasemapDpi(template);
     const includeOverview = exportPackage?.pdf?.pages?.[0]?.pageType === 'overview';
     const projectName = session?.project?.projectName || exportPackage?.projectName || 'sheet_cutting';
+    const exportDate = new Date();
     const routeLine = session?.routeLine || exportPackage?.layers?.route?.features?.[0] || null;
     const pdfBearingMode = template.pdfMapBearingMode ?? DEFAULT_PDF_MAP_BEARING_MODE;
     const pdfBearings = resolveSheetPdfBearings(detailSheets, routeLine, { mode: pdfBearingMode });
@@ -1354,7 +1501,9 @@ export async function exportSheetPlanPdf({
                     detailSheets,
                     routeLine,
                     matchLineRegistry,
-                    frameRing: ring
+                    frameRing: ring,
+                    projectName,
+                    exportDate
                 },
                 map,
                 mapService,

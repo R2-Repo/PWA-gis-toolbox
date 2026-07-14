@@ -26,6 +26,7 @@ import {
     placeSheetCanvasOnPdfPage,
     resolveDetailPageMarginsPt,
     resolveExportLayerIds,
+    resolveRightHandSeeLabelVisualCenter,
     resolveSheetEdgeSeeLabelPlacements,
     warnIfBasemapDpiConstrained
 } from '../js/widgets/sheet-cutting/sheet-pdf-export.js';
@@ -33,10 +34,13 @@ import { prepareExportLayerVisibility } from '../js/widgets/sheet-cutting/sheet-
 import {
     PDF_DETAIL_FOOTER_BAND_IN,
     PDF_MAP_BEARING_MODES,
+    TITLE_BLOCK_CELL_RATIOS,
     buildSheetContinuationLabels,
     buildSheetEdgeSeeLabelSpecs,
+    buildSheetTitleBlockFooterModel,
     formatRouteStationFt,
     formatSeeSheetLabel,
+    formatSheetExportDate,
     landscapeBearingCandidates,
     normalizeMapBearingForLeftToRight,
     northPointsUpOnPage,
@@ -47,7 +51,7 @@ import {
 } from '../js/widgets/sheet-cutting/sheet-pdf-orientation.js';
 import { getLocalTangentBearing } from '../js/widgets/project-stationing/engine.js';
 import { buildCorridorMatchLineRegistry, buildSheetFramesGeoJson, buildSheetPdfPagePlan, buildOverviewGeoJson, stationKey } from '../js/widgets/sheet-cutting/export-builder.js';
-import { buildPdfRingFromPixelRing, buildSheetPageTransform, findCapEdgeVertexIndices, pickTextAngleWithBottomTowardInterior, pointInPdfRing } from '../js/widgets/sheet-cutting/sheet-pdf-placement.js';
+import { buildPdfRingFromPixelRing, buildSheetPageTransform, computeCapEdgePdfPlacementFromPdfPoints, findCapEdgeVertexIndices, isRightHandCapMidpoint, offsetRightHandLabelOutsidePdfRing, pickTextAngleWithBottomTowardInterior, pointInPdfRing, resolveRightHandSeeLabelDrawPosition } from '../js/widgets/sheet-cutting/sheet-pdf-placement.js';
 
 globalThis.turf = turf;
 
@@ -198,6 +202,38 @@ describe('sheet PDF orientation', () => {
         expect(labels.stationRange).toBe('2+200 – 3+300');
         expect(labels.continueFrom).toBe('← Sheet 02');
         expect(labels.continueTo).toBe('Sheet 04 →');
+    });
+
+    it('formats export dates as MM/DD/YYYY', () => {
+        expect(formatSheetExportDate(new Date(2026, 6, 14))).toBe('07/14/2026');
+        expect(formatSheetExportDate(new Date(2026, 0, 5))).toBe('01/05/2026');
+    });
+
+    it('builds title-block footer model with project, date, sheet, and spare ratios', () => {
+        const model = buildSheetTitleBlockFooterModel({
+            projectName: 'Belt Route',
+            exportDate: new Date(2026, 6, 14),
+            sheet: { sheetNumber: 8, startDistanceFt: 0, endDistanceFt: 1000 },
+            totalSheets: 15
+        });
+        expect(model.projectLabel).toBe('Project:');
+        expect(model.projectValue).toBe('Belt Route');
+        expect(model.dateLabel).toBe('Date:');
+        expect(model.dateValue).toBe('07/14/2026');
+        expect(model.sheetLabel).toBe('Sheet 08 of 15');
+        expect(model.cellRatios).toEqual(TITLE_BLOCK_CELL_RATIOS);
+        expect(model.cellRatios.reduce((sum, r) => sum + r, 0)).toBeCloseTo(1, 5);
+    });
+
+    it('accepts a preformatted export date string for the title-block model', () => {
+        const model = buildSheetTitleBlockFooterModel({
+            projectName: 'Fiber',
+            exportDate: '12/01/2026',
+            sheet: { sheetNumber: 1 },
+            totalSheets: 3
+        });
+        expect(model.dateValue).toBe('12/01/2026');
+        expect(model.sheetLabel).toBe('Sheet 01 of 3');
     });
 
     it('formats SEE SHEET edge labels with zero padding', () => {
@@ -668,6 +704,177 @@ describe('sheet PDF edge SEE SHEET labels', () => {
 
         expect(placements).toHaveLength(2);
         expect(placements.map((entry) => entry.text)).toEqual(['SEE SHEET 01', 'SEE SHEET 03']);
+    });
+
+    it('forces right-hand draw positions into the margin even when placement math is wrong', () => {
+        const pdfRing = [
+            { x: 100, y: 200 },
+            { x: 500, y: 200 },
+            { x: 500, y: 400 },
+            { x: 100, y: 400 }
+        ];
+        const placedRect = { x: 100, y: 200, width: 400, height: 200 };
+        const transform = {
+            placedRect,
+            toPdf: (px, py) => ({ x: px, y: py })
+        };
+        const wrongPlacement = {
+            text: 'SEE SHEET 01',
+            x: 470,
+            y: 300,
+            midX: 500,
+            midY: 300,
+            angle: 90,
+            edgeAngleDeg: 90
+        };
+
+        expect(isRightHandCapMidpoint(500, placedRect, pdfRing)).toBe(true);
+        expect(isRightHandCapMidpoint(100, placedRect, pdfRing)).toBe(false);
+
+        const fixed = resolveRightHandSeeLabelDrawPosition(
+            wrongPlacement,
+            transform,
+            [[500, 200], [500, 400], [100, 400], [100, 200]],
+            EDGE_SEE_LABEL_OFFSET_PT
+        );
+
+        expect(fixed.x).toBeGreaterThan(wrongPlacement.midX);
+        expect(pointInPdfRing(fixed.x, fixed.y, pdfRing)).toBe(false);
+        expect(fixed.y).toBe(300);
+        expect(fixed.text).toBe('SEE SHEET 01');
+    });
+
+    it('offsets right-hand match-line labels away from sheet interior even when centroid normal inverts', () => {
+        const pdfRing = [
+            { x: 100, y: 200 },
+            { x: 500, y: 200 },
+            { x: 500, y: 250 },
+            { x: 700, y: 250 },
+            { x: 700, y: 350 },
+            { x: 500, y: 350 },
+            { x: 500, y: 400 },
+            { x: 100, y: 400 }
+        ];
+        const pLeft = { x: 500, y: 250 };
+        const pRight = { x: 500, y: 350 };
+        const interiorRefPdf = { x: 420, y: 300 };
+        const placedRect = { x: 100, y: 200, width: 600, height: 200 };
+
+        const placement = computeCapEdgePdfPlacementFromPdfPoints(
+            pLeft,
+            pRight,
+            interiorRefPdf,
+            EDGE_SEE_LABEL_OFFSET_PT,
+            pdfRing,
+            placedRect
+        );
+
+        expect(placement).not.toBeNull();
+        expect(pointInPdfRing(placement.x, placement.y, pdfRing)).toBe(false);
+        expect(placement.x).toBeGreaterThan(placement.midX);
+        expect(placement.x).toBeGreaterThan(700);
+        expect(placement.y).toBeCloseTo(placement.midY, 0);
+    });
+
+    it('pushes right-hand labels past the match-line mid even when they start inside', () => {
+        const pdfRing = [
+            { x: 100, y: 200 },
+            { x: 500, y: 200 },
+            { x: 500, y: 400 },
+            { x: 100, y: 400 }
+        ];
+        // Simulate the bug: label center sits just inside the right match line
+        const inside = offsetRightHandLabelOutsidePdfRing(500, 300, EDGE_SEE_LABEL_OFFSET_PT, pdfRing);
+        expect(inside.x).toBeGreaterThan(500);
+        expect(pointInPdfRing(inside.x, inside.y, pdfRing)).toBe(false);
+        expect(pointInPdfRing(495, 300, pdfRing)).toBe(true);
+    });
+
+    it('forces right-hand visual centers past the cutout max X', () => {
+        const pdfRing = [
+            { x: 100, y: 200 },
+            { x: 500, y: 200 },
+            { x: 500, y: 400 },
+            { x: 100, y: 400 }
+        ];
+        const doc = {
+            setFontSize() {},
+            getTextDimensions: () => ({ w: 40, h: 8 })
+        };
+        const visual = resolveRightHandSeeLabelVisualCenter(
+            doc,
+            {
+                text: 'SEE SHEET 02',
+                x: 490,
+                y: 300,
+                midX: 500,
+                midY: 300,
+                angle: 90,
+                edgeAngleDeg: 90
+            },
+            pdfRing,
+            { x: 300, y: 300 }
+        );
+
+        expect(visual.x).toBeGreaterThan(500);
+        expect(pointInPdfRing(visual.x, visual.y, pdfRing)).toBe(false);
+        expect(visual.y).toBe(300);
+    });
+
+    it('places right-side cap labels outside the polygon when route reads right-to-left on page', () => {
+        const sheet = detailSheets[1];
+        const registry = buildCorridorMatchLineRegistry(detailSheets, eastRoute);
+        const frames = buildSheetFramesGeoJson(detailSheets, eastRoute).features;
+        const frameRing = frames[1].geometry.coordinates[0];
+        const rtlMap = {
+            project: ([lng, lat]) => {
+                const point = map.project([lng, lat]);
+                return { x: 1200 - point.x, y: point.y };
+            }
+        };
+        const framePixelRing = frameRing.map(([lng, lat]) => {
+            const point = rtlMap.project([lng, lat]);
+            return [point.x, point.y];
+        });
+        const rtlTransform = buildSheetPageTransform(
+            framePixelRing,
+            marginsPt,
+            pageSize,
+            { preferLandscapeFlow: true }
+        );
+        const pdfRing = buildPdfRingFromPixelRing(framePixelRing, rtlTransform);
+        const startCap = registry.get(stationKey(sheet.startDistanceFt));
+        const endCap = registry.get(stationKey(sheet.endDistanceFt));
+        const startSpec = buildSheetEdgeSeeLabelSpecs(sheet, detailSheets.length)[0];
+        const endSpec = buildSheetEdgeSeeLabelSpecs(sheet, detailSheets.length)[1];
+
+        const startPlacement = computeSheetEdgeSeeLabelPlacement(
+            startSpec,
+            startCap,
+            eastRoute,
+            rtlTransform,
+            rtlMap,
+            1,
+            framePixelRing,
+            frameRing
+        );
+        const endPlacement = computeSheetEdgeSeeLabelPlacement(
+            endSpec,
+            endCap,
+            eastRoute,
+            rtlTransform,
+            rtlMap,
+            1,
+            framePixelRing,
+            frameRing
+        );
+
+        expect(startPlacement?.text).toBe('SEE SHEET 01');
+        expect(endPlacement?.text).toBe('SEE SHEET 03');
+        expect(pointInPdfRing(startPlacement.x, startPlacement.y, pdfRing)).toBe(false);
+        expect(pointInPdfRing(endPlacement.x, endPlacement.y, pdfRing)).toBe(false);
+        expect(startPlacement.x).toBeGreaterThan(startPlacement.midX);
+        expect(endPlacement.x).toBeLessThan(endPlacement.midX);
     });
 });
 
