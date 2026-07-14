@@ -3,6 +3,8 @@ import { nearestPointOnLineAny } from '../../tools/line-geojson.js';
 import { validateMilepostValue, validateMilepostRange } from '../route-milepost-segment/engine.js';
 
 export const DEFAULT_INTERVAL_FT = 100;
+/** MapLibre min zoom for stationing labels — higher = labels hide sooner when zooming out. */
+export const DEFAULT_STATIONING_LABEL_MIN_ZOOM = 16;
 const FEET_PER_MILE = 5280;
 
 export const DEFAULT_STATIONING_GRAPHICS = {

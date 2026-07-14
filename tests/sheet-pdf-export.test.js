@@ -20,8 +20,10 @@ import {
     polygonRingFitsViewport,
     placeSheetCanvasOnPdfPage,
     resolveDetailPageMarginsPt,
+    resolveExportLayerIds,
     resolveSheetEdgeSeeLabelPlacements
 } from '../js/widgets/sheet-cutting/sheet-pdf-export.js';
+import { prepareExportLayerVisibility } from '../js/widgets/sheet-cutting/sheet-preview.js';
 import {
     PDF_DETAIL_FOOTER_BAND_IN,
     PDF_MAP_BEARING_MODES,
@@ -38,10 +40,85 @@ import {
     tangentToLandscapeMapBearing
 } from '../js/widgets/sheet-cutting/sheet-pdf-orientation.js';
 import { getLocalTangentBearing } from '../js/widgets/project-stationing/engine.js';
-import { buildSharedMatchLineRegistry, buildSheetPdfPagePlan, stationKey } from '../js/widgets/sheet-cutting/export-builder.js';
+import { buildSharedMatchLineRegistry, buildSheetPdfPagePlan, buildOverviewGeoJson, stationKey } from '../js/widgets/sheet-cutting/export-builder.js';
 import { buildSheetPageTransform } from '../js/widgets/sheet-cutting/sheet-pdf-placement.js';
 
 globalThis.turf = turf;
+
+describe('sheet PDF export layer visibility', () => {
+    it('resolves export layer ids from route centerline and checked design layers', () => {
+        const ids = resolveExportLayerIds({
+            project: { stationingRouteLayerId: 'route-1' },
+            sheets: { designLayerIds: ['design-a', 'design-b'] }
+        });
+        expect(ids).toEqual(['route-1', 'design-a', 'design-b']);
+    });
+
+    it('hides only layers outside the export scope and restores prior visibility', () => {
+        const visibility = new Map([
+            ['route-1', true],
+            ['design-a', true],
+            ['other-layer', true],
+            ['hidden-layer', false]
+        ]);
+        const toggled = [];
+
+        const mapService = {
+            getMap: () => ({
+                getLayer: (subId) => ({ id: subId }),
+                getLayoutProperty: (subId, prop) => {
+                    if (prop !== 'visibility') return 'visible';
+                    const parentId = subId.replace(/-line$/, '');
+                    return visibility.get(parentId) ? 'visible' : 'none';
+                }
+            }),
+            getLayerIds: () => ['route-1', 'design-a', 'other-layer', 'hidden-layer'],
+            getLayerRecord: (layerId) => ({ layerIds: [`${layerId}-line`] }),
+            toggleLayer: (layerId, show) => {
+                toggled.push({ layerId, show });
+                visibility.set(layerId, show);
+            }
+        };
+
+        const restore = prepareExportLayerVisibility(mapService, ['route-1', 'design-a']);
+
+        expect(toggled).toEqual([{ layerId: 'other-layer', show: false }]);
+        expect(visibility.get('route-1')).toBe(true);
+        expect(visibility.get('design-a')).toBe(true);
+        expect(visibility.get('other-layer')).toBe(false);
+        expect(visibility.get('hidden-layer')).toBe(false);
+
+        restore();
+
+        expect(toggled).toEqual([
+            { layerId: 'other-layer', show: false },
+            { layerId: 'other-layer', show: true }
+        ]);
+        expect(visibility.get('other-layer')).toBe(true);
+        expect(visibility.get('hidden-layer')).toBe(false);
+    });
+
+    it('builds overview vector content with route, sheet outlines, and labels only', () => {
+        const overview = buildOverviewGeoJson(
+            { sheetBoxes: [] },
+            turf.lineString([[-112, 40], [-111.9, 40]]),
+            {
+                type: 'FeatureCollection',
+                features: [{
+                    type: 'Feature',
+                    properties: { sheet_id: 's1', sheet_number: 1 },
+                    geometry: { type: 'Polygon', coordinates: [[[-112, 40], [-111.9, 40], [-111.9, 40.01], [-112, 40.01], [-112, 40]]] }
+                }]
+            }
+        );
+
+        expect(overview.features.map((f) => f.properties.feature_type)).toEqual([
+            'overview_route',
+            'overview_sheet_outline',
+            'overview_sheet_label'
+        ]);
+    });
+});
 
 describe('sheet export sizing', () => {
     it('computes printable tabloid landscape dimensions with margins', () => {

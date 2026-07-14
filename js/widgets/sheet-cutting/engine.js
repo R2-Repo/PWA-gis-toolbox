@@ -686,9 +686,7 @@ export function generateSheetSet(session) {
 
     const matchLines = generateSheetMatchLines(sheets);
 
-    const overviewSheet = template.includeOverview
-        ? buildOverviewSheet(sheets, session.routeLine)
-        : null;
+    const overviewSheet = buildOverviewSheet(sheets, session.routeLine);
 
     const featureAssignments = assignFeaturesToSheets(
         session.designFeatures || [],

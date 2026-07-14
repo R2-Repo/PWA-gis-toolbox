@@ -30,8 +30,74 @@ function waitForMapIdle(map, timeoutMs = 12000) {
     });
 }
 
+async function ensureMapStyleReady(map, timeoutMs = 8000) {
+    return new Promise((resolve) => {
+        if (!map) {
+            resolve();
+            return;
+        }
+
+        const isReady = () => map.loaded?.()
+            && (typeof map.isStyleLoaded !== 'function' || map.isStyleLoaded());
+
+        if (isReady()) {
+            resolve();
+            return;
+        }
+
+        let settled = false;
+        const finish = () => {
+            if (settled) return;
+            settled = true;
+            map.off('load', onReady);
+            map.off('styledata', onStyleData);
+            clearTimeout(timer);
+            resolve();
+        };
+
+        const onReady = () => {
+            if (isReady()) finish();
+        };
+        const onStyleData = () => {
+            if (isReady()) finish();
+        };
+
+        map.on('load', onReady);
+        map.on('styledata', onStyleData);
+        const timer = setTimeout(finish, timeoutMs);
+    });
+}
+
 export async function ensureMapFrameReady(map) {
     await waitForMapIdle(map);
+}
+
+/**
+ * Apply export pixel ratio and resize the map canvas in the same step.
+ * MapLibre requires resize after setPixelRatio or WebGL framebuffers can fail.
+ *
+ * @param {import('maplibre-gl').Map} map
+ * @param {number} ratio
+ */
+export function applyMapPixelRatio(map, ratio) {
+    if (!map || typeof map.setPixelRatio !== 'function') return;
+    map.setPixelRatio(ratio);
+    map.resize();
+}
+
+/**
+ * Restore the map pixel ratio used before a high-DPI capture.
+ *
+ * @param {import('maplibre-gl').Map} map
+ * @param {number} originalRatio
+ */
+export async function restoreMapPixelRatio(map, originalRatio) {
+    if (!map || typeof map.getPixelRatio !== 'function') return;
+    const currentRatio = map.getPixelRatio();
+    if (currentRatio > originalRatio) {
+        applyMapPixelRatio(map, originalRatio);
+        await ensureMapFrameReady(map);
+    }
 }
 
 /**
@@ -317,6 +383,7 @@ export async function captureMapCanvas(mapService, options = {}) {
     if (!map) {
         throw new Error('Map is not ready');
     }
+    await ensureMapStyleReady(map);
     if (!map.loaded()) {
         throw new Error('Map is still loading');
     }
@@ -334,7 +401,7 @@ export async function captureMapCanvas(mapService, options = {}) {
     const bumped = exportRatio > originalRatio;
 
     if (bumped) {
-        map.setPixelRatio(exportRatio);
+        applyMapPixelRatio(map, exportRatio);
     }
 
     const waitForCapture = options.highResCapture ? ensureHighResCaptureReady : ensureMapFrameReady;
@@ -348,8 +415,7 @@ export async function captureMapCanvas(mapService, options = {}) {
         return captureLiveFrame(map, mapService);
     } finally {
         if (bumped) {
-            map.setPixelRatio(originalRatio);
-            map.resize();
+            await restoreMapPixelRatio(map, originalRatio);
         }
     }
 }

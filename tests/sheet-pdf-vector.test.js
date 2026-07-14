@@ -83,12 +83,21 @@ describe('sheet PDF vector styles', () => {
                 pointSize: 0,
                 fillOpacity: 0,
                 strokeOpacity: 0,
-                strokeWidth: 0
+                strokeWidth: 0,
+                labels: {
+                    enabled: true,
+                    field: 'station_label',
+                    size: 10,
+                    color: '#222222',
+                    haloColor: '#ffffff',
+                    haloWidth: 1.5
+                }
             }
         );
         expect(style.kind).toBe('label');
         expect(style.field).toBe('station_label');
-        expect(style.fontSize).toBe(11);
+        expect(style.fontSize).toBe(10);
+        expect(style.haloColor).toBe('#ffffff');
     });
 
     it('resolves sheet outline and route styles', () => {
@@ -104,6 +113,17 @@ describe('sheet PDF vector styles', () => {
             geometry: { type: 'LineString' }
         });
         expect(route.strokeColor).toBe('#cc4444');
+
+        const styledRoute = resolveVectorFeatureStyle(
+            {
+                properties: { feature_type: 'route' },
+                geometry: { type: 'LineString' }
+            },
+            { strokeColor: '#336699', strokeWidth: 3, strokeOpacity: 0.4 }
+        );
+        expect(styledRoute.strokeColor).toBe('#336699');
+        expect(styledRoute.strokeWidth).toBe(3);
+        expect(styledRoute.strokeOpacity).toBe(0.4);
     });
 
     it('falls back to layer style for design features', () => {

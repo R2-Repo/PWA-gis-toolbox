@@ -1,4 +1,5 @@
 import { SHEET_FRAME_PREVIEW_COLOR } from './sheet-preview.js';
+import { resolveFeatureStyle } from '../../map/style-engine.js';
 
 /**
  * @param {string} hex
@@ -18,6 +19,79 @@ export function parseHexColor(hex) {
         g: parseInt(raw.slice(2, 4), 16) || 0,
         b: parseInt(raw.slice(4, 6), 16) || 0
     };
+}
+
+/**
+ * @param {string} geometryType
+ * @returns {'point'|'line'|'polygon'|null}
+ */
+function geometryKindFromType(geometryType) {
+    if (geometryType === 'Point' || geometryType === 'MultiPoint') return 'point';
+    if (geometryType === 'LineString' || geometryType === 'MultiLineString') return 'line';
+    if (geometryType === 'Polygon' || geometryType === 'MultiPolygon') return 'polygon';
+    return null;
+}
+
+/**
+ * @param {object|null} layerStyle
+ * @param {object} feature
+ * @param {'point'|'line'|'polygon'} geometryKind
+ * @returns {object|null}
+ */
+function resolveLayerFlatStyle(layerStyle, feature, geometryKind) {
+    if (!layerStyle) return null;
+    return resolveFeatureStyle(layerStyle, feature, geometryKind);
+}
+
+/**
+ * @param {object|null} labelsConfig
+ * @returns {object}
+ */
+function labelDrawStyleFromConfig(labelsConfig) {
+    if (!labelsConfig?.field && labelsConfig?.enabled !== true) return {};
+    return {
+        fontSize: labelsConfig.size || 8,
+        color: labelsConfig.color || '#111111',
+        haloColor: labelsConfig.haloColor || '#ffffff',
+        haloWidth: labelsConfig.haloWidth ?? 1.25
+    };
+}
+
+/**
+ * @param {import('jspdf').jsPDF} doc
+ * @param {number} opacity
+ * @param {() => void} drawFn
+ */
+function withPdfOpacity(doc, opacity, drawFn) {
+    const alpha = Number.isFinite(opacity) ? Math.max(0, Math.min(1, opacity)) : 1;
+    if (alpha >= 0.999) {
+        drawFn();
+        return;
+    }
+
+    const canUseGState = typeof doc.saveGraphicsState === 'function'
+        && typeof doc.restoreGraphicsState === 'function'
+        && typeof doc.setGState === 'function'
+        && typeof doc.GState === 'function';
+
+    if (!canUseGState) {
+        drawFn();
+        return;
+    }
+
+    try {
+        doc.saveGraphicsState();
+        doc.setGState(doc.GState({ opacity: alpha }));
+        drawFn();
+    } catch (_) {
+        drawFn();
+    } finally {
+        try {
+            doc.restoreGraphicsState();
+        } catch (_) {
+            // Ignore graphics-state restore failures.
+        }
+    }
 }
 
 /**
@@ -67,6 +141,15 @@ export function resolveVectorFeatureStyle(feature, layerStyle = null) {
     }
 
     if (featureType === 'route' || preview === 'route') {
+        const flat = resolveLayerFlatStyle(layerStyle, feature, 'line');
+        if (flat) {
+            return {
+                kind: 'line',
+                strokeColor: flat.strokeColor,
+                strokeWidth: flat.strokeWidth,
+                strokeOpacity: flat.strokeOpacity ?? 1
+            };
+        }
         return { kind: 'line', strokeColor: '#cc4444', strokeWidth: 2, strokeOpacity: 0.65 };
     }
 
@@ -100,21 +183,28 @@ export function resolveVectorFeatureStyle(feature, layerStyle = null) {
     }
 
     const geometryType = feature?.geometry?.type;
-    const strokeColor = layerStyle?.strokeColor || '#2563eb';
-    const strokeWidth = layerStyle?.strokeWidth ?? 2;
-    const strokeOpacity = layerStyle?.strokeOpacity ?? 1;
-    const fillColor = layerStyle?.fillColor || strokeColor;
-    const fillOpacity = layerStyle?.fillOpacity ?? 0.25;
+    const geometryKind = geometryKindFromType(geometryType);
+    const flat = geometryKind ? resolveLayerFlatStyle(layerStyle, feature, geometryKind) : null;
+    const labelsConfig = layerStyle?.labels?.enabled && layerStyle?.labels?.field
+        ? layerStyle.labels
+        : null;
+    const labelStyle = labelDrawStyleFromConfig(labelsConfig);
+
+    const strokeColor = flat?.strokeColor || layerStyle?.strokeColor || '#2563eb';
+    const strokeWidth = flat?.strokeWidth ?? layerStyle?.strokeWidth ?? 2;
+    const strokeOpacity = flat?.strokeOpacity ?? layerStyle?.strokeOpacity ?? 1;
+    const fillColor = flat?.fillColor || layerStyle?.fillColor || strokeColor;
+    const fillOpacity = flat?.fillOpacity ?? layerStyle?.fillOpacity ?? 0.25;
 
     if (geometryType === 'LineString' || geometryType === 'MultiLineString') {
-        const labelField = layerStyle?.labels?.field;
+        const labelField = labelsConfig?.field || layerStyle?.labels?.field;
         return {
             kind: 'line',
             strokeColor,
             strokeWidth,
             strokeOpacity,
             labelField: labelField || null,
-            labelSize: layerStyle?.labels?.size || 8
+            labelSize: labelStyle.fontSize || 8
         };
     }
 
@@ -130,20 +220,21 @@ export function resolveVectorFeatureStyle(feature, layerStyle = null) {
     }
 
     if (geometryType === 'Point' || geometryType === 'MultiPoint') {
-        const labelField = layerStyle?.labels?.field
+        const labelField = labelsConfig?.field
+            || layerStyle?.labels?.field
             || (props.station_label != null && props.station_label !== '' ? 'station_label' : null)
             || props.name
             || null;
-        const pointSize = layerStyle?.pointSize;
+        const pointSize = flat?.pointSize ?? layerStyle?.pointSize;
         const pointHidden = pointSize === 0
-            || ((layerStyle?.fillOpacity ?? 1) === 0 && (layerStyle?.strokeOpacity ?? 1) === 0 && (layerStyle?.strokeWidth ?? 1) === 0);
+            || (fillOpacity === 0 && strokeOpacity === 0 && strokeWidth === 0);
 
         if (pointHidden && labelField) {
             return {
                 kind: 'label',
                 field: labelField,
-                fontSize: layerStyle?.labels?.size || (labelField === 'station_label' ? 11 : 8),
-                color: layerStyle?.labels?.color || '#111111'
+                ...labelStyle,
+                fontSize: labelStyle.fontSize || (labelField === 'station_label' ? 11 : 8)
             };
         }
 
@@ -153,9 +244,13 @@ export function resolveVectorFeatureStyle(feature, layerStyle = null) {
             strokeColor,
             radius: pointSize ?? 4,
             strokeWidth: 1,
+            fillOpacity,
+            strokeOpacity,
             labelField,
-            labelSize: layerStyle?.labels?.size || 8,
-            color: layerStyle?.labels?.color || '#111111'
+            labelSize: labelStyle.fontSize || 8,
+            color: labelStyle.color || '#111111',
+            haloColor: labelStyle.haloColor,
+            haloWidth: labelStyle.haloWidth
         };
     }
 
@@ -204,18 +299,20 @@ function projectRing(map, ring, transform, captureScale) {
 function drawPolyline(doc, points, style, pxPerPt) {
     if (points.length < 2) return;
 
-    applyStrokeColor(doc, style.strokeColor);
-    doc.setLineWidth(Math.max(0.35, (style.strokeWidth || 1) * pxPerPt));
+    withPdfOpacity(doc, style.strokeOpacity, () => {
+        applyStrokeColor(doc, style.strokeColor);
+        doc.setLineWidth(Math.max(0.35, (style.strokeWidth || 1) * pxPerPt));
 
-    if (style.dash?.length) {
-        doc.setLineDashPattern?.(style.dash, 0);
-    } else {
-        doc.setLineDashPattern?.([], 0);
-    }
+        if (style.dash?.length) {
+            doc.setLineDashPattern?.(style.dash, 0);
+        } else {
+            doc.setLineDashPattern?.([], 0);
+        }
 
-    for (let i = 1; i < points.length; i++) {
-        doc.line(points[i - 1].x, points[i - 1].y, points[i].x, points[i].y);
-    }
+        for (let i = 1; i < points.length; i++) {
+            doc.line(points[i - 1].x, points[i - 1].y, points[i].x, points[i].y);
+        }
+    });
 }
 
 /**
@@ -240,10 +337,12 @@ function drawPoint(doc, point, style, pxPerPt) {
     if (style.radius === 0 || rawRadius <= 0) return;
 
     const radius = Math.max(0.5, rawRadius);
-    applyFillColor(doc, style.fillColor || '#2563eb');
-    applyStrokeColor(doc, style.strokeColor || '#ffffff');
-    doc.setLineWidth(Math.max(0.2, (style.strokeWidth || 1) * pxPerPt * 0.5));
-    doc.circle(point.x, point.y, radius, 'FD');
+    withPdfOpacity(doc, style.fillOpacity ?? 1, () => {
+        applyFillColor(doc, style.fillColor || '#2563eb');
+        applyStrokeColor(doc, style.strokeColor || '#ffffff');
+        doc.setLineWidth(Math.max(0.2, (style.strokeWidth || 1) * pxPerPt * 0.5));
+        doc.circle(point.x, point.y, radius, 'FD');
+    });
 }
 
 /**
@@ -362,7 +461,9 @@ function renderFeature(doc, feature, map, transform, captureScale, style) {
         if (style.labelField && style.kind !== 'label') {
             drawLabel(doc, point, feature.properties?.[style.labelField], {
                 fontSize: style.labelSize || 8,
-                color: style.color || '#111111'
+                color: style.color || '#111111',
+                haloColor: style.haloColor,
+                haloWidth: style.haloWidth
             });
         }
         return;

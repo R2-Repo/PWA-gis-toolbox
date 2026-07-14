@@ -1460,6 +1460,20 @@ textarea { resize: vertical; min-height: 60px; }
     flex-wrap: wrap;
     margin-bottom: 6px;
 }
+.gis-widget__btn-row--split {
+    flex-wrap: nowrap;
+    width: 100%;
+}
+.gis-widget__btn-row--split > .btn {
+    flex: 1 1 0;
+    min-width: 0;
+    white-space: normal;
+    justify-content: center;
+    text-align: center;
+    font-size: 11px;
+    padding: 8px 4px;
+    line-height: 1.25;
+}
 
 .proc-symbology {
     margin-top: 10px;

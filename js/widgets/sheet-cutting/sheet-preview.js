@@ -97,26 +97,64 @@ export function suspendDesignLayersForCapture(mapService, designLayerIds = []) {
     };
 }
 
+/**
+ * @param {object} mapService
+ * @param {string} layerId
+ * @returns {boolean}
+ */
+function isLayerVisibleOnMap(mapService, layerId) {
+    const map = mapService?.getMap?.();
+    const record = mapService.getLayerRecord?.(layerId);
+    const subIds = record?.layerIds ?? [];
+
+    if (map && subIds.length) {
+        for (const subId of subIds) {
+            if (!map.getLayer(subId)) continue;
+            return map.getLayoutProperty(subId, 'visibility') !== 'none';
+        }
+    }
+
+    return true;
+}
+
+/**
+ * Temporarily hide data layers outside the export scope so PDF capture matches
+ * the map appearance of the route centerline + checked design layers only.
+ *
+ * @param {object} mapService
+ * @param {string[]} [exportLayerIds]
+ * @returns {() => void}
+ */
+export function prepareExportLayerVisibility(mapService, exportLayerIds = []) {
+    const exportSet = new Set(exportLayerIds.filter(Boolean));
+    const restored = [];
+
+    for (const layerId of mapService.getLayerIds?.() ?? []) {
+        if (exportSet.has(layerId)) continue;
+
+        const wasVisible = isLayerVisibleOnMap(mapService, layerId);
+        if (wasVisible) {
+            mapService.toggleLayer(layerId, false);
+            restored.push({ layerId, wasVisible });
+        }
+    }
+
+    return () => {
+        for (const { layerId, wasVisible } of restored) {
+            mapService.toggleLayer(layerId, wasVisible);
+        }
+    };
+}
+
 export function suppressMapDataLayersForCapture(mapService) {
     const map = mapService?.getMap?.();
     const restored = [];
 
     for (const layerId of mapService.getLayerIds?.() ?? []) {
-        const record = mapService.getLayerRecord?.(layerId);
-        const subIds = record?.layerIds ?? [];
-        let wasVisible = true;
-
-        if (map && subIds.length) {
-            for (const subId of subIds) {
-                if (!map.getLayer(subId)) continue;
-                wasVisible = map.getLayoutProperty(subId, 'visibility') !== 'none';
-                break;
-            }
-        }
-
-        restored.push({ layerId, wasVisible });
+        const wasVisible = isLayerVisibleOnMap(mapService, layerId);
         if (wasVisible) {
             mapService.toggleLayer(layerId, false);
+            restored.push({ layerId, wasVisible });
         }
     }
 

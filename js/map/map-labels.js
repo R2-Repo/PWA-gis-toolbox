@@ -138,14 +138,37 @@ export function fieldEmptyRatio(features, field, sampleSize = 20) {
  */
 export function resolveLayerLabels(style, dataset) {
     const fromStyle = style?.labels;
-    if (fromStyle?.enabled && fromStyle.field) {
-        const { enabled, ...rest } = fromStyle;
-        return normalizeMapLabels(rest);
+    if (fromStyle != null) {
+        if (fromStyle.enabled === false) return null;
+        if (fromStyle.enabled && fromStyle.field) {
+            const { enabled, ...rest } = fromStyle;
+            return normalizeMapLabels(rest);
+        }
     }
     if (dataset?._mapLabels?.field) {
         return normalizeMapLabels(dataset._mapLabels);
     }
     return null;
+}
+
+/**
+ * Copy legacy dataset._mapLabels into style.labels when style has no active labels block.
+ * Keeps map output, right-panel Labels section, and zoom-range application in sync.
+ * @param {object|null|undefined} style
+ * @param {object|null|undefined} dataset
+ * @returns {object}
+ */
+export function mergeDatasetLabelsIntoStyle(style, dataset) {
+    const base = style && typeof style === 'object' ? { ...style } : {};
+    if (base.labels?.enabled && base.labels?.field) return base;
+    if (!dataset?._mapLabels?.field) return base;
+    return {
+        ...base,
+        labels: normalizeLayerLabels({
+            enabled: true,
+            ...dataset._mapLabels
+        })
+    };
 }
 
 /**

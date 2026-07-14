@@ -38,8 +38,10 @@ import {
     resolveClipMilepostRange,
     resolveClipMilepostEndpoints,
     snapMilepostsAlongCenterline,
-    buildMilepostLabelFeatures
+    buildMilepostLabelFeatures,
+    DEFAULT_STATIONING_LABEL_MIN_ZOOM
 } from './engine.js';
+import { mergeDatasetLabelsIntoStyle } from '../../map/map-labels.js';
 import { createCenterlineDrawHandlers } from '../map-draw-helpers.js';
 import { getSpatialLayerOptions } from '../widget-context.js';
 import { materializeSpatialLayer, getWorkingFeaturesFromLayer } from '../../tools/gis-layer-context.js';
@@ -567,12 +569,13 @@ function addDerivedLayer(ctx, name, fc, options = {}) {
     if (options._mapLabels) dataset._mapLabels = options._mapLabels;
     if (options._kmlExport) dataset._kmlExport = options._kmlExport;
     if (options._stationingProfile) dataset._stationingProfile = options._stationingProfile;
+    const layerStyle = mergeDatasetLabelsIntoStyle(options.style || null, dataset);
     ctx.addLayer(dataset);
     const index = ctx.getLayers().indexOf(dataset);
-    ctx.mapService.addLayer(dataset, index, { fit: options.fit ?? false, style: options.style });
-    if (options.style) {
-        ctx.mapService.setLayerStyle(dataset.id, options.style);
-        ctx.mapService.restyleLayer?.(dataset.id, dataset, options.style);
+    ctx.mapService.addLayer(dataset, index, { fit: options.fit ?? false });
+    if (layerStyle && Object.keys(layerStyle).length) {
+        ctx.mapService.setLayerStyle(dataset.id, layerStyle);
+        ctx.mapService.restyleLayer?.(dataset.id, dataset, layerStyle);
     }
     return dataset;
 }
@@ -628,7 +631,7 @@ async function plotStationTableOutput(ctx, routeLayer, routeProfile, importState
             { type: 'FeatureCollection', features: output.eventPoints },
             {
                 fit: true,
-                _mapLabels: { field: 'name', placement: 'point', minZoom: 10, size: 11 },
+                _mapLabels: { field: 'name', placement: 'point', minZoom: DEFAULT_STATIONING_LABEL_MIN_ZOOM, size: 11 },
                 style: {
                     mode: 'simple',
                     strokeColor: '#ff7f00',
@@ -1123,7 +1126,7 @@ export async function openProjectStationing(ctx) {
                         _kmlExport: { labelOnly: true },
                         _mapLabels: {
                             field: 'station_label',
-                            minZoom: 10,
+                            minZoom: DEFAULT_STATIONING_LABEL_MIN_ZOOM,
                             size: 11,
                             ...STATIONING_LABEL_STYLE
                         },
@@ -1166,7 +1169,7 @@ export async function openProjectStationing(ctx) {
                                 ...(useSeparateLabels ? {} : {
                                     _mapLabels: {
                                         field: 'milepost',
-                                        minZoom: 10,
+                                        minZoom: DEFAULT_STATIONING_LABEL_MIN_ZOOM,
                                         size: 10,
                                         ...STATIONING_LABEL_STYLE
                                     }
@@ -1191,7 +1194,7 @@ export async function openProjectStationing(ctx) {
                                     _kmlExport: { labelOnly: true },
                                     _mapLabels: {
                                         field: 'milepost',
-                                        minZoom: 10,
+                                        minZoom: DEFAULT_STATIONING_LABEL_MIN_ZOOM,
                                         size: 10,
                                         ...STATIONING_LABEL_STYLE
                                     },

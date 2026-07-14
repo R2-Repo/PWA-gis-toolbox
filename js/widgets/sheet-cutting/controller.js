@@ -6,7 +6,6 @@ import { openReactIsland } from '../../ui/open-react-island.js';
 import { getSpatialLayerOptions } from '../widget-context.js';
 import { isProjectStationingCenterline } from '../project-stationing/route-profile.js';
 import { markWidgetClosed, upsertWidgetState } from '../widget-state-store.js';
-import { openPlanProductionExport } from '../plan-production-export/controller.js';
 import { openRouteMilepostSegment } from '../route-milepost-segment/controller.js';
 import { openProjectStationing } from '../project-stationing/controller.js';
 import {
@@ -229,24 +228,13 @@ export async function openSheetCutting(ctx, { restoreState = null } = {}) {
                 renderSheetPreview(ctx, session);
                 return created;
             },
-            onSaveSession: () => {
-                persistSession(session);
-                downloadTextFile(
-                    `${session.project.projectName || 'sheet_cutting'}.json`,
-                    JSON.stringify(serializeSheetSession(session), null, 2),
-                    'application/json'
-                );
-            },
             onOpenRouteCenterline: () => {
                 openRouteMilepostSegment(ctx);
             },
             onOpenProjectStationing: () => {
                 openProjectStationing(ctx);
             },
-            onRefreshStationingLayers: () => getStationingLayerOptions(ctx),
-            onOpenFullPlanExport: () => {
-                openPlanProductionExport(ctx);
-            }
+            onRefreshStationingLayers: () => getStationingLayerOptions(ctx)
         })
     });
 }

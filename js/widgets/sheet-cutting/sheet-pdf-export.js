@@ -1,6 +1,7 @@
 /**
- * Sheet plan PDF export — hybrid vector overlay + basemap underlay per page.
- * Written one file at a time to a user-chosen folder (File System Access API).
+ * Sheet plan PDF export — high-DPI basemap capture + crisp vector overlays per page.
+ * Detail sheets: basemap raster + vector route/design layers styled from the map.
+ * Overview: basemap raster + vector sheet index (polygons, red route, labels).
  */
 
 import { loadJsPDF } from '../../core/libs.js';
@@ -11,10 +12,12 @@ import {
     writeBlobToFolder
 } from '../../export/folder-export.js';
 import {
+    applyMapPixelRatio,
     captureLiveFrame,
     captureMapCanvas,
     computePixelRatioForTargetDimensions,
     ensureMapFrameReady,
+    restoreMapPixelRatio,
     SHEET_EXPORT_MAX_PIXEL_RATIO,
     suspendMapInteractions
 } from '../../map/map-export.js';
@@ -55,6 +58,17 @@ const NORTH_ARROW_SIZE_PT = 28;
 /** Ground offset from match-line cap to place SEE SHEET labels outside the polygon. */
 const EDGE_SEE_LABEL_OFFSET_FT = 20;
 const EDGE_SEE_LABEL_FONT_PT = 7.5;
+
+/**
+ * @param {object} session
+ * @returns {string[]}
+ */
+export function resolveExportLayerIds(session) {
+    return [
+        session?.project?.stationingRouteLayerId,
+        ...(session?.sheets?.designLayerIds || [])
+    ].filter(Boolean);
+}
 
 /**
  * @param {import('maplibre-gl').Map} map
@@ -710,24 +724,11 @@ async function bumpMapToExportRatio(map, template) {
     });
 
     if (exportRatio > originalRatio) {
-        map.setPixelRatio(exportRatio);
+        applyMapPixelRatio(map, exportRatio);
         await ensureMapFrameReady(map);
     }
 
     return { exportRatio, originalRatio };
-}
-
-/**
- * @param {import('maplibre-gl').Map} map
- * @param {number} originalRatio
- */
-async function restoreMapPixelRatio(map, originalRatio) {
-    const currentRatio = typeof map.getPixelRatio === 'function' ? map.getPixelRatio() : 1;
-    if (currentRatio > originalRatio) {
-        map.setPixelRatio(originalRatio);
-        map.resize();
-        await ensureMapFrameReady(map);
-    }
 }
 
 /**
@@ -796,17 +797,30 @@ async function captureBasemapUnderlay(mapService, template, ring) {
 }
 
 /**
+ * Overview capture: basemap tiles only; route, sheet frames, and labels are vector overlays.
+ *
  * @param {object} mapService
  * @param {object} template
  * @returns {Promise<{ canvas: HTMLCanvasElement, captureScale: number }>}
  */
 async function captureOverviewBasemap(mapService, template) {
-    let captureScale = 1;
-    const canvas = await captureBasemapAtDpi(mapService, template, (map) => {
-        const cssW = Math.max(1, map.getContainer()?.clientWidth || 1);
-        captureScale = map.getCanvas().width / cssW;
-    });
-    return { canvas, captureScale };
+    clearSheetPreview(mapService);
+    const restoreDataLayers = suppressMapDataLayersForCapture(mapService);
+    const map = mapService?.getMap?.();
+
+    try {
+        let captureScale = 1;
+        const canvas = await captureBasemapAtDpi(mapService, template, (captureMap) => {
+            const cssW = Math.max(1, captureMap.getContainer()?.clientWidth || 1);
+            captureScale = captureMap.getCanvas().width / cssW;
+        });
+        return { canvas, captureScale };
+    } finally {
+        restoreDataLayers();
+        if (map) {
+            await ensureMapFrameReady(map);
+        }
+    }
 }
 
 /**
@@ -994,7 +1008,7 @@ export async function exportSheetPlanPdf({
         ...(session?.sheets?.template || exportPackage?.template || {})
     };
     const basemapDpi = resolveBasemapDpi(template);
-    const includeOverview = template.includeOverview !== false && exportPackage?.pdf?.pages?.[0]?.pageType === 'overview';
+    const includeOverview = exportPackage?.pdf?.pages?.[0]?.pageType === 'overview';
     const projectName = session?.project?.projectName || exportPackage?.projectName || 'sheet_cutting';
     const routeLine = session?.routeLine || exportPackage?.layers?.route?.features?.[0] || null;
     const pdfBearingMode = template.pdfMapBearingMode ?? DEFAULT_PDF_MAP_BEARING_MODE;
@@ -1005,6 +1019,7 @@ export async function exportSheetPlanPdf({
     const folderName = folderHandle.name || 'selected folder';
 
     const savedCamera = saveMapCamera(map);
+    const sessionOriginalPixelRatio = typeof map?.getPixelRatio === 'function' ? map.getPixelRatio() : 1;
     const was3d = mapService.is3DEnabled?.() ?? false;
     const resumeInteractions = suspendMapInteractions(map);
     const writtenFiles = [];
@@ -1016,34 +1031,33 @@ export async function exportSheetPlanPdf({
         }
 
         if (includeOverview) {
-            onProgress?.(`Rendering overview (basemap ${basemapDpi} DPI + vector)…`);
+            onProgress?.(`Rendering overview (basemap ${basemapDpi} DPI + sheet index)…`);
             clearSheetPreview(mapService);
             mapService.clearTempFeatures?.();
             await ensureMapFrameReady(map);
-            const restoreDataLayers = suppressMapDataLayersForCapture(mapService);
-            try {
-                const overviewBounds = boundsFromGeoJson(sheetFrames);
-                if (!overviewBounds) {
-                    throw new Error('Could not determine overview bounds');
-                }
-                await fitMapToBounds(mapService, overviewBounds, { pitch: 0, bearing: 0 });
-                const { canvas: overviewCanvas, captureScale } = await captureOverviewBasemap(mapService, template);
-                const overviewBlob = await buildHybridPagePdfBlob({
-                    template,
-                    pageOptions: { pageType: 'overview', exportBearingDeg: 0 },
-                    map,
-                    mapService,
-                    basemapCanvas: overviewCanvas,
-                    captureScale,
-                    vectorFeatures: layers.overview || null,
-                    overviewPlacement: true
-                });
-                const overviewFile = buildSheetPageFilename(projectName, 'overview');
-                await writeBlobToFolder(folderHandle, overviewFile, overviewBlob);
-                writtenFiles.push(overviewFile);
-            } finally {
-                restoreDataLayers();
+
+            const overviewBounds = boundsFromGeoJson(sheetFrames);
+            if (!overviewBounds) {
+                throw new Error('Could not determine overview bounds');
             }
+            await fitMapToBounds(mapService, overviewBounds, { pitch: 0, bearing: 0 });
+            const { canvas: overviewCanvas, captureScale } = await captureOverviewBasemap(
+                mapService,
+                template
+            );
+            const overviewBlob = await buildHybridPagePdfBlob({
+                template,
+                pageOptions: { pageType: 'overview', exportBearingDeg: 0 },
+                map,
+                mapService,
+                basemapCanvas: overviewCanvas,
+                captureScale,
+                vectorFeatures: layers.overview || null,
+                overviewPlacement: true
+            });
+            const overviewFile = buildSheetPageFilename(projectName, 'overview');
+            await writeBlobToFolder(folderHandle, overviewFile, overviewBlob);
+            writtenFiles.push(overviewFile);
             await ensureMapFrameReady(map);
         }
 
@@ -1127,12 +1141,17 @@ export async function exportSheetPlanPdf({
         onProgress?.(`Saved ${writtenFiles.length} PDF(s) to ${folderName}.`);
         return { pageCount: writtenFiles.length, folderName, files: writtenFiles };
     } finally {
-        if (was3d) {
-            mapService.enable3D?.({ animate: false });
+        try {
+            await restoreMapPixelRatio(map, sessionOriginalPixelRatio);
+            if (was3d) {
+                mapService.enable3D?.({ animate: false });
+            }
+            restoreMapCamera(map, savedCamera);
+            resumeInteractions?.();
+            showSheetPreview(mapService, layers);
+            await ensureMapFrameReady(map);
+        } catch (_) {
+            // Best-effort recovery so a failed export does not leave the map wedged.
         }
-        restoreMapCamera(map, savedCamera);
-        resumeInteractions?.();
-        showSheetPreview(mapService, layers);
-        await ensureMapFrameReady(map);
     }
 }

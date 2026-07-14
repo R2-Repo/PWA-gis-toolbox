@@ -4,7 +4,7 @@
  */
 import logger from '../core/logger.js';
 import bus from '../core/event-bus.js';
-import { getActiveLayer, setActiveLayer, isLayerLocked, getMapLayerOrderIds } from '../core/state.js';
+import { getActiveLayer, setActiveLayer, isLayerLocked, getMapLayerOrderIds, getLayers } from '../core/state.js';
 import { flattenFeatureGeometryCollections, isWorkspaceLayer, isServiceLayer } from '../core/data-model.js';
 import { getCoverageRasters, isCoverageRasterLayer } from '../core/coverage-raster-layer.js';
 import { MAP_CHUNK_BATCH_SIZE, RENDER_LIMITS } from './render-limits.js';
@@ -74,7 +74,8 @@ import {
     shouldSkipClickBinding
 } from './interaction-hit.js';
 import { buildSymbolLayerLayout } from './style-symbols.js';
-import { buildMapLabelLayerSpec, resolveLayerLabels, isMapLabelLayerId, resolveEffectiveLabelZoomRange } from './map-labels.js';
+import { buildMapLabelLayerSpec, resolveLayerLabels, isMapLabelLayerId, resolveEffectiveLabelZoomRange, mergeDatasetLabelsIntoStyle } from './map-labels.js';
+import { DEFAULT_STATIONING_LABEL_MIN_ZOOM } from '../widgets/project-stationing/engine.js';
 import {
     buildAnnotationLayerSpecs,
     excludeAnnotationsFilter,
@@ -225,6 +226,12 @@ class MapManager {
         return resolveMapLibreZoomRange(dataset, this.map.getCenter().lat);
     }
 
+    _resolveLabelsConfigForZoom(dataset) {
+        if (!dataset?.id) return null;
+        const layerStyle = this._layerStyles.get(dataset.id) || null;
+        return resolveLayerLabels(layerStyle, dataset);
+    }
+
     _applyZoomRangeToLayerIds(layerIds, zoomRange, labelsConfig) {
         if (!this.map || !layerIds?.length) return;
         const geomMin = zoomRange?.minzoom ?? MAPLIBRE_MIN_ZOOM;
@@ -245,7 +252,8 @@ class MapManager {
         const config = normalizeScaleRange(scaleRangeConfig || {});
         entry.scaleRange = config;
         const zoomRange = resolveMapLibreZoomRange(config, this.map.getCenter().lat);
-        const labelsConfig = this._layerStyles.get(layerId)?.labels;
+        const dataset = getLayers().find((l) => l.id === layerId);
+        const labelsConfig = dataset ? this._resolveLabelsConfigForZoom(dataset) : this._layerStyles.get(layerId)?.labels;
         this._applyZoomRangeToLayerIds(entry.layerIds, zoomRange, labelsConfig);
     }
 
@@ -269,7 +277,8 @@ class MapManager {
         for (const [layerId, entry] of this.dataLayers) {
             if (!entry.scaleRange?.scaleRangeEnabled) continue;
             const zoomRange = resolveMapLibreZoomRange(entry.scaleRange, lat);
-            const labelsConfig = this._layerStyles.get(layerId)?.labels;
+            const dataset = getLayers().find((l) => l.id === layerId);
+            const labelsConfig = dataset ? this._resolveLabelsConfigForZoom(dataset) : this._layerStyles.get(layerId)?.labels;
             this._applyZoomRangeToLayerIds(entry.layerIds, zoomRange, labelsConfig);
             changed = true;
         }
@@ -284,7 +293,7 @@ class MapManager {
         const scaleRangeConfig = normalizeScaleRange(dataset);
         entry.scaleRange = scaleRangeConfig;
         const zoomRange = resolveMapLibreZoomRange(scaleRangeConfig, this.map.getCenter().lat);
-        const labelsConfig = this._layerStyles.get(dataset.id)?.labels;
+        const labelsConfig = this._resolveLabelsConfigForZoom(dataset);
         this._applyZoomRangeToLayerIds(entry.layerIds, zoomRange, labelsConfig);
         this._lastScaleRangeLat = this.map.getCenter().lat;
     }
@@ -616,8 +625,11 @@ class MapManager {
 
         const defaultColor = LAYER_COLORS[colorIndex % LAYER_COLORS.length];
         const stored = this._layerStyles.get(dataset.id);
-        const layerStyle = normalizeStyle(stored, defaultColor);
-        if (!stored) this._layerStyles.set(dataset.id, { ...layerStyle });
+        let layerStyle = normalizeStyle(stored, defaultColor);
+        layerStyle = mergeDatasetLabelsIntoStyle(layerStyle, dataset);
+        if (!stored || (dataset?._mapLabels?.field && !stored.labels?.enabled)) {
+            this._layerStyles.set(dataset.id, { ...layerStyle });
+        }
 
         const styPoly = compilePaint(layerStyle, 'polygon');
         const styLine = compilePaint(layerStyle, 'line');
@@ -1165,7 +1177,7 @@ class MapManager {
 
         this._bindLayerClickHandlers(dataset, layerIds, flat);
         const zoomRange = this._getLayerZoomRange(dataset);
-        this._applyZoomRangeToLayerIds(layerIds, zoomRange, layerStyle.labels);
+        this._applyZoomRangeToLayerIds(layerIds, zoomRange, this._resolveLabelsConfigForZoom(dataset));
         return layerIds;
     }
 
@@ -3936,7 +3948,7 @@ class MapManager {
 
         const stationLabelSpec = buildMapLabelLayerSpec(srcId + '-station-labels', srcId, {
             field: 'station_label',
-            minZoom: 0,
+            minZoom: DEFAULT_STATIONING_LABEL_MIN_ZOOM,
             size: 11,
             anchor: 'center',
             offset: [0, 0],
@@ -3967,7 +3979,7 @@ class MapManager {
 
         const beginEndLabelSpec = buildMapLabelLayerSpec(srcId + '-begin-end-labels', srcId, {
             field: 'name',
-            minZoom: 0,
+            minZoom: DEFAULT_STATIONING_LABEL_MIN_ZOOM,
             size: 12
         });
         if (beginEndLabelSpec) {
@@ -3994,7 +4006,7 @@ class MapManager {
 
         const milepostLabelSpec = buildMapLabelLayerSpec(srcId + '-milepost-labels', srcId, {
             field: 'milepost',
-            minZoom: 0,
+            minZoom: DEFAULT_STATIONING_LABEL_MIN_ZOOM,
             size: 10,
             anchor: 'center',
             offset: [0, 0],

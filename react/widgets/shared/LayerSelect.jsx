@@ -7,8 +7,20 @@ export function LayerSelect({
     allowEmpty = true,
     formatOption = (layer) => `${layer.name} (${layer.featureCount ?? layer.count ?? 0})`,
     className = '',
-    headerExtra = null
+    headerExtra = null,
+    selectExtra = null
 }) {
+    const select = (
+        <select value={value} onChange={(e) => onChange?.(e.target.value)}>
+            {allowEmpty ? <option value="">{placeholder}</option> : null}
+            {layers.map((layer) => (
+                <option key={layer.id} value={layer.id}>
+                    {formatOption(layer)}
+                </option>
+            ))}
+        </select>
+    );
+
     return (
         <div className={['form-group', className].filter(Boolean).join(' ')}>
             {headerExtra ? (
@@ -19,14 +31,14 @@ export function LayerSelect({
             ) : (
                 <label>{label}</label>
             )}
-            <select value={value} onChange={(e) => onChange?.(e.target.value)}>
-                {allowEmpty ? <option value="">{placeholder}</option> : null}
-                {layers.map((layer) => (
-                    <option key={layer.id} value={layer.id}>
-                        {formatOption(layer)}
-                    </option>
-                ))}
-            </select>
+            {selectExtra ? (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>{select}</div>
+                    {selectExtra}
+                </div>
+            ) : (
+                select
+            )}
         </div>
     );
 }

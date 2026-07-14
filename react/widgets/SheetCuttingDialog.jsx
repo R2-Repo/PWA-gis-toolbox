@@ -12,6 +12,65 @@ const SHEET_ORIENTATION = 'landscape';
 const DEFAULT_SHEET_LENGTH_FT = 1100;
 const DEFAULT_CORRIDOR_WIDTH_FT = 350;
 const BASEMAP_DPI_OPTIONS = [120, 150, 200];
+const SHEET_LENGTH_LABEL = 'Sheet length along route (ft)';
+const CORRIDOR_WIDTH_LABEL = 'Corridor width (ft)';
+
+function DimensionFieldIcon({ title, children }) {
+    return (
+        <span
+            title={title}
+            aria-label={title}
+            style={{
+                display: 'inline-flex',
+                flexShrink: 0,
+                color: 'var(--text-muted)',
+                cursor: 'help'
+            }}
+        >
+            {children}
+        </span>
+    );
+}
+
+function HorizontalDoubleArrowIcon() {
+    return (
+        <svg
+            viewBox="0 0 24 24"
+            width="16"
+            height="16"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+        >
+            <path d="M7 12H17" />
+            <path d="M7 9L4 12L7 15" />
+            <path d="M17 9L20 12L17 15" />
+        </svg>
+    );
+}
+
+function VerticalDoubleArrowIcon() {
+    return (
+        <svg
+            viewBox="0 0 24 24"
+            width="16"
+            height="16"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+        >
+            <path d="M12 7V17" />
+            <path d="M9 10L12 7L15 10" />
+            <path d="M9 14L12 17L15 14" />
+        </svg>
+    );
+}
 
 export function SheetCuttingDialog({
     defaultTemplate = {},
@@ -28,8 +87,6 @@ export function SheetCuttingDialog({
     onExportPackage,
     onExportPdf,
     onAddResultLayers,
-    onSaveSession,
-    onOpenFullPlanExport,
     onOpenRouteCenterline,
     onOpenProjectStationing,
     onRefreshStationingLayers
@@ -37,7 +94,6 @@ export function SheetCuttingDialog({
     const [session, setSession] = useState(initialSession);
     const [stationingLayerOptions, setStationingLayerOptions] = useState(stationingLayers);
     const [projectName, setProjectName] = useState(initialSession?.project?.projectName || '');
-    const [projectNumber, setProjectNumber] = useState(initialSession?.project?.projectNumber || '');
     const [stationingLayerId, setStationingLayerId] = useState(initialSession?.project?.stationingRouteLayerId || '');
     const [sheetLengthFt, setSheetLengthFt] = useState(
         String(initialSession?.sheets?.template?.sheetLengthFt ?? defaultTemplate.sheetLengthFt ?? DEFAULT_SHEET_LENGTH_FT)
@@ -45,7 +101,6 @@ export function SheetCuttingDialog({
     const [corridorWidthFt, setCorridorWidthFt] = useState(
         String(initialSession?.sheets?.template?.corridorWidthFt ?? defaultTemplate.corridorWidthFt ?? DEFAULT_CORRIDOR_WIDTH_FT)
     );
-    const [includeOverview, setIncludeOverview] = useState(initialSession?.sheets?.template?.includeOverview !== false);
     const [basemapDpi, setBasemapDpi] = useState(
         String(initialSession?.sheets?.template?.basemapDpi ?? initialSession?.sheets?.template?.exportDpi ?? defaultTemplate.basemapDpi ?? 150)
     );
@@ -119,8 +174,7 @@ export function SheetCuttingDialog({
     const handleGenerate = async () => {
         const next = await run(async () => {
             let current = await onCreateProject?.({
-                projectName: projectName.trim() || 'Sheet Cutter',
-                projectNumber: projectNumber.trim()
+                projectName: projectName.trim() || 'Sheet Cutter'
             });
             if (!current) throw new Error('Unable to create project.');
 
@@ -135,8 +189,7 @@ export function SheetCuttingDialog({
                 paperSize: SHEET_PAPER_SIZE,
                 orientation: SHEET_ORIENTATION,
                 sheetLengthFt: Number(sheetLengthFt) || DEFAULT_SHEET_LENGTH_FT,
-                corridorWidthFt: Number(corridorWidthFt) || DEFAULT_CORRIDOR_WIDTH_FT,
-                includeOverview
+                corridorWidthFt: Number(corridorWidthFt) || DEFAULT_CORRIDOR_WIDTH_FT
             }) || current;
 
             if (selectedLayerIds.length) {
@@ -169,21 +222,44 @@ export function SheetCuttingDialog({
                 <label>Project name</label>
                 <input value={projectName} onChange={(e) => setProjectName(e.target.value)} placeholder="Sheet Cutter" />
             </div>
-            <div className="form-group">
-                <label>Project number</label>
-                <input value={projectNumber} onChange={(e) => setProjectNumber(e.target.value)} placeholder="Optional" />
-            </div>
-
             <LayerSelect
-                label="Route centerline (Project Stationing)"
+                label="Route centerline or stationing"
                 layers={stationingLayerOptions}
                 value={stationingLayerId}
                 onChange={setStationingLayerId}
                 emptyLabel="No Project Stationing centerline layers found"
+                selectExtra={(
+                    <button
+                        type="button"
+                        className="btn-icon"
+                        disabled={busy}
+                        title="Refresh layer list"
+                        aria-label="Refresh layer list"
+                        onClick={() => {
+                            const next = onRefreshStationingLayers?.();
+                            if (next) setStationingLayerOptions(next);
+                        }}
+                    >
+                        <svg
+                            viewBox="0 0 24 24"
+                            width="14"
+                            height="14"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            aria-hidden="true"
+                        >
+                            <path d="M1 4v6h6" />
+                            <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" />
+                        </svg>
+                    </button>
+                )}
             />
             {!stationingLayerOptions.length ? (
                 <div className="info-box text-xs" style={{ marginBottom: 12 }}>
-                    Build a route centerline, run Project Stationing to create station segments, then refresh the list below.
+                    Select existing layer or create new layers using the widgets below.
                 </div>
             ) : null}
             {session?.stationingRoute ? (
@@ -194,14 +270,14 @@ export function SheetCuttingDialog({
                     </div>
                 </div>
             ) : null}
-            <div className="gis-widget__btn-row" style={{ marginBottom: 16 }}>
+            <div className="gis-widget__btn-row gis-widget__btn-row--split" style={{ marginBottom: 16 }}>
                 <button
                     type="button"
                     className="btn btn-secondary btn-sm"
                     disabled={busy}
                     onClick={() => onOpenRouteCenterline?.()}
                 >
-                    Open Route Centerline
+                    Route Centerline Widget
                 </button>
                 <button
                     type="button"
@@ -209,35 +285,41 @@ export function SheetCuttingDialog({
                     disabled={busy}
                     onClick={() => onOpenProjectStationing?.()}
                 >
-                    Open Project Stationing
+                    Project Stationing Widget
                 </button>
-                <button
-                    type="button"
-                    className="btn btn-secondary btn-sm"
-                    disabled={busy}
-                    onClick={() => {
-                        const next = onRefreshStationingLayers?.();
-                        if (next) setStationingLayerOptions(next);
-                    }}
+            </div>
+
+            <div className="form-group">
+                <div
+                    className="gis-widget__row"
+                    style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 0 }}
                 >
-                    Refresh layer list
-                </button>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: '1 1 0', minWidth: 0 }}>
+                        <DimensionFieldIcon title={SHEET_LENGTH_LABEL}>
+                            <HorizontalDoubleArrowIcon />
+                        </DimensionFieldIcon>
+                        <input
+                            value={sheetLengthFt}
+                            onChange={(e) => setSheetLengthFt(e.target.value)}
+                            aria-label={SHEET_LENGTH_LABEL}
+                            inputMode="numeric"
+                            style={{ width: 72, minWidth: 0, flex: '0 1 auto' }}
+                        />
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: '1 1 0', minWidth: 0 }}>
+                        <DimensionFieldIcon title={CORRIDOR_WIDTH_LABEL}>
+                            <VerticalDoubleArrowIcon />
+                        </DimensionFieldIcon>
+                        <input
+                            value={corridorWidthFt}
+                            onChange={(e) => setCorridorWidthFt(e.target.value)}
+                            aria-label={CORRIDOR_WIDTH_LABEL}
+                            inputMode="numeric"
+                            style={{ width: 72, minWidth: 0, flex: '0 1 auto' }}
+                        />
+                    </div>
+                </div>
             </div>
-
-            <div className="form-group">
-                <label>Sheet length along route (ft)</label>
-                <input value={sheetLengthFt} onChange={(e) => setSheetLengthFt(e.target.value)} />
-            </div>
-
-            <div className="form-group">
-                <label>Corridor width (ft)</label>
-                <input value={corridorWidthFt} onChange={(e) => setCorridorWidthFt(e.target.value)} />
-            </div>
-
-            <label className="text-xs" style={{ display: 'block', marginBottom: 12 }}>
-                <input type="checkbox" checked={includeOverview} onChange={(e) => setIncludeOverview(e.target.checked)} />
-                {' '}Include overview sheet
-            </label>
 
             {frameDims ? (
                 <p className="text-xs" style={{ marginTop: -4, marginBottom: 12, color: 'var(--text-muted)' }}>
@@ -319,17 +401,6 @@ export function SheetCuttingDialog({
                         </button>
                         <button type="button" className="btn btn-secondary btn-sm" disabled={busy} onClick={() => onAddResultLayers?.()}>
                             Add sheet layers to map
-                        </button>
-                        <button type="button" className="gis-widget__link-btn" disabled={busy} onClick={() => onSaveSession?.()}>
-                            Save session JSON
-                        </button>
-                        <button
-                            type="button"
-                            className="btn btn-secondary btn-sm"
-                            disabled={busy}
-                            onClick={() => onOpenFullPlanExport?.()}
-                        >
-                            Export full plan package
                         </button>
                     </div>
                 </div>

@@ -935,9 +935,15 @@ export function clipFeaturesToSheetFrame(frameFeature, features = []) {
  * @param {object[]} detailSheets
  * @param {object} routeLine
  * @param {object[]} designFeatures
+ * @param {string} [stationingRouteLayerId]
  * @returns {object[]}
  */
-export function buildPerSheetLayerExports(detailSheets = [], routeLine = null, designFeatures = []) {
+export function buildPerSheetLayerExports(
+    detailSheets = [],
+    routeLine = null,
+    designFeatures = [],
+    stationingRouteLayerId = ''
+) {
     const sheetFrames = buildSheetFramesGeoJson(detailSheets, routeLine);
     const frameBySheetId = new Map(
         sheetFrames.features.map((feature) => [feature.properties?.sheet_id, feature])
@@ -963,7 +969,10 @@ export function buildPerSheetLayerExports(detailSheets = [], routeLine = null, d
             ? clipFeatureToSheetFrame(
                 {
                     type: 'Feature',
-                    properties: { feature_type: 'route' },
+                    properties: {
+                        feature_type: 'route',
+                        _sourceLayerId: stationingRouteLayerId || ''
+                    },
                     geometry: routeLine.geometry
                 },
                 frameFeature
@@ -1055,7 +1064,12 @@ export function buildSheetExportPackage(session) {
     const detailSheets = (sheetSet.sheets || []).filter((sheet) => sheet.sheetType !== 'overview');
     const designFeatures = session.designFeatures || [];
     const sheetFrames = buildSheetFramesGeoJson(detailSheets, session.routeLine);
-    const perSheet = buildPerSheetLayerExports(detailSheets, session.routeLine, designFeatures);
+    const perSheet = buildPerSheetLayerExports(
+        detailSheets,
+        session.routeLine,
+        designFeatures,
+        session.project?.stationingRouteLayerId || ''
+    );
 
     return {
         projectName: session.project?.projectName || 'Sheet Cutter',
