@@ -1,10 +1,12 @@
 # Live Layers catalog
 
-Curated live service layers appear in **Import → Live Layers**. Clicking a card adds the layer to the current map session with catalog styling applied.
+Curated live service layers appear in **Import → Live Layers**. Clicking a card adds the layer (or a group of sublayers) to the current map session with catalog styling applied.
 
 ## Add a new layer
 
-Edit [`js/live-layers/catalog.js`](../js/live-layers/catalog.js) and append to `LIVE_LAYERS`:
+Edit [`js/live-layers/catalog.js`](../js/live-layers/catalog.js) and append to `LIVE_LAYERS`.
+
+### Single service
 
 ```javascript
 {
@@ -22,18 +24,53 @@ Edit [`js/live-layers/catalog.js`](../js/live-layers/catalog.js) and append to `
 }
 ```
 
+### Composite (multiple sublayers in one folder)
+
+```javascript
+{
+  id: 'wildfire-watch',
+  name: 'Wildfire Watch',
+  description: 'Perimeters and detections as separate layers.',
+  icon: '🔥',
+  category: 'Wildfire',
+  subLayers: [
+    {
+      id: 'fire-perimeters',
+      name: 'Fire Perimeters',
+      kind: 'arcgis-featureserver',
+      url: 'https://…/FeatureServer/0',
+      style: PERIMETER_STYLE
+    },
+    {
+      id: 'fire-detections',
+      name: 'Fire Detections',
+      kind: 'arcgis-featureserver',
+      url: 'https://…/FeatureServer/1',
+      style: FIREWATCH_STYLE
+    }
+  ]
+}
+```
+
+Composite cards create an expandable **layer group** in the left panel (same folder UX as multi-file imports). Each sublayer is its own `type: 'service'` dataset with its own style and refresh.
+
 ## Styling
 
 Assign a `style` object using the same schema as the main style engine (`mode: 'smart'` with visual variables, or simple flat style). Reuse presets from [`js/live-layers/live-layer-styles.js`](../js/live-layers/live-layer-styles.js) or define new exported constants there.
 
 Paint is compiled in [`js/live-layers/live-layer-engine.js`](../js/live-layers/live-layer-engine.js) via `resolveServiceLayerStyle()` → `compilePaint()`.
 
+Styles are **developer-authored in the catalog** (not the layer style panel).
+
 ## Runtime behavior
 
-- Layers are `type: 'service'` — they stream for the current viewport and refresh on pan/zoom.
-- Styles come from the catalog (not the layer style panel).
-- Use **Materialize viewport** on a service layer when you need a normal spatial copy for GIS widgets.
+- Vector layers (`arcgis-featureserver`, `geojson-feed`, `wfs`) stream features for the **current map viewport** and refresh on pan/zoom (plus `refreshMs`).
+- Features are tagged with stable `_featureIndex` values (ArcGIS `OBJECTID` when available) so selection, popups, GIS tools, and widgets can use them like normal spatial layers.
+- Analysis, selection, and widget pickers are **viewport-scoped** — they operate on features currently loaded in view, not the full national feed.
+- Dense viewports may be capped by map render limits; zoom in if counts look truncated.
+- Raster kinds (`arcgis-mapserver`, `wms`) remain visual overlays only (not analyzable as features).
+- Optional: **Materialize viewport** creates a permanent `type: 'spatial'` snapshot for offline/export workflows.
 
 ## Validation
 
-Run `npm test` — `tests/live-layer-catalog.test.js` calls `validateCatalog()`.
+Run `npm test` — `tests/live-layer-catalog.test.js` and `tests/live-layer-viewport.test.js` cover catalog validation, tagging, and analyzability.

@@ -10,7 +10,7 @@ import {
     setActiveLayer, toggleLayerVisibility, toggleLayerLock, getMapLayerOrderIds,
     reorderLayer, reorderLayerToIndex, setUIState, toggleAGOLCompat
 } from '../core/state.js';
-import { mergeDatasets, getSelectedFields, tableToSpatial, createSpatialDataset, createTableDataset, analyzeSchema, analyzeTableSchema, isSpatialLayer, isServiceLayer, isWorkspaceLayer } from '../core/data-model.js';
+import { mergeDatasets, getSelectedFields, tableToSpatial, createSpatialDataset, createTableDataset, analyzeSchema, analyzeTableSchema, isSpatialLayer, isServiceLayer, isWorkspaceLayer, isAnalyzableLayer, isLiveVectorLayer } from '../core/data-model.js';
 import { isLayerDisplayReady, layerCrsWarning, getLayerCrs, resolveReprojectFromCrs } from '../crs/layer-crs.js';
 import { importFile, importFiles } from '../import/importer.js';
 import { cancelWorkerParse } from '../import/import-parse-service.js';
@@ -2668,10 +2668,10 @@ async function openClip() {
 // New Turf.js Geoprocessing Tools
 // ============================
 
-// Helper: require spatial layer (materializes workspace-backed layers for GIS tools)
+// Helper: require spatial / live-vector layer (materializes workspace + viewport live layers)
 async function requireSpatialLayer(geomTypes = null) {
     const raw = getActiveLayer();
-    if (!raw || !isSpatialLayer(raw)) {
+    if (!raw || !isAnalyzableLayer(raw)) {
         showToast('Need a spatial layer', 'warning');
         return null;
     }
@@ -2683,6 +2683,10 @@ async function requireSpatialLayer(geomTypes = null) {
     const layer = await materializeSpatialLayer(raw);
     if (!layer) {
         showToast('Need a spatial layer', 'warning');
+        return null;
+    }
+    if (isLiveVectorLayer(raw) && !(layer.geojson?.features?.length)) {
+        showToast('No live features in the current viewport. Pan/zoom to load data first.', 'warning');
         return null;
     }
 
@@ -2724,13 +2728,13 @@ export function clearSelection() {
 
 export function selectAllFeatures() {
     const layer = getActiveLayer();
-    if (!layer || layer.type !== 'spatial') return;
+    if (!layer || !isAnalyzableLayer(layer) || !layer.geojson) return;
     mapService.selectAll(layer.id, layer.geojson);
 }
 
 export function invertSelection() {
     const layer = getActiveLayer();
-    if (!layer || layer.type !== 'spatial') return;
+    if (!layer || !isAnalyzableLayer(layer) || !layer.geojson) return;
     mapService.invertSelection(layer.id, layer.geojson);
 }
 

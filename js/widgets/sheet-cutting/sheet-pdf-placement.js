@@ -354,19 +354,21 @@ export function isRightHandCapMidpoint(midX, placedRect, pdfRing) {
 }
 
 /**
- * Push a label to the right of a match-line midpoint until it clears the cutout.
- * Always moves in +X from the cap mid — never toward the sheet interior.
+ * Push a label horizontally away from the sheet until it clears the cutout.
+ * Left → −X, right → +X. Never steps toward the sheet interior.
  *
+ * @param {'left'|'right'} side
  * @param {number} midX
  * @param {number} midY
  * @param {number} offsetPt
  * @param {Array<{ x: number, y: number }>} [pdfRing]
  * @returns {{ x: number, y: number }}
  */
-export function offsetRightHandLabelOutsidePdfRing(midX, midY, offsetPt, pdfRing = null) {
+export function offsetPageSideLabelOutsidePdfRing(side, midX, midY, offsetPt, pdfRing = null) {
+    const sign = side === 'left' ? -1 : 1;
     const step = Math.max(1, offsetPt);
     let distance = step;
-    let x = midX + distance;
+    let x = midX + sign * distance;
     const y = midY;
 
     if (!pdfRing?.length) {
@@ -374,21 +376,86 @@ export function offsetRightHandLabelOutsidePdfRing(midX, midY, offsetPt, pdfRing
     }
 
     for (let attempt = 0; attempt < 80; attempt++) {
-        if (!pointInPdfRing(x, y, pdfRing) && x > midX) {
+        const outsideSide = side === 'left' ? x < midX : x > midX;
+        if (!pointInPdfRing(x, y, pdfRing) && outsideSide) {
             // One extra step clears the dashed outline stroke on the match line.
-            return { x: x + step, y };
+            return { x: x + sign * step, y };
         }
         distance += step;
-        x = midX + distance;
+        x = midX + sign * distance;
     }
 
-    const ringMaxX = Math.max(...pdfRing.map((point) => point.x));
-    return { x: Math.max(midX + step, ringMaxX + step), y };
+    // Last resort: stay relative to the match-line mid, not the sheet bbox.
+    return { x: midX + sign * distance, y };
+}
+
+/**
+ * @param {number} midX
+ * @param {number} midY
+ * @param {number} offsetPt
+ * @param {Array<{ x: number, y: number }>} [pdfRing]
+ * @returns {{ x: number, y: number }}
+ */
+export function offsetRightHandLabelOutsidePdfRing(midX, midY, offsetPt, pdfRing = null) {
+    return offsetPageSideLabelOutsidePdfRing('right', midX, midY, offsetPt, pdfRing);
+}
+
+/**
+ * @param {number} midX
+ * @param {number} midY
+ * @param {number} offsetPt
+ * @param {Array<{ x: number, y: number }>} [pdfRing]
+ * @returns {{ x: number, y: number }}
+ */
+export function offsetLeftHandLabelOutsidePdfRing(midX, midY, offsetPt, pdfRing = null) {
+    return offsetPageSideLabelOutsidePdfRing('left', midX, midY, offsetPt, pdfRing);
+}
+
+/**
+ * Place a SEE SHEET label just outside a page-side match line.
+ *
+ * @param {'left'|'right'} side
+ * @param {number} midX
+ * @param {number} midY
+ * @param {number} edgeAngleDeg
+ * @param {Array<{ x: number, y: number }>} pdfRing
+ * @param {{ x: number, y: number, width: number, height: number }} [placedRect]
+ * @param {{ x: number, y: number }} fallbackInteriorRefPdf
+ * @param {number} offsetPt
+ * @returns {{ midX: number, midY: number, x: number, y: number, angle: number, edgeAngleDeg: number }}
+ */
+export function placePageSideCapSeeLabel(
+    side,
+    midX,
+    midY,
+    edgeAngleDeg,
+    pdfRing,
+    placedRect,
+    fallbackInteriorRefPdf,
+    offsetPt
+) {
+    const { x, y } = offsetPageSideLabelOutsidePdfRing(side, midX, midY, offsetPt, pdfRing);
+    const interiorRefPdf = computePdfRingCentroid(pdfRing)
+        ?? fallbackInteriorRefPdf
+        ?? {
+            x: placedRect
+                ? placedRect.x + placedRect.width / 2
+                : (side === 'left' ? midX + 1 : midX - 1),
+            y: midY
+        };
+
+    return {
+        midX,
+        midY,
+        x,
+        y,
+        angle: pickTextAngleWithBottomTowardInterior(edgeAngleDeg, x, y, interiorRefPdf),
+        edgeAngleDeg
+    };
 }
 
 /**
  * Place a SEE SHEET label just outside a right-hand match line (page-right of the cap).
- * Left-hand labels use placeLeftHandCapSeeLabel and are not affected.
  *
  * @param {number} midX
  * @param {number} midY
@@ -408,22 +475,16 @@ export function placeRightHandCapSeeLabel(
     fallbackInteriorRefPdf,
     offsetPt
 ) {
-    const { x, y } = offsetRightHandLabelOutsidePdfRing(midX, midY, offsetPt, pdfRing);
-    const interiorRefPdf = computePdfRingCentroid(pdfRing)
-        ?? fallbackInteriorRefPdf
-        ?? {
-            x: placedRect ? placedRect.x + placedRect.width / 2 : midX - 1,
-            y: midY
-        };
-
-    return {
+    return placePageSideCapSeeLabel(
+        'right',
         midX,
         midY,
-        x,
-        y,
-        angle: pickTextAngleWithBottomTowardInterior(edgeAngleDeg, x, y, interiorRefPdf),
-        edgeAngleDeg
-    };
+        edgeAngleDeg,
+        pdfRing,
+        placedRect,
+        fallbackInteriorRefPdf,
+        offsetPt
+    );
 }
 
 /**
@@ -477,69 +538,41 @@ export function resolveRightHandSeeLabelDrawPosition(placement, transform, pixel
 }
 
 /**
- * Original left-margin placement (unchanged from production behavior).
+ * Place a SEE SHEET label just outside a left-hand match line (page-left of the cap).
+ * Same hard page-side offset as the right hand — always −X from the cap mid.
  *
  * @param {number} midX
  * @param {number} midY
  * @param {number} edgeAngleDeg
- * @param {number} edgeNormX
- * @param {number} edgeNormY
+ * @param {number} _edgeNormX
+ * @param {number} _edgeNormY
  * @param {{ x: number, y: number }} interiorRefPdf
  * @param {number} offsetPt
  * @param {Array<{ x: number, y: number }>} [pdfRing]
+ * @param {{ x: number, y: number, width: number, height: number }} [placedRect]
  * @returns {{ midX: number, midY: number, x: number, y: number, angle: number, edgeAngleDeg: number }}
  */
 export function placeLeftHandCapSeeLabel(
     midX,
     midY,
     edgeAngleDeg,
-    edgeNormX,
-    edgeNormY,
+    _edgeNormX,
+    _edgeNormY,
     interiorRefPdf,
     offsetPt,
-    pdfRing = null
+    pdfRing = null,
+    placedRect = null
 ) {
-    let normX = edgeNormX;
-    let normY = edgeNormY;
-
-    if (pdfRing?.length) {
-        const outward = computeOutwardNormalFromPdfRing(midX, midY, pdfRing);
-        if (outward) {
-            normX = outward.x;
-            normY = outward.y;
-        } else {
-            const interiorX = interiorRefPdf.x - midX;
-            const interiorY = interiorRefPdf.y - midY;
-            if (normX * interiorX + normY * interiorY > 0) {
-                normX = -normX;
-                normY = -normY;
-            }
-        }
-    } else {
-        const interiorX = interiorRefPdf.x - midX;
-        const interiorY = interiorRefPdf.y - midY;
-        if (normX * interiorX + normY * interiorY > 0) {
-            normX = -normX;
-            normY = -normY;
-        }
-    }
-
-    const offset = offsetPointOutsidePdfRing(midX, midY, normX, normY, offsetPt, pdfRing);
-    let x = offset.x;
-    let y = offset.y;
-
-    if (pdfRing?.length || interiorRefPdf) {
-        ({ x, y } = mirrorLabelAcrossCapMidIfInside(midX, midY, x, y, interiorRefPdf, pdfRing));
-    }
-
-    return {
+    return placePageSideCapSeeLabel(
+        'left',
         midX,
         midY,
-        x,
-        y,
-        angle: pickTextAngleWithBottomTowardInterior(edgeAngleDeg, x, y, interiorRefPdf),
-        edgeAngleDeg
-    };
+        edgeAngleDeg,
+        pdfRing,
+        placedRect,
+        interiorRefPdf,
+        offsetPt
+    );
 }
 
 /**
@@ -656,31 +689,18 @@ export function computeCapEdgePdfPlacementFromPdfPoints(pLeft, pRight, interiorR
     const midX = (pLeft.x + pRight.x) / 2;
     const midY = (pLeft.y + pRight.y) / 2;
     const edgeAngleDeg = (Math.atan2(edgeDy, edgeDx) * 180) / Math.PI;
-    const edgeNormX = -edgeDy / edgeLen;
-    const edgeNormY = edgeDx / edgeLen;
     const pdfRingResolved = pdfRing ?? null;
 
-    if (isRightHandCapMidpoint(midX, placedRect, pdfRingResolved)) {
-        return placeRightHandCapSeeLabel(
-            midX,
-            midY,
-            edgeAngleDeg,
-            pdfRingResolved,
-            placedRect,
-            interiorRefPdf,
-            offsetPt
-        );
-    }
-
-    return placeLeftHandCapSeeLabel(
+    const side = isRightHandCapMidpoint(midX, placedRect, pdfRingResolved) ? 'right' : 'left';
+    return placePageSideCapSeeLabel(
+        side,
         midX,
         midY,
         edgeAngleDeg,
-        edgeNormX,
-        edgeNormY,
+        pdfRingResolved,
+        placedRect,
         interiorRefPdf,
-        offsetPt,
-        pdfRingResolved
+        offsetPt
     );
 }
 

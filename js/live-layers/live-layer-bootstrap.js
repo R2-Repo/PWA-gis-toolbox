@@ -1,26 +1,27 @@
 import { addLayer, getLayers, setActiveLayer } from '../core/state.js';
 import { createServiceLayer, isServiceLayer } from '../core/data-model.js';
-import { resolveLiveLayer } from './catalog-schema.js';
-import { addServiceLayer } from './live-layer-engine.js';
+import { assignLayersToGroup, createLayerGroup } from '../core/layer-groups.js';
+import { expandCatalogEntry, resolveLiveLayer } from './catalog-schema.js';
 
 /**
- * @param {object} catalogEntry
+ * @param {import('./catalog-schema.js').LiveLayerServiceConfig} serviceConfig
+ * @param {string} catalogId
  */
-function createServiceLayerFromCatalogEntry(catalogEntry) {
+function createServiceLayerFromConfig(serviceConfig, catalogId) {
     return createServiceLayer({
-        name: catalogEntry.name,
-        kind: catalogEntry.kind,
-        url: catalogEntry.url,
-        refreshMs: catalogEntry.refreshMs,
-        opacity: catalogEntry.opacity,
-        attribution: catalogEntry.attribution,
-        presetId: catalogEntry.id,
-        style: catalogEntry.style
+        name: serviceConfig.name,
+        kind: serviceConfig.kind,
+        url: serviceConfig.url,
+        refreshMs: serviceConfig.refreshMs,
+        opacity: serviceConfig.opacity,
+        attribution: serviceConfig.attribution,
+        presetId: serviceConfig.id || catalogId,
+        style: serviceConfig.style
     });
 }
 
 /**
- * Add a catalog live layer to the current map session.
+ * Add a catalog live layer (single or multi-sublayer group) to the current map session.
  * @param {{ mapService: object, showToast?: (msg: string, type?: string) => void, refreshUI?: () => void }} ctx
  * @param {string} layerId
  * @param {{ fit?: boolean }} [options]
@@ -31,14 +32,62 @@ export async function addCatalogLayerToMap(ctx, layerId, { fit = true } = {}) {
         throw new Error(`Unknown live layer: ${layerId}`);
     }
 
-    const dataset = createServiceLayerFromCatalogEntry(catalogEntry);
-    addLayer(dataset, { activate: true });
-    await ctx.mapService.addServiceLayer(dataset, getLayers().indexOf(dataset), { fit });
-    setActiveLayer(dataset.id);
+    const serviceConfigs = expandCatalogEntry(catalogEntry);
+    if (!serviceConfigs.length) {
+        throw new Error(`Live layer ${layerId} has no services`);
+    }
 
-    ctx.showToast?.(`Added ${catalogEntry.name}`, 'success');
+    const datasets = serviceConfigs.map((config) => createServiceLayerFromConfig(config, catalogEntry.id));
+
+    for (const dataset of datasets) {
+        addLayer(dataset, { activate: false });
+    }
+
+    if (datasets.length >= 2) {
+        const group = createLayerGroup(
+            catalogEntry.name,
+            datasets.map((ds) => ds.id),
+            { collapsed: false, source: 'import' }
+        );
+        if (group) assignLayersToGroup(group.id, datasets);
+    }
+
+    for (let i = 0; i < datasets.length; i++) {
+        const dataset = datasets[i];
+        const layerIdx = getLayers().indexOf(dataset);
+        await ctx.mapService.addServiceLayer(dataset, layerIdx, { fit: false });
+    }
+
+    if (fit) {
+        fitDatasets(ctx, datasets);
+    }
+
+    setActiveLayer(datasets[0].id);
+    ctx.mapService.syncLayerOrder?.(getLayers().map((l) => l.id));
+
+    const label = datasets.length > 1
+        ? `Added ${catalogEntry.name} (${datasets.length} layers)`
+        : `Added ${catalogEntry.name}`;
+    ctx.showToast?.(label, 'success');
     ctx.refreshUI?.();
-    return dataset;
+    return datasets.length === 1 ? datasets[0] : datasets;
+}
+
+/**
+ * @param {{ mapService: object }} ctx
+ * @param {object[]} datasets
+ */
+function fitDatasets(ctx, datasets) {
+    const map = ctx.mapService.getMap?.();
+    if (!map || typeof globalThis.turf === 'undefined') return;
+
+    const allFeatures = datasets.flatMap((ds) => ds.geojson?.features || []);
+    if (!allFeatures.length) return;
+
+    try {
+        const bbox = globalThis.turf.bbox({ type: 'FeatureCollection', features: allFeatures });
+        map.fitBounds([[bbox[0], bbox[1]], [bbox[2], bbox[3]]], { padding: 40, duration: 0 });
+    } catch { /* ignore fit errors */ }
 }
 
 /**
@@ -54,6 +103,7 @@ export function buildServiceLayerRecord(layer) {
         active: false,
         created: layer.created || new Date().toISOString(),
         service: { ...layer.service },
-        source: layer.source || { format: 'live-service', url: layer.service?.url }
+        source: layer.source || { format: 'live-service', url: layer.service?.url },
+        ...(layer.groupId ? { groupId: layer.groupId } : {})
     };
 }

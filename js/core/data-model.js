@@ -123,6 +123,7 @@ export function createServiceLayer({
         visible: true,
         active: true,
         created: new Date().toISOString(),
+        geojson: { type: 'FeatureCollection', features: [] },
         service: {
             presetId,
             kind,
@@ -145,9 +146,16 @@ export function isServiceLayer(layer) {
     return layer?.type === 'service';
 }
 
-/** Layers that support spatial analysis (in-memory features). */
+const LIVE_VECTOR_KINDS = new Set(['arcgis-featureserver', 'geojson-feed', 'wfs']);
+
+/** Live service layers that stream vector features (viewport-scoped). */
+export function isLiveVectorLayer(layer) {
+    return isServiceLayer(layer) && LIVE_VECTOR_KINDS.has(layer.service?.kind);
+}
+
+/** Layers that support spatial analysis (in-memory / viewport features). */
 export function isAnalyzableLayer(layer) {
-    return isSpatialLayer(layer);
+    return isSpatialLayer(layer) || isLiveVectorLayer(layer);
 }
 
 /** Feature/row count for UI labels — workspace layers use schema.featureCount, not in-memory geojson length. */
@@ -155,6 +163,9 @@ export function getLayerFeatureCount(layer) {
     if (!layer) return 0;
     if (isWorkspaceLayer(layer)) {
         return layer.schema?.featureCount ?? 0;
+    }
+    if (isLiveVectorLayer(layer)) {
+        return layer.geojson?.features?.length ?? layer.schema?.featureCount ?? 0;
     }
     if (layer.type === 'spatial') {
         return layer.geojson?.features?.length ?? layer.schema?.featureCount ?? 0;

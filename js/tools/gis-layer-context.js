@@ -1,7 +1,13 @@
 /**
- * Resolve in-memory and workspace-backed layers for GIS tool operations.
+ * Resolve in-memory, workspace-backed, and live viewport layers for GIS tool operations.
  */
-import { isSpatialLayer, isWorkspaceLayer, getLayerFeatureCount } from '../core/data-model.js';
+import {
+    isSpatialLayer,
+    isWorkspaceLayer,
+    isLiveVectorLayer,
+    isAnalyzableLayer,
+    getLayerFeatureCount
+} from '../core/data-model.js';
 import { loadAllWorkspaceFeatures } from '../workspace/workspace-store.js';
 
 /**
@@ -9,15 +15,23 @@ import { loadAllWorkspaceFeatures } from '../workspace/workspace-store.js';
  * @returns {boolean}
  */
 export function isGisToolLayer(layer) {
-    return isSpatialLayer(layer);
+    return isAnalyzableLayer(layer);
 }
 
 /**
- * Load full feature geometry for GIS tools. Workspace layers are read from IndexedDB.
+ * Load feature geometry for GIS tools.
+ * Workspace layers are read from IndexedDB; live services use the current viewport cache.
  * @param {object} layer
  * @returns {Promise<object|null>}
  */
 export async function materializeSpatialLayer(layer) {
+    if (isLiveVectorLayer(layer)) {
+        return {
+            ...layer,
+            geojson: layer.geojson || { type: 'FeatureCollection', features: [] }
+        };
+    }
+
     if (!isSpatialLayer(layer)) return null;
     if (!isWorkspaceLayer(layer)) return layer;
 
@@ -34,7 +48,7 @@ export async function materializeSpatialLayer(layer) {
  * @param {{ getSelectionCount?: (id: string) => number, getSelectedFeatures?: (id: string, geojson: object) => object|null }} mapApi
  */
 export function getWorkingFeaturesFromLayer(layer, applyTo = 'auto', mapApi = {}) {
-    if (!layer || !isSpatialLayer(layer)) return null;
+    if (!layer || !isGisToolLayer(layer)) return null;
 
     const geojson = layer.geojson || { type: 'FeatureCollection', features: [] };
     const totalCount = isWorkspaceLayer(layer)

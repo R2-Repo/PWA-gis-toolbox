@@ -1378,12 +1378,13 @@ class MapManager {
                 if (e._drawHandled || isLayerLocked(dataset.id)) return;
                 e.preventDefault();
                 const props = e.features?.[0]?.properties;
-                if (!props) return;
-                const featureIndex = props._featureIndex;
+                if (!props || props._featureIndex === undefined) return;
+                const featureIndex = Number(props._featureIndex);
                 const resolveFeature = async () => {
-                    let feature = dataset.geojson.features.find(
-                        (f) => f.properties?._featureIndex === featureIndex
-                    ) || dataset.geojson.features[featureIndex];
+                    const features = dataset.geojson?.features || [];
+                    let feature = features.find(
+                        (f) => Number(f.properties?._featureIndex) === featureIndex
+                    ) || (Number.isInteger(featureIndex) ? features[featureIndex] : null);
                     if (isWorkspaceLayer(dataset)) {
                         const wsId = dataset.workspaceLayerId || dataset.id;
                         const attrs = await getWorkspaceFeatureAttributes(wsId, featureIndex);
@@ -1392,8 +1393,6 @@ class MapManager {
                         } else if (attrs) {
                             feature = { type: 'Feature', geometry: e.features[0].geometry, properties: attrs };
                         }
-                    } else {
-                        feature = dataset.geojson.features[featureIndex];
                     }
                     return feature;
                 };
@@ -1521,14 +1520,15 @@ class MapManager {
         const info = this.dataLayers.get(layerId);
         if (!info) return null;
 
+        const idx = Number(featureIndex);
         const wsDataset = this._workspaceDatasets?.get(layerId);
         let feature = info.geojson?.features?.find(
-            (f) => f.properties?._featureIndex === featureIndex
-        ) || info.geojson?.features?.[featureIndex];
+            (f) => Number(f.properties?._featureIndex) === idx
+        ) || (Number.isInteger(idx) ? info.geojson?.features?.[idx] : null);
 
         if (wsDataset || info.workspace) {
             const wsId = wsDataset?.workspaceLayerId || layerId;
-            const attrs = await getWorkspaceFeatureAttributes(wsId, featureIndex);
+            const attrs = await getWorkspaceFeatureAttributes(wsId, idx);
             if (feature && attrs) {
                 feature = { ...feature, properties: { ...attrs } };
             } else if (attrs) {
@@ -1538,10 +1538,6 @@ class MapManager {
                     properties: attrs
                 };
             }
-        } else if (info.geojson?.features) {
-            feature = info.geojson.features.find(
-                (f) => f.properties?._featureIndex === featureIndex
-            ) || info.geojson.features[featureIndex];
         }
 
         return feature || null;
@@ -1568,7 +1564,7 @@ class MapManager {
         }
 
         const layerId = hit.properties._datasetId;
-        const featureIndex = hit.properties._featureIndex;
+        const featureIndex = Number(hit.properties._featureIndex);
 
         if (isLayerLocked(layerId)) {
             bus.emit('map:contextmenu', {
@@ -1611,6 +1607,7 @@ class MapManager {
     removeLayer(id) {
         if (getServiceLayerRuntime(this, id)) {
             engineRemoveServiceLayer(this, id);
+            this.clearSelection(id);
             return;
         }
         const info = this.dataLayers.get(id);
@@ -1833,12 +1830,12 @@ class MapManager {
         for (const rf of rendered) {
             const props = rf.properties;
             if (!props || props._featureIndex === undefined) continue;
-            const key = `${props._datasetId}-${props._featureIndex}`;
+            const featureIndex = Number(props._featureIndex);
+            const key = `${props._datasetId}-${featureIndex}`;
             if (seen.has(key)) continue;
             seen.add(key);
 
             const layerId = props._datasetId;
-            const featureIndex = props._featureIndex;
             const layerName = this._layerNames.get(layerId) || layerId;
             const sty = this._layerStyles.get(layerId);
             const layerColor = sty?.strokeColor || '#2563eb';
@@ -1846,7 +1843,9 @@ class MapManager {
             const info = this.dataLayers.get(layerId);
             let feature = null;
             if (info?.geojson?.features) {
-                feature = info.geojson.features.find(f => f.properties?._featureIndex === featureIndex);
+                feature = info.geojson.features.find(
+                    (f) => Number(f.properties?._featureIndex) === featureIndex
+                );
             }
             if (!feature) continue;
 
@@ -1973,10 +1972,13 @@ class MapManager {
         this.clearHighlight();
         const info = this.dataLayers.get(layerId);
         if (!info) return;
-        const matches = info.geojson.features.filter(f => f.properties?._featureIndex === featureIndex);
+        const idx = Number(featureIndex);
+        const matches = info.geojson.features.filter(
+            (f) => Number(f.properties?._featureIndex) === idx
+        );
         if (matches.length === 0) return;
 
-        this._highlightedInfo = { layerId, featureIndex };
+        this._highlightedInfo = { layerId, featureIndex: idx };
         const hlSrcId = 'highlight-source';
 
         if (this.map.getSource(hlSrcId)) {
@@ -4352,13 +4354,15 @@ class MapManager {
     _handleSelectionClick(layerId, featureIndex, toggleKey) {
         if (isLayerLocked(layerId)) return;
         if (!this._presentationMultiSelect && !this._isActiveLayer(layerId)) return;
+        const idx = Number(featureIndex);
+        if (!Number.isFinite(idx)) return;
         if (!this._selections.has(layerId)) this._selections.set(layerId, new Set());
         const sel = this._selections.get(layerId);
 
         if (toggleKey) {
-            sel.has(featureIndex) ? sel.delete(featureIndex) : sel.add(featureIndex);
+            sel.has(idx) ? sel.delete(idx) : sel.add(idx);
         } else {
-            this._selections.set(layerId, new Set([featureIndex]));
+            this._selections.set(layerId, new Set([idx]));
         }
 
         this._renderSelectionHighlights(layerId);
@@ -4490,8 +4494,9 @@ class MapManager {
 
         for (const f of info.geojson.features) {
             if (!f.geometry) continue;
-            const idx = f.properties?._featureIndex;
-            if (idx === undefined) continue;
+            if (f.properties?._featureIndex === undefined) continue;
+            const idx = Number(f.properties._featureIndex);
+            if (!Number.isFinite(idx)) continue;
             try {
                 if (turf.booleanIntersects(f, bboxPoly)) sel.add(idx);
             } catch {
@@ -4525,7 +4530,9 @@ class MapManager {
         const info = this.dataLayers.get(layerId);
         if (!info) return;
 
-        const selectedFeatures = info.geojson.features.filter(f => sel.has(f.properties?._featureIndex));
+        const selectedFeatures = info.geojson.features.filter(
+            (f) => sel.has(Number(f.properties?._featureIndex))
+        );
         if (selectedFeatures.length === 0) return;
 
         this.map.addSource(selSrcId, { type: 'geojson', data: { type: 'FeatureCollection', features: selectedFeatures } });
@@ -4567,14 +4574,23 @@ class MapManager {
 
     selectFeatures(layerId, indices) {
         if (isLayerLocked(layerId)) return;
-        this._selections.set(layerId, new Set(indices));
+        const normalized = (indices || []).map((i) => Number(i)).filter(Number.isFinite);
+        this._selections.set(layerId, new Set(normalized));
         this._renderSelectionHighlights(layerId);
-        bus.emit('selection:changed', { layerId, count: indices.length, totalCount: this.getTotalSelectionCount() });
+        bus.emit('selection:changed', { layerId, count: normalized.length, totalCount: this.getTotalSelectionCount() });
     }
-    selectAll(layerId, geojson) { this.selectFeatures(layerId, geojson.features.map((_, i) => i)); }
+    selectAll(layerId, geojson) {
+        const indices = (geojson?.features || [])
+            .map((f) => Number(f.properties?._featureIndex))
+            .filter(Number.isFinite);
+        this.selectFeatures(layerId, indices);
+    }
     invertSelection(layerId, geojson) {
         const current = this._selections.get(layerId) || new Set();
-        this.selectFeatures(layerId, geojson.features.map((_, i) => i).filter(i => !current.has(i)));
+        const indices = (geojson?.features || [])
+            .map((f) => Number(f.properties?._featureIndex))
+            .filter((i) => Number.isFinite(i) && !current.has(i));
+        this.selectFeatures(layerId, indices);
     }
 
     // ============================

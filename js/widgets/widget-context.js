@@ -1,7 +1,12 @@
 /**
  * Shared helpers for building widget layer options and context.
  */
-import { isWorkspaceLayer } from '../core/data-model.js';
+import {
+    isWorkspaceLayer,
+    isAnalyzableLayer,
+    isLiveVectorLayer,
+    getLayerFeatureCount
+} from '../core/data-model.js';
 
 const DEFAULT_FIELD_SAMPLE = 200;
 
@@ -19,12 +24,33 @@ function layerHasPointGeometry(features, sampleSize = DEFAULT_FIELD_SAMPLE) {
     });
 }
 
-function collectFieldNames(features, sampleSize = DEFAULT_FIELD_SAMPLE) {
+function layerHasPolygonGeometry(features, sampleSize = DEFAULT_FIELD_SAMPLE) {
+    return (features || []).slice(0, sampleSize).some((feature) => {
+        const type = feature?.geometry?.type;
+        return type === 'Polygon' || type === 'MultiPolygon';
+    });
+}
+
+function collectFieldNames(features, schemaFields, sampleSize = DEFAULT_FIELD_SAMPLE) {
+    if (schemaFields?.length) {
+        return schemaFields.map((f) => f.name).filter(Boolean).sort();
+    }
     const fields = new Set();
     (features || []).slice(0, sampleSize).forEach((feature) => {
-        Object.keys(feature?.properties || {}).forEach((key) => fields.add(key));
+        Object.keys(feature?.properties || {}).forEach((key) => {
+            if (!key.startsWith('_')) fields.add(key);
+        });
     });
     return [...fields].sort();
+}
+
+function geometryTypeAllows(layer, kind) {
+    const geom = layer.schema?.geometryType;
+    if (!geom) return null;
+    if (kind === 'polygon') return geom === 'Polygon' || geom === 'MultiPolygon';
+    if (kind === 'line') return geom === 'LineString' || geom === 'MultiLineString';
+    if (kind === 'point') return geom === 'Point' || geom === 'MultiPoint';
+    return null;
 }
 
 /**
@@ -43,36 +69,45 @@ export function getSpatialLayerOptions(ctx, opts = {}) {
         requirePoints = false,
         includeSelectionCount = false
     } = opts;
-    const spatialLayers = (ctx.getLayers() || []).filter((layer) => layer.type === 'spatial');
+    const spatialLayers = (ctx.getLayers() || []).filter((layer) => isAnalyzableLayer(layer));
 
     const options = spatialLayers.map((layer) => {
         const features = layer.geojson?.features || [];
         const option = {
             id: layer.id,
             name: layer.name,
-            featureCount: features.length
+            featureCount: getLayerFeatureCount(layer)
         };
 
         if (requirePolygons || includeFields) {
-            option.hasPolygons = features.some((feature) =>
-                feature?.geometry?.type === 'Polygon' || feature?.geometry?.type === 'MultiPolygon'
-            );
+            const fromSchema = geometryTypeAllows(layer, 'polygon');
+            option.hasPolygons = fromSchema != null
+                ? fromSchema
+                : (!features.length && (isWorkspaceLayer(layer) || isLiveVectorLayer(layer))
+                    ? true
+                    : layerHasPolygonGeometry(features));
         }
 
         if (requireLines) {
-            option.hasLines = !features.length && isWorkspaceLayer(layer)
-                ? true
-                : layerHasLineGeometry(features);
+            const fromSchema = geometryTypeAllows(layer, 'line');
+            option.hasLines = fromSchema != null
+                ? fromSchema
+                : (!features.length && (isWorkspaceLayer(layer) || isLiveVectorLayer(layer))
+                    ? true
+                    : layerHasLineGeometry(features));
         }
 
         if (requirePoints) {
-            option.hasPoints = !features.length && isWorkspaceLayer(layer)
-                ? true
-                : layerHasPointGeometry(features);
+            const fromSchema = geometryTypeAllows(layer, 'point');
+            option.hasPoints = fromSchema != null
+                ? fromSchema
+                : (!features.length && (isWorkspaceLayer(layer) || isLiveVectorLayer(layer))
+                    ? true
+                    : layerHasPointGeometry(features));
         }
 
         if (includeFields) {
-            option.fields = collectFieldNames(features);
+            option.fields = collectFieldNames(features, layer.schema?.fields);
         }
 
         if (includeSelectionCount) {

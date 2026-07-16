@@ -1,9 +1,27 @@
-import { ArcGISRestImporter } from '../arcgis/rest-importer.js';
-import { createSpatialDataset } from '../core/data-model.js';
-import { compilePaint } from '../map/style-engine.js';
+import { ArcGISRestImporter, schemaFromArcgisMetadata } from '../arcgis/rest-importer.js';
+import { analyzeSchema, createSpatialDataset } from '../core/data-model.js';
+import { getLayers } from '../core/state.js';
+import bus from '../core/event-bus.js';
+import { compilePaint, getBaseFlatStyle } from '../map/style-engine.js';
+import { RENDER_LIMITS } from '../map/render-limits.js';
 import { inferServiceKind } from './catalog-schema.js';
 import { resolveServiceLayerStyle, scalePaintOpacity } from './live-layer-styles.js';
+import {
+    applyRenderLimits,
+    isVectorServiceKind,
+    pruneSelectionToViewport,
+    tagServiceFeatures
+} from './live-layer-viewport.js';
 import logger from '../core/logger.js';
+
+export {
+    VECTOR_SERVICE_KINDS,
+    isVectorServiceKind,
+    applyRenderLimits,
+    tagServiceFeatures,
+    resolveStableFeatureIndex,
+    pruneSelectionToViewport
+} from './live-layer-viewport.js';
 
 const DEFAULT_REFRESH_MS = 300000;
 
@@ -19,6 +37,8 @@ const DEFAULT_REFRESH_MS = 300000;
  * @property {import('geojson').FeatureCollection} [viewportCache]
  * @property {string} [lastError]
  * @property {number} colorIndex
+ * @property {string} [objectIdField]
+ * @property {boolean} [truncated]
  */
 
 /** @type {WeakMap<object, Map<string, ServiceRuntime>>} */
@@ -93,6 +113,8 @@ export async function addServiceLayer(mapManager, dataset, colorIndex = 0, optio
         url: normalizeServiceUrl(service.url),
         refreshMs: service.refreshMs || DEFAULT_REFRESH_MS,
         colorIndex,
+        objectIdField: service.objectIdField || 'OBJECTID',
+        truncated: false,
         viewportCache: { type: 'FeatureCollection', features: [] }
     });
 
@@ -115,17 +137,41 @@ export async function addServiceLayer(mapManager, dataset, colorIndex = 0, optio
                 paint: { 'raster-opacity': opacity }
             });
             runtime.mapLayerIds = [layerId];
+            getRuntimeMap(mapManager).set(dataset.id, runtime);
+            scheduleServiceRefresh(mapManager, dataset.id);
         } else {
+            if (kind === 'arcgis-featureserver') {
+                await ensureFeatureServerMetadata(dataset, runtime);
+            }
+
+            if (!dataset.geojson) {
+                dataset.geojson = { type: 'FeatureCollection', features: [] };
+            }
+
             map.addSource(sourceId, {
                 type: 'geojson',
                 data: { type: 'FeatureCollection', features: [] }
             });
             runtime.mapLayerIds = addVectorLayers(map, dataset.id, sourceId, layerStyle, opacity);
-            await refreshServiceLayer(mapManager, dataset.id);
-        }
 
-        getRuntimeMap(mapManager).set(dataset.id, runtime);
-        scheduleServiceRefresh(mapManager, dataset.id);
+            mapManager.dataLayers.set(dataset.id, {
+                sourceId,
+                layerIds: runtime.mapLayerIds,
+                chunkSources: [{ sourceId, layerIds: runtime.mapLayerIds }],
+                colorIndex,
+                geojson: dataset.geojson,
+                liveService: true,
+                scaleRange: null
+            });
+
+            const styFlat = getBaseFlatStyle(layerStyle, 'point');
+            mapManager._layerStyles?.set(dataset.id, layerStyle);
+            mapManager._bindLayerClickHandlers?.(dataset, runtime.mapLayerIds, styFlat);
+
+            getRuntimeMap(mapManager).set(dataset.id, runtime);
+            await refreshServiceLayer(mapManager, dataset.id);
+            scheduleServiceRefresh(mapManager, dataset.id);
+        }
 
         if (options.fit) {
             const bounds = getDatasetBounds(dataset, runtime);
@@ -139,7 +185,32 @@ export async function addServiceLayer(mapManager, dataset, colorIndex = 0, optio
     } catch (error) {
         runtime.lastError = error?.message || 'Failed to add service layer';
         logger.warn('LiveLayer', runtime.lastError, { url: service.url });
+        removeServiceLayer(mapManager, dataset.id);
         throw error;
+    }
+}
+
+/**
+ * @param {object} dataset
+ * @param {ServiceRuntime} runtime
+ */
+async function ensureFeatureServerMetadata(dataset, runtime) {
+    try {
+        const importer = new ArcGISRestImporter();
+        const metadata = await importer.fetchMetadata(runtime.url);
+        runtime.objectIdField = metadata.objectIdField || 'OBJECTID';
+        if (dataset.service) {
+            dataset.service.objectIdField = runtime.objectIdField;
+            dataset.service.maxRecordCount = metadata.maxRecordCount || 1000;
+        }
+        if (!dataset.schema?.fields?.length) {
+            dataset.schema = schemaFromArcgisMetadata(metadata);
+        }
+    } catch (error) {
+        logger.warn('LiveLayer', 'Metadata fetch failed; continuing with defaults', {
+            url: runtime.url,
+            error: error?.message
+        });
     }
 }
 
@@ -225,15 +296,77 @@ export async function refreshServiceLayer(mapManager, layerId) {
     }
 
     try {
-        const geojson = await fetchVectorData(map, runtime);
+        const raw = await fetchVectorData(map, runtime);
+        const limited = applyRenderLimits(raw.features || []);
+        const tagged = tagServiceFeatures(layerId, limited.features, runtime.objectIdField);
+        const geojson = { type: 'FeatureCollection', features: tagged };
+
         runtime.viewportCache = geojson;
+        runtime.truncated = limited.truncated || !!raw.truncated;
         runtime.lastError = null;
+
+        const dataset = getLayers().find((layer) => layer.id === layerId) || null;
+        if (dataset) {
+            dataset.geojson = geojson;
+            if (!dataset.schema?.fields?.length) {
+                dataset.schema = analyzeSchema(geojson);
+            } else {
+                dataset.schema = {
+                    ...dataset.schema,
+                    featureCount: tagged.length,
+                    geometryType: dataset.schema.geometryType || analyzeSchema(geojson).geometryType
+                };
+            }
+            if (runtime.truncated) {
+                dataset._viewportTruncated = true;
+            } else {
+                delete dataset._viewportTruncated;
+            }
+            bus.emit('layer:updated', dataset);
+        }
+
+        const entry = mapManager.dataLayers?.get(layerId);
+        if (entry) {
+            entry.geojson = geojson;
+        }
+
         const source = map.getSource(runtime.sourceId);
         source?.setData?.(geojson);
+
+        reconcileLiveSelection(mapManager, layerId, tagged);
+
+        if (runtime.truncated) {
+            logger.warn('LiveLayer', 'Viewport truncated to render limits', {
+                layerId,
+                features: tagged.length,
+                maxFeatures: RENDER_LIMITS.maxFeaturesPerSource
+            });
+        }
     } catch (error) {
         runtime.lastError = error?.message || 'Refresh failed';
         logger.warn('LiveLayer', runtime.lastError, { layerId, url: runtime.url });
     }
+}
+
+/**
+ * @param {object} mapManager
+ * @param {string} layerId
+ * @param {object[]} taggedFeatures
+ */
+function reconcileLiveSelection(mapManager, layerId, taggedFeatures) {
+    const sel = mapManager._selections?.get(layerId);
+    if (!sel?.size) return;
+
+    const next = pruneSelectionToViewport(sel, taggedFeatures);
+    if (next.length !== sel.size) {
+        if (next.length) {
+            mapManager.selectFeatures?.(layerId, next);
+        } else {
+            mapManager.clearSelection?.(layerId);
+        }
+        return;
+    }
+    mapManager._renderSelectionHighlights?.(layerId);
 }
 
 /**
@@ -251,20 +384,21 @@ async function fetchVectorData(map, runtime) {
     }
 
     if (runtime.kind === 'arcgis-featureserver') {
-        return fetchArcgisFeatureServerViewport(map, runtime.url);
+        return fetchArcgisFeatureServerViewport(map, runtime);
     }
 
     return { type: 'FeatureCollection', features: [] };
 }
 
 /**
+ * Viewport envelope query with pagination until transfer limit clears or render budget is hit.
  * @param {import('maplibre-gl').Map} map
- * @param {string} url
+ * @param {ServiceRuntime} runtime
  */
-async function fetchArcgisFeatureServerViewport(map, url) {
+async function fetchArcgisFeatureServerViewport(map, runtime) {
     const bounds = map.getBounds();
     const importer = new ArcGISRestImporter();
-    const cleanUrl = importer.normalizeUrl(url);
+    const cleanUrl = importer.normalizeUrl(runtime.url);
     const geometry = {
         xmin: bounds.getWest(),
         ymin: bounds.getSouth(),
@@ -272,24 +406,47 @@ async function fetchArcgisFeatureServerViewport(map, url) {
         ymax: bounds.getNorth(),
         spatialReference: { wkid: 4326 }
     };
-    const params = new URLSearchParams({
-        f: 'geojson',
-        where: '1=1',
-        geometry: JSON.stringify(geometry),
-        geometryType: 'esriGeometryEnvelope',
-        inSR: '4326',
-        outSR: '4326',
-        spatialRel: 'esriSpatialRelIntersects',
-        outFields: '*',
-        returnGeometry: 'true'
-    });
 
-    const resp = await fetch(`${cleanUrl}/query?${params}`);
-    if (!resp.ok) throw new Error(`FeatureServer query failed (${resp.status})`);
-    const data = await resp.json();
-    if (data.error) throw new Error(data.error.message || 'FeatureServer query error');
-    if (data.type === 'FeatureCollection') return data;
-    return { type: 'FeatureCollection', features: [] };
+    const pageSize = 1000;
+    let offset = 0;
+    const features = [];
+    let truncated = false;
+
+    while (features.length < RENDER_LIMITS.maxFeaturesPerSource) {
+        const remaining = RENDER_LIMITS.maxFeaturesPerSource - features.length;
+        const params = new URLSearchParams({
+            f: 'geojson',
+            where: '1=1',
+            geometry: JSON.stringify(geometry),
+            geometryType: 'esriGeometryEnvelope',
+            inSR: '4326',
+            outSR: '4326',
+            spatialRel: 'esriSpatialRelIntersects',
+            outFields: '*',
+            returnGeometry: 'true',
+            resultOffset: String(offset),
+            resultRecordCount: String(Math.min(pageSize, remaining))
+        });
+
+        const resp = await fetch(`${cleanUrl}/query?${params}`);
+        if (!resp.ok) throw new Error(`FeatureServer query failed (${resp.status})`);
+        const data = await resp.json();
+        if (data.error) throw new Error(data.error.message || 'FeatureServer query error');
+
+        const page = data.type === 'FeatureCollection' ? (data.features || []) : [];
+        features.push(...page);
+
+        const exceeded = data.exceededTransferLimit === true || data.properties?.exceededTransferLimit === true;
+        if (!page.length || !exceeded) break;
+
+        offset += page.length;
+        if (features.length >= RENDER_LIMITS.maxFeaturesPerSource) {
+            truncated = true;
+            break;
+        }
+    }
+
+    return { type: 'FeatureCollection', features, truncated };
 }
 
 /**
@@ -312,19 +469,21 @@ function scheduleServiceRefresh(mapManager, layerId) {
 export function removeServiceLayer(mapManager, layerId) {
     const map = mapManager.map;
     const runtime = getRuntimeMap(mapManager).get(layerId);
-    if (!runtime) return;
 
-    if (runtime.refreshTimer) window.clearInterval(runtime.refreshTimer);
+    if (runtime?.refreshTimer) window.clearInterval(runtime.refreshTimer);
 
-    if (map) {
+    if (runtime && map) {
         for (const id of runtime.mapLayerIds) {
             if (map.getLayer(id)) map.removeLayer(id);
+            mapManager._boundClickLayers?.delete(id);
         }
         if (map.getSource(runtime.sourceId)) map.removeSource(runtime.sourceId);
     }
 
+    mapManager.dataLayers?.delete(layerId);
     getRuntimeMap(mapManager).delete(layerId);
     mapManager._layerNames?.delete(layerId);
+    mapManager._layerStyles?.delete(layerId);
 }
 
 /**
@@ -332,7 +491,7 @@ export function removeServiceLayer(mapManager, layerId) {
  */
 export function refreshAllVectorServiceLayers(mapManager) {
     for (const [layerId, runtime] of getRuntimeMap(mapManager)) {
-        if (runtime.kind === 'arcgis-featureserver' || runtime.kind === 'geojson-feed' || runtime.kind === 'wfs') {
+        if (isVectorServiceKind(runtime.kind)) {
             void refreshServiceLayer(mapManager, layerId);
         }
     }
@@ -343,7 +502,7 @@ export function refreshAllVectorServiceLayers(mapManager) {
  * @param {ServiceRuntime} runtime
  */
 function getDatasetBounds(dataset, runtime) {
-    const features = runtime.viewportCache?.features || [];
+    const features = runtime.viewportCache?.features || dataset?.geojson?.features || [];
     if (!features.length || typeof globalThis.turf === 'undefined') return null;
     try {
         const bbox = globalThis.turf.bbox({ type: 'FeatureCollection', features });
@@ -359,10 +518,13 @@ function getDatasetBounds(dataset, runtime) {
  */
 export function materializeServiceLayerViewport(mapManager, dataset) {
     const runtime = getRuntimeMap(mapManager).get(dataset.id);
-    if (!runtime?.viewportCache?.features?.length) {
+    const features = runtime?.viewportCache?.features?.length
+        ? runtime.viewportCache.features
+        : dataset?.geojson?.features;
+    if (!features?.length) {
         throw new Error('No features in the current viewport to materialize. Pan/zoom to load data first.');
     }
-    if (runtime.kind === 'arcgis-mapserver' || runtime.kind === 'wms') {
+    if (runtime?.kind === 'arcgis-mapserver' || runtime?.kind === 'wms' || dataset?.service?.kind === 'arcgis-mapserver' || dataset?.service?.kind === 'wms') {
         throw new Error('Raster service layers are visual overlays only. Materialize is not available.');
     }
 
@@ -370,12 +532,12 @@ export function materializeServiceLayerViewport(mapManager, dataset) {
         `${dataset.name} (snapshot)`,
         {
             type: 'FeatureCollection',
-            features: runtime.viewportCache.features.map((f) => structuredClone(f))
+            features: features.map((f) => structuredClone(f))
         },
         {
             format: 'live-service-snapshot',
             sourceLayerId: dataset.id,
-            url: runtime.url
+            url: runtime?.url || dataset.service?.url
         }
     );
 }

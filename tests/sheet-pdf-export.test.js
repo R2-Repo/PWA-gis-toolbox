@@ -26,7 +26,10 @@ import {
     placeSheetCanvasOnPdfPage,
     resolveDetailPageMarginsPt,
     resolveExportLayerIds,
+    computeRotatedTextAnchor,
+    resolveLeftHandSeeLabelVisualCenter,
     resolveRightHandSeeLabelVisualCenter,
+    resolveSeeLabelVisualCenterOutside,
     resolveSheetEdgeSeeLabelPlacements,
     warnIfBasemapDpiConstrained
 } from '../js/widgets/sheet-cutting/sheet-pdf-export.js';
@@ -51,7 +54,7 @@ import {
 } from '../js/widgets/sheet-cutting/sheet-pdf-orientation.js';
 import { getLocalTangentBearing } from '../js/widgets/project-stationing/engine.js';
 import { buildCorridorMatchLineRegistry, buildSheetFramesGeoJson, buildSheetPdfPagePlan, buildOverviewGeoJson, stationKey } from '../js/widgets/sheet-cutting/export-builder.js';
-import { buildPdfRingFromPixelRing, buildSheetPageTransform, computeCapEdgePdfPlacementFromPdfPoints, findCapEdgeVertexIndices, isRightHandCapMidpoint, offsetRightHandLabelOutsidePdfRing, pickTextAngleWithBottomTowardInterior, pointInPdfRing, resolveRightHandSeeLabelDrawPosition } from '../js/widgets/sheet-cutting/sheet-pdf-placement.js';
+import { buildPdfRingFromPixelRing, buildSheetPageTransform, computeCapEdgePdfPlacementFromPdfPoints, findCapEdgeVertexIndices, isRightHandCapMidpoint, offsetLeftHandLabelOutsidePdfRing, offsetRightHandLabelOutsidePdfRing, pickTextAngleWithBottomTowardInterior, pointInPdfRing, resolveRightHandSeeLabelDrawPosition } from '../js/widgets/sheet-cutting/sheet-pdf-placement.js';
 
 globalThis.turf = turf;
 
@@ -793,6 +796,19 @@ describe('sheet PDF edge SEE SHEET labels', () => {
         expect(pointInPdfRing(495, 300, pdfRing)).toBe(true);
     });
 
+    it('pushes left-hand labels past the match-line mid even when they start inside', () => {
+        const pdfRing = [
+            { x: 100, y: 200 },
+            { x: 500, y: 200 },
+            { x: 500, y: 400 },
+            { x: 100, y: 400 }
+        ];
+        const outside = offsetLeftHandLabelOutsidePdfRing(100, 300, EDGE_SEE_LABEL_OFFSET_PT, pdfRing);
+        expect(outside.x).toBeLessThan(100);
+        expect(pointInPdfRing(outside.x, outside.y, pdfRing)).toBe(false);
+        expect(pointInPdfRing(105, 300, pdfRing)).toBe(true);
+    });
+
     it('forces right-hand visual centers past the cutout max X', () => {
         const pdfRing = [
             { x: 100, y: 200 },
@@ -822,6 +838,214 @@ describe('sheet PDF edge SEE SHEET labels', () => {
         expect(visual.x).toBeGreaterThan(500);
         expect(pointInPdfRing(visual.x, visual.y, pdfRing)).toBe(false);
         expect(visual.y).toBe(300);
+        // Clearance includes glyph height so the dashed edge stays clear.
+        expect(visual.x).toBeGreaterThan(500 + EDGE_SEE_LABEL_OFFSET_PT + 6);
+    });
+
+    it('centers rotated SEE SHEET text with left/middle jsPDF anchors', () => {
+        // Regression: align:'center'+angle put right-hand glyphs inside the cutout.
+        const width = 40;
+        const cx = 520;
+        const cy = 300;
+
+        const vertical = computeRotatedTextAnchor(cx, cy, width, 90);
+        expect(vertical.x).toBeCloseTo(cx, 5);
+        expect(vertical.y).toBeCloseTo(cy - width / 2, 5);
+
+        const tilted = computeRotatedTextAnchor(cx, cy, width, 75);
+        const rad = (75 * Math.PI) / 180;
+        expect(tilted.x).toBeCloseTo(cx - (width / 2) * Math.cos(rad), 5);
+        expect(tilted.y).toBeCloseTo(cy - (width / 2) * Math.sin(rad), 5);
+
+        // After compensation, the string midpoint is back at (cx, cy).
+        expect(tilted.x + (width / 2) * Math.cos(rad)).toBeCloseTo(cx, 5);
+        expect(tilted.y + (width / 2) * Math.sin(rad)).toBeCloseTo(cy, 5);
+    });
+
+    it('keeps tilted right-hand glyph boxes outside the cutout', () => {
+        // Parallelogram like the Belt Route sheet: right match line is not at max X.
+        const pdfRing = [
+            { x: 120, y: 180 },
+            { x: 520, y: 140 },
+            { x: 560, y: 420 },
+            { x: 160, y: 460 }
+        ];
+        const doc = {
+            setFontSize() {},
+            getTextDimensions: () => ({ w: 48, h: 8 })
+        };
+        const midX = 540;
+        const midY = 280;
+        const visual = resolveRightHandSeeLabelVisualCenter(
+            doc,
+            {
+                text: 'SEE SHEET 02',
+                x: midX - 8,
+                y: midY,
+                midX,
+                midY,
+                angle: 75,
+                edgeAngleDeg: 75
+            },
+            pdfRing,
+            { x: 340, y: 300 }
+        );
+
+        // Standoff is from the match-line mid, not the sheet bbox max X.
+        expect(visual.x).toBeGreaterThan(midX + EDGE_SEE_LABEL_OFFSET_PT);
+        expect(visual.x - midX).toBeLessThan(80);
+        expect(pointInPdfRing(visual.x, visual.y, pdfRing)).toBe(false);
+
+        const anchor = computeRotatedTextAnchor(visual.x, visual.y, 48, visual.angle);
+        expect(pointInPdfRing(anchor.x, anchor.y, pdfRing)).toBe(false);
+        expect(pointInPdfRing(visual.x, visual.y, pdfRing)).toBe(false);
+    });
+
+    it('forces left-hand visual centers outside near the match-line mid', () => {
+        const pdfRing = [
+            { x: 100, y: 200 },
+            { x: 500, y: 200 },
+            { x: 500, y: 400 },
+            { x: 100, y: 400 }
+        ];
+        const doc = {
+            setFontSize() {},
+            getTextDimensions: () => ({ w: 40, h: 8 })
+        };
+        const visual = resolveLeftHandSeeLabelVisualCenter(
+            doc,
+            {
+                text: 'SEE SHEET 05',
+                x: 110,
+                y: 300,
+                midX: 100,
+                midY: 300,
+                angle: -90,
+                edgeAngleDeg: -90
+            },
+            pdfRing,
+            { x: 300, y: 300 }
+        );
+
+        expect(visual.x).toBeLessThan(100);
+        expect(pointInPdfRing(visual.x, visual.y, pdfRing)).toBe(false);
+        expect(visual.y).toBe(300);
+        expect(visual.x).toBeLessThan(100 - EDGE_SEE_LABEL_OFFSET_PT - 6);
+        // Must stay near the edge — not jump to a page/bbox position.
+        expect(100 - visual.x).toBeLessThan(80);
+    });
+
+    it('does not pull left labels to the sheet bbox when the polygon is skewed', () => {
+        // Left match mid is near x=140, but a distant corner reaches x=40.
+        const pdfRing = [
+            { x: 40, y: 120 },
+            { x: 520, y: 160 },
+            { x: 560, y: 440 },
+            { x: 140, y: 400 }
+        ];
+        const doc = {
+            setFontSize() {},
+            getTextDimensions: () => ({ w: 40, h: 8 })
+        };
+        const midX = 140;
+        const midY = 300;
+        const visual = resolveLeftHandSeeLabelVisualCenter(
+            doc,
+            {
+                text: 'SEE SHEET 06',
+                x: midX + 10,
+                y: midY,
+                midX,
+                midY,
+                angle: -90,
+                edgeAngleDeg: -90
+            },
+            pdfRing,
+            { x: 320, y: 300 }
+        );
+
+        expect(pointInPdfRing(visual.x, visual.y, pdfRing)).toBe(false);
+        expect(visual.x).toBeLessThan(midX);
+        // Distance from match line — not from ringMinX (40).
+        expect(midX - visual.x).toBeLessThan(80);
+        expect(visual.x).toBeGreaterThan(40);
+    });
+
+    it('places both page-side labels outside the cutout consistently', () => {
+        const pdfRing = [
+            { x: 100, y: 200 },
+            { x: 500, y: 200 },
+            { x: 500, y: 400 },
+            { x: 100, y: 400 }
+        ];
+        const doc = {
+            setFontSize() {},
+            getTextDimensions: () => ({ w: 40, h: 8 })
+        };
+        const centroid = { x: 300, y: 300 };
+        const left = resolveSeeLabelVisualCenterOutside(
+            doc,
+            {
+                text: 'SEE SHEET 05',
+                x: 110,
+                y: 300,
+                midX: 100,
+                midY: 300,
+                angle: -90,
+                edgeAngleDeg: -90
+            },
+            pdfRing,
+            centroid,
+            'left'
+        );
+        const right = resolveSeeLabelVisualCenterOutside(
+            doc,
+            {
+                text: 'SEE SHEET 03',
+                x: 490,
+                y: 300,
+                midX: 500,
+                midY: 300,
+                angle: 90,
+                edgeAngleDeg: 90
+            },
+            pdfRing,
+            centroid,
+            'right'
+        );
+
+        expect(pointInPdfRing(left.x, left.y, pdfRing)).toBe(false);
+        expect(pointInPdfRing(right.x, right.y, pdfRing)).toBe(false);
+        expect(left.x).toBeLessThan(100);
+        expect(right.x).toBeGreaterThan(500);
+        expect(left.x).toBeLessThan(right.x);
+    });
+
+    it('offsets left-hand match-line labels away from sheet interior', () => {
+        const pdfRing = [
+            { x: 100, y: 200 },
+            { x: 500, y: 200 },
+            { x: 500, y: 400 },
+            { x: 100, y: 400 }
+        ];
+        const pLeft = { x: 100, y: 200 };
+        const pRight = { x: 100, y: 400 };
+        const interiorRefPdf = { x: 300, y: 300 };
+        const placedRect = { x: 100, y: 200, width: 400, height: 200 };
+
+        const placement = computeCapEdgePdfPlacementFromPdfPoints(
+            pLeft,
+            pRight,
+            interiorRefPdf,
+            EDGE_SEE_LABEL_OFFSET_PT,
+            pdfRing,
+            placedRect
+        );
+
+        expect(placement).not.toBeNull();
+        expect(pointInPdfRing(placement.x, placement.y, pdfRing)).toBe(false);
+        expect(placement.x).toBeLessThan(placement.midX);
+        expect(placement.x).toBeLessThan(100);
     });
 
     it('places right-side cap labels outside the polygon when route reads right-to-left on page', () => {

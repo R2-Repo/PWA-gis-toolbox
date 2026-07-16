@@ -114,7 +114,10 @@ export async function buildDatasetFromSavedLayer(saved, payload = {}) {
             visible: saved.visible !== false,
             active: false,
             created: saved.created || new Date().toISOString(),
-            ...(saved.locked ? { locked: true } : {})
+            geojson: { type: 'FeatureCollection', features: [] },
+            ...(saved.schema ? { schema: saved.schema } : {}),
+            ...(saved.locked ? { locked: true } : {}),
+            ...(saved.groupId ? { groupId: saved.groupId } : {})
         };
     }
 

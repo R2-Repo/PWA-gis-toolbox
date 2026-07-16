@@ -169,7 +169,7 @@ Detail pages default to **landscape-align**: each sheet polygon is rotated so it
 |------|----------|
 | **North arrow** | Top-right margin; rotated **−exportBearingDeg** from page up so it shows true north relative to the map. |
 | **Title-block footer** | Flush to the bottom of the page (within side margins): bordered 5-cell bar — **Project** (wizard name), **Date** (export `MM/DD/YYYY`), two empty spare cells for post-export edits, and **Sheet NN of N**. Station range and continuation arrows are not drawn on the PDF. |
-| **Edge SEE SHEET labels** | Detail pages only: `SEE SHEET NN` on start/end polygon caps pointing to the previous/next sheet (no match-line station text). Labels align to the cap edge in PDF space with ~8 pt outward standoff. |
+| **Edge SEE SHEET labels** | Detail pages only: `SEE SHEET NN` on start/end polygon caps pointing to the previous/next sheet (no match-line station text). Labels are tied to a **fixed standoff from the match-line cap midpoint** (not the sheet’s page bounding box). Both sides offset −X / +X from that edge, stepping farther only if still inside the cutout. **Draw path:** left/middle jsPDF anchors with half-width compensation (`computeRotatedTextAnchor`) — never `align:'center'` with `angle`. |
 | **Overview** | Always north-up. |
 
 Landscape-align picks between two bearings 180° apart (`tangent − 90°` and `tangent + 90°`), keeps the one where north points up, and prefers left → right when both qualify.

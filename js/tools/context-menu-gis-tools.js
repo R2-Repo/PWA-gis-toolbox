@@ -2,7 +2,7 @@
  * GIS tool eligibility for the map right-click context menu.
  */
 import { getEnabledMapGisTools } from './tool-catalog.js';
-import { isSpatialLayer, isServiceLayer, isWorkspaceLayer } from '../core/data-model.js';
+import { isAnalyzableLayer, isWorkspaceLayer } from '../core/data-model.js';
 import { isCoverageRasterLayer } from '../core/coverage-raster-layer.js';
 
 /** @type {Record<string, string[]|null>} null = any geometry type */
@@ -47,8 +47,7 @@ export function featureMatchesGeomTypes(feature, geomTypes) {
  */
 export function isLayerEligibleForContextMenuTools(layer) {
     return !!layer
-        && isSpatialLayer(layer)
-        && !isServiceLayer(layer)
+        && isAnalyzableLayer(layer)
         && !isCoverageRasterLayer(layer);
 }
 

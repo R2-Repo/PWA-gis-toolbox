@@ -1,9 +1,24 @@
 import { createDefaultStyle, normalizeStyle } from '../map/style-engine.js';
-import { resolveLiveLayer } from './catalog-schema.js';
+import { expandCatalogEntry, resolveLiveLayer } from './catalog-schema.js';
+import { LIVE_LAYERS } from './catalog.js';
 
 /** @typedef {import('../map/style-engine.js').ReturnType<typeof createDefaultStyle>} LayerStyle */
 
 export const LIVE_LAYER_COLORS = ['#2563eb', '#dc2626', '#16a34a', '#d97706', '#7c3aed', '#0891b2', '#be185d', '#65a30d'];
+
+/**
+ * Resolve a catalog style by top-level or sublayer id.
+ * @param {string} presetId
+ */
+function resolveCatalogStyle(presetId) {
+    const top = resolveLiveLayer(presetId);
+    if (top?.style) return top.style;
+    for (const entry of LIVE_LAYERS) {
+        const match = expandCatalogEntry(entry).find((service) => service.id === presetId);
+        if (match?.style) return match.style;
+    }
+    return null;
+}
 
 /** NOAA satellite fire detections — size and color by FRP (MW). */
 export const FIREWATCH_STYLE = {
@@ -56,7 +71,7 @@ export const FIREWATCH_STYLE = {
 export function resolveServiceLayerStyle(service, colorIndex = 0) {
     const defaultColor = LIVE_LAYER_COLORS[colorIndex % LIVE_LAYER_COLORS.length];
     const raw = service?.style
-        ?? (service?.presetId ? resolveLiveLayer(service.presetId)?.style : null);
+        ?? (service?.presetId ? resolveCatalogStyle(service.presetId) : null);
     return normalizeStyle(raw, defaultColor);
 }
 

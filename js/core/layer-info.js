@@ -1,7 +1,7 @@
 /**
  * Read-only layer summary rows for the Data Preview panel.
  */
-import { getLayerFeatureCount, isSpatialLayer, isWorkspaceLayer, isServiceLayer } from './data-model.js';
+import { getLayerFeatureCount, isSpatialLayer, isWorkspaceLayer, isServiceLayer, isLiveVectorLayer } from './data-model.js';
 import { getLayerCrs, isLayerDisplayReady, layerCrsWarning } from '../crs/layer-crs.js';
 import { crsLabel } from '../crs/registry.js';
 import { formatBytes } from '../import/import-preflight.js';
@@ -58,6 +58,7 @@ export function getLayerInfoSummary(layer) {
     const rows = [];
     const spatial = isSpatialLayer(layer);
     const service = isServiceLayer(layer);
+    const liveVector = isLiveVectorLayer(layer);
     const count = getLayerFeatureCount(layer);
     const fieldCount = layer.schema?.fields?.length ?? 0;
 
@@ -78,6 +79,28 @@ export function getLayerInfoSummary(layer) {
             label: 'Refresh',
             value: layer.service?.refreshMs ? `${Math.round(layer.service.refreshMs / 1000)}s` : '—'
         });
+        if (liveVector) {
+            rows.push({
+                id: 'records',
+                label: 'Features in view',
+                value: count.toLocaleString(),
+                warning: layer._viewportTruncated
+                    ? 'Viewport capped at render limits — zoom in for denser areas'
+                    : 'Updates as the map pans and zooms'
+            });
+            rows.push({
+                id: 'fields',
+                label: 'Fields',
+                value: String(fieldCount)
+            });
+            if (layer.schema?.geometryType) {
+                rows.push({
+                    id: 'geometry',
+                    label: 'Geometry',
+                    value: layer.schema.geometryType
+                });
+            }
+        }
     } else {
         rows.push({
             id: 'records',

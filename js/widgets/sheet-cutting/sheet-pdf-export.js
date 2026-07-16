@@ -56,7 +56,8 @@ import {
     computePdfRingCentroid,
     computeSheetImagePlacement,
     isRightHandCapMidpoint,
-    pickTextAngleWithBottomTowardInterior
+    pickTextAngleWithBottomTowardInterior,
+    pointInPdfRing
 } from './sheet-pdf-placement.js';
 import { renderFeatureCollectionToPdf } from './sheet-pdf-vector.js';
 
@@ -96,56 +97,101 @@ export function measureSeeLabelWidthPt(doc, text) {
 }
 
 /**
- * Draw rotated text with its visual midpoint at (cx, cy).
- * Placement already puts (cx, cy) on the match-line midpoint (plus outward offset).
- * Do not pre-shift the anchor — with angle set, an extra half-width offset makes the
- * string *start* sit on the match-line mid instead of the text midpoint.
+ * jsPDF left/middle anchor so rotated text is visually centered on (cx, cy).
+ * Do not use align:'center' with angle — jsPDF does not reliably rotate about the
+ * visual midpoint, and right-hand SEE SHEET labels land inside the cutout.
+ *
+ * @param {number} cx
+ * @param {number} cy
+ * @param {number} widthPt
+ * @param {number} angleDeg
+ * @returns {{ x: number, y: number }}
+ */
+export function computeRotatedTextAnchor(cx, cy, widthPt, angleDeg) {
+    const rad = ((Number(angleDeg) || 0) * Math.PI) / 180;
+    const half = Math.max(0, Number(widthPt) || 0) / 2;
+    return {
+        x: cx - half * Math.cos(rad),
+        y: cy - half * Math.sin(rad)
+    };
+}
+
+/**
+ * Draw rotated text centered on (cx, cy).
+ * Anchor with left/middle and compensate so the glyph box centers on (cx, cy).
  *
  * @param {import('jspdf').jsPDF} doc
  * @param {string} text
- * @param {number} cx
- * @param {number} cy
+ * @param {number} cx - desired visual center X
+ * @param {number} cy - desired visual center Y
  * @param {number} angleDeg
  */
 function drawRotatedTextWithHalo(doc, text, cx, cy, angleDeg) {
     const label = String(text ?? '');
-    const angle = Number(angleDeg) || 0;
-    const options = { align: 'center', baseline: 'middle', angle };
     doc.setFontSize(EDGE_SEE_LABEL_FONT_PT);
+    const width = measureSeeLabelWidthPt(doc, label);
+    const angle = Number(angleDeg) || 0;
+    const { x: anchorX, y: anchorY } = computeRotatedTextAnchor(cx, cy, width, angle);
+    const options = { align: 'left', baseline: 'middle', angle };
 
     doc.setTextColor(255, 255, 255);
     for (const [dx, dy] of [
         [-0.8, 0], [0.8, 0], [0, -0.8], [0, 0.8],
         [-0.6, -0.6], [0.6, 0.6], [-0.6, 0.6], [0.6, -0.6]
     ]) {
-        doc.text(label, cx + dx, cy + dy, options);
+        doc.text(label, anchorX + dx, anchorY + dy, options);
     }
     doc.setTextColor(20, 20, 20);
-    doc.text(label, cx, cy, options);
+    doc.text(label, anchorX, anchorY, options);
 }
 
 /**
- * Visual center for a right-hand matchline label: past the cutout edge and
- * far enough that the glyph box cannot sit on the map.
+ * Visual center for a matchline label: fixed standoff from the cap midpoint
+ * (the match-line edge), not from the sheet's page bounding box.
+ * Steps farther only while the center is still inside the cutout.
  *
  * @param {import('jspdf').jsPDF} doc
  * @param {{ x: number, y: number, midX?: number, midY?: number, text: string, angle: number, edgeAngleDeg?: number }} placement
  * @param {Array<{ x: number, y: number }>|null} pdfRing
  * @param {{ x: number, y: number }|null} ringCentroid
+ * @param {'left'|'right'} side
  * @returns {{ x: number, y: number, angle: number, text: string }}
  */
-export function resolveRightHandSeeLabelVisualCenter(doc, placement, pdfRing, ringCentroid) {
+export function resolveSeeLabelVisualCenterOutside(doc, placement, pdfRing, ringCentroid, side) {
     if (!placement?.text || placement.midX == null || placement.midY == null) {
         return placement;
     }
 
     const midX = placement.midX;
     const midY = placement.midY;
-    const ringMaxX = pdfRing?.length ? Math.max(...pdfRing.map((p) => p.x)) : midX;
-    const clearance = EDGE_SEE_LABEL_OFFSET_PT + EDGE_SEE_LABEL_GLYPH_CLEAR_PT;
-    const x = Math.max(midX, ringMaxX) + clearance;
+    const sign = side === 'left' ? -1 : 1;
+    const interior = ringCentroid ?? {
+        x: side === 'left' ? midX + 1 : midX - 1,
+        y: midY
+    };
+    const textWidth = measureSeeLabelWidthPt(doc, placement.text);
+    const provisionalX = midX + sign * EDGE_SEE_LABEL_OFFSET_PT;
+    const provisionalAngle = pickTextAngleWithBottomTowardInterior(
+        placement.edgeAngleDeg ?? 0,
+        provisionalX,
+        midY,
+        interior
+    );
+    const rad = (provisionalAngle * Math.PI) / 180;
+    // Keep the whole rotated string (and glyph height) past the dashed cutout edge.
+    const halfSpanX = Math.abs((textWidth / 2) * Math.cos(rad)) + EDGE_SEE_LABEL_FONT_PT * 0.55;
+    const clearance = EDGE_SEE_LABEL_OFFSET_PT + EDGE_SEE_LABEL_GLYPH_CLEAR_PT + halfSpanX;
+
+    let distance = clearance;
+    let x = midX + sign * distance;
     const y = midY;
-    const interior = ringCentroid ?? { x: midX - 1, y: midY };
+    if (pdfRing?.length) {
+        for (let attempt = 0; attempt < 40; attempt++) {
+            if (!pointInPdfRing(x, y, pdfRing)) break;
+            distance += EDGE_SEE_LABEL_OFFSET_PT;
+            x = midX + sign * distance;
+        }
+    }
 
     return {
         ...placement,
@@ -158,6 +204,28 @@ export function resolveRightHandSeeLabelVisualCenter(doc, placement, pdfRing, ri
             interior
         )
     };
+}
+
+/**
+ * @param {import('jspdf').jsPDF} doc
+ * @param {{ x: number, y: number, midX?: number, midY?: number, text: string, angle: number, edgeAngleDeg?: number }} placement
+ * @param {Array<{ x: number, y: number }>|null} pdfRing
+ * @param {{ x: number, y: number }|null} ringCentroid
+ * @returns {{ x: number, y: number, angle: number, text: string }}
+ */
+export function resolveRightHandSeeLabelVisualCenter(doc, placement, pdfRing, ringCentroid) {
+    return resolveSeeLabelVisualCenterOutside(doc, placement, pdfRing, ringCentroid, 'right');
+}
+
+/**
+ * @param {import('jspdf').jsPDF} doc
+ * @param {{ x: number, y: number, midX?: number, midY?: number, text: string, angle: number, edgeAngleDeg?: number }} placement
+ * @param {Array<{ x: number, y: number }>|null} pdfRing
+ * @param {{ x: number, y: number }|null} ringCentroid
+ * @returns {{ x: number, y: number, angle: number, text: string }}
+ */
+export function resolveLeftHandSeeLabelVisualCenter(doc, placement, pdfRing, ringCentroid) {
+    return resolveSeeLabelVisualCenterOutside(doc, placement, pdfRing, ringCentroid, 'left');
 }
 
 /**
@@ -206,17 +274,18 @@ export function drawSheetEdgeSeeLabels(doc, options = {}) {
             : null);
 
     for (const placement of placements) {
-        let drawAt = placement;
-
-        // Right-hand match line only: force visual center into the right margin.
-        // Left-hand labels keep their existing placement (already correct).
-        const isRightHand = drawAt.midX != null && ringCenterX != null
-            ? drawAt.midX >= ringCenterX
-            : isRightHandCapMidpoint(drawAt.midX, transform?.placedRect, pdfRing);
-
-        if (isRightHand) {
-            drawAt = resolveRightHandSeeLabelVisualCenter(doc, drawAt, pdfRing, ringCentroid);
-        }
+        // Both sides: force visual center into the page margin outside the cutout.
+        const isRightHand = placement.midX != null && ringCenterX != null
+            ? placement.midX >= ringCenterX
+            : isRightHandCapMidpoint(placement.midX, transform?.placedRect, pdfRing);
+        const side = isRightHand ? 'right' : 'left';
+        const drawAt = resolveSeeLabelVisualCenterOutside(
+            doc,
+            placement,
+            pdfRing,
+            ringCentroid,
+            side
+        );
 
         drawRotatedTextWithHalo(doc, drawAt.text, drawAt.x, drawAt.y, drawAt.angle);
     }
@@ -715,23 +784,21 @@ export function drawSheetTitleBlockFooter(doc, sheet, totalSheets, marginsPt, op
     }
 
     doc.setTextColor(20, 20, 20);
-    doc.setFontSize(7.5);
+    // Project / Date: label on first line, value on second (stacked, not inline).
     const labelBaseline = boxTop + padY + 6.5;
+    const valueBaseline = labelBaseline + 9;
+    const projectMaxW = Math.max(8, cellWidths[0] - padX * 2);
+    const dateMaxW = Math.max(8, cellWidths[1] - padX * 2);
+
+    doc.setFontSize(7.5);
     doc.text(model.projectLabel, cellXs[0] + padX, labelBaseline, { align: 'left' });
     doc.text(model.dateLabel, cellXs[1] + padX, labelBaseline, { align: 'left' });
 
-    const projectLabelW = doc.getTextWidth(model.projectLabel);
-    const dateLabelW = doc.getTextWidth(model.dateLabel);
     doc.setFontSize(8.5);
-    const valueGap = 3;
-    const projectValueX = cellXs[0] + padX + projectLabelW + valueGap;
-    const projectMaxW = Math.max(8, cellWidths[0] - padX * 2 - projectLabelW - valueGap);
-    const dateValueX = cellXs[1] + padX + dateLabelW + valueGap;
-    const dateMaxW = Math.max(8, cellWidths[1] - padX * 2 - dateLabelW - valueGap);
     const projectLines = doc.splitTextToSize(model.projectValue, projectMaxW);
     const dateLines = doc.splitTextToSize(model.dateValue, dateMaxW);
-    doc.text(projectLines[0] || '', projectValueX, labelBaseline, { align: 'left' });
-    doc.text(dateLines[0] || '', dateValueX, labelBaseline, { align: 'left' });
+    doc.text(projectLines[0] || '', cellXs[0] + padX, valueBaseline, { align: 'left' });
+    doc.text(dateLines[0] || '', cellXs[1] + padX, valueBaseline, { align: 'left' });
 
     doc.setFontSize(9);
     const sheetCenterX = cellXs[4] + cellWidths[4] / 2;

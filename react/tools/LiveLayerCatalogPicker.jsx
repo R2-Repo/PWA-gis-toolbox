@@ -22,6 +22,7 @@ export function LiveLayerCatalogPicker({
         <div className="live-layer-catalog-picker">
             <p className="import-option-hint mb-8">
                 Add pre-styled live service layers to your current map.
+                Features load for the viewport and can be selected, measured, and used in GIS tools.
             </p>
             <div className="import-option-grid">
                 {layers.map((layer) => (

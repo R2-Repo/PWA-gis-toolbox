@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { isSpatialLayer, getLayerFeatureCount } from '../../js/core/data-model.js';
+import { isSpatialLayer, isLiveVectorLayer, isServiceLayer, getLayerFeatureCount } from '../../js/core/data-model.js';
 import { isLayerDisplayReady, layerCrsWarning } from '../../js/crs/layer-crs.js';
 import { buildLayerPanelRows, isGroupFullyVisible, isGroupPartiallyVisible } from '../../js/core/layer-groups.js';
 import { LayerDataToolsPanel } from './LayerDataToolsPanel.jsx';
@@ -32,10 +32,16 @@ function LayerItemRow({
     const isDragging = layer.id === draggingId;
     const isDropTarget = dragOverIndex === idx && draggingId && draggingId !== layer.id;
     const isSpatial = isSpatialLayer(layer);
-    const icon = isSpatial ? '🗺️' : '📊';
-    const count = isSpatial
-        ? `${getLayerFeatureCount(layer).toLocaleString()} features`
-        : `${getLayerFeatureCount(layer).toLocaleString()} rows`;
+    const isLive = isLiveVectorLayer(layer);
+    const isService = isServiceLayer(layer);
+    const icon = isLive ? '🛰️' : isSpatial ? '🗺️' : isService ? '📡' : '📊';
+    const count = isLive
+        ? `${getLayerFeatureCount(layer).toLocaleString()} in view`
+        : isSpatial
+            ? `${getLayerFeatureCount(layer).toLocaleString()} features`
+            : isService
+                ? 'Live overlay'
+                : `${getLayerFeatureCount(layer).toLocaleString()} rows`;
     const fieldCount = layer.schema?.fields?.length || 0;
     const geomType = layer.schema?.geometryType;
     const isVisible = layer.visible !== false;
