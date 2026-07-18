@@ -40,6 +40,10 @@ If they only say something is broken with **no** runtime named, classify first u
 
 ## Done checks
 
+Prefer delegating mechanical verification to subagent **`dual-runtime-qa`** (Composer fast — `.cursor/agents/dual-runtime-qa.md`) with the changed-file list. Parent should not burn expensive tokens on test logs/docs.
+
+Minimum if no subagent available:
+
 ```bash
 npm test
 npm run build

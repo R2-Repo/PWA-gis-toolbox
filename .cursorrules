@@ -17,3 +17,4 @@ PWA vs DESKTOP (when user says fix/update PWA or desktop, or feature for both):
 - Desktop → .cursor/skills/fix-desktop/SKILL.md (or /fix-desktop)
 - Both runtimes → .cursor/skills/feature-both/SKILL.md (or /feature-both)
 - Unclear runtime → .cursor/skills/pwa-desktop-compat/SKILL.md (or /which-runtime)
+- After implementation → delegate dual-runtime-qa subagent (Composer fast) or /qa-both; do not use expensive models for test/doc churn

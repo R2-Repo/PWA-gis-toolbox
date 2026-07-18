@@ -42,6 +42,10 @@ If ambiguous, read [`docs/PWA_DESKTOP_COMPAT.md`](../../../docs/PWA_DESKTOP_COMP
 
 ## Done checks
 
+Prefer delegating mechanical verification to subagent **`dual-runtime-qa`** (Composer fast — `.cursor/agents/dual-runtime-qa.md`) with the changed-file list. Parent should not burn expensive tokens on test logs/docs.
+
+Minimum if no subagent available:
+
 ```bash
 npm test
 npm run build          # PWA / Pages artifact must still work

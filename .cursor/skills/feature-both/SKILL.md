@@ -67,7 +67,16 @@ npm run build:desktop  # desktop frontend bundle
 
 If you cannot run desktop in this environment, still keep web green, keep Windows providers compiling, and list exact desktop smoke steps for the user — do **not** invent “it works on desktop” without evidence.
 
-### 5. Communication style (avoid thrash)
+### 5. Hand off mechanical QA/docs to the cheap subagent
+
+After implementation (or when the user runs `/qa-both`), **delegate** to project subagent `dual-runtime-qa` (`.cursor/agents/dual-runtime-qa.md`, pinned to Composer fast):
+
+- Pass the changed-file list + one-line feature summary
+- Let it run tests/builds, boundary audit, and minimal doc updates
+- Parent (expensive model) should **not** burn tokens re-running long test logs or rewriting docs
+- Fix any blockers it reports, then stop
+
+### 6. Communication style (avoid thrash)
 
 - Lead with the layer split and done criteria, then implement
 - Do not rewrite shared code mid-task to “make Tauri easier”

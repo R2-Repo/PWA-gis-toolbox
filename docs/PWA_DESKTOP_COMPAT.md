@@ -4,7 +4,9 @@
 >
 > Agents: if the user says **fix/update PWA** or **fix/update desktop**, follow the matching skill under `.cursor/skills/` and the rules in `.cursor/rules/fix-*.mdc`.
 >
-> **Slash commands (quick access):** `/fix-pwa`, `/fix-desktop`, `/feature-both`, `/smoke-both`, `/which-runtime` — see `.cursor/commands/`.
+> **Slash commands (quick access):** `/fix-pwa`, `/fix-desktop`, `/feature-both`, `/smoke-both`, `/qa-both`, `/which-runtime` — see `.cursor/commands/`.
+>
+> **Cheap QA subagent:** after implementation, parent should delegate to `.cursor/agents/dual-runtime-qa.md` (Composer fast) for tests/builds/docs — not the expensive parent model.
 
 ## Runtimes
 
@@ -105,4 +107,5 @@ You do **not** need to retest the entire product after every change — only the
 - Contracts: `js/platform/contracts.js`
 - Skills: `.cursor/skills/fix-pwa/`, `fix-desktop/`, `feature-both/`, `pwa-desktop-compat/`
 - Rules: `.cursor/rules/fix-pwa.mdc`, `fix-desktop.mdc`, `feature-both.mdc`, `platform-shared.mdc`
-- Commands: `.cursor/commands/fix-pwa.md`, `fix-desktop.md`, `feature-both.md`, `smoke-both.md`, `which-runtime.md`
+- Commands: `.cursor/commands/fix-pwa.md`, `fix-desktop.md`, `feature-both.md`, `smoke-both.md`, `qa-both.md`, `which-runtime.md`
+- Subagent: `.cursor/agents/dual-runtime-qa.md` (Composer fast)

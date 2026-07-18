@@ -288,7 +288,10 @@ Use `windows` naming (not generic `desktop`) since macOS/Linux are out of scope.
 - `/fix-desktop` — then describe the desktop issue
 - `/feature-both` — new/changed feature that must work on PWA **and** desktop
 - `/smoke-both` — dual-runtime blast-radius check after a change
+- `/qa-both` — cheap Composer subagent: tests, builds, boundary audit, minimal docs
 - `/which-runtime` — classify before fixing
+
+**Subagent:** `.cursor/agents/dual-runtime-qa.md` pinned to `composer-2.5-fast` so expensive parent models do not spend tokens on test logs and doc maintenance.
 
 **Shared widget or bug fix:**
 > Add/fix [X] following WIDGET_AGENT_PLAYBOOK. Engine stays pure. No Tauri imports. Platform behavior via ctx.services only.

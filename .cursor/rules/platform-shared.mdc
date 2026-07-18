@@ -18,6 +18,7 @@ When the user says **fix/update PWA** or **fix/update desktop**, do **not** wait
 - Desktop → `.cursor/skills/fix-desktop/SKILL.md` + `fix-desktop.mdc`
 - Both → `.cursor/skills/feature-both/SKILL.md` + `feature-both.mdc`
 - Unclear → `.cursor/skills/pwa-desktop-compat/SKILL.md`
+- After implementation → subagent `dual-runtime-qa` (Composer fast) or `/qa-both` for tests/docs
 
 Blast-radius reference: [`docs/PWA_DESKTOP_COMPAT.md`](../../docs/PWA_DESKTOP_COMPAT.md)
 

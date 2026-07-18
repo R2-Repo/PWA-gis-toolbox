@@ -73,9 +73,12 @@ GIS Toolbox is **one shared app** with two runtimes (public PWA + private Window
 | **fix / update the desktop app** (Windows, Tauri, WebView2) — or `/fix-desktop` | Follow `.cursor/skills/fix-desktop/SKILL.md` + `.cursor/rules/fix-desktop.mdc` |
 | **Feature for both** / works on PWA and desktop — or `/feature-both` | Follow `.cursor/skills/feature-both/SKILL.md` + `.cursor/rules/feature-both.mdc` |
 | Dual smoke / “did we break the other?” — or `/smoke-both` | Blast-radius checks from `docs/PWA_DESKTOP_COMPAT.md` |
+| QA / tests / dual-runtime docs after a change — or `/qa-both` | Delegate to subagent `.cursor/agents/dual-runtime-qa.md` (**Composer fast**, not the parent model) |
 | Bug with **no** runtime named — or `/which-runtime` | Follow `.cursor/skills/pwa-desktop-compat/SKILL.md` — classify first |
 
-**Slash commands** (type `/` in chat): `fix-pwa`, `fix-desktop`, `feature-both`, `smoke-both`, `which-runtime`.
+**Slash commands** (type `/` in chat): `fix-pwa`, `fix-desktop`, `feature-both`, `smoke-both`, `qa-both`, `which-runtime`.
+
+**Cost tip:** Parent (expensive) model implements. Subagent `dual-runtime-qa` runs tests/builds and updates blast-radius docs. Do not use Fable/Opus-class models for doc churn or re-reading long test logs.
 
 **Always read** [`docs/PWA_DESKTOP_COMPAT.md`](docs/PWA_DESKTOP_COMPAT.md) for the path matrix and blast radius.
 
@@ -113,7 +116,8 @@ Do not put widget logic inline in `js/tools/tool-handlers.js`. Copy the closest 
 | `public/` | Static assets |
 | `docs/` | Development guide, widget playbook, authoring checklist, **sheet cutting geometry** (`SHEET_CUTTING.md`), PWA↔Desktop blast radius (`PWA_DESKTOP_COMPAT.md`), PWA+Windows plan (`PWA_DESKTOP_WORKFLOW_PLAN.md`) |
 | `.cursor/skills/` | Agent skills: `fix-pwa`, `fix-desktop`, `feature-both`, `pwa-desktop-compat` |
-| `.cursor/commands/` | Slash commands: `/fix-pwa`, `/fix-desktop`, `/feature-both`, `/smoke-both`, `/which-runtime` |
+| `.cursor/commands/` | Slash commands: `/fix-pwa`, `/fix-desktop`, `/feature-both`, `/smoke-both`, `/qa-both`, `/which-runtime` |
+| `.cursor/agents/` | Custom subagents: `dual-runtime-qa` (Composer fast — tests + dual-runtime docs) |
 
 **Build targets:** `npm run build` → `dist/` (existing Pages deploy), `npm run build:web` → `dist-web/`, `npm run build:desktop` → `dist-desktop/` (no PWA service worker).
 
