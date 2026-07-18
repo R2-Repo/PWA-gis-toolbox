@@ -1,11 +1,13 @@
 mod jobs;
 mod sidecar;
+mod temp_files;
 
 use jobs::{job_cancel, job_start, sidecar_health, JobRegistry};
 use serde_json::{json, Value};
 use sidecar::{check_sidecar_health, SidecarState};
 use std::sync::Arc;
 use tauri::Manager;
+use temp_files::{remove_temp_file, write_temp_geojson};
 
 #[tauri::command]
 fn platform_handshake(state: tauri::State<'_, SidecarState>) -> Value {
@@ -89,6 +91,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             platform_handshake,
             reveal_in_explorer,
+            write_temp_geojson,
+            remove_temp_file,
             job_start,
             job_cancel,
             sidecar_health

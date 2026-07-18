@@ -48,6 +48,15 @@ export function createWindowsFileService() {
         async revealInExplorer(path) {
             if (!path) return;
             await invokeCommand('reveal_in_explorer', { path });
+        },
+
+        async writeTempGeoJson(contents) {
+            return invokeCommand('write_temp_geojson', { contents: String(contents ?? '') });
+        },
+
+        async removeTempFile(path) {
+            if (!path) return;
+            await invokeCommand('remove_temp_file', { path });
         }
     };
 }
