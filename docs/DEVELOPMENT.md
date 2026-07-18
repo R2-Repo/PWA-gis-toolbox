@@ -112,8 +112,12 @@ npm test                 # run tests
 ### Dual runtime (PWA + Windows desktop)
 
 GIS Toolbox is one shared frontend with two build targets. See
-[`docs/PWA_DESKTOP_WORKFLOW_PLAN.md`](PWA_DESKTOP_WORKFLOW_PLAN.md) for architecture,
-capability contracts, and how desktop packaging fits the staging → production workflow.
+[`docs/PWA_DESKTOP_COMPAT.md`](PWA_DESKTOP_COMPAT.md) for the blast-radius matrix
+(what breaks what), and [`docs/PWA_DESKTOP_WORKFLOW_PLAN.md`](PWA_DESKTOP_WORKFLOW_PLAN.md)
+for architecture and packaging.
+
+**Agent shortcuts:** “fix/update PWA” → `.cursor/skills/fix-pwa/`;
+“fix/update desktop” → `.cursor/skills/fix-desktop/`.
 
 | Target | Command | Output |
 |--------|---------|--------|

@@ -9,6 +9,8 @@ Read `AGENTS.md` before substantive work. For git and release workflow, also rea
 
 **New GIS Widget work:** read `docs/WIDGET_AGENT_PLAYBOOK.md` first, then `docs/WIDGET_AUTHORING.md`.
 
+**PWA vs Desktop:** if the user says fix/update PWA or fix/update desktop, follow `.cursor/skills/fix-pwa` or `.cursor/skills/fix-desktop` and [`docs/PWA_DESKTOP_COMPAT.md`](../../docs/PWA_DESKTOP_COMPAT.md).
+
 **PWA + Windows desktop:** read `docs/PWA_DESKTOP_WORKFLOW_PLAN.md`. Shared code in `js/` and `react/`; platform contracts in `js/platform/`; never copy widgets into a desktop folder.
 
 ## Stack

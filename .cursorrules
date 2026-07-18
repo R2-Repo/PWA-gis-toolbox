@@ -10,3 +10,9 @@ GIT WORKFLOW (MANDATORY):
 GIS WIDGETS (new or changed panel wizards):
 - Read docs/WIDGET_AGENT_PLAYBOOK.md first, then docs/WIDGET_AUTHORING.md.
 - Register in js/widgets/registry.js; wire via js/widgets/<id>/controller.js.
+
+PWA vs DESKTOP (when user says fix/update PWA or desktop):
+- Read docs/PWA_DESKTOP_COMPAT.md
+- PWA → .cursor/skills/fix-pwa/SKILL.md
+- Desktop → .cursor/skills/fix-desktop/SKILL.md
+- Unclear runtime → .cursor/skills/pwa-desktop-compat/SKILL.md

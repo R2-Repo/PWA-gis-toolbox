@@ -63,6 +63,25 @@ When work is complete:
 - Only add tests when requested or when they add meaningful coverage
 - Comments only for non-obvious business logic
 
+## PWA vs Desktop intents (CRITICAL for dual-runtime work)
+
+GIS Toolbox is **one shared app** with two runtimes (public PWA + private Windows desktop). When the user says:
+
+| User says… | Agent must… |
+|------------|-------------|
+| **fix / update the PWA** (web, browser, staging preview) | Follow `.cursor/skills/fix-pwa/SKILL.md` + `.cursor/rules/fix-pwa.mdc` |
+| **fix / update the desktop app** (Windows, Tauri, WebView2) | Follow `.cursor/skills/fix-desktop/SKILL.md` + `.cursor/rules/fix-desktop.mdc` |
+| Bug with **no** runtime named | Follow `.cursor/skills/pwa-desktop-compat/SKILL.md` — classify first |
+
+**Always read** [`docs/PWA_DESKTOP_COMPAT.md`](docs/PWA_DESKTOP_COMPAT.md) for the path matrix and blast radius.
+
+Implied constraints (user should not need to repeat):
+
+- Desktop-only fixes start in `src-tauri/` / `js/platform/windows/` / `desktop/sidecar/`
+- Shared changes use platform adapters — do not rewrite the other runtime’s path
+- No `@tauri-apps/*` outside `js/platform/windows/`
+- After shared or desktop work: keep **both** `npm run build` and `npm run build:desktop` green
+
 ## GIS Widgets (multi-step panel wizards)
 
 When the user wants to **add or change a GIS Widget** (left panel → **GIS Widgets** section):
@@ -88,7 +107,8 @@ Do not put widget logic inline in `js/tools/tool-handlers.js`. Copy the closest 
 | `css/` | Stylesheets |
 | `pipelines/` | Saved workflow pipeline JSON |
 | `public/` | Static assets |
-| `docs/` | Development guide, widget playbook, authoring checklist, **sheet cutting geometry** (`SHEET_CUTTING.md`), PWA+Windows plan (`PWA_DESKTOP_WORKFLOW_PLAN.md`) |
+| `docs/` | Development guide, widget playbook, authoring checklist, **sheet cutting geometry** (`SHEET_CUTTING.md`), PWA↔Desktop blast radius (`PWA_DESKTOP_COMPAT.md`), PWA+Windows plan (`PWA_DESKTOP_WORKFLOW_PLAN.md`) |
+| `.cursor/skills/` | Agent skills: `fix-pwa`, `fix-desktop`, `pwa-desktop-compat` |
 
 **Build targets:** `npm run build` → `dist/` (existing Pages deploy), `npm run build:web` → `dist-web/`, `npm run build:desktop` → `dist-desktop/` (no PWA service worker).
 

@@ -247,12 +247,23 @@ Use `windows` naming (not generic `desktop`) since macOS/Linux are out of scope.
 
 ## Cursor agent rules
 
+**Living blast-radius doc:** [`docs/PWA_DESKTOP_COMPAT.md`](PWA_DESKTOP_COMPAT.md)
+
+**Intent skills** (user does not need to spell out constraints):
+
+| User says | Skill |
+|-----------|--------|
+| fix/update PWA / web / browser | `.cursor/skills/fix-pwa/SKILL.md` + `fix-pwa.mdc` |
+| fix/update desktop / Windows / Tauri | `.cursor/skills/fix-desktop/SKILL.md` + `fix-desktop.mdc` |
+| unclear which runtime | `.cursor/skills/pwa-desktop-compat/SKILL.md` |
+
 ### platform-shared.mdc (always on)
 - Default all widget, map, tool, UI, and bug-fix work to shared code
 - Never create Windows copies of shared widgets
 - Engines stay platform-independent
 - Use WidgetContext services for platform behavior
 - No Tauri or Python imports in shared modules
+- Route “fix PWA” / “fix desktop” intents to the skills above
 
 ### windows-native.mdc (when editing src-tauri/, desktop/sidecar/, js/platform/windows/)
 - Expose native behavior through narrow typed service operations
@@ -266,6 +277,10 @@ Use `windows` naming (not generic `desktop`) since macOS/Linux are out of scope.
 - After shared changes, both build targets must stay green
 
 ### Prompt templates
+
+**Short forms (preferred):**
+> Fix the PWA: [issue]
+> Fix the desktop app: [issue]
 
 **Shared widget or bug fix:**
 > Add/fix [X] following WIDGET_AGENT_PLAYBOOK. Engine stays pure. No Tauri imports. Platform behavior via ctx.services only.
@@ -515,6 +530,7 @@ Treat GIS Toolbox as one modular web app. Add a thin **Windows 11 Tauri shell** 
 - [x] Phase 1: web + desktop Vite build modes → dist-web/ and dist-desktop/ (`npm run build` still → `dist/` for Pages)
 - [x] Phase 2: js/platform/ contracts + web provider + WidgetContext extension + registry capabilities
 - [x] Cursor rules: platform-shared.mdc, windows-native.mdc, build-target.mdc
+- [x] PWA↔Desktop compat doc + fix-pwa / fix-desktop / pwa-desktop-compat skills + rules
 - [x] Phase 3: src-tauri/ Tauri 2 shell loading dist-desktop/ (`npm run dev:desktop` / `build:desktop:app`)
 - [x] Phase 4: native file dialogs via ctx.services.files (Tauri dialog plugin + reveal_in_explorer)
 - [x] Phase 5: ctx.services.jobs infrastructure (shared handles + Windows IPC events + tests)

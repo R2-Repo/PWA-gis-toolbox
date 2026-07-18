@@ -9,6 +9,8 @@ alwaysApply: false
 
 # Windows-native implementation
 
+When the user asks to **fix/update the desktop app**, also follow `.cursor/skills/fix-desktop/SKILL.md` and [`docs/PWA_DESKTOP_COMPAT.md`](../../docs/PWA_DESKTOP_COMPAT.md).
+
 Windows-native code belongs in:
 
 - `src-tauri/` — Tauri 2 shell, IPC commands, packaging
