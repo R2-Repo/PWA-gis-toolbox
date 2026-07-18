@@ -16,6 +16,7 @@ When the user says **fix/update PWA** or **fix/update desktop**, do **not** wait
 
 - PWA → `.cursor/skills/fix-pwa/SKILL.md` + `fix-pwa.mdc`
 - Desktop → `.cursor/skills/fix-desktop/SKILL.md` + `fix-desktop.mdc`
+- Both → `.cursor/skills/feature-both/SKILL.md` + `feature-both.mdc`
 - Unclear → `.cursor/skills/pwa-desktop-compat/SKILL.md`
 
 Blast-radius reference: [`docs/PWA_DESKTOP_COMPAT.md`](../../docs/PWA_DESKTOP_COMPAT.md)

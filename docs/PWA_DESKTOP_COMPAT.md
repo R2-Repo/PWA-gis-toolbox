@@ -4,7 +4,7 @@
 >
 > Agents: if the user says **fix/update PWA** or **fix/update desktop**, follow the matching skill under `.cursor/skills/` and the rules in `.cursor/rules/fix-*.mdc`.
 >
-> **Slash commands (quick access):** `/fix-pwa`, `/fix-desktop`, `/which-runtime` — see `.cursor/commands/`.
+> **Slash commands (quick access):** `/fix-pwa`, `/fix-desktop`, `/feature-both`, `/smoke-both`, `/which-runtime` — see `.cursor/commands/`.
 
 ## Runtimes
 
@@ -49,6 +49,13 @@ Same `js/` + `react/` source. Different shell, file APIs, and (on desktop) Pytho
 3. Hard rule: `@tauri-apps/*` only in `js/platform/windows/` (via `tauri-bridge.js`).
 4. Verify: `npm test` + `npm run build` / `build:web` + `npm run build:desktop`.
 5. Smoke: desktop for the bug; **also browser** if any shared file changed.
+
+### “Add a feature for both” / “works on PWA and desktop”
+
+1. Follow `.cursor/skills/feature-both/SKILL.md` (or `/feature-both`).
+2. Split: shared product vs web provider vs Windows provider **before** coding.
+3. Implement shared + **both** providers; degrade cleanly when a capability is missing.
+4. Done only after `npm test`, web build, desktop build, and dual smoke (or `/smoke-both`).
 
 ### Ambiguous (“zoom is broken”, “dual screen is broken”)
 
@@ -96,5 +103,6 @@ You do **not** need to retest the entire product after every change — only the
 
 - Plan / architecture: [`PWA_DESKTOP_WORKFLOW_PLAN.md`](./PWA_DESKTOP_WORKFLOW_PLAN.md)
 - Contracts: `js/platform/contracts.js`
-- Skills: `.cursor/skills/fix-pwa/`, `.cursor/skills/fix-desktop/`
-- Rules: `.cursor/rules/fix-pwa.mdc`, `.cursor/rules/fix-desktop.mdc`, `platform-shared.mdc`
+- Skills: `.cursor/skills/fix-pwa/`, `fix-desktop/`, `feature-both/`, `pwa-desktop-compat/`
+- Rules: `.cursor/rules/fix-pwa.mdc`, `fix-desktop.mdc`, `feature-both.mdc`, `platform-shared.mdc`
+- Commands: `.cursor/commands/fix-pwa.md`, `fix-desktop.md`, `feature-both.md`, `smoke-both.md`, `which-runtime.md`

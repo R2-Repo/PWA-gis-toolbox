@@ -116,8 +116,12 @@ GIS Toolbox is one shared frontend with two build targets. See
 (what breaks what), and [`docs/PWA_DESKTOP_WORKFLOW_PLAN.md`](PWA_DESKTOP_WORKFLOW_PLAN.md)
 for architecture and packaging.
 
-**Agent shortcuts:** “fix/update PWA” → `.cursor/skills/fix-pwa/`;
-“fix/update desktop” → `.cursor/skills/fix-desktop/`.
+**Agent shortcuts** (or type `/` in chat):
+
+- “fix/update PWA” → `/fix-pwa`
+- “fix/update desktop” → `/fix-desktop`
+- “feature for both” → `/feature-both`
+- dual smoke → `/smoke-both`
 
 | Target | Command | Output |
 |--------|---------|--------|

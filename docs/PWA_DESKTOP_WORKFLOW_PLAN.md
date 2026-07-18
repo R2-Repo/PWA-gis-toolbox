@@ -255,6 +255,7 @@ Use `windows` naming (not generic `desktop`) since macOS/Linux are out of scope.
 |-----------|--------|
 | fix/update PWA / web / browser | `.cursor/skills/fix-pwa/SKILL.md` + `fix-pwa.mdc` |
 | fix/update desktop / Windows / Tauri | `.cursor/skills/fix-desktop/SKILL.md` + `fix-desktop.mdc` |
+| feature for both / works on both | `.cursor/skills/feature-both/SKILL.md` + `feature-both.mdc` |
 | unclear which runtime | `.cursor/skills/pwa-desktop-compat/SKILL.md` |
 
 ### platform-shared.mdc (always on)
@@ -285,6 +286,8 @@ Use `windows` naming (not generic `desktop`) since macOS/Linux are out of scope.
 **Slash commands** (type `/` in Agent chat — no need to remember wording):
 - `/fix-pwa` — then describe the PWA issue
 - `/fix-desktop` — then describe the desktop issue
+- `/feature-both` — new/changed feature that must work on PWA **and** desktop
+- `/smoke-both` — dual-runtime blast-radius check after a change
 - `/which-runtime` — classify before fixing
 
 **Shared widget or bug fix:**
@@ -535,7 +538,7 @@ Treat GIS Toolbox as one modular web app. Add a thin **Windows 11 Tauri shell** 
 - [x] Phase 1: web + desktop Vite build modes → dist-web/ and dist-desktop/ (`npm run build` still → `dist/` for Pages)
 - [x] Phase 2: js/platform/ contracts + web provider + WidgetContext extension + registry capabilities
 - [x] Cursor rules: platform-shared.mdc, windows-native.mdc, build-target.mdc
-- [x] PWA↔Desktop compat doc + fix-pwa / fix-desktop / pwa-desktop-compat skills + rules
+- [x] PWA↔Desktop compat doc + fix-pwa / fix-desktop / feature-both / pwa-desktop-compat skills + rules + slash commands
 - [x] Phase 3: src-tauri/ Tauri 2 shell loading dist-desktop/ (`npm run dev:desktop` / `build:desktop:app`)
 - [x] Phase 4: native file dialogs via ctx.services.files (Tauri dialog plugin + reveal_in_explorer)
 - [x] Phase 5: ctx.services.jobs infrastructure (shared handles + Windows IPC events + tests)

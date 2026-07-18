@@ -1,0 +1,24 @@
+---
+description: Apply when the user wants a new feature or change that must work on both PWA and Windows desktop
+alwaysApply: false
+---
+
+# Feature for both runtimes
+
+When the user wants something that works on **both** PWA and desktop (also: `/feature-both`, “shared feature”, “works on both”):
+
+1. **Read:** [`docs/PWA_DESKTOP_COMPAT.md`](../../docs/PWA_DESKTOP_COMPAT.md)
+2. **Follow:** `.cursor/skills/feature-both/SKILL.md`
+
+## Required pattern
+
+- Shared UI/engine in `js/` + `react/`
+- Platform differences only via `js/platform` contracts + web and windows providers
+- Optional native acceleration via capabilities — web must still work
+- Done only after tests + web build + desktop build + dual smoke (or explicit desktop smoke list if Tauri unavailable here)
+
+## Forbidden
+
+- Implementing desktop-first then “porting” to PWA
+- `@tauri-apps/*` outside `js/platform/windows/`
+- Claiming done after browser-only verification when the request was dual-runtime
