@@ -282,6 +282,11 @@ Use `windows` naming (not generic `desktop`) since macOS/Linux are out of scope.
 > Fix the PWA: [issue]
 > Fix the desktop app: [issue]
 
+**Slash commands** (type `/` in Agent chat — no need to remember wording):
+- `/fix-pwa` — then describe the PWA issue
+- `/fix-desktop` — then describe the desktop issue
+- `/which-runtime` — classify before fixing
+
 **Shared widget or bug fix:**
 > Add/fix [X] following WIDGET_AGENT_PLAYBOOK. Engine stays pure. No Tauri imports. Platform behavior via ctx.services only.
 

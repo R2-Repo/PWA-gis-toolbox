@@ -3,6 +3,8 @@
 > **One shared app, two runtimes.** Use this when deciding where a fix belongs and what else it can break.
 >
 > Agents: if the user says **fix/update PWA** or **fix/update desktop**, follow the matching skill under `.cursor/skills/` and the rules in `.cursor/rules/fix-*.mdc`.
+>
+> **Slash commands (quick access):** `/fix-pwa`, `/fix-desktop`, `/which-runtime` — see `.cursor/commands/`.
 
 ## Runtimes
 

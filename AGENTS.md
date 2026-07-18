@@ -69,9 +69,11 @@ GIS Toolbox is **one shared app** with two runtimes (public PWA + private Window
 
 | User says… | Agent must… |
 |------------|-------------|
-| **fix / update the PWA** (web, browser, staging preview) | Follow `.cursor/skills/fix-pwa/SKILL.md` + `.cursor/rules/fix-pwa.mdc` |
-| **fix / update the desktop app** (Windows, Tauri, WebView2) | Follow `.cursor/skills/fix-desktop/SKILL.md` + `.cursor/rules/fix-desktop.mdc` |
-| Bug with **no** runtime named | Follow `.cursor/skills/pwa-desktop-compat/SKILL.md` — classify first |
+| **fix / update the PWA** (web, browser, staging preview) — or `/fix-pwa` | Follow `.cursor/skills/fix-pwa/SKILL.md` + `.cursor/rules/fix-pwa.mdc` |
+| **fix / update the desktop app** (Windows, Tauri, WebView2) — or `/fix-desktop` | Follow `.cursor/skills/fix-desktop/SKILL.md` + `.cursor/rules/fix-desktop.mdc` |
+| Bug with **no** runtime named — or `/which-runtime` | Follow `.cursor/skills/pwa-desktop-compat/SKILL.md` — classify first |
+
+**Slash commands** (type `/` in chat): `.cursor/commands/fix-pwa.md`, `fix-desktop.md`, `which-runtime.md`.
 
 **Always read** [`docs/PWA_DESKTOP_COMPAT.md`](docs/PWA_DESKTOP_COMPAT.md) for the path matrix and blast radius.
 
