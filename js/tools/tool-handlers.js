@@ -102,7 +102,7 @@ import {
     restoreOpenWidget
 } from '../widgets/widget-state-store.js';
 import { createWidgetContext } from '../widgets/widget-context.js';
-import { getPlatformBundle } from '../platform/create-platform.js';
+import { getPlatformBundle, refreshPlatformBundle } from '../platform/create-platform.js';
 import { openImportStationTable } from '../widgets/project-stationing/controller.js';
 import { isProjectStationingCenterline } from '../widgets/project-stationing/route-profile.js';
 import { createWorkflowController } from '../workflow/workflow-controller.js';
@@ -3939,6 +3939,20 @@ export function openPresentationLinkBuilderWidget() {
 
 export function bootstrapAppFromUrl() {
     bootstrapAppUrl({ mapService, setPanelCollapsed });
+}
+
+/**
+ * Refresh Windows capability handshake when running inside the Tauri shell.
+ * Safe no-op in the public PWA / browser.
+ */
+export async function bootstrapDesktopPlatform() {
+    try {
+        await refreshPlatformBundle({ showToast });
+    } catch (err) {
+        logger.warn('Platform', 'Desktop handshake failed', {
+            message: err?.message || String(err)
+        });
+    }
 }
 
 export async function materializeServiceLayerWithConfirm(layerId) {

@@ -5,7 +5,12 @@ import {
     listAvailableOptionalCapabilities
 } from '../js/platform/contracts.js';
 import { createWebPlatform } from '../js/platform/web/web-platform.js';
-import { createPlatform, isWindowsDesktopRuntime } from '../js/platform/create-platform.js';
+import {
+    createPlatform,
+    isTauriShellPresent,
+    isWindowsDesktopRuntime
+} from '../js/platform/create-platform.js';
+import { createWindowsPlatform } from '../js/platform/windows/windows-platform.js';
 
 /**
  * Local mirror of registry filtering — avoids importing controllers that need DOM.
@@ -31,11 +36,20 @@ describe('platform contracts', () => {
 
     it('createPlatform defaults to the web provider in Node/test', () => {
         expect(isWindowsDesktopRuntime()).toBe(false);
+        expect(isTauriShellPresent()).toBe(false);
         const bundle = createPlatform();
         expect(bundle.platform.runtime).toBe('web');
         expect(bundle.services.compute).toBeTruthy();
         expect(bundle.services.files).toBeTruthy();
         expect(bundle.services.jobs).toBeTruthy();
+    });
+
+    it('windows platform marks nativeFiles when Tauri globals are absent', () => {
+        const { platform, services } = createWindowsPlatform();
+        expect(platform.runtime).toBe('windows');
+        expect(platform.capabilities.nativeFiles.available).toBe(false);
+        expect(services.files.open).toBeTypeOf('function');
+        expect(services.files.revealInExplorer).toBeTypeOf('function');
     });
 
     it('keeps shared widgets visible when they require no special capabilities', () => {

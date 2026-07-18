@@ -1,14 +1,13 @@
-# Windows platform provider (reserved)
+# Windows platform provider
 
-This folder is the **only** place allowed to import `@tauri-apps/*`.
+**Only this folder may import `@tauri-apps/*`.**
 
-It will host:
+| File | Role |
+|------|------|
+| `tauri-bridge.js` | `invoke`, native dialog wrappers |
+| `windows-file-service.js` | Open / save / folder / reveal in Explorer |
+| `windows-compute-service.js` | Placeholder for Python/GPU ops |
+| `windows-job-service.js` | Placeholder for long-running jobs |
+| `windows-platform.js` | Assembles `platform` + `services` for WidgetContext |
 
-- `windows-platform.js`
-- `windows-file-service.js`
-- `windows-compute-service.js`
-- `windows-job-service.js`
-- `tauri-bridge.js`
-
-Until Tauri is scaffolded (`src-tauri/`), the app falls back to the web platform provider
-even when `VITE_GIS_RUNTIME=windows`. See `docs/PWA_DESKTOP_WORKFLOW_PLAN.md`.
+Shell IPC lives in `src-tauri/`. See `docs/PWA_DESKTOP_WORKFLOW_PLAN.md`.

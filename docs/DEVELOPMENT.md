@@ -99,11 +99,14 @@ No manual deploy step is required.
 
 ```bash
 npm install
-npm run dev            # web/PWA dev server
-npm run build          # production web build → dist/ (used by Pages deploy)
-npm run build:web      # explicit web build → dist-web/
-npm run build:desktop  # Windows frontend build → dist-desktop/ (no PWA SW)
-npm test               # run tests
+npm run dev              # web/PWA dev server
+npm run build            # production web build → dist/ (used by Pages deploy)
+npm run build:web        # explicit web build → dist-web/
+npm run build:desktop    # Windows frontend build → dist-desktop/ (no PWA SW)
+npm run dev:desktop:ui   # desktop Vite mode in a browser (no Tauri window)
+npm run dev:desktop      # Tauri Windows shell + desktop Vite (requires Rust + Windows)
+npm run build:desktop:app # package Windows installer via Tauri (Windows machine)
+npm test                 # run tests
 ```
 
 ### Dual runtime (PWA + Windows desktop)
@@ -117,9 +120,14 @@ capability contracts, and how desktop packaging fits the staging → production 
 | Public PWA (existing deploy) | `npm run build` | `dist/` |
 | Explicit web | `npm run build:web` | `dist-web/` |
 | Windows shell frontend | `npm run build:desktop` | `dist-desktop/` |
+| Windows installed app | `npm run build:desktop:app` | installer under `src-tauri/target/` |
 
 Platform contracts live in `js/platform/`. Widget controllers receive `ctx.platform` and
 `ctx.services` via `getWidgetContext()`. Do not import Tauri APIs outside `js/platform/windows/`.
+
+The Tauri shell lives in `src-tauri/` (Windows 11 / WebView2). Day-to-day widget work still
+uses `npm run dev` in the browser. Use `npm run dev:desktop` on a Windows machine when you
+need the native window, file dialogs, or sidecar features.
 
 **Git workflow is unchanged:** develop on `staging`, push for preview, Promote to Production for `main`.
 

@@ -515,8 +515,8 @@ Treat GIS Toolbox as one modular web app. Add a thin **Windows 11 Tauri shell** 
 - [x] Phase 1: web + desktop Vite build modes → dist-web/ and dist-desktop/ (`npm run build` still → `dist/` for Pages)
 - [x] Phase 2: js/platform/ contracts + web provider + WidgetContext extension + registry capabilities
 - [x] Cursor rules: platform-shared.mdc, windows-native.mdc, build-target.mdc
-- [ ] Phase 3: src-tauri/ Tauri 2 shell loading dist-desktop/
-- [ ] Phase 4: native file dialogs via ctx.services.files
+- [x] Phase 3: src-tauri/ Tauri 2 shell loading dist-desktop/ (`npm run dev:desktop` / `build:desktop:app`)
+- [x] Phase 4: native file dialogs via ctx.services.files (Tauri dialog plugin + reveal_in_explorer)
 - [ ] Phase 5: ctx.services.jobs infrastructure
 - [ ] Phase 6: packaged Python sidecar + one narrow GIS operation
 - [ ] Phase 7: first desktop-only widget

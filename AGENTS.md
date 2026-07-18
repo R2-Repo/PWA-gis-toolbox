@@ -82,6 +82,7 @@ Do not put widget logic inline in `js/tools/tool-handlers.js`. Copy the closest 
 | `js/widgets/` | GIS Widget engines, controllers, registry |
 | `react/widgets/` | Widget React dialogs and shared wizard UI |
 | `js/platform/` | Web/Windows platform contracts and providers (no Tauri in shared code) |
+| `src-tauri/` | Tauri 2 Windows shell (WebView2); packages `dist-desktop/` |
 | `js/` | Core app logic (map, import, export, workflow, tools) |
 | `react/` | React UI islands (tools, panels, workflow editor) |
 | `css/` | Stylesheets |
