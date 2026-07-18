@@ -81,12 +81,15 @@ Do not put widget logic inline in `js/tools/tool-handlers.js`. Copy the closest 
 |------|---------|
 | `js/widgets/` | GIS Widget engines, controllers, registry |
 | `react/widgets/` | Widget React dialogs and shared wizard UI |
+| `js/platform/` | Web/Windows platform contracts and providers (no Tauri in shared code) |
 | `js/` | Core app logic (map, import, export, workflow, tools) |
 | `react/` | React UI islands (tools, panels, workflow editor) |
 | `css/` | Stylesheets |
 | `pipelines/` | Saved workflow pipeline JSON |
 | `public/` | Static assets |
-| `docs/` | Development guide, widget playbook, authoring checklist, **sheet cutting geometry** (`SHEET_CUTTING.md`) |
+| `docs/` | Development guide, widget playbook, authoring checklist, **sheet cutting geometry** (`SHEET_CUTTING.md`), PWA+Windows plan (`PWA_DESKTOP_WORKFLOW_PLAN.md`) |
+
+**Build targets:** `npm run build` → `dist/` (existing Pages deploy), `npm run build:web` → `dist-web/`, `npm run build:desktop` → `dist-desktop/` (no PWA service worker).
 
 ## Local development
 

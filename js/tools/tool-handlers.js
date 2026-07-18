@@ -102,6 +102,7 @@ import {
     restoreOpenWidget
 } from '../widgets/widget-state-store.js';
 import { createWidgetContext } from '../widgets/widget-context.js';
+import { getPlatformBundle } from '../platform/create-platform.js';
 import { openImportStationTable } from '../widgets/project-stationing/controller.js';
 import { isProjectStationingCenterline } from '../widgets/project-stationing/route-profile.js';
 import { createWorkflowController } from '../workflow/workflow-controller.js';
@@ -3914,6 +3915,7 @@ async function processPhotoFiles(files, modalOverlay) {
 // GIS Widgets
 // ============================
 export function getWidgetContext() {
+    const { platform, services } = getPlatformBundle({ showToast });
     return createWidgetContext({
         getLayers,
         getLayerById: (id) => getLayers().find((layer) => layer.id === id),
@@ -3925,7 +3927,9 @@ export function getWidgetContext() {
         showToast,
         setActiveLayer: setActiveLayerAndRefresh,
         analyzeSchema,
-        turf: globalThis.turf
+        turf: globalThis.turf,
+        platform,
+        services
     });
 }
 

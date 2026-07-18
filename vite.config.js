@@ -4,8 +4,19 @@ import { resolve, join } from 'node:path';
 import { cpSync, existsSync, readFileSync } from 'node:fs';
 import { VitePWA } from 'vite-plugin-pwa';
 
+/**
+ * Build targets:
+ * - default / production / web → public PWA (service worker + offline)
+ * - desktop → Windows shell frontend (no PWA registration)
+ *
+ * Outputs:
+ * - npm run build           → dist/          (unchanged for existing Pages deploy)
+ * - npm run build:web       → dist-web/
+ * - npm run build:desktop   → dist-desktop/
+ */
+
 /** Serve and copy repo-root pipelines/ (example JSON + manifest). */
-function pipelinesStaticPlugin() {
+function pipelinesStaticPlugin(outDir) {
   const root = __dirname;
   return {
     name: 'pipelines-static',
@@ -20,7 +31,7 @@ function pipelinesStaticPlugin() {
       });
     },
     closeBundle() {
-      cpSync(join(root, 'pipelines'), join(root, 'dist/pipelines'), { recursive: true });
+      cpSync(join(root, 'pipelines'), join(root, outDir, 'pipelines'), { recursive: true });
     }
   };
 }
@@ -60,110 +71,126 @@ function createManualChunks(id) {
   return undefined;
 }
 
-export default defineConfig({
-  base: './',
-  server: {
-    port: 5174,
-    strictPort: true
-  },
-  plugins: [
-    react(),
-    pipelinesStaticPlugin(),
-    VitePWA({
-      registerType: 'autoUpdate',
-      injectRegister: 'auto',
-      includeAssets: [
-        'icons/favicon.png',
-        'icons/PWAicon.png',
-        'icons/MobileAddButton.png',
-        'icons/MobileMenuButton.png',
-        'Side_Background.webp',
-        '.nojekyll'
+function createPwaPlugin() {
+  return VitePWA({
+    registerType: 'autoUpdate',
+    injectRegister: 'auto',
+    includeAssets: [
+      'icons/favicon.png',
+      'icons/PWAicon.png',
+      'icons/MobileAddButton.png',
+      'icons/MobileMenuButton.png',
+      'Side_Background.webp',
+      '.nojekyll'
+    ],
+    manifest: {
+      name: 'GIS Toolbox',
+      short_name: 'GIS Toolbox',
+      description: 'Free browser-based GIS toolkit. Import, transform, visualize, and export geospatial data — Shapefile, GeoJSON, KML, KMZ, CSV, Excel & more.',
+      start_url: './',
+      scope: './',
+      id: './',
+      display: 'standalone',
+      orientation: 'any',
+      background_color: '#0f1117',
+      theme_color: '#1c1c1e',
+      categories: ['utilities', 'productivity'],
+      lang: 'en-US',
+      icons: [
+        {
+          src: 'icons/PWAicon.png',
+          sizes: '512x512',
+          type: 'image/png',
+          purpose: 'any'
+        },
+        {
+          src: 'icons/PWAicon.png',
+          sizes: '192x192',
+          type: 'image/png',
+          purpose: 'any'
+        },
+        {
+          src: 'icons/PWAicon.png',
+          sizes: '512x512',
+          type: 'image/png',
+          purpose: 'maskable'
+        },
+        {
+          src: 'icons/PWAicon.png',
+          sizes: '192x192',
+          type: 'image/png',
+          purpose: 'maskable'
+        }
       ],
-      manifest: {
-        name: 'GIS Toolbox',
-        short_name: 'GIS Toolbox',
-        description: 'Free browser-based GIS toolkit. Import, transform, visualize, and export geospatial data — Shapefile, GeoJSON, KML, KMZ, CSV, Excel & more.',
-        start_url: './',
-        scope: './',
-        id: './',
-        display: 'standalone',
-        orientation: 'any',
-        background_color: '#0f1117',
-        theme_color: '#1c1c1e',
-        categories: ['utilities', 'productivity'],
-        lang: 'en-US',
-        icons: [
-          {
-            src: 'icons/PWAicon.png',
-            sizes: '512x512',
-            type: 'image/png',
-            purpose: 'any'
-          },
-          {
-            src: 'icons/PWAicon.png',
-            sizes: '192x192',
-            type: 'image/png',
-            purpose: 'any'
-          },
-          {
-            src: 'icons/PWAicon.png',
-            sizes: '512x512',
-            type: 'image/png',
-            purpose: 'maskable'
-          },
-          {
-            src: 'icons/PWAicon.png',
-            sizes: '192x192',
-            type: 'image/png',
-            purpose: 'maskable'
+      file_handlers: [
+        {
+          action: './',
+          accept: {
+            'application/zip': ['.gis-toolbox', '.gtbx'],
+            'application/octet-stream': ['.gis-toolbox', '.gtbx']
           }
-        ],
-        file_handlers: [
-          {
-            action: './',
-            accept: {
-              'application/zip': ['.gis-toolbox', '.gtbx'],
-              'application/octet-stream': ['.gis-toolbox', '.gtbx']
+        }
+      ]
+    },
+    workbox: {
+      maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
+      cleanupOutdatedCaches: true,
+      clientsClaim: true,
+      skipWaiting: true,
+      runtimeCaching: [
+        {
+          urlPattern: /^https:\/\/(unpkg\.com|cdn\.sheetjs\.com|cdn\.jsdelivr\.net)\//i,
+          handler: 'CacheFirst',
+          options: {
+            cacheName: 'gis-toolbox-cdn-libs',
+            expiration: {
+              maxEntries: 64,
+              maxAgeSeconds: 60 * 60 * 24 * 30
+            },
+            cacheableResponse: {
+              statuses: [0, 200]
             }
           }
-        ]
-      },
-      workbox: {
-        maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
-        cleanupOutdatedCaches: true,
-        clientsClaim: true,
-        skipWaiting: true,
-        runtimeCaching: [
-          {
-            urlPattern: /^https:\/\/(unpkg\.com|cdn\.sheetjs\.com|cdn\.jsdelivr\.net)\//i,
-            handler: 'CacheFirst',
-            options: {
-              cacheName: 'gis-toolbox-cdn-libs',
-              expiration: {
-                maxEntries: 64,
-                maxAgeSeconds: 60 * 60 * 24 * 30
-              },
-              cacheableResponse: {
-                statuses: [0, 200]
-              }
-            }
-          }
-        ]
-      }
-    })
-  ],
-  build: {
-    outDir: 'dist',
-    emptyOutDir: true,
-    rollupOptions: {
-      input: {
-        main: resolve(__dirname, 'index.html'),
-        mapWindow: resolve(__dirname, 'map-window.html')
-      },
-      output: {
-        manualChunks: createManualChunks
+        }
+      ]
+    }
+  });
+}
+
+export default defineConfig(({ mode }) => {
+  const isDesktop = mode === 'desktop';
+  const outDir = isDesktop
+    ? 'dist-desktop'
+    : (mode === 'web' ? 'dist-web' : 'dist');
+  const gisRuntime = isDesktop ? 'windows' : 'web';
+
+  return {
+    base: './',
+    server: {
+      port: 5174,
+      strictPort: true
+    },
+    define: {
+      'import.meta.env.VITE_GIS_RUNTIME': JSON.stringify(gisRuntime)
+    },
+    plugins: [
+      react(),
+      pipelinesStaticPlugin(outDir),
+      // Desktop/Windows builds must not register a service worker or PWA install UI.
+      ...(isDesktop ? [] : [createPwaPlugin()])
+    ],
+    build: {
+      outDir,
+      emptyOutDir: true,
+      rollupOptions: {
+        input: {
+          main: resolve(__dirname, 'index.html'),
+          mapWindow: resolve(__dirname, 'map-window.html')
+        },
+        output: {
+          manualChunks: createManualChunks
+        }
       }
     }
-  }
+  };
 });

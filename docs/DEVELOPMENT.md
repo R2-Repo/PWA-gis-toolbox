@@ -99,10 +99,29 @@ No manual deploy step is required.
 
 ```bash
 npm install
-npm run dev      # dev server
-npm run build    # production build
-npm test         # run tests
+npm run dev            # web/PWA dev server
+npm run build          # production web build → dist/ (used by Pages deploy)
+npm run build:web      # explicit web build → dist-web/
+npm run build:desktop  # Windows frontend build → dist-desktop/ (no PWA SW)
+npm test               # run tests
 ```
+
+### Dual runtime (PWA + Windows desktop)
+
+GIS Toolbox is one shared frontend with two build targets. See
+[`docs/PWA_DESKTOP_WORKFLOW_PLAN.md`](PWA_DESKTOP_WORKFLOW_PLAN.md) for architecture,
+capability contracts, and how desktop packaging fits the staging → production workflow.
+
+| Target | Command | Output |
+|--------|---------|--------|
+| Public PWA (existing deploy) | `npm run build` | `dist/` |
+| Explicit web | `npm run build:web` | `dist-web/` |
+| Windows shell frontend | `npm run build:desktop` | `dist-desktop/` |
+
+Platform contracts live in `js/platform/`. Widget controllers receive `ctx.platform` and
+`ctx.services` via `getWidgetContext()`. Do not import Tauri APIs outside `js/platform/windows/`.
+
+**Git workflow is unchanged:** develop on `staging`, push for preview, Promote to Production for `main`.
 
 ## Planned features
 

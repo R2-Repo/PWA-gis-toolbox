@@ -1,0 +1,25 @@
+---
+description: Dual Vite build targets for PWA and Windows desktop
+globs:
+  - vite.config.js
+  - package.json
+  - .github/workflows/**
+alwaysApply: false
+---
+
+# Build targets
+
+The public PWA and Windows desktop app compile from the **same frontend source** with separate Vite modes.
+
+| Script | Mode | Output | PWA service worker |
+|--------|------|--------|--------------------|
+| `npm run build` | production | `dist/` | Yes (existing Pages deploy) |
+| `npm run build:web` | web | `dist-web/` | Yes |
+| `npm run build:desktop` | desktop | `dist-desktop/` | **No** |
+
+## Rules
+
+- The Windows/desktop build must **not** register the PWA service worker
+- Do not point the production Windows app at the PWA `dist/` artifact
+- After shared frontend changes, keep both web and desktop builds green
+- Prefer extending `js/platform/` over forking Vite config per feature
