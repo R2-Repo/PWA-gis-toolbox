@@ -4,8 +4,13 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:desktop": "vite --mode desktop",
     "build": "vite build",
+    "build:web": "vite build --mode web",
+    "build:desktop": "vite build --mode desktop",
     "preview": "vite preview",
+    "preview:web": "vite preview --mode web",
+    "preview:desktop": "vite preview --mode desktop",
     "test": "vitest run",
     "test:watch": "vitest",
     "smoke:preview": "node scripts/preview-smoke.mjs",

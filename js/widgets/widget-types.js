@@ -10,6 +10,8 @@
  * @property {(id: string) => void} [setActiveLayer]
  * @property {(geojson: object) => object} [analyzeSchema]
  * @property {typeof globalThis.turf} [turf]
+ * @property {import('../platform/contracts.js').PlatformInfo} [platform]
+ * @property {import('../platform/contracts.js').PlatformServices} [services]
  */
 
 /**

@@ -14,12 +14,22 @@ import { openQuery } from './query/controller.js';
 import { openWirelessSitePlanning } from './wireless-site-planning/controller.js';
 import { openPresentationLinkBuilder } from './presentation-link-builder/controller.js';
 import logger from '../core/logger.js';
+import {
+    hasRequiredCapabilities,
+    listAvailableOptionalCapabilities
+} from '../platform/contracts.js';
+import { getPlatformBundle } from '../platform/create-platform.js';
 
 /** @typedef {import('./widget-types.js').WidgetContext} WidgetContext */
+/** @typedef {import('../platform/contracts.js').PlatformInfo} PlatformInfo */
 
 /**
  * Widgets shown in the GIS Widgets panel (`react/panels/WidgetPanel.jsx`).
  * To re-enable a hidden widget, move its entry from `GIS_WIDGETS_HIDDEN` into this array.
+ *
+ * Optional metadata (defaults keep current web behavior):
+ * - requiredCapabilities: hide widget when any capability is missing
+ * - optionalCapabilities: available for accelerated Windows providers later
  */
 export const GIS_WIDGETS = [
     {
@@ -28,6 +38,8 @@ export const GIS_WIDGETS = [
         label: 'Find Features in Area',
         icon: '🔎',
         tip: 'Search for features from one layer that fall inside a drawn area or polygon layer.',
+        requiredCapabilities: [],
+        optionalCapabilities: [],
         open: openSpatialAnalyzer
     },
     {
@@ -155,13 +167,34 @@ export const GIS_WIDGETS_HIDDEN = [
 export const ALL_GIS_WIDGETS = [...GIS_WIDGETS, ...GIS_WIDGETS_HIDDEN];
 
 /**
- * Build APP_ACTIONS entries for visible widgets only.
+ * @param {PlatformInfo} [platform]
+ * @returns {typeof GIS_WIDGETS}
+ */
+export function getVisibleWidgets(platform) {
+    const info = platform || getPlatformBundle().platform;
+    return GIS_WIDGETS.filter((widget) =>
+        hasRequiredCapabilities(info, widget.requiredCapabilities)
+    );
+}
+
+/**
+ * @param {object} widget
+ * @param {PlatformInfo} [platform]
+ * @returns {string[]}
+ */
+export function getWidgetOptionalCapabilities(widget, platform) {
+    const info = platform || getPlatformBundle().platform;
+    return listAvailableOptionalCapabilities(info, widget.optionalCapabilities);
+}
+
+/**
+ * Build APP_ACTIONS entries for capability-visible widgets only.
  * @param {() => WidgetContext} getCtx
  * @returns {Record<string, () => void>}
  */
 export function buildWidgetActions(getCtx) {
     const actions = {};
-    for (const widget of GIS_WIDGETS) {
+    for (const widget of getVisibleWidgets()) {
         actions[widget.action] = () => {
             logger.info('Widget', 'Open', { type: widget.type, label: widget.label });
             widget.open(getCtx());

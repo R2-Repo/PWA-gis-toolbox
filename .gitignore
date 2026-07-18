@@ -12,3 +12,5 @@ desktop.ini
 # Dev-only test tooling (Vitest); shipped site stays static
 node_modules/
 dist/
+dist-web/
+dist-desktop/
