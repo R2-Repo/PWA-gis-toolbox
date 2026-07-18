@@ -18,6 +18,7 @@ import {
 } from './dual-screen/secondary-client.js';
 import { setupMapPrintMenu } from './map/map-export.js';
 import { mountBasemapToggle, syncBasemapToggleActive } from './map/basemap-catalog.js';
+import { isTauriShellPresent } from './platform/create-platform.js';
 
 const ROLE = 'secondary';
 const QUEUED_MESSAGE_TYPES = new Set([
@@ -43,6 +44,19 @@ function sendBye() {
     if (byeSent) return;
     byeSent = true;
     post(MessageType.BYE, {});
+}
+
+/** Close this secondary map window (browser Window or Tauri WebviewWindow). */
+function closeSelfWindow() {
+    if (isTauriShellPresent()) {
+        void import('./platform/windows/tauri-bridge.js').then(({ closeCurrentWebviewWindow }) => {
+            void closeCurrentWebviewWindow();
+        });
+        return;
+    }
+    try {
+        window.close();
+    } catch (_) { /* ignore */ }
 }
 
 function isWorkspaceLayerMeta(entry) {
@@ -321,7 +335,7 @@ function dispatchMessage(msg) {
             applyMapCmd(msg.payload);
             break;
         case MessageType.BYE:
-            window.close();
+            closeSelfWindow();
             break;
         default:
             break;
@@ -356,7 +370,7 @@ function setupHeaderControls() {
                 window.opener.postMessage({ type: 'gis-toolbox-dual-screen-exit' }, window.location.origin);
             }
         } catch (_) { /* ignore */ }
-        window.close();
+        closeSelfWindow();
     });
 
     mountBasemapToggle(document.getElementById('basemap-toggle'), {
@@ -399,6 +413,11 @@ function boot() {
     initSecondaryClient({ post, getChannel: () => channel });
 
     const map = mapService.getMap();
+    if (isTauriShellPresent() && map) {
+        void import('./platform/windows/map-wheel-zoom.js').then(({ installDesktopMapZoom }) => {
+            installDesktopMapZoom(map);
+        });
+    }
     if (map?.loaded()) onMapReady();
     else map?.once('load', onMapReady);
 

@@ -42,6 +42,7 @@ describe('platform contracts', () => {
         expect(bundle.services.compute).toBeTruthy();
         expect(bundle.services.files).toBeTruthy();
         expect(bundle.services.jobs).toBeTruthy();
+        expect(bundle.services.windows?.openMapWindow).toBeTypeOf('function');
     });
 
     it('windows platform marks nativeFiles when Tauri globals are absent', () => {
@@ -50,6 +51,7 @@ describe('platform contracts', () => {
         expect(platform.capabilities.nativeFiles.available).toBe(false);
         expect(services.files.open).toBeTypeOf('function');
         expect(services.files.revealInExplorer).toBeTypeOf('function');
+        expect(services.windows?.openMapWindow).toBeTypeOf('function');
     });
 
     it('keeps shared widgets visible when they require no special capabilities', () => {

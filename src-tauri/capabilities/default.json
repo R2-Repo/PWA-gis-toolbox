@@ -1,11 +1,19 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Default capabilities for the GIS Toolbox Windows shell",
+  "description": "Main window — can create the Dual Screen map webview and use native dialogs",
   "windows": ["main"],
   "permissions": [
     "core:default",
     "core:event:default",
+    "core:webview:allow-create-webview-window",
+    "core:webview:allow-set-webview-zoom",
+    "core:window:allow-close",
+    "core:window:allow-show",
+    "core:window:allow-set-focus",
+    "core:window:allow-set-size",
+    "core:window:allow-set-position",
+    "core:window:allow-center",
     "dialog:default",
     "dialog:allow-open",
     "dialog:allow-save"

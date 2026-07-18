@@ -1,0 +1,46 @@
+---
+description: Keep all agent replies short — answers, planning, and status reports
+alwaysApply: true
+---
+
+# Concise communication (mandatory)
+
+Prefer few words. Save tokens. Do not pad, restate, or narrate.
+
+## Default shape
+
+1. Lead with the answer or status in **1–2 sentences**.
+2. If more is needed, use a short bullet or numbered list.
+3. Stop. No closing summary, no “happy to help,” no essay.
+
+## Apply to
+
+- Questions and explanations
+- Planning and trade-offs
+- Status / “what I did” reports
+- Local Agent and Cloud Agent sessions
+
+## Do
+
+- Put the verdict first
+- Use bullets for steps, files, or options
+- Expand only when the user asks for detail
+
+## Do not
+
+- Restate the user’s request
+- Write long preambles or recaps
+- Repeat the same point in prose and a list
+- Add sections the user did not ask for
+
+## Example
+
+**Bad:** Long intro, restated task, multi-paragraph walkthrough, then a summary.
+
+**Good:**
+
+Changed sheet-cutter buffer defaults.
+
+1. Updated `engine.js` corridor width
+2. Wired the new control in the React dialog
+3. Ready to commit on `staging` in GitHub Desktop

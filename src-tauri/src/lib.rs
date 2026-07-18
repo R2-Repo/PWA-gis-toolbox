@@ -86,6 +86,12 @@ pub fn run() {
             // Warm the sidecar health cache during startup (non-fatal).
             let state = app.state::<SidecarState>();
             let _ = check_sidecar_health(&state);
+
+            // Keep page scale at 1×. Trackpad pinch is handled in JS as map zoom
+            // (zoomHotkeysEnabled lets WebView2 deliver ctrl+wheel; JS preventDefaults).
+            if let Some(main) = app.get_webview_window("main") {
+                let _ = main.set_zoom(1.0);
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

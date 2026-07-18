@@ -1,13 +1,32 @@
 /**
- * Dual Screen — open the secondary map window with a usable Window reference.
+ * Dual Screen — open the secondary map window via the platform WindowService.
  *
- * A sized `windowFeatures` string encourages browsers to open a separate window
- * instead of a tab. Do not pass `noopener` or `noreferrer` in features — both
- * can cause window.open() to return null while the popup may still open.
+ * Web/PWA: browser window.open (unchanged behavior).
+ * Windows desktop: Tauri WebviewWindow (js/platform/windows/).
  */
+
+import { getPlatformBundle } from '../platform/create-platform.js';
 
 export const MAP_WINDOW_NAME = 'gis-toolbox-map';
 export const MAP_WINDOW_PATH = 'map-window.html';
+/** Tauri webview label for the secondary map window. */
+export const MAP_WEBVIEW_LABEL = 'map';
+
+/**
+ * @param {Pick<Screen, 'availWidth' | 'availHeight' | 'availLeft' | 'availTop'>} [screenLike]
+ * @returns {{ width: number, height: number, x: number, y: number }}
+ */
+export function buildMapWindowBounds(screenLike = globalThis.screen) {
+    const availWidth = screenLike?.availWidth ?? 1280;
+    const availHeight = screenLike?.availHeight ?? 800;
+    const availLeft = screenLike?.availLeft ?? 0;
+    const availTop = screenLike?.availTop ?? 0;
+    const width = Math.min(1600, Math.max(800, availWidth - 48));
+    const height = Math.min(960, Math.max(600, availHeight - 48));
+    const x = Math.max(0, Math.round(availLeft + (availWidth - width) / 2));
+    const y = Math.max(0, Math.round(availTop + (availHeight - height) / 2));
+    return { width, height, x, y };
+}
 
 /**
  * Build window.open features for a dedicated map window (not a browser tab).
@@ -15,20 +34,12 @@ export const MAP_WINDOW_PATH = 'map-window.html';
  * @returns {string}
  */
 export function buildMapWindowFeatures(screenLike = globalThis.screen) {
-    const availWidth = screenLike?.availWidth ?? 1280;
-    const availHeight = screenLike?.availHeight ?? 800;
-    const availLeft = screenLike?.availLeft ?? 0;
-    const availTop = screenLike?.availTop ?? 0;
-    const width = Math.min(1600, Math.max(800, availWidth - 48));
-    const height = Math.min(960, Math.max(600, availHeight - 48));
-    const left = Math.max(0, Math.round(availLeft + (availWidth - width) / 2));
-    const top = Math.max(0, Math.round(availTop + (availHeight - height) / 2));
-
+    const { width, height, x, y } = buildMapWindowBounds(screenLike);
     return [
         `width=${width}`,
         `height=${height}`,
-        `left=${left}`,
-        `top=${top}`,
+        `left=${x}`,
+        `top=${y}`,
         'menubar=no',
         'toolbar=no',
         'location=no',
@@ -39,24 +50,34 @@ export function buildMapWindowFeatures(screenLike = globalThis.screen) {
 }
 
 /**
- * @param {Window | null} win
+ * @param {import('../platform/contracts.js').MapWindowHandle | null | undefined} handle
  * @returns {boolean}
  */
-export function isSecondaryMapWindowOpen(win) {
-    return !!(win && !win.closed);
+export function isSecondaryMapWindowOpen(handle) {
+    return !!(handle && !handle.closed);
 }
 
 /**
- * Open (or reuse) the named map window in a separate browser window when possible.
- * @returns {Window | null}
+ * Open (or reuse) the secondary map window for the active platform.
+ * @returns {Promise<import('../platform/contracts.js').MapWindowHandle | null>}
  */
-export function openSecondaryMapWindow() {
+export async function openSecondaryMapWindow() {
+    const bounds = buildMapWindowBounds();
     const features = buildMapWindowFeatures();
-    const win = window.open(MAP_WINDOW_PATH, MAP_WINDOW_NAME, features);
-    if (win) {
-        try {
-            win.opener = null;
-        } catch (_) { /* ignore */ }
+    const windows = getPlatformBundle().services.windows;
+    if (!windows?.openMapWindow) return null;
+
+    try {
+        return await windows.openMapWindow({
+            url: MAP_WINDOW_PATH,
+            name: MAP_WINDOW_NAME,
+            label: MAP_WEBVIEW_LABEL,
+            title: 'GIS Toolbox — Map',
+            features,
+            bounds
+        });
+    } catch (err) {
+        console.warn('[DualScreen] openMapWindow failed', err);
+        return null;
     }
-    return win;
 }

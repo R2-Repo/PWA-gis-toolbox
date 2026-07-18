@@ -1,6 +1,7 @@
 import { createWindowsFileService } from './windows-file-service.js';
 import { createWindowsComputeService } from './windows-compute-service.js';
 import { createWindowsJobService } from './windows-job-service.js';
+import { createWindowsWindowService } from './windows-window-service.js';
 import { invokeCommand, isTauriAvailable } from './tauri-bridge.js';
 
 /**
@@ -63,6 +64,7 @@ export function createWindowsPlatform(opts = {}) {
             files: createWindowsFileService(),
             compute,
             jobs,
+            windows: createWindowsWindowService(),
             notifications: {
                 show: showToast
             }

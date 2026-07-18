@@ -116,7 +116,7 @@ class DualScreenCoordinator {
      */
     async activate() {
         if (this.isActive) {
-            this._focusMapWindow();
+            await this._focusMapWindow();
             return true;
         }
         if (this._isMobile()) return false;
@@ -126,7 +126,7 @@ class DualScreenCoordinator {
         }
         if (this._pendingActivation) return false;
 
-        this._mapWindow = openSecondaryMapWindow();
+        this._mapWindow = await openSecondaryMapWindow();
 
         if (isSecondaryMapWindowOpen(this._mapWindow)) {
             this._completeActivation();
@@ -196,7 +196,7 @@ class DualScreenCoordinator {
                     this._channel.post(createMessage('primary', MessageType.BYE, {}));
                 }
                 if (isSecondaryMapWindowOpen(this._mapWindow)) {
-                    try { this._mapWindow.close(); } catch (_) { /* ignore */ }
+                    try { void this._mapWindow.close(); } catch (_) { /* ignore */ }
                 }
             }
 
@@ -562,17 +562,17 @@ class DualScreenCoordinator {
         return boundsFromViewportPayload(this._lastViewport);
     }
 
-    _focusMapWindow() {
+    async _focusMapWindow() {
         if (!isSecondaryMapWindowOpen(this._mapWindow)) {
-            this._mapWindow = openSecondaryMapWindow();
+            this._mapWindow = await openSecondaryMapWindow();
         }
         if (isSecondaryMapWindowOpen(this._mapWindow)) {
-            try { this._mapWindow.focus(); } catch (_) { /* ignore */ }
+            try { await this._mapWindow.focus(); } catch (_) { /* ignore */ }
         }
     }
 
     focusMapWindow() {
-        this._focusMapWindow();
+        void this._focusMapWindow();
     }
 }
 

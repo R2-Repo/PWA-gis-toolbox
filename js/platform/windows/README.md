@@ -4,7 +4,9 @@
 
 | File | Role |
 |------|------|
-| `tauri-bridge.js` | `invoke`, event listen, native dialog wrappers |
+| `tauri-bridge.js` | `invoke`, event listen, native dialog wrappers, WebviewWindow helpers |
+| `map-wheel-zoom.js` | WebView2 trackpad pinch / wheel → MapLibre zoom (desktop only) |
+| `windows-window-service.js` | Dual Screen secondary map window (`WebviewWindow` label `map`) |
 | `windows-file-service.js` | Open / save / folder / reveal in Explorer |
 | `windows-compute-service.js` | Routes allow-listed ops through the job service |
 | `windows-job-service.js` | Starts Rust jobs; streams progress/log/result events |

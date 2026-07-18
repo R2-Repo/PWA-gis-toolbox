@@ -53,6 +53,7 @@ import { isPresentationMode } from '../presentation/presentation-mode-detector.j
 import { installDualScreenPrimaryHandlers } from '../dual-screen/primary-handlers.js';
 import {
     POPUP_BLOCKED_MESSAGE,
+    DESKTOP_MAP_WINDOW_FAILED_MESSAGE,
     RELOAD_REMINDER_MESSAGE,
     consumeDualScreenReloadReminder
 } from '../dual-screen/storage-hint.js';
@@ -102,7 +103,7 @@ import {
     restoreOpenWidget
 } from '../widgets/widget-state-store.js';
 import { createWidgetContext } from '../widgets/widget-context.js';
-import { getPlatformBundle, refreshPlatformBundle } from '../platform/create-platform.js';
+import { getPlatformBundle, isTauriShellPresent, refreshPlatformBundle } from '../platform/create-platform.js';
 import { openImportStationTable } from '../widgets/project-stationing/controller.js';
 import { isProjectStationingCenterline } from '../widgets/project-stationing/route-profile.js';
 import { createWorkflowController } from '../workflow/workflow-controller.js';
@@ -1694,7 +1695,10 @@ function setupDualScreenMode() {
         }
         const ok = await dualScreenCoordinator.activate();
         if (!ok) {
-            showToast(POPUP_BLOCKED_MESSAGE, 'error', { duration: 8000 });
+            const msg = isTauriShellPresent()
+                ? DESKTOP_MAP_WINDOW_FAILED_MESSAGE
+                : POPUP_BLOCKED_MESSAGE;
+            showToast(msg, 'error', { duration: 8000 });
         }
     };
 

@@ -1,6 +1,7 @@
 import { createWebFileService } from './web-file-service.js';
 import { createWebComputeService } from './web-compute-service.js';
 import { createWebJobService } from './web-job-service.js';
+import { createWebWindowService } from './web-window-service.js';
 
 /**
  * @param {{ showToast?: (message: string, type?: string) => void }} [opts]
@@ -46,6 +47,7 @@ export function createWebPlatform(opts = {}) {
             files: createWebFileService(),
             compute: createWebComputeService(),
             jobs: createWebJobService(),
+            windows: createWebWindowService(),
             notifications: {
                 show: showToast
             }

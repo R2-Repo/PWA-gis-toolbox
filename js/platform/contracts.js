@@ -72,11 +72,37 @@
  */
 
 /**
+ * Abstract handle for the Dual Screen secondary map window.
+ * Web uses a browser Window; Windows uses a Tauri WebviewWindow.
+ *
+ * @typedef {Object} MapWindowHandle
+ * @property {boolean} closed
+ * @property {() => void | Promise<void>} focus
+ * @property {() => void | Promise<void>} close
+ */
+
+/**
+ * @typedef {Object} OpenMapWindowOptions
+ * @property {string} url - Relative app URL (e.g. map-window.html)
+ * @property {string} [name] - Browser window name
+ * @property {string} [label] - Tauri webview label
+ * @property {string} [features] - window.open features string (web)
+ * @property {{ width: number, height: number, x?: number, y?: number }} [bounds]
+ * @property {string} [title]
+ */
+
+/**
+ * @typedef {Object} WindowService
+ * @property {(opts: OpenMapWindowOptions) => Promise<MapWindowHandle | null>} openMapWindow
+ */
+
+/**
  * @typedef {Object} PlatformServices
  * @property {FileService} files
  * @property {ComputeService} compute
  * @property {JobService} jobs
  * @property {NotificationService} notifications
+ * @property {WindowService} [windows]
  */
 
 /**
