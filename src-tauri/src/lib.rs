@@ -1,7 +1,34 @@
+mod jobs;
+mod sidecar;
+
+use jobs::{job_cancel, job_start, sidecar_health, JobRegistry};
 use serde_json::{json, Value};
+use sidecar::{check_sidecar_health, SidecarState};
+use std::sync::Arc;
+use tauri::Manager;
 
 #[tauri::command]
-fn platform_handshake() -> Value {
+fn platform_handshake(state: tauri::State<'_, SidecarState>) -> Value {
+    let health = check_sidecar_health(&state);
+    let mut python = json!({
+        "available": health.available
+    });
+    if let Some(version) = &health.version {
+        python["version"] = json!(version);
+    }
+    if let Some(reason) = &health.reason {
+        python["reason"] = json!(reason);
+    }
+
+    let large = if health.available {
+        json!({ "available": true })
+    } else {
+        json!({
+            "available": false,
+            "reason": "Requires Python sidecar"
+        })
+    };
+
     json!({
         "runtime": "windows",
         "os": "windows",
@@ -10,10 +37,7 @@ fn platform_handshake() -> Value {
             "nativeFiles": {
                 "available": true
             },
-            "pythonCompute": {
-                "available": false,
-                "reason": "Python sidecar not packaged yet"
-            },
+            "pythonCompute": python,
             "gpuCompute": {
                 "available": false,
                 "reason": "GPU backend not configured yet"
@@ -26,10 +50,7 @@ fn platform_handshake() -> Value {
                 "available": false,
                 "reason": "PDAL not packaged yet"
             },
-            "largeDatasetProcessing": {
-                "available": false,
-                "reason": "Large-dataset processing not packaged yet"
-            }
+            "largeDatasetProcessing": large
         }
     })
 }
@@ -57,9 +78,20 @@ fn reveal_in_explorer(path: String) -> Result<(), String> {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .manage(SidecarState::default())
+        .manage(Arc::new(JobRegistry::default()))
+        .setup(|app| {
+            // Warm the sidecar health cache during startup (non-fatal).
+            let state = app.state::<SidecarState>();
+            let _ = check_sidecar_health(&state);
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             platform_handshake,
-            reveal_in_explorer
+            reveal_in_explorer,
+            job_start,
+            job_cancel,
+            sidecar_health
         ])
         .run(tauri::generate_context!())
         .expect("error while running GIS Toolbox desktop shell");

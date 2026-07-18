@@ -1,13 +1,20 @@
 # Windows platform provider
 
-**Only this folder may import `@tauri-apps/*`.**
+**Only this folder may import `@tauri-apps/*` (via `tauri-bridge.js`).**
 
 | File | Role |
 |------|------|
-| `tauri-bridge.js` | `invoke`, native dialog wrappers |
+| `tauri-bridge.js` | `invoke`, event listen, native dialog wrappers |
 | `windows-file-service.js` | Open / save / folder / reveal in Explorer |
-| `windows-compute-service.js` | Placeholder for Python/GPU ops |
-| `windows-job-service.js` | Placeholder for long-running jobs |
+| `windows-compute-service.js` | Routes allow-listed ops through the job service |
+| `windows-job-service.js` | Starts Rust jobs; streams progress/log/result events |
 | `windows-platform.js` | Assembles `platform` + `services` for WidgetContext |
 
-Shell IPC lives in `src-tauri/`. See `docs/PWA_DESKTOP_WORKFLOW_PLAN.md`.
+## Native operations
+
+Allow-listed in `js/platform/jobs/allowed-operations.js` and `src-tauri/src/jobs.rs`:
+
+- `echo`
+- `summarize_geojson` — `{ path: string }` file path only
+
+Shell IPC lives in `src-tauri/`. Python implementation: `desktop/sidecar/python/`.

@@ -52,6 +52,7 @@
 /**
  * @typedef {Object} JobHandle
  * @property {string} id
+ * @property {string} [operation]
  * @property {(cb: (progress: object) => void) => void} onProgress
  * @property {(cb: (message: string) => void) => void} onLog
  * @property {() => void} cancel

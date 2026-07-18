@@ -129,6 +129,22 @@ The Tauri shell lives in `src-tauri/` (Windows 11 / WebView2). Day-to-day widget
 uses `npm run dev` in the browser. Use `npm run dev:desktop` on a Windows machine when you
 need the native window, file dialogs, or sidecar features.
 
+### Desktop jobs + Python sidecar
+
+Long-running native work uses `ctx.services.jobs` / `ctx.services.compute` with allow-listed
+operations (`echo`, `summarize_geojson`). The Python sidecar is under
+`desktop/sidecar/python/` (stdlib only for v0.1).
+
+```bash
+# Smoke the sidecar without Tauri
+cd desktop/sidecar/python
+printf '%s\n' '{"id":"1","op":"health","input":{}}' | python3 -m gis_sidecar
+```
+
+On Windows, package a frozen binary later with:
+
+`powershell -File desktop/scripts/package-sidecar-windows.ps1`
+
 **Git workflow is unchanged:** develop on `staging`, push for preview, Promote to Production for `main`.
 
 ## Planned features

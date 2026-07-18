@@ -517,8 +517,8 @@ Treat GIS Toolbox as one modular web app. Add a thin **Windows 11 Tauri shell** 
 - [x] Cursor rules: platform-shared.mdc, windows-native.mdc, build-target.mdc
 - [x] Phase 3: src-tauri/ Tauri 2 shell loading dist-desktop/ (`npm run dev:desktop` / `build:desktop:app`)
 - [x] Phase 4: native file dialogs via ctx.services.files (Tauri dialog plugin + reveal_in_explorer)
-- [ ] Phase 5: ctx.services.jobs infrastructure
-- [ ] Phase 6: packaged Python sidecar + one narrow GIS operation
+- [x] Phase 5: ctx.services.jobs infrastructure (shared handles + Windows IPC events + tests)
+- [x] Phase 6: Python sidecar + health-check + `summarize_geojson` (dev: `python -m gis_sidecar`; Windows freeze script included)
 - [ ] Phase 7: first desktop-only widget
 - [ ] Phase 8: first accelerated shared widget
 - [ ] Phase 9: Windows installer + clean-machine test

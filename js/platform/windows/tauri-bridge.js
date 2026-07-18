@@ -23,6 +23,16 @@ export async function invokeCommand(command, args = {}) {
 }
 
 /**
+ * @param {string} event
+ * @param {(event: { payload: any }) => void} handler
+ * @returns {Promise<() => void>}
+ */
+export async function listenEvent(event, handler) {
+    const { listen } = await import('@tauri-apps/api/event');
+    return listen(event, handler);
+}
+
+/**
  * @param {object} [options]
  * @returns {Promise<string | string[] | null>}
  */

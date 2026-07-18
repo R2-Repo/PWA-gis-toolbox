@@ -50,6 +50,9 @@ export function createWindowsPlatform(opts = {}) {
         ? opts.showToast
         : () => {};
 
+    const jobs = createWindowsJobService();
+    const compute = createWindowsComputeService(jobs);
+
     return {
         platform: {
             runtime: 'windows',
@@ -58,8 +61,8 @@ export function createWindowsPlatform(opts = {}) {
         },
         services: {
             files: createWindowsFileService(),
-            compute: createWindowsComputeService(),
-            jobs: createWindowsJobService(),
+            compute,
+            jobs,
             notifications: {
                 show: showToast
             }
