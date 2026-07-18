@@ -519,7 +519,7 @@ Treat GIS Toolbox as one modular web app. Add a thin **Windows 11 Tauri shell** 
 - [x] Phase 4: native file dialogs via ctx.services.files (Tauri dialog plugin + reveal_in_explorer)
 - [x] Phase 5: ctx.services.jobs infrastructure (shared handles + Windows IPC events + tests)
 - [x] Phase 6: Python sidecar + health-check + `summarize_geojson` (dev: `python -m gis_sidecar`; Windows freeze script included)
-- [ ] Phase 7: first desktop-only widget
+- [x] Phase 7: first desktop-only widget — GeoJSON File Summary (`requiredCapabilities: ['pythonCompute','nativeFiles']`)
 - [ ] Phase 8: first accelerated shared widget
 - [ ] Phase 9: Windows installer + clean-machine test
 - [ ] CI: update deploy-pages.yml to use build:web (optional — current `npm run build` → `dist/` still works)

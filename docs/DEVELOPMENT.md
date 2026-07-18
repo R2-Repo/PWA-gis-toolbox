@@ -145,6 +145,12 @@ On Windows, package a frozen binary later with:
 
 `powershell -File desktop/scripts/package-sidecar-windows.ps1`
 
+### Desktop-only GIS Widget
+
+**GeoJSON File Summary** (`js/widgets/geojson-file-summary/`) appears in the GIS Widgets
+panel only when `pythonCompute` and `nativeFiles` capabilities are available (Windows
+desktop shell with a healthy Python sidecar). It is hidden in the public PWA.
+
 **Git workflow is unchanged:** develop on `staging`, push for preview, Promote to Production for `main`.
 
 ## Planned features

@@ -3952,6 +3952,11 @@ export async function bootstrapDesktopPlatform() {
         logger.warn('Platform', 'Desktop handshake failed', {
             message: err?.message || String(err)
         });
+    } finally {
+        // Let React panels re-read capability-gated widgets (e.g. desktop-only).
+        if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('gis-platform-ready'));
+        }
     }
 }
 
