@@ -288,10 +288,18 @@ Use `windows` naming (not generic `desktop`) since macOS/Linux are out of scope.
 - `/fix-desktop` — then describe the desktop issue
 - `/feature-both` — new/changed feature that must work on PWA **and** desktop
 - `/smoke-both` — dual-runtime blast-radius check after a change
-- `/qa-both` — cheap Composer subagent: tests, builds, boundary audit, minimal docs
+- `/qa-both` — cheap Composer subagent: tests, builds, minimal docs
+- `/platform-boundary` — readonly boundary + obvious desktop security scan
+- `/widget-scaffold` — review widget Build Plan (PWA vs desktop-only gating)
 - `/which-runtime` — classify before fixing
 
-**Subagent:** `.cursor/agents/dual-runtime-qa.md` pinned to `composer-2.5-fast` so expensive parent models do not spend tokens on test logs and doc maintenance.
+**Subagents** (all pinned to `composer-2.5-fast`):
+
+| Agent | Role |
+|-------|------|
+| `dual-runtime-qa` | Tests, builds, minimal dual-runtime docs |
+| `platform-boundary` | Readonly PWA↔desktop boundary + desktop security |
+| `widget-scaffold` | Post–Build Plan widget checklist + capability gating |
 
 **Shared widget or bug fix:**
 > Add/fix [X] following WIDGET_AGENT_PLAYBOOK. Engine stays pure. No Tauri imports. Platform behavior via ctx.services only.
@@ -542,6 +550,7 @@ Treat GIS Toolbox as one modular web app. Add a thin **Windows 11 Tauri shell** 
 - [x] Phase 2: js/platform/ contracts + web provider + WidgetContext extension + registry capabilities
 - [x] Cursor rules: platform-shared.mdc, windows-native.mdc, build-target.mdc
 - [x] PWA↔Desktop compat doc + fix-pwa / fix-desktop / feature-both / pwa-desktop-compat skills + rules + slash commands
+- [x] Composer subagents: dual-runtime-qa, platform-boundary (desktop security), widget-scaffold
 - [x] Phase 3: src-tauri/ Tauri 2 shell loading dist-desktop/ (`npm run dev:desktop` / `build:desktop:app`)
 - [x] Phase 4: native file dialogs via ctx.services.files (Tauri dialog plugin + reveal_in_explorer)
 - [x] Phase 5: ctx.services.jobs infrastructure (shared handles + Windows IPC events + tests)

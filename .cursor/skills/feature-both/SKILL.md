@@ -69,12 +69,14 @@ If you cannot run desktop in this environment, still keep web green, keep Window
 
 ### 5. Hand off mechanical QA/docs to the cheap subagent
 
-After implementation (or when the user runs `/qa-both`), **delegate** to project subagent `dual-runtime-qa` (`.cursor/agents/dual-runtime-qa.md`, pinned to Composer fast):
+After implementation (or when the user runs `/qa-both`), **delegate** cheap Composer subagents:
 
-- Pass the changed-file list + one-line feature summary
-- Let it run tests/builds, boundary audit, and minimal doc updates
-- Parent (expensive model) should **not** burn tokens re-running long test logs or rewriting docs
-- Fix any blockers it reports, then stop
+1. `dual-runtime-qa` — tests/builds + minimal docs
+2. `platform-boundary` — readonly boundary + desktop security ( esp. if native/platform files changed)
+
+If this is a **new GIS widget**, run `widget-scaffold` on the Build Plan **before** heavy coding (`/widget-scaffold`).
+
+Parent (expensive model) should **not** burn tokens on those mechanical passes. Fix blockers they report, then stop.
 
 ### 6. Communication style (avoid thrash)
 

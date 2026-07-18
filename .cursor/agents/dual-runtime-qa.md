@@ -60,6 +60,8 @@ Fail the QA report if you find:
 - Desktop build registering / requiring PWA service worker incorrectly
 - Duplicate Windows-only copy of a shared widget tree
 
+For a deeper desktop **security** scan (shell/path/secrets/allow-list), tell the parent to run subagent `platform-boundary` — do not duplicate that full audit here.
+
 ## Step 4 — Docs updates (only when needed)
 
 Update docs **only** if the change introduced lasting dual-runtime truth. Prefer minimal edits.

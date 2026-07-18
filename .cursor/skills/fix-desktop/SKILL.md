@@ -42,7 +42,12 @@ If ambiguous, read [`docs/PWA_DESKTOP_COMPAT.md`](../../../docs/PWA_DESKTOP_COMP
 
 ## Done checks
 
-Prefer delegating mechanical verification to subagent **`dual-runtime-qa`** (Composer fast — `.cursor/agents/dual-runtime-qa.md`) with the changed-file list. Parent should not burn expensive tokens on test logs/docs.
+Prefer delegating mechanical verification to:
+
+1. **`dual-runtime-qa`** — tests/builds/docs
+2. **`platform-boundary`** — readonly boundary + obvious desktop security (especially if `src-tauri/`, sidecar, or `js/platform/windows/` changed)
+
+Parent should not burn expensive tokens on those passes.
 
 Minimum if no subagent available:
 

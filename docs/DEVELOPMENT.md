@@ -122,7 +122,9 @@ for architecture and packaging.
 - “fix/update desktop” → `/fix-desktop`
 - “feature for both” → `/feature-both`
 - dual smoke → `/smoke-both`
-- cheap tests/docs QA → `/qa-both` (Composer subagent `dual-runtime-qa`)
+- cheap tests/docs QA → `/qa-both` (Composer `dual-runtime-qa`)
+- boundary + desktop security → `/platform-boundary`
+- after widget Build Plan → `/widget-scaffold`
 
 | Target | Command | Output |
 |--------|---------|--------|

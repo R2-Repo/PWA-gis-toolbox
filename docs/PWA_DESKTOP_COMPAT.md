@@ -4,9 +4,12 @@
 >
 > Agents: if the user says **fix/update PWA** or **fix/update desktop**, follow the matching skill under `.cursor/skills/` and the rules in `.cursor/rules/fix-*.mdc`.
 >
-> **Slash commands (quick access):** `/fix-pwa`, `/fix-desktop`, `/feature-both`, `/smoke-both`, `/qa-both`, `/which-runtime` — see `.cursor/commands/`.
+> **Slash commands (quick access):** `/fix-pwa`, `/fix-desktop`, `/feature-both`, `/smoke-both`, `/qa-both`, `/platform-boundary`, `/widget-scaffold`, `/which-runtime` — see `.cursor/commands/`.
 >
-> **Cheap QA subagent:** after implementation, parent should delegate to `.cursor/agents/dual-runtime-qa.md` (Composer fast) for tests/builds/docs — not the expensive parent model.
+> **Cheap subagents (Composer fast):**
+> - `dual-runtime-qa` — tests/builds/docs after implementation
+> - `platform-boundary` — readonly boundary + obvious desktop security audit
+> - `widget-scaffold` — review widget Build Plan / PWA vs desktop-only gating
 
 ## Runtimes
 
@@ -108,4 +111,4 @@ You do **not** need to retest the entire product after every change — only the
 - Skills: `.cursor/skills/fix-pwa/`, `fix-desktop/`, `feature-both/`, `pwa-desktop-compat/`
 - Rules: `.cursor/rules/fix-pwa.mdc`, `fix-desktop.mdc`, `feature-both.mdc`, `platform-shared.mdc`
 - Commands: `.cursor/commands/fix-pwa.md`, `fix-desktop.md`, `feature-both.md`, `smoke-both.md`, `qa-both.md`, `which-runtime.md`
-- Subagent: `.cursor/agents/dual-runtime-qa.md` (Composer fast)
+- Subagents: `.cursor/agents/dual-runtime-qa.md`, `platform-boundary.md`, `widget-scaffold.md` (Composer fast)
