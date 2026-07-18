@@ -71,4 +71,23 @@ describe('platform contracts', () => {
         await expect(services.compute.run('generate-contours', {})).rejects.toThrow(/Windows desktop/i);
         await expect(services.jobs.start({ operation: 'generate-contours', input: {} })).rejects.toThrow(/Windows desktop/i);
     });
+
+    it('shows geojson-file-summary only when nativeFiles + pythonCompute are available', () => {
+        const required = ['pythonCompute', 'nativeFiles'];
+        const web = createWebPlatform().platform;
+        expect(hasRequiredCapabilities(web, required)).toBe(false);
+
+        const desktopReady = {
+            runtime: 'windows',
+            os: 'windows',
+            capabilities: {
+                nativeFiles: { available: true },
+                pythonCompute: { available: true, version: '0.1.0' }
+            }
+        };
+        expect(hasRequiredCapabilities(desktopReady, required)).toBe(true);
+        expect(filterVisible(web, [{ type: 'geojson-file-summary', requiredCapabilities: required }])).toEqual([]);
+        expect(filterVisible(desktopReady, [{ type: 'geojson-file-summary', requiredCapabilities: required }])
+            .map((w) => w.type)).toEqual(['geojson-file-summary']);
+    });
 });

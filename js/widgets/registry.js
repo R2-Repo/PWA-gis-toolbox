@@ -13,6 +13,7 @@ import { openCrsManager } from './crs-manager/controller.js';
 import { openQuery } from './query/controller.js';
 import { openWirelessSitePlanning } from './wireless-site-planning/controller.js';
 import { openPresentationLinkBuilder } from './presentation-link-builder/controller.js';
+import { openGeoJsonFileSummary } from './geojson-file-summary/controller.js';
 import logger from '../core/logger.js';
 import {
     hasRequiredCapabilities,
@@ -105,6 +106,16 @@ export const GIS_WIDGETS = [
         icon: '✂️',
         tip: 'Cut a project route into numbered plan sheet extents with matchlines and export.',
         open: openSheetCutting
+    },
+    {
+        type: 'geojson-file-summary',
+        action: 'openGeoJsonFileSummary',
+        label: 'GeoJSON File Summary',
+        icon: '📄',
+        tip: 'Desktop only: summarize a local GeoJSON file with the Python sidecar (feature counts, geometry types, fields).',
+        requiredCapabilities: ['pythonCompute', 'nativeFiles'],
+        optionalCapabilities: [],
+        open: openGeoJsonFileSummary
     }
 ];
 
@@ -188,16 +199,31 @@ export function getWidgetOptionalCapabilities(widget, platform) {
 }
 
 /**
- * Build APP_ACTIONS entries for capability-visible widgets only.
+ * Build APP_ACTIONS for all registered visible-list widgets.
+ * Capability gating is enforced here and in the panel filter so desktop-only
+ * widgets remain callable after a late platform handshake refresh.
  * @param {() => WidgetContext} getCtx
  * @returns {Record<string, () => void>}
  */
 export function buildWidgetActions(getCtx) {
     const actions = {};
-    for (const widget of getVisibleWidgets()) {
+    for (const widget of GIS_WIDGETS) {
         actions[widget.action] = () => {
+            const ctx = getCtx();
+            const platform = ctx.platform || getPlatformBundle().platform;
+            if (!hasRequiredCapabilities(platform, widget.requiredCapabilities)) {
+                logger.warn('Widget', 'Missing required capabilities', {
+                    type: widget.type,
+                    requiredCapabilities: widget.requiredCapabilities
+                });
+                ctx.showToast?.(
+                    `${widget.label} requires the Windows desktop app with the needed native capabilities.`,
+                    'warning'
+                );
+                return;
+            }
             logger.info('Widget', 'Open', { type: widget.type, label: widget.label });
-            widget.open(getCtx());
+            widget.open(ctx);
         };
     }
     return actions;
