@@ -1,0 +1,35 @@
+---
+description: Apply when the user asks to fix, update, debug, or change the PWA / web / browser app
+alwaysApply: false
+---
+
+# Fix / update PWA (web runtime)
+
+When the user says they need to **fix, update, debug, or change the PWA** (also: web app, browser app, staging preview, progressive web app):
+
+1. **Read first:** [`docs/PWA_DESKTOP_COMPAT.md`](../../docs/PWA_DESKTOP_COMPAT.md)
+2. **Follow skill:** `.cursor/skills/fix-pwa/SKILL.md`
+
+## Meaning of this intent
+
+- Target runtime is the **public browser PWA**
+- Prefer changes in shared app code and/or `js/platform/web/`
+- **Do not** “fix web” by adding Tauri, sidecar, or Windows-only APIs
+- Preserve desktop: `npm run build:desktop` must stay green; do not break Windows providers
+
+## Allowed focus
+
+- `js/`, `react/`, `css/`, `js/platform/web/`, PWA/Vite web config
+- Shared bugs that reproduce in the browser
+
+## Forbidden for this intent
+
+- Importing `@tauri-apps/*` outside `js/platform/windows/`
+- Requiring native files / Python / GPU for the PWA path
+- Disabling or gutting desktop providers to make web simpler
+
+## Verify before done
+
+- `npm test`
+- `npm run build` or `npm run build:web`
+- Browser smoke for the changed flow only

@@ -10,6 +10,19 @@ GIS Toolbox has **one shared React/MapLibre frontend** used by:
 1. The public progressive web app
 2. A private Windows 11 desktop application (Tauri / WebView2 — when present)
 
+## User intent shortcuts
+
+When the user says **fix/update PWA** or **fix/update desktop**, do **not** wait for them to spell out constraints:
+
+- PWA → `.cursor/skills/fix-pwa/SKILL.md` + `fix-pwa.mdc`
+- Desktop → `.cursor/skills/fix-desktop/SKILL.md` + `fix-desktop.mdc`
+- Both → `.cursor/skills/feature-both/SKILL.md` + `feature-both.mdc`
+- Unclear → `.cursor/skills/pwa-desktop-compat/SKILL.md`
+- After implementation → `/qa-both` + `/platform-boundary` when native/platform files changed
+- After a widget Build Plan → `/widget-scaffold`
+
+Blast-radius reference: [`docs/PWA_DESKTOP_COMPAT.md`](../../docs/PWA_DESKTOP_COMPAT.md)
+
 ## Default all work to shared code
 
 - Widgets, map, tools, UI, and bug fixes go in `js/` and `react/`
@@ -22,7 +35,7 @@ GIS Toolbox has **one shared React/MapLibre frontend** used by:
 - Inject platform APIs through `WidgetContext` (`ctx.platform`, `ctx.services`)
 - Contracts live in `js/platform/contracts.js`
 - Web provider: `js/platform/web/`
-- Windows provider (when added): `js/platform/windows/` only
+- Windows provider: `js/platform/windows/` only
 
 ## Hard rules
 

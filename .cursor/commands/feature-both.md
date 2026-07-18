@@ -1,0 +1,16 @@
+Add or change a feature for **both** the public PWA and the Windows desktop app.
+
+Follow `.cursor/skills/feature-both/SKILL.md` and read `docs/PWA_DESKTOP_COMPAT.md` first.
+
+Process (do not skip):
+1. Split into shared vs `js/platform/web/` vs `js/platform/windows/` (and shell/sidecar only if needed)
+2. Plan web behavior + desktop behavior + degradation before coding
+3. Implement shared first, then both providers — no Tauri in shared modules
+4. After coding, delegate mechanical QA/docs to subagent `dual-runtime-qa` (Composer fast) — do not burn the parent model on test logs/doc churn
+5. Definition of done — all required:
+   - dual-runtime-qa report green (or equivalent `npm test` + web + desktop builds)
+   - Smoke the **same feature** on PWA and desktop (or list exact desktop steps if Tauri cannot run here)
+6. Do not claim done until both runtimes are covered
+7. Do not ask me to re-explain PWA vs desktop rules
+
+My feature request:
