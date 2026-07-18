@@ -24,5 +24,22 @@ Production packaging embeds `../dist-desktop` (built with **no** PWA service wor
 - Rust / Tauri config: this folder
 - Frontend bridge: `js/platform/windows/` (only place that may import `@tauri-apps/*`)
 - Shared GIS UI: `js/`, `react/` (unchanged)
+- Python sidecar: `desktop/sidecar/python/` (allow-listed ops over stdin/stdout JSON)
+
+### Native jobs
+
+Frontend:
+
+```js
+const result = await ctx.services.compute.run('summarize_geojson', { path }, {
+  onProgress: (p) => console.log(p),
+  signal
+});
+```
+
+Rust commands: `job_start`, `job_cancel`, `sidecar_health`, `platform_handshake`.
+
+Dev mode launches `python -m gis_sidecar` with `PYTHONPATH=desktop/sidecar/python`.
+Package a frozen `gis-sidecar.exe` later via `desktop/scripts/package-sidecar-windows.ps1`.
 
 See `docs/PWA_DESKTOP_WORKFLOW_PLAN.md`.
