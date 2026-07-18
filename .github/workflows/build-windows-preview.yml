@@ -1,0 +1,65 @@
+name: Build Windows Preview
+
+# Desktop equivalent of the staging web preview.
+# Push to staging → build desktop frontend + verify Tauri shell compiles.
+# Download the artifact from Actions when you want a packaged smoke check later.
+
+on:
+  push:
+    branches:
+      - staging
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-preview
+  cancel-in-progress: true
+
+jobs:
+  preview:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm test
+
+      - name: Build desktop frontend (no PWA)
+        run: npm run build:desktop
+
+      - name: Cargo check Tauri shell
+        working-directory: src-tauri
+        run: cargo check
+
+      - name: Smoke Python sidecar
+        shell: bash
+        run: |
+          cd desktop/sidecar/python
+          printf '%s\n' '{"id":"ci","op":"health","input":{}}' | python -m gis_sidecar
+
+      - name: Upload desktop frontend artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-desktop-staging
+          path: dist-desktop/
+          retention-days: 14

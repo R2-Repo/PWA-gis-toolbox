@@ -14,6 +14,7 @@ import { openQuery } from './query/controller.js';
 import { openWirelessSitePlanning } from './wireless-site-planning/controller.js';
 import { openPresentationLinkBuilder } from './presentation-link-builder/controller.js';
 import { openGeoJsonFileSummary } from './geojson-file-summary/controller.js';
+import { openLayerSummary } from './layer-summary/controller.js';
 import logger from '../core/logger.js';
 import {
     hasRequiredCapabilities,
@@ -106,6 +107,16 @@ export const GIS_WIDGETS = [
         icon: '✂️',
         tip: 'Cut a project route into numbered plan sheet extents with matchlines and export.',
         open: openSheetCutting
+    },
+    {
+        type: 'layer-summary',
+        action: 'openLayerSummary',
+        label: 'Layer Summary',
+        icon: '📊',
+        tip: 'Summarize feature counts, geometry types, and fields for a map layer. Uses Python on Windows for large layers when available.',
+        requiredCapabilities: [],
+        optionalCapabilities: ['pythonCompute'],
+        open: openLayerSummary
     },
     {
         type: 'geojson-file-summary',

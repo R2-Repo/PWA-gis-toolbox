@@ -17,6 +17,12 @@ export function createWebFileService() {
         },
         async revealInExplorer() {
             // Not available in the browser.
+        },
+        async writeTempGeoJson() {
+            throw new Error('Temporary GeoJSON materialization requires the Windows desktop application.');
+        },
+        async removeTempFile() {
+            // No-op in the browser.
         }
     };
 }

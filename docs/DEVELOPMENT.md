@@ -151,6 +151,22 @@ On Windows, package a frozen binary later with:
 panel only when `pythonCompute` and `nativeFiles` capabilities are available (Windows
 desktop shell with a healthy Python sidecar). It is hidden in the public PWA.
 
+### Shared accelerated widget
+
+**Layer Summary** (`js/widgets/layer-summary/`) works in the public PWA and desktop app.
+It always has a JavaScript provider. On Windows, layers with ≥ 2,500 features can optionally
+use the Python sidecar (`optionalCapabilities: ['pythonCompute']`). The dialog shows
+**Mode: JavaScript** or **Mode: Python (accelerated)**.
+
+### Windows CI
+
+| Workflow | Trigger | Result |
+|----------|---------|--------|
+| `build-windows-preview.yml` | Push to `staging` | Tests + `build:desktop` + `cargo check` → Actions artifact |
+| `build-windows-release.yml` | Push to `main` (after Promote) | Tauri NSIS/MSI → GitHub Release |
+
+Web deploy via `deploy-pages.yml` is unchanged.
+
 **Git workflow is unchanged:** develop on `staging`, push for preview, Promote to Production for `main`.
 
 ## Planned features

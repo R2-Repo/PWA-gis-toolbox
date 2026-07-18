@@ -42,6 +42,8 @@
  * @property {(opts?: object) => Promise<{ canceled: boolean, path?: string }>} [save]
  * @property {(opts?: object) => Promise<{ canceled: boolean, path?: string }>} [selectFolder]
  * @property {(path: string) => Promise<void>} [revealInExplorer]
+ * @property {(contents: string) => Promise<string>} [writeTempGeoJson]
+ * @property {(path: string) => Promise<void>} [removeTempFile]
  */
 
 /**

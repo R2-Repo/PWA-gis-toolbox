@@ -520,8 +520,8 @@ Treat GIS Toolbox as one modular web app. Add a thin **Windows 11 Tauri shell** 
 - [x] Phase 5: ctx.services.jobs infrastructure (shared handles + Windows IPC events + tests)
 - [x] Phase 6: Python sidecar + health-check + `summarize_geojson` (dev: `python -m gis_sidecar`; Windows freeze script included)
 - [x] Phase 7: first desktop-only widget — GeoJSON File Summary (`requiredCapabilities: ['pythonCompute','nativeFiles']`)
-- [ ] Phase 8: first accelerated shared widget
-- [ ] Phase 9: Windows installer + clean-machine test
+- [x] Phase 8: first accelerated shared widget — Layer Summary (JS always; Python optional for large layers)
+- [x] Phase 9 lite: Windows CI preview + release workflows (full clean-machine QA still manual)
 - [ ] CI: update deploy-pages.yml to use build:web (optional — current `npm run build` → `dist/` still works)
-- [ ] CI: add build-windows-preview.yml (push to staging → artifact)
-- [ ] CI: add build-windows-release.yml (push to main → GitHub Release)
+- [x] CI: add build-windows-preview.yml (push to staging → artifact)
+- [x] CI: add build-windows-release.yml (push to main → GitHub Release)
