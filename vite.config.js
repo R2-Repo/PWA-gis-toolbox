@@ -164,11 +164,27 @@ export default defineConfig(({ mode }) => {
     : (mode === 'web' ? 'dist-web' : 'dist');
   const gisRuntime = isDesktop ? 'windows' : 'web';
 
+  const host = process.env.TAURI_DEV_HOST;
+
   return {
     base: './',
+    // Keep Rust errors visible when launched via `tauri dev`
+    clearScreen: false,
+    envPrefix: ['VITE_', 'TAURI_ENV_*'],
     server: {
       port: 5174,
-      strictPort: true
+      strictPort: true,
+      host: host || false,
+      hmr: host
+        ? {
+            protocol: 'ws',
+            host,
+            port: 1421
+          }
+        : undefined,
+      watch: {
+        ignored: ['**/src-tauri/**']
+      }
     },
     define: {
       'import.meta.env.VITE_GIS_RUNTIME': JSON.stringify(gisRuntime)
@@ -182,6 +198,10 @@ export default defineConfig(({ mode }) => {
     build: {
       outDir,
       emptyOutDir: true,
+      // When packaging inside Tauri, target a modern Chromium (WebView2 on Windows).
+      target: isDesktop || process.env.TAURI_ENV_PLATFORM === 'windows'
+        ? 'chrome105'
+        : undefined,
       rollupOptions: {
         input: {
           main: resolve(__dirname, 'index.html'),
@@ -194,3 +214,4 @@ export default defineConfig(({ mode }) => {
     }
   };
 });
+

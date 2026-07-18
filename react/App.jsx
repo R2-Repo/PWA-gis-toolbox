@@ -54,7 +54,8 @@ import {
     buildMapContextMenuItems,
     setPanelCollapsed,
     openPresentationLinkBuilderWidget,
-    bootstrapAppFromUrl
+    bootstrapAppFromUrl,
+    bootstrapDesktopPlatform
 } from '../js/tools/tool-handlers.js';
 import { getAppUrlConfig } from '../js/url/app-url-detector.js';
 import { getActiveLayer } from '../js/core/state.js';
@@ -478,6 +479,7 @@ export function App() {
         if (!bootRanRef.current) {
             bootRanRef.current = true;
             void (async () => {
+                await bootstrapDesktopPlatform();
                 bootstrapAppFromUrl();
                 if (window.innerWidth >= 768) {
                     await showToolInfo();
