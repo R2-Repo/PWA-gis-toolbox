@@ -22,6 +22,18 @@ export function createWindowsAtlasDbService() {
         },
         async updateFinding(findingId, patch) {
             await invokeCommand('atlas_finding_update', { findingId, patch });
+        },
+        async ensureImportInbox() {
+            return invokeCommand('atlas_import_inbox_ensure');
+        },
+        async openImportInbox() {
+            await invokeCommand('atlas_import_inbox_open');
+        },
+        async listImportInbox() {
+            return invokeCommand('atlas_import_inbox_list');
+        },
+        async readImportFile(path) {
+            return invokeCommand('atlas_import_read_file', { path });
         }
     };
 }

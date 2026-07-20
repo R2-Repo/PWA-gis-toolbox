@@ -5,8 +5,9 @@ mod temp_files;
 
 use atlas::{
     atlas_db_load_snapshot, atlas_db_open, atlas_finding_update, atlas_import_apply,
-    atlas_ping_cancel, atlas_ping_many, atlas_ping_one, atlas_ping_save, AtlasDbState,
-    AtlasPingState,
+    atlas_import_inbox_ensure, atlas_import_inbox_list, atlas_import_inbox_open,
+    atlas_import_read_file, atlas_ping_cancel, atlas_ping_many, atlas_ping_one, atlas_ping_save,
+    AtlasDbState, AtlasPingState,
 };
 use jobs::{job_cancel, job_start, sidecar_health, JobRegistry};
 use serde_json::{json, Value};
@@ -119,6 +120,10 @@ pub fn run() {
             atlas_db_open,
             atlas_db_load_snapshot,
             atlas_import_apply,
+            atlas_import_inbox_ensure,
+            atlas_import_inbox_list,
+            atlas_import_inbox_open,
+            atlas_import_read_file,
             atlas_ping_save,
             atlas_finding_update,
             atlas_ping_one,

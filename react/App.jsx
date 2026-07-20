@@ -89,7 +89,6 @@ import {
     pingChannel,
     pingDrop,
     pingTargets,
-    runAtlasImport,
     runAreaQuery,
     startAtlasMonitor,
     stopAtlasMonitor,
@@ -179,7 +178,6 @@ function AppShell() {
     const [atlasAvailable, setAtlasAvailable] = useState(() => isAtlasAvailable());
     const [canAtlasPing, setCanAtlasPing] = useState(() => atlasCapabilities().canPing);
     const [atlasImportOpen, setAtlasImportOpen] = useState(false);
-    const [atlasImportBusy, setAtlasImportBusy] = useState(false);
     const leftPanel = usePanelCollapse('left');
     const rightPanel = usePanelCollapse('right');
 
@@ -235,17 +233,11 @@ function AppShell() {
         else void enterAtlas();
     }, [enterAtlas, leaveAtlas]);
 
-    const onAtlasImport = useCallback(async (files) => {
-        setAtlasImportBusy(true);
-        try {
-            const summary = await runAtlasImport(files);
-            getPlatformBundle().services?.notifications?.show?.(
-                `Atlas import complete: ${summary?.counts?.drops ?? 0} drops, ${summary?.counts?.findings ?? 0} findings`,
-                'success'
-            );
-        } finally {
-            setAtlasImportBusy(false);
-        }
+    const onAtlasImported = useCallback((summary) => {
+        getPlatformBundle().services?.notifications?.show?.(
+            `Atlas import complete: ${summary?.counts?.drops ?? 0} drops, ${summary?.counts?.findings ?? 0} findings`,
+            'success'
+        );
     }, []);
 
     const onAreaFromDraw = useCallback(async () => {
@@ -558,9 +550,8 @@ function AppShell() {
 
             <AtlasImportDialog
                 open={atlasImportOpen}
-                busy={atlasImportBusy}
                 onClose={() => setAtlasImportOpen(false)}
-                onImport={onAtlasImport}
+                onImported={onAtlasImported}
             />
 
             <button

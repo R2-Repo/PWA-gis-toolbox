@@ -283,6 +283,49 @@
     box-shadow: 0 16px 40px rgba(0, 0, 0, 0.2);
 }
 
+.atlas-modal--wide {
+    width: min(560px, 100%);
+    max-height: min(90vh, 720px);
+    overflow: auto;
+}
+
+.atlas-import-section {
+    margin: 14px 0;
+    padding-top: 10px;
+    border-top: 1px solid var(--border, #e2e8f0);
+}
+
+.atlas-import-section h3 {
+    margin: 0 0 6px;
+    font-size: 13px;
+}
+
+.atlas-import-detected {
+    list-style: none;
+    margin: 8px 0 0;
+    padding: 0;
+    font-size: 12px;
+}
+
+.atlas-import-summary {
+    margin-top: 8px;
+    padding: 10px;
+    background: #f8fafc;
+    border-radius: 6px;
+    font-size: 12px;
+}
+
+.atlas-import-summary ul {
+    margin: 6px 0 0;
+    padding-left: 18px;
+}
+
+.atlas-mono {
+    font-family: ui-monospace, Consolas, monospace;
+    font-size: 11px;
+    word-break: break-all;
+}
+
 .atlas-modal h2 {
     margin: 0 0 8px;
     font-size: 18px;

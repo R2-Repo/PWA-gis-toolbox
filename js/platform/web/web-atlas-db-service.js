@@ -15,6 +15,10 @@ export function createWebAtlasDbService() {
         loadSnapshot: unavailable,
         applyImport: unavailable,
         savePingResults: unavailable,
-        updateFinding: unavailable
+        updateFinding: unavailable,
+        ensureImportInbox: unavailable,
+        openImportInbox: unavailable,
+        listImportInbox: unavailable,
+        readImportFile: unavailable
     };
 }

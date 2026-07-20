@@ -77,33 +77,79 @@ export async function refreshAtlasFromDb() {
 }
 
 /**
- * @param {{ workbookFile?: File, atmsFile?: File }} files
+ * Normalize File / path / already-parsed inputs into pipeline shape.
+ * @param {{
+ *   workbookFile?: File,
+ *   atmsFile?: File,
+ *   workbookPath?: string,
+ *   atmsPath?: string,
+ *   workbook?: { name: string, buffer: ArrayBuffer },
+ *   atms?: { name: string, text: string }
+ * }} files
  */
-export async function runAtlasImport(files) {
-    const service = db();
-    if (!service?.applyImport) {
-        throw new Error('Atlas import requires the Windows desktop app');
-    }
+async function resolveImportInputs(files = {}) {
+    const { readAtlasImportPath } = await import('./import/inbox.js');
 
     /** @type {{ name: string, buffer: ArrayBuffer } | undefined} */
-    let workbookFile;
+    let workbookFile = files.workbook;
     /** @type {{ name: string, text: string } | undefined} */
-    let atmsFile;
+    let atmsFile = files.atms;
 
-    if (files.workbookFile) {
+    if (!workbookFile && files.workbookFile) {
         workbookFile = {
             name: files.workbookFile.name,
             buffer: await files.workbookFile.arrayBuffer()
         };
     }
-    if (files.atmsFile) {
+    if (!atmsFile && files.atmsFile) {
         atmsFile = {
             name: files.atmsFile.name,
             text: await files.atmsFile.text()
         };
     }
+    if (!workbookFile && files.workbookPath) {
+        workbookFile = await readAtlasImportPath(files.workbookPath, 'workbook');
+    }
+    if (!atmsFile && files.atmsPath) {
+        atmsFile = await readAtlasImportPath(files.atmsPath, 'atms');
+    }
 
+    return { workbookFile, atmsFile };
+}
+
+/**
+ * Build import payload + summary without writing the database (review step).
+ * @param {Parameters<typeof resolveImportInputs>[0]} files
+ */
+export async function previewAtlasImport(files) {
+    const { workbookFile, atmsFile } = await resolveImportInputs(files);
+    if (!workbookFile && !atmsFile) {
+        throw new Error('Select or detect a FiberSwitchLocation workbook and/or ATMS CSV');
+    }
     const payload = await buildAtlasImportPayload({ workbookFile, atmsFile });
+    return {
+        summary: payload.summary,
+        payload
+    };
+}
+
+/**
+ * Apply a previously previewed payload, or build+apply from files.
+ * Replaces the current Atlas network tables.
+ * @param {Parameters<typeof resolveImportInputs>[0] | { payload: object }} input
+ */
+export async function runAtlasImport(input) {
+    const service = db();
+    if (!service?.applyImport) {
+        throw new Error('Atlas import requires the Windows desktop app');
+    }
+
+    let payload = input?.payload;
+    if (!payload) {
+        const preview = await previewAtlasImport(input || {});
+        payload = preview.payload;
+    }
+
     await service.applyImport(payload);
     await refreshAtlasFromDb();
     return payload.summary;

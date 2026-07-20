@@ -105,6 +105,10 @@
  * @property {(payload: object) => Promise<object>} applyImport
  * @property {(payload: object) => Promise<void>} [savePingResults]
  * @property {(findingId: string, patch: object) => Promise<void>} [updateFinding]
+ * @property {() => Promise<{ path: string }>} [ensureImportInbox]
+ * @property {() => Promise<void>} [openImportInbox]
+ * @property {() => Promise<{ path: string, files: object[] }>} [listImportInbox]
+ * @property {(path: string) => Promise<{ name: string, path: string, ext: string, base64: string }>} [readImportFile]
  */
 
 /**

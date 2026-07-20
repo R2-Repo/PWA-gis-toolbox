@@ -38,6 +38,22 @@ Region → Hub → Channel → Drop → Device
 - [x] Phase 6 — Temporary monitoring sessions + CSV export
 - [x] Phase 7 — Reconciliation center + dashboard + exports
 
+## Import workflow (not GIS map import)
+
+Atlas source files use a **dedicated path**:
+
+1. **Network Atlas → Import data → Open folder** opens `%AppData%\...\atlas-import\` (created automatically; includes `README.txt`).
+2. Copy into that folder:
+   - `FiberSwitchLocation YYYY-MM-DD.xlsx`
+   - ATMS Master Device List `.csv`
+3. **Scan folder** detects the newest matching pair.
+4. **Review** shows counts (sites, switches, findings) without writing.
+5. **Apply (replace DB)** rebuilds the Atlas SQLite network tables from those files.
+
+Opening Atlas later loads SQLite only — spreadsheets are not re-read until the next Apply.
+
+Manual file pickers remain as a fallback. Do **not** use the header Import / map drop for these sources.
+
 ## Non-goals (v1)
 
 SNMP/SSH/CDP, 24/7 monitoring, email alerts, full API, fiber panel tracing, DuckDB, PWA full parity.
