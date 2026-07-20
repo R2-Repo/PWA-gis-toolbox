@@ -2,6 +2,8 @@ import { createWebFileService } from './web-file-service.js';
 import { createWebComputeService } from './web-compute-service.js';
 import { createWebJobService } from './web-job-service.js';
 import { createWebWindowService } from './web-window-service.js';
+import { createWebAtlasDbService } from './web-atlas-db-service.js';
+import { createWebPingService } from './web-ping-service.js';
 
 /**
  * @param {{ showToast?: (message: string, type?: string) => void }} [opts]
@@ -40,6 +42,14 @@ export function createWebPlatform(opts = {}) {
                 largeDatasetProcessing: {
                     available: false,
                     reason: 'Large-dataset processing requires the Windows desktop application'
+                },
+                localSqlite: {
+                    available: false,
+                    reason: 'Network Atlas SQLite requires the Windows desktop application'
+                },
+                icmpPing: {
+                    available: false,
+                    reason: 'ICMP ping requires the Windows desktop application'
                 }
             }
         },
@@ -48,6 +58,8 @@ export function createWebPlatform(opts = {}) {
             compute: createWebComputeService(),
             jobs: createWebJobService(),
             windows: createWebWindowService(),
+            atlasDb: createWebAtlasDbService(),
+            ping: createWebPingService(),
             notifications: {
                 show: showToast
             }

@@ -1,7 +1,13 @@
+mod atlas;
 mod jobs;
 mod sidecar;
 mod temp_files;
 
+use atlas::{
+    atlas_db_load_snapshot, atlas_db_open, atlas_finding_update, atlas_import_apply,
+    atlas_ping_cancel, atlas_ping_many, atlas_ping_one, atlas_ping_save, AtlasDbState,
+    AtlasPingState,
+};
 use jobs::{job_cancel, job_start, sidecar_health, JobRegistry};
 use serde_json::{json, Value};
 use sidecar::{check_sidecar_health, SidecarState};
@@ -52,7 +58,13 @@ fn platform_handshake(state: tauri::State<'_, SidecarState>) -> Value {
                 "available": false,
                 "reason": "PDAL not packaged yet"
             },
-            "largeDatasetProcessing": large
+            "largeDatasetProcessing": large,
+            "localSqlite": {
+                "available": true
+            },
+            "icmpPing": {
+                "available": true
+            }
         }
     })
 }
@@ -82,6 +94,8 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .manage(SidecarState::default())
         .manage(Arc::new(JobRegistry::default()))
+        .manage(Arc::new(AtlasDbState::default()))
+        .manage(Arc::new(AtlasPingState::default()))
         .setup(|app| {
             // Warm the sidecar health cache during startup (non-fatal).
             let state = app.state::<SidecarState>();
@@ -101,7 +115,15 @@ pub fn run() {
             remove_temp_file,
             job_start,
             job_cancel,
-            sidecar_health
+            sidecar_health,
+            atlas_db_open,
+            atlas_db_load_snapshot,
+            atlas_import_apply,
+            atlas_ping_save,
+            atlas_finding_update,
+            atlas_ping_one,
+            atlas_ping_many,
+            atlas_ping_cancel
         ])
         .run(tauri::generate_context!())
         .expect("error while running GIS Toolbox desktop shell");

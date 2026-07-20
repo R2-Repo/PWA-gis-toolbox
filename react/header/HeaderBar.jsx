@@ -20,6 +20,9 @@ export function HeaderBar({
     onExportMapView,
     onPresentationLink,
     onPopupModeChange,
+    onNetworkAtlas,
+    showNetworkAtlas = false,
+    networkAtlasActive = false,
     getActiveLayer,
     getSelectionCount,
     onDeleteSelected,
@@ -70,6 +73,21 @@ export function HeaderBar({
                             <span className="btn-icon-text">🖥️</span><span className="btn-label">Dual Screen</span>
                         </button>
                     </div>
+                    {showNetworkAtlas && (
+                        <>
+                            <div className="header-sep" aria-hidden="true" />
+                            <button
+                                type="button"
+                                className={`btn btn-secondary btn-sm${networkAtlasActive ? ' active' : ''}`}
+                                id="btn-network-atlas"
+                                title="Open ITS Network Atlas workspace"
+                                onClick={() => onNetworkAtlas?.()}
+                            >
+                                <span className="btn-icon-text">🕸️</span>
+                                <span className="btn-label">Network Atlas</span>
+                            </button>
+                        </>
+                    )}
                 </div>
                 </div>
             </div>

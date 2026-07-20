@@ -116,7 +116,8 @@ Do not put widget logic inline in `js/tools/tool-handlers.js`. Copy the closest 
 | `css/` | Stylesheets |
 | `pipelines/` | Saved workflow pipeline JSON |
 | `public/` | Static assets |
-| `docs/` | Development guide, widget playbook, authoring checklist, **sheet cutting geometry** (`SHEET_CUTTING.md`), PWA↔Desktop blast radius (`PWA_DESKTOP_COMPAT.md`), PWA+Windows plan (`PWA_DESKTOP_WORKFLOW_PLAN.md`) |
+| `docs/` | Development guide, widget playbook, authoring checklist, **sheet cutting geometry** (`SHEET_CUTTING.md`), **Network Atlas** (`NETWORK_ATLAS.md`), PWA↔Desktop blast radius (`PWA_DESKTOP_COMPAT.md`), PWA+Windows plan (`PWA_DESKTOP_WORKFLOW_PLAN.md`) |
+| `js/atlas/`, `react/atlas/` | ITS Network Atlas workspace (desktop-first; not a GIS widget) |
 | `.cursor/skills/` | Agent skills: `fix-pwa`, `fix-desktop`, `feature-both`, `pwa-desktop-compat` |
 | `.cursor/commands/` | Slash commands: `/fix-pwa`, `/fix-desktop`, `/feature-both`, `/smoke-both`, `/qa-both`, `/which-runtime` |
 | `.cursor/agents/` | Custom subagents (Composer fast): `dual-runtime-qa`, `platform-boundary` (readonly + desktop security), `widget-scaffold` |

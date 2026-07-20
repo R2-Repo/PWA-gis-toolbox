@@ -2,6 +2,8 @@ import { createWindowsFileService } from './windows-file-service.js';
 import { createWindowsComputeService } from './windows-compute-service.js';
 import { createWindowsJobService } from './windows-job-service.js';
 import { createWindowsWindowService } from './windows-window-service.js';
+import { createWindowsAtlasDbService } from './windows-atlas-db-service.js';
+import { createWindowsPingService } from './windows-ping-service.js';
 import { invokeCommand, isTauriAvailable } from './tauri-bridge.js';
 
 /**
@@ -35,6 +37,14 @@ function capabilitiesFromHandshake(handshake) {
         largeDatasetProcessing: fromShell.largeDatasetProcessing || {
             available: false,
             reason: 'Large-dataset processing not packaged yet'
+        },
+        localSqlite: fromShell.localSqlite || {
+            available: isTauriAvailable(),
+            reason: isTauriAvailable() ? undefined : 'Tauri runtime not detected'
+        },
+        icmpPing: fromShell.icmpPing || {
+            available: isTauriAvailable(),
+            reason: isTauriAvailable() ? undefined : 'Tauri runtime not detected'
         }
     };
 }
@@ -65,6 +75,8 @@ export function createWindowsPlatform(opts = {}) {
             compute,
             jobs,
             windows: createWindowsWindowService(),
+            atlasDb: createWindowsAtlasDbService(),
+            ping: createWindowsPingService(),
             notifications: {
                 show: showToast
             }

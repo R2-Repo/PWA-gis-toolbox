@@ -29,6 +29,8 @@ describe('platform contracts', () => {
         expect(platform.runtime).toBe('web');
         expect(platform.os).toBe('browser');
         expect(hasCapability(platform, 'pythonCompute')).toBe(false);
+        expect(hasCapability(platform, 'localSqlite')).toBe(false);
+        expect(hasCapability(platform, 'icmpPing')).toBe(false);
         expect(hasRequiredCapabilities(platform, [])).toBe(true);
         expect(hasRequiredCapabilities(platform, ['pythonCompute'])).toBe(false);
         expect(listAvailableOptionalCapabilities(platform, ['pythonCompute', 'gpuCompute'])).toEqual([]);

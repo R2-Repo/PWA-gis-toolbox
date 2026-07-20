@@ -21,6 +21,8 @@
  * @property {CapabilityStatus} [localGdal]
  * @property {CapabilityStatus} [localPdal]
  * @property {CapabilityStatus} [largeDatasetProcessing]
+ * @property {CapabilityStatus} [localSqlite]
+ * @property {CapabilityStatus} [icmpPing]
  */
 
 /**
@@ -97,12 +99,38 @@
  */
 
 /**
+ * @typedef {Object} DatabaseService
+ * @property {() => Promise<void>} open
+ * @property {() => Promise<object>} loadSnapshot
+ * @property {(payload: object) => Promise<object>} applyImport
+ * @property {(payload: object) => Promise<void>} [savePingResults]
+ * @property {(findingId: string, patch: object) => Promise<void>} [updateFinding]
+ */
+
+/**
+ * @typedef {Object} PingResult
+ * @property {string} ip
+ * @property {'reachable'|'unreachable'|'warning'} status
+ * @property {number|null} [rttMs]
+ * @property {string} [error]
+ */
+
+/**
+ * @typedef {Object} PingService
+ * @property {(ip: string, opts?: { timeoutMs?: number }) => Promise<PingResult>} pingOne
+ * @property {(ips: string[], opts?: { timeoutMs?: number, concurrency?: number }) => Promise<PingResult[]>} pingMany
+ * @property {(sessionId: string) => Promise<void>} [cancel]
+ */
+
+/**
  * @typedef {Object} PlatformServices
  * @property {FileService} files
  * @property {ComputeService} compute
  * @property {JobService} jobs
  * @property {NotificationService} notifications
  * @property {WindowService} [windows]
+ * @property {DatabaseService} [atlasDb]
+ * @property {PingService} [ping]
  */
 
 /**
@@ -118,7 +146,9 @@ export const CAPABILITY_KEYS = Object.freeze([
     'gpuCompute',
     'localGdal',
     'localPdal',
-    'largeDatasetProcessing'
+    'largeDatasetProcessing',
+    'localSqlite',
+    'icmpPing'
 ]);
 
 /**

@@ -19,7 +19,8 @@ const state = {
         logsOpen: false,
         photoMapperOpen: false,
         arcgisImporterOpen: false,
-        coordinatesOpen: false
+        coordinatesOpen: false,
+        workspaceMode: 'gis'   // 'gis' | 'atlas' (Network Atlas desktop workspace)
     }
 };
 
