@@ -5,11 +5,14 @@ import mapService from '../map/map-service.js';
 
 const SOURCE_ID = 'atlas-network';
 const CHANNEL_SOURCE_ID = 'atlas-channel-path';
+const AREA_SOURCE_ID = 'atlas-area';
 const LAYER_HUBS = 'atlas-hubs-circle';
 const LAYER_DROPS = 'atlas-drops-circle';
 const LAYER_STATUS = 'atlas-status-circle';
 const LAYER_SELECTED = 'atlas-selected-circle';
 const LAYER_CHANNEL_LINE = 'atlas-channel-line';
+const LAYER_AREA_FILL = 'atlas-area-fill';
+const LAYER_AREA_LINE = 'atlas-area-line';
 
 const CLICK_LAYERS = [LAYER_DROPS, LAYER_HUBS, LAYER_STATUS, LAYER_SELECTED];
 
@@ -133,6 +136,7 @@ export function syncAtlasMapLayers(snap) {
     }
 
     syncChannelPath(snap);
+    syncAreaOverlay(snap);
 }
 
 /**
@@ -174,6 +178,48 @@ function syncChannelPath(snap) {
                 'line-color': '#2563eb',
                 'line-width': 3,
                 'line-opacity': 0.85
+            }
+        }, LAYER_STATUS);
+    }
+}
+
+/**
+ * Show the active area query polygon on the map.
+ * @param {import('./types.js').AtlasSnapshot} snap
+ */
+function syncAreaOverlay(snap) {
+    const map = mapService.getMap?.();
+    if (!map) return;
+
+    const geometry = snap.areaResults?.geometry;
+    const fc = {
+        type: 'FeatureCollection',
+        features: geometry
+            ? [{ type: 'Feature', geometry, properties: {} }]
+            : []
+    };
+
+    if (map.getSource(AREA_SOURCE_ID)) {
+        map.getSource(AREA_SOURCE_ID).setData(fc);
+    } else if (geometry) {
+        map.addSource(AREA_SOURCE_ID, { type: 'geojson', data: fc });
+        map.addLayer({
+            id: LAYER_AREA_FILL,
+            type: 'fill',
+            source: AREA_SOURCE_ID,
+            paint: {
+                'fill-color': '#d4a24e',
+                'fill-opacity': 0.12
+            }
+        }, LAYER_STATUS);
+        map.addLayer({
+            id: LAYER_AREA_LINE,
+            type: 'line',
+            source: AREA_SOURCE_ID,
+            paint: {
+                'line-color': '#b45309',
+                'line-width': 2,
+                'line-dasharray': [4, 3]
             }
         }, LAYER_STATUS);
     }
@@ -278,10 +324,13 @@ export function clearAtlasMapLayers() {
     disableAtlasMapInteraction();
     const map = mapService.getMap?.();
     if (!map) return;
-    for (const id of [LAYER_CHANNEL_LINE, LAYER_SELECTED, LAYER_STATUS, LAYER_DROPS, LAYER_HUBS]) {
+    for (const id of [
+        LAYER_AREA_LINE, LAYER_AREA_FILL, LAYER_CHANNEL_LINE,
+        LAYER_SELECTED, LAYER_STATUS, LAYER_DROPS, LAYER_HUBS
+    ]) {
         if (map.getLayer(id)) map.removeLayer(id);
     }
-    for (const id of [CHANNEL_SOURCE_ID, SOURCE_ID]) {
+    for (const id of [AREA_SOURCE_ID, CHANNEL_SOURCE_ID, SOURCE_ID]) {
         if (map.getSource(id)) map.removeSource(id);
     }
 }

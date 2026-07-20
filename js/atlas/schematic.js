@@ -5,7 +5,7 @@ import { getAtlasSnapshot } from './store.js';
 
 /**
  * @param {string} channelId
- * @returns {{ channel: object, nodes: Array<object> } | null}
+ * @returns {{ channel: object, nodes: Array<object>, dropCount: number, openFindings: number } | null}
  */
 export function buildChannelSchematic(channelId) {
     const snap = getAtlasSnapshot();
@@ -15,6 +15,29 @@ export function buildChannelSchematic(channelId) {
     const drops = snap.drops
         .filter((d) => d.channelId === channelId)
         .sort((a, b) => (a.dropNumber ?? 9999) - (b.dropNumber ?? 9999));
+
+    const dropIds = new Set(drops.map((d) => d.id));
+    const dropIps = new Set(drops.map((d) => d.ip).filter(Boolean));
+    const openFindings = (snap.findings || []).filter((f) =>
+        f.status === 'Open'
+        && (
+            f.entityId === channelId
+            || (f.entityId && dropIds.has(f.entityId))
+            || (f.ip && dropIps.has(f.ip))
+        ));
+
+    /** @type {Map<string, object[]>} */
+    const findingsByDrop = new Map();
+    for (const f of openFindings) {
+        let dropId = f.entityId && dropIds.has(f.entityId) ? f.entityId : null;
+        if (!dropId && f.ip) {
+            const hit = drops.find((d) => d.ip === f.ip);
+            dropId = hit?.id || null;
+        }
+        if (!dropId) continue;
+        if (!findingsByDrop.has(dropId)) findingsByDrop.set(dropId, []);
+        findingsByDrop.get(dropId).push(f);
+    }
 
     /** @type {Array<object>} */
     const nodes = [];
@@ -26,11 +49,13 @@ export function buildChannelSchematic(channelId) {
         label: channel.primaryHubCode ? `Hub ${channel.primaryHubCode}` : 'Primary Hub',
         hubCode: channel.primaryHubCode,
         ip: null,
-        ping: null
+        ping: null,
+        warnings: []
     });
 
     for (const drop of drops) {
         const ping = drop.ip ? snap.pingResults[drop.ip] : null;
+        const warnings = findingsByDrop.get(drop.id) || [];
         nodes.push({
             kind: 'drop',
             role: 'drop',
@@ -43,7 +68,7 @@ export function buildChannelSchematic(channelId) {
             manufacturer: drop.manufacturer,
             wireless: drop.wireless,
             ping: ping || { status: 'untested', at: null },
-            warnings: []
+            warnings
         });
     }
 
@@ -54,8 +79,14 @@ export function buildChannelSchematic(channelId) {
         label: channel.secondaryHubCode ? `Hub ${channel.secondaryHubCode}` : 'Secondary Hub',
         hubCode: channel.secondaryHubCode,
         ip: null,
-        ping: null
+        ping: null,
+        warnings: []
     });
 
-    return { channel, nodes };
+    return {
+        channel,
+        nodes,
+        dropCount: drops.length,
+        openFindings: openFindings.length
+    };
 }

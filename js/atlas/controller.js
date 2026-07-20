@@ -323,6 +323,7 @@ export function runAreaQuery(geometry) {
     patchAtlasSnapshot({ areaResults: results });
     const snap = getAtlasSnapshot();
     patchAtlasSnapshot({ stats: buildDashboardStats(snap, { scope: 'selection' }) });
+    syncAtlasMapLayers(getAtlasSnapshot());
     const points = [
         ...(results.drops || []).filter((d) => d.lat != null).map((d) => ({ lat: d.lat, lon: d.lon })),
         ...(results.hubs || []).filter((h) => h.lat != null).map((h) => ({ lat: h.lat, lon: h.lon }))

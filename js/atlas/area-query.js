@@ -2,6 +2,7 @@
  * Spatial query of Atlas assets inside a polygon / bbox.
  */
 import { getAtlasSnapshot } from './store.js';
+import { findingsInScope } from './triage.js';
 
 /**
  * @param {[number, number]} point [lon, lat]
@@ -47,7 +48,7 @@ export function pointInGeometry(point, geometry) {
 }
 
 /**
- * @param {object} geometry GeoJSON Polygon / MultiPolygon / bbox Feature as Polygon
+ * @param {object} geometry GeoJSON Polygon / MultiPolygon / bbox rewritten as Polygon
  */
 export function queryAtlasInArea(geometry) {
     const snap = getAtlasSnapshot();
@@ -63,14 +64,21 @@ export function queryAtlasInArea(geometry) {
     const primaryHubCodes = new Set(channels.map((c) => c.primaryHubCode).filter(Boolean));
     const secondaryHubCodes = new Set(channels.map((c) => c.secondaryHubCode).filter(Boolean));
 
+    const areaSnap = {
+        ...snap,
+        areaResults: { drops, hubs, channels, devices },
+        selection: { kind: 'area', id: 'area' }
+    };
+    const warnings = findingsInScope(areaSnap, 'selection').filter((f) => f.status === 'Open');
+
     return {
+        geometry,
         drops,
         hubs,
         channels,
         devices,
         primaryHubCodes: [...primaryHubCodes],
         secondaryHubCodes: [...secondaryHubCodes],
-        warnings: snap.findings.filter((f) =>
-            f.status === 'Open' && drops.some((d) => d.id === f.entityId))
+        warnings
     };
 }

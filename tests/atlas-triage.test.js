@@ -1,7 +1,10 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { collectHubIps, dropsInScope, findingsInScope, listScopedDropsByPing } from '../js/atlas/triage.js';
 import { formatPingAge, isPingStale, parsePingAt } from '../js/atlas/ping-format.js';
 import { buildImportFindings } from '../js/atlas/import/audit.js';
+import { queryAtlasInArea, pointInGeometry } from '../js/atlas/area-query.js';
+import { getAtlasSnapshot, patchAtlasSnapshot, resetAtlasSnapshot } from '../js/atlas/store.js';
+import { buildChannelSchematic } from '../js/atlas/schematic.js';
 
 describe('atlas ping format', () => {
     it('parses unix seconds and ISO', () => {
@@ -87,6 +90,64 @@ describe('atlas unreachable triage', () => {
         };
         expect(dropsInScope(snap, 'selection').map((d) => d.id)).toEqual(['d1']);
         expect(findingsInScope(snap, 'selection').map((f) => f.id)).toEqual(['f1']);
+    });
+});
+
+describe('atlas area + schematic', () => {
+    beforeEach(() => {
+        resetAtlasSnapshot();
+    });
+    afterEach(() => {
+        resetAtlasSnapshot();
+    });
+
+    it('keeps geometry and IP-linked warnings in area results', () => {
+        const geometry = {
+            type: 'Polygon',
+            coordinates: [[[0, 0], [2, 0], [2, 2], [0, 2], [0, 0]]]
+        };
+        expect(pointInGeometry([1, 1], geometry)).toBe(true);
+        patchAtlasSnapshot({
+            drops: [
+                { id: 'd1', channelId: 'c1', lat: 1, lon: 1, ip: '10.0.0.1' },
+                { id: 'd2', channelId: 'c1', lat: 9, lon: 9, ip: '10.0.0.2' }
+            ],
+            hubs: [],
+            channels: [{ id: 'c1', channelNumber: '1' }],
+            devices: [],
+            findings: [
+                { id: 'f1', status: 'Open', ip: '10.0.0.1', findingType: 'duplicate_ip' },
+                { id: 'f2', status: 'Open', entityId: 'd2', findingType: 'missing_site_id' }
+            ]
+        });
+        const results = queryAtlasInArea(geometry);
+        expect(results.geometry).toEqual(geometry);
+        expect(results.drops.map((d) => d.id)).toEqual(['d1']);
+        expect(results.warnings.map((f) => f.id)).toEqual(['f1']);
+    });
+
+    it('attaches open findings to schematic drop nodes', () => {
+        patchAtlasSnapshot({
+            channels: [{
+                id: 'c1',
+                channelNumber: '12',
+                primaryHubCode: 'H1',
+                secondaryHubCode: 'H2'
+            }],
+            drops: [
+                { id: 'd1', channelId: 'c1', dropNumber: 1, ip: '10.0.0.1' },
+                { id: 'd2', channelId: 'c1', dropNumber: 2, ip: '10.0.0.2' }
+            ],
+            pingResults: {},
+            findings: [
+                { id: 'f1', status: 'Open', entityId: 'd1', findingType: 'missing_site_id' }
+            ]
+        });
+        const schematic = buildChannelSchematic('c1');
+        expect(schematic?.openFindings).toBe(1);
+        const dropNode = schematic?.nodes.find((n) => n.id === 'd1');
+        expect(dropNode?.warnings).toHaveLength(1);
+        expect(getAtlasSnapshot().channels).toHaveLength(1);
     });
 });
 

@@ -1,6 +1,7 @@
 /**
  * Atlas CSV / printable report helpers.
  */
+import { dropsInScope } from './triage.js';
 
 /**
  * @param {string} filename
@@ -33,9 +34,12 @@ export function rowsToCsv(rows) {
 
 /**
  * @param {import('./types.js').AtlasSnapshot} snap
+ * @param {{ scope?: 'network'|'selection' }} [opts]
  */
-export function exportDropsCsv(snap) {
-    const rows = (snap.drops || []).map((d) => ({
+export function exportDropsCsv(snap, opts = {}) {
+    const scope = opts.scope || 'network';
+    const drops = dropsInScope(snap, scope);
+    const rows = drops.map((d) => ({
         channel: d.channelNumber,
         drop: d.dropNumber,
         inventoryName: d.inventoryName,
@@ -45,7 +49,8 @@ export function exportDropsCsv(snap) {
         lat: d.lat,
         lon: d.lon
     }));
-    downloadTextFile(`atlas-drops-${Date.now()}.csv`, rowsToCsv(rows));
+    const suffix = scope === 'selection' ? 'selection' : 'network';
+    downloadTextFile(`atlas-drops-${suffix}-${Date.now()}.csv`, rowsToCsv(rows));
 }
 
 /**

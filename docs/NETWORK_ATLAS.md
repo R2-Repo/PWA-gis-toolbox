@@ -59,8 +59,12 @@ Operator UX:
 - Last-import freshness banner on the left panel
 - Ping triage: unreachable / stale / untested / needs attention + bulk re-ping
 - Hub detail: ping all / primary / secondary switch sets
-- Area query: rectangle or polygon, fit bounds, Selection scope, open findings in area
+- Area query: rectangle or polygon, map overlay, fit bounds, Selection scope, open findings
 - Area clear + entity selection overrides stale area scope
+- Scoped drops CSV / printable report (Network vs Selection)
+- Channel schematic shows open finding badges per drop
+- Channel summary + site drops list with ping
+- Monitor from drop, triage list, or area; live sample tail
 - Ping toasts (start + up/down summary)
 - Reconciliation findings follow Network / Selection scope
 - Ping age on drop details / schematic (stale after 24h)
