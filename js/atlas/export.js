@@ -58,9 +58,29 @@ export function exportFindingsCsv(findings) {
         status: f.status,
         description: f.description,
         suggestedAction: f.suggestedAction,
+        entityId: f.entityId || '',
+        entityKind: f.entityKind || '',
+        ip: f.ip || '',
         createdAt: f.createdAt
     }));
     downloadTextFile(`atlas-findings-${Date.now()}.csv`, rowsToCsv(rows));
+}
+
+/**
+ * Export import diff lists for tickets.
+ * @param {object} diff from diffAtlasImport
+ */
+export function exportImportDiffCsv(diff) {
+    if (!diff) return;
+    const rows = [];
+    for (const ip of diff.newIps || []) rows.push({ change: 'new_ip', value: ip });
+    for (const ip of diff.missingIps || []) rows.push({ change: 'missing_ip', value: ip });
+    for (const ip of diff.changedIps || []) rows.push({ change: 'changed_ip', value: ip });
+    for (const c of diff.newChannels || []) rows.push({ change: 'new_channel', value: c });
+    for (const c of diff.missingChannels || []) rows.push({ change: 'missing_channel', value: c });
+    for (const d of diff.newDrops || []) rows.push({ change: 'new_drop', value: d });
+    for (const d of diff.missingDrops || []) rows.push({ change: 'missing_drop', value: d });
+    downloadTextFile(`atlas-import-diff-${Date.now()}.csv`, rowsToCsv(rows));
 }
 
 /**

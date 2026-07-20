@@ -291,7 +291,14 @@ export async function buildAtlasImportPayload(input) {
 
     const hubs = [...hubsByCode.values()];
     const channels = [...channelsByNum.values()];
-    const findings = buildImportFindings({ joined, atmsMatches, devices });
+    const findings = buildImportFindings({
+        joined,
+        atmsMatches,
+        devices,
+        drops,
+        sites,
+        channels
+    });
 
     const summary = {
         batchId,

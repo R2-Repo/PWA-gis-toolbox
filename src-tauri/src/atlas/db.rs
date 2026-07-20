@@ -111,6 +111,8 @@ fn migrate(conn: &Connection) -> Result<(), String> {
             created_at TEXT,
             resolved_at TEXT,
             entity_id TEXT,
+            entity_kind TEXT,
+            ip TEXT,
             source_record_ids_json TEXT
         );
         CREATE TABLE IF NOT EXISTS ping_session (
@@ -135,6 +137,9 @@ fn migrate(conn: &Connection) -> Result<(), String> {
         "#,
     )
     .map_err(|e| format!("migrate: {e}"))?;
+    // Additive columns for DBs created before entity_kind/ip existed
+    let _ = conn.execute("ALTER TABLE reconciliation_finding ADD COLUMN entity_kind TEXT", []);
+    let _ = conn.execute("ALTER TABLE reconciliation_finding ADD COLUMN ip TEXT", []);
     Ok(())
 }
 
@@ -296,12 +301,12 @@ fn load_snapshot_inner(conn: &Connection) -> Result<Value, String> {
     {
         let mut stmt = conn
             .prepare(
-                "SELECT id, finding_type, severity, description, suggested_action, status, notes, created_at, resolved_at, entity_id, source_record_ids_json FROM reconciliation_finding",
+                "SELECT id, finding_type, severity, description, suggested_action, status, notes, created_at, resolved_at, entity_id, entity_kind, ip, source_record_ids_json FROM reconciliation_finding",
             )
             .map_err(|e| e.to_string())?;
         let rows = stmt
             .query_map([], |r| {
-                let src: Option<String> = r.get(10)?;
+                let src: Option<String> = r.get(12)?;
                 let source_ids: Value = src
                     .and_then(|s| serde_json::from_str(&s).ok())
                     .unwrap_or_else(|| json!([]));
@@ -316,6 +321,8 @@ fn load_snapshot_inner(conn: &Connection) -> Result<Value, String> {
                     "createdAt": r.get::<_, Option<String>>(7)?,
                     "resolvedAt": r.get::<_, Option<String>>(8)?,
                     "entityId": r.get::<_, Option<String>>(9)?,
+                    "entityKind": r.get::<_, Option<String>>(10)?,
+                    "ip": r.get::<_, Option<String>>(11)?,
                     "sourceRecordIds": source_ids,
                 }))
             })
@@ -324,6 +331,23 @@ fn load_snapshot_inner(conn: &Connection) -> Result<Value, String> {
             findings.push(row.map_err(|e| e.to_string())?);
         }
     }
+
+    let last_import = conn
+        .query_row(
+            "SELECT id, batch_date, imported_at, workbook_name, atms_name FROM import_batch ORDER BY imported_at DESC LIMIT 1",
+            [],
+            |r| {
+                Ok(json!({
+                    "id": r.get::<_, String>(0)?,
+                    "batchDate": r.get::<_, Option<String>>(1)?,
+                    "importedAt": r.get::<_, String>(2)?,
+                    "workbookName": r.get::<_, Option<String>>(3)?,
+                    "atmsName": r.get::<_, Option<String>>(4)?,
+                }))
+            },
+        )
+        .optional()
+        .map_err(|e| e.to_string())?;
 
     // Latest ping status per IP (survive restart + import)
     let mut ping_results = serde_json::Map::new();
@@ -369,6 +393,7 @@ fn load_snapshot_inner(conn: &Connection) -> Result<Value, String> {
         "devices": devices,
         "findings": findings,
         "pingResults": ping_results,
+        "lastImport": last_import,
     }))
 }
 
@@ -568,7 +593,7 @@ pub fn atlas_import_apply(
                     .map(|v| v.to_string())
                     .unwrap_or_else(|| "[]".into());
                 tx.execute(
-                    "INSERT OR REPLACE INTO reconciliation_finding (id, finding_type, severity, description, suggested_action, status, notes, created_at, resolved_at, entity_id, source_record_ids_json) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)",
+                    "INSERT OR REPLACE INTO reconciliation_finding (id, finding_type, severity, description, suggested_action, status, notes, created_at, resolved_at, entity_id, entity_kind, ip, source_record_ids_json) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13)",
                     params![
                         json_str(f.get("id")).unwrap_or_default(),
                         json_str(f.get("findingType")),
@@ -580,6 +605,8 @@ pub fn atlas_import_apply(
                         json_str(f.get("createdAt")),
                         json_str(f.get("resolvedAt")),
                         json_str(f.get("entityId")),
+                        json_str(f.get("entityKind")),
+                        json_str(f.get("ip")),
                         src,
                     ],
                 )
@@ -632,13 +659,23 @@ pub fn atlas_ping_save(
 }
 
 fn chrono_like_now() -> String {
-    // Avoid chrono dependency — use system time via JS-compatible ISO-ish UTC
+    // Prefer ISO-8601 UTC when available (Windows); fall back to unix seconds.
+    #[cfg(windows)]
+    {
+        use std::time::{SystemTime, UNIX_EPOCH};
+        if let Ok(dur) = SystemTime::now().duration_since(UNIX_EPOCH) {
+            let secs = dur.as_secs();
+            // Minimal UTC formatting without chrono crate
+            // JS side accepts unix seconds or ISO; emit seconds for stability.
+            // Frontend formatPingWhen handles both.
+            return secs.to_string();
+        }
+    }
     use std::time::{SystemTime, UNIX_EPOCH};
-    let secs = SystemTime::now()
+    SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0);
-    format!("{secs}")
+        .map(|d| d.as_secs().to_string())
+        .unwrap_or_else(|_| "0".into())
 }
 
 #[tauri::command]

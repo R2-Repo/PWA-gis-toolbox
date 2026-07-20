@@ -55,6 +55,13 @@ Opening Atlas later loads SQLite only — spreadsheets are not re-read until the
 
 Map: click hubs/drops to select; channel selection draws a path and fits bounds. Dashboard can scope to Network or Selection.
 
+Operator UX:
+- Last-import freshness banner on the left panel
+- Unreachable triage list + re-ping for current scope
+- Ping age on drop details / schematic (stale after 24h)
+- Findings link to map entities when available
+- Import Review: full diff lists + CSV export
+
 Manual file pickers remain as a fallback. Do **not** use the header Import / map drop for these sources.
 
 ## Non-goals (v1)

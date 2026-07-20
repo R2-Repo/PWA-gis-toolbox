@@ -67,6 +67,7 @@ export async function openAtlasWorkspace() {
         sites: data.sites || [],
         findings: data.findings || [],
         pingResults,
+        lastImport: data.lastImport || null,
         selection: getAtlasSnapshot().selection,
         areaResults: getAtlasSnapshot().areaResults
     };
@@ -340,6 +341,44 @@ export function leaveAtlasMap() {
 export function setDashboardScope(scope) {
     const snap = getAtlasSnapshot();
     patchAtlasSnapshot({ stats: buildDashboardStats(snap, { scope }) });
+}
+
+/**
+ * Navigate from a finding to the related map/details entity.
+ * @param {import('./types.js').AtlasFinding} finding
+ */
+export function selectFindingEntity(finding) {
+    if (!finding) return;
+    const snap = getAtlasSnapshot();
+    if (finding.entityId) {
+        if (finding.entityKind === 'drop' || snap.drops.some((d) => d.id === finding.entityId)) {
+            selectAtlasEntity({ kind: 'drop', id: finding.entityId });
+            return;
+        }
+        if (finding.entityKind === 'channel' || snap.channels.some((c) => c.id === finding.entityId)) {
+            selectAtlasEntity({ kind: 'channel', id: finding.entityId });
+            return;
+        }
+        if (finding.entityKind === 'hub' || snap.hubs.some((h) => h.id === finding.entityId)) {
+            selectAtlasEntity({ kind: 'hub', id: finding.entityId });
+            return;
+        }
+        if (finding.entityKind === 'device' || snap.devices.some((d) => d.id === finding.entityId)) {
+            const device = snap.devices.find((d) => d.id === finding.entityId);
+            const drop = snap.drops.find((d) => d.deviceId === device?.id || (device?.ip && d.ip === device.ip));
+            if (drop) {
+                selectAtlasEntity({ kind: 'drop', id: drop.id });
+                return;
+            }
+        }
+    }
+    if (finding.ip) {
+        const drop = snap.drops.find((d) => d.ip === finding.ip);
+        if (drop) {
+            selectAtlasEntity({ kind: 'drop', id: drop.id });
+            return;
+        }
+    }
 }
 
 export function updateFindingStatus(findingId, status) {

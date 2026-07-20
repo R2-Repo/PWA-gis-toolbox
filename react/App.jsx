@@ -86,6 +86,7 @@ import {
 import {
     openAtlasWorkspace,
     selectAtlasEntity,
+    selectFindingEntity,
     pingChannel,
     pingDrop,
     pingTargets,
@@ -537,6 +538,7 @@ function AppShell() {
                                     onStopMonitor={(id) => stopAtlasMonitor(id)}
                                     onUpdateFinding={updateFindingStatus}
                                     onAreaFromDraw={() => void onAreaFromDraw()}
+                                    onSelectFinding={selectFindingEntity}
                                 />
                             ) : (
                                 <RightPanel

@@ -5,6 +5,7 @@ import {
     scanAtlasImportInbox
 } from '../../js/atlas/import/inbox.js';
 import { previewAtlasImport, runAtlasImport } from '../../js/atlas/controller.js';
+import { exportImportDiffCsv } from '../../js/atlas/export.js';
 
 /**
  * Dedicated Atlas import (not GIS map import).
@@ -20,6 +21,8 @@ export function AtlasImportDialog({ open, onClose, busy: busyProp, onImported })
     const [filePickerAtms, setFilePickerAtms] = useState(null);
     const [summary, setSummary] = useState(null);
     const [payload, setPayload] = useState(null);
+    const [diff, setDiff] = useState(null);
+    const [showDiffLists, setShowDiffLists] = useState(false);
     const [error, setError] = useState('');
     const [busyLocal, setBusyLocal] = useState(false);
     const busy = busyProp || busyLocal;
@@ -27,6 +30,8 @@ export function AtlasImportDialog({ open, onClose, busy: busyProp, onImported })
     const resetReview = () => {
         setSummary(null);
         setPayload(null);
+        setDiff(null);
+        setShowDiffLists(false);
     };
 
     useEffect(() => {
@@ -78,6 +83,7 @@ export function AtlasImportDialog({ open, onClose, busy: busyProp, onImported })
             const result = await previewAtlasImport(buildInput());
             setSummary(result.summary);
             setPayload(result.payload);
+            setDiff(result.diff || result.summary?.diffDetails || null);
         } catch (err) {
             setError(err?.message || String(err));
             resetReview();
@@ -208,7 +214,7 @@ export function AtlasImportDialog({ open, onClose, busy: busyProp, onImported })
                                 <li>Hubs / channels / drops / devices: {counts.hubs} / {counts.channels} / {counts.drops} / {counts.devices}</li>
                                 <li>Findings: {counts.findings}</li>
                             </ul>
-                            {summary.diff && !summary.diffDetails?.emptyCurrent && (
+                            {summary.diff && !diff?.emptyCurrent && (
                                 <div className="atlas-import-diff">
                                     <strong>Compared to current DB</strong>
                                     <ul>
@@ -218,21 +224,44 @@ export function AtlasImportDialog({ open, onClose, busy: busyProp, onImported })
                                         <li>New / missing channels: {summary.diff.newChannels} / {summary.diff.missingChannels}</li>
                                         <li>New / missing drops: {summary.diff.newDrops} / {summary.diff.missingDrops}</li>
                                     </ul>
-                                    {!!summary.diffDetails?.newIps?.length && (
-                                        <p className="atlas-muted">
-                                            Sample new IPs: {summary.diffDetails.newIps.slice(0, 5).join(', ')}
-                                            {summary.diffDetails.newIps.length > 5 ? '…' : ''}
-                                        </p>
-                                    )}
-                                    {!!summary.diffDetails?.missingIps?.length && (
-                                        <p className="atlas-muted">
-                                            Sample missing IPs: {summary.diffDetails.missingIps.slice(0, 5).join(', ')}
-                                            {summary.diffDetails.missingIps.length > 5 ? '…' : ''}
-                                        </p>
+                                    <div className="atlas-toolbar">
+                                        <button
+                                            type="button"
+                                            className="btn btn-ghost btn-sm"
+                                            onClick={() => setShowDiffLists((v) => !v)}
+                                        >
+                                            {showDiffLists ? 'Hide lists' : 'Show full lists'}
+                                        </button>
+                                        <button
+                                            type="button"
+                                            className="btn btn-ghost btn-sm"
+                                            onClick={() => exportImportDiffCsv(diff)}
+                                        >
+                                            Export diff CSV
+                                        </button>
+                                    </div>
+                                    {showDiffLists && diff && (
+                                        <div className="atlas-diff-lists">
+                                            {!!diff.newIps?.length && (
+                                                <p><strong>New IPs:</strong> {diff.newIps.join(', ')}</p>
+                                            )}
+                                            {!!diff.missingIps?.length && (
+                                                <p><strong>Missing IPs:</strong> {diff.missingIps.join(', ')}</p>
+                                            )}
+                                            {!!diff.changedIps?.length && (
+                                                <p><strong>Changed IPs:</strong> {diff.changedIps.join(', ')}</p>
+                                            )}
+                                            {!!diff.newChannels?.length && (
+                                                <p><strong>New channels:</strong> {diff.newChannels.join(', ')}</p>
+                                            )}
+                                            {!!diff.missingChannels?.length && (
+                                                <p><strong>Missing channels:</strong> {diff.missingChannels.join(', ')}</p>
+                                            )}
+                                        </div>
                                     )}
                                 </div>
                             )}
-                            {summary.diffDetails?.emptyCurrent && (
+                            {diff?.emptyCurrent && (
                                 <p className="atlas-muted">No existing Atlas data — this will be the first load.</p>
                             )}
                         </div>

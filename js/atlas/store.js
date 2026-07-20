@@ -17,7 +17,8 @@ const snapshot = {
     selection: null,
     areaResults: null,
     activeSession: null,
-    stats: null
+    stats: null,
+    lastImport: null
 };
 
 /**
@@ -81,5 +82,6 @@ export function resetAtlasSnapshot() {
     snapshot.areaResults = null;
     snapshot.activeSession = null;
     snapshot.stats = null;
+    snapshot.lastImport = null;
     bus.emit('atlas:changed', snapshot);
 }

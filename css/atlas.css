@@ -326,6 +326,38 @@
     border-top: 1px dashed var(--border, #cbd5e1);
 }
 
+.atlas-diff-lists {
+    margin-top: 8px;
+    max-height: 160px;
+    overflow: auto;
+    font-size: 11px;
+    word-break: break-all;
+}
+
+.atlas-freshness-banner {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 8px;
+    margin-bottom: 8px;
+    border-radius: 6px;
+    background: #f1f5f9;
+    font-size: 11px;
+}
+
+.atlas-stale-warn {
+    color: #b45309 !important;
+}
+
+.atlas-ping--stale {
+    opacity: 0.85;
+}
+
+.atlas-finding-title {
+    display: inline;
+    text-align: left;
+}
+
 .atlas-mono {
     font-family: ui-monospace, Consolas, monospace;
     font-size: 11px;

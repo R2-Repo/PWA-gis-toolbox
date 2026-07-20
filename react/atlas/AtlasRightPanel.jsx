@@ -4,6 +4,8 @@ import { getAtlasSnapshot } from '../../js/atlas/store.js';
 import { buildChannelSchematic } from '../../js/atlas/schematic.js';
 import { getHubChannelSummary } from '../../js/atlas/hierarchy.js';
 import { buildDashboardStats, exportDropsCsv, exportFindingsCsv, openPrintableReport } from '../../js/atlas/export.js';
+import { listScopedDropsByPing } from '../../js/atlas/triage.js';
+import { formatPingAge, formatPingWhen, isPingStale } from '../../js/atlas/ping-format.js';
 import { ChannelSchematic } from './ChannelSchematic.jsx';
 import { CollapsibleSection } from '../ui/CollapsibleSection.jsx';
 
@@ -20,7 +22,8 @@ export function AtlasRightPanel({
     onStartMonitor,
     onStopMonitor,
     onUpdateFinding,
-    onAreaFromDraw
+    onAreaFromDraw,
+    onSelectFinding
 }) {
     const [tick, setTick] = useState(0);
     const [findingFilter, setFindingFilter] = useState('Open');
@@ -72,6 +75,13 @@ export function AtlasRightPanel({
     }, [snap.findings, findingFilter, tick]);
 
     const area = snap.areaResults;
+
+    const unreachable = useMemo(
+        () => listScopedDropsByPing(snap, { scope: dashScope }),
+        [snap, tick, dashScope]
+    );
+
+    const dropPing = dropDetail?.ip ? snap.pingResults?.[dropDetail.ip] : null;
 
     return (
         <div className="atlas-panel atlas-panel-right">
@@ -131,6 +141,13 @@ export function AtlasRightPanel({
                         <p>Channel {dropDetail.channelNumber} · Drop {dropDetail.dropNumber ?? '—'}</p>
                         <p>IP: {dropDetail.ip || '—'}</p>
                         <p>{[dropDetail.manufacturer, dropDetail.model].filter(Boolean).join(' · ') || '—'}</p>
+                        <p className={dropPing && isPingStale(dropPing.at) ? 'atlas-stale-warn' : 'atlas-muted'}>
+                            Ping: {dropPing?.status || 'untested'}
+                            {dropPing?.rttMs != null ? ` · ${dropPing.rttMs} ms` : ''}
+                            {' · '}
+                            {formatPingAge(dropPing?.at)}
+                            {dropPing?.at ? ` (${formatPingWhen(dropPing.at)})` : ''}
+                        </p>
                         {canPing && dropDetail.ip && (
                             <div className="atlas-toolbar">
                                 <button type="button" className="btn btn-secondary btn-sm" onClick={() => onPingDrop?.(dropDetail.id)}>Ping once</button>
@@ -195,6 +212,38 @@ export function AtlasRightPanel({
                 />
             </CollapsibleSection>
 
+            <CollapsibleSection title="Unreachable triage" bodyId="atlas-triage" defaultOpen>
+                <p className="atlas-muted">
+                    Down switches in {dashScope === 'selection' ? 'current selection/area' : 'full network'} ({unreachable.length}).
+                </p>
+                {canPing && unreachable.length > 0 && (
+                    <button
+                        type="button"
+                        className="btn btn-secondary btn-sm"
+                        onClick={() => onPingSelectedIps?.(unreachable.map((r) => r.ip))}
+                    >
+                        Re-ping unreachable ({unreachable.length})
+                    </button>
+                )}
+                <ul className="atlas-simple-list">
+                    {unreachable.slice(0, 60).map((row) => (
+                        <li key={row.drop.id}>
+                            <button
+                                type="button"
+                                className="atlas-linkish"
+                                onClick={() => onSelect?.({ kind: 'drop', id: row.drop.id })}
+                            >
+                                Ch {row.drop.channelNumber || '?'} · D{row.drop.dropNumber ?? '?'} · {row.ip}
+                            </button>
+                            <span className={`atlas-muted${row.stale ? ' atlas-stale-warn' : ''}`}>
+                                {' '}· {row.age}
+                            </span>
+                        </li>
+                    ))}
+                    {!unreachable.length && <li className="atlas-muted">No unreachable switches in this scope.</li>}
+                </ul>
+            </CollapsibleSection>
+
             <CollapsibleSection title="Area troubleshooting" bodyId="atlas-area" defaultOpen={false}>
                 <p className="atlas-muted">Draw a rectangle or polygon on the map, then run the query.</p>
                 <button type="button" className="btn btn-secondary btn-sm" onClick={() => onAreaFromDraw?.()}>
@@ -254,7 +303,15 @@ export function AtlasRightPanel({
                         <li key={f.id}>
                             <span className={statusClass(f.severity)}>{f.severity}</span>
                             <div>
-                                <strong>{f.findingType}</strong>
+                                <button
+                                    type="button"
+                                    className="atlas-linkish atlas-finding-title"
+                                    onClick={() => onSelectFinding?.(f)}
+                                    disabled={!f.entityId && !f.ip}
+                                    title={f.entityId || f.ip ? 'Show on map / details' : 'No linked entity'}
+                                >
+                                    <strong>{f.findingType}</strong>
+                                </button>
                                 <p>{f.description}</p>
                                 <div className="atlas-toolbar">
                                     {['Open', 'Reviewed', 'Ignored', 'Resolved'].map((st) => (

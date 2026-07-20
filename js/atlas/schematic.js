@@ -42,7 +42,7 @@ export function buildChannelSchematic(channelId) {
             model: drop.model,
             manufacturer: drop.manufacturer,
             wireless: drop.wireless,
-            ping: ping || { status: 'untested' },
+            ping: ping || { status: 'untested', at: null },
             warnings: []
         });
     }

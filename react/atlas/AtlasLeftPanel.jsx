@@ -3,6 +3,7 @@ import bus from '../../js/core/event-bus.js';
 import { getAtlasSnapshot } from '../../js/atlas/store.js';
 import { searchAtlas } from '../../js/atlas/search.js';
 import { buildHierarchyTree } from '../../js/atlas/hierarchy.js';
+import { formatPingWhen } from '../../js/atlas/ping-format.js';
 import { CollapsibleSection } from '../ui/CollapsibleSection.jsx';
 
 function HierarchyNode({ node, depth, onSelect }) {
@@ -65,6 +66,19 @@ export function AtlasLeftPanel({ onSelect, onOpenImport }) {
                         : 'Not loaded'}
                 </span>
             </div>
+            {snap.lastImport && (
+                <div className="atlas-freshness-banner">
+                    <strong>Last import</strong>
+                    <span>
+                        {snap.lastImport.workbookName || 'workbook'}
+                        {snap.lastImport.atmsName ? ` + ${snap.lastImport.atmsName}` : ''}
+                    </span>
+                    <span className="atlas-muted">
+                        {snap.lastImport.batchDate || formatPingWhen(snap.lastImport.importedAt)}
+                        {snap.lastImport.importedAt ? ` · ${formatPingWhen(snap.lastImport.importedAt)}` : ''}
+                    </span>
+                </div>
+            )}
 
             <CollapsibleSection title="Search" bodyId="atlas-search">
                 <input
