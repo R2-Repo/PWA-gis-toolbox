@@ -10,8 +10,16 @@ import {
     setPingStatuses,
     resetAtlasSnapshot
 } from './store.js';
-import { syncAtlasMapLayers, flyToAtlasPoint, clearAtlasMapLayers } from './map-layers.js';
+import {
+    syncAtlasMapLayers,
+    flyToAtlasPoint,
+    fitAtlasPoints,
+    clearAtlasMapLayers,
+    enableAtlasMapInteraction,
+    disableAtlasMapInteraction
+} from './map-layers.js';
 import { buildAtlasImportPayload } from './import/pipeline.js';
+import { diffAtlasImport } from './import/diff.js';
 import { buildDashboardStats, exportPingSessionCsv } from './export.js';
 import { startPingSession, stopPingSession } from './monitor.js';
 import { queryAtlasInArea } from './area-query.js';
@@ -49,7 +57,8 @@ export async function openAtlasWorkspace() {
     }
     await service.open();
     const data = await service.loadSnapshot();
-    patchAtlasSnapshot({
+    const pingResults = data.pingResults || {};
+    const base = {
         loaded: true,
         hubs: data.hubs || [],
         channels: data.channels || [],
@@ -57,17 +66,16 @@ export async function openAtlasWorkspace() {
         devices: data.devices || [],
         sites: data.sites || [],
         findings: data.findings || [],
-        stats: buildDashboardStats({
-            hubs: data.hubs || [],
-            channels: data.channels || [],
-            drops: data.drops || [],
-            devices: data.devices || [],
-            sites: data.sites || [],
-            findings: data.findings || [],
-            pingResults: getAtlasSnapshot().pingResults
-        })
+        pingResults,
+        selection: getAtlasSnapshot().selection,
+        areaResults: getAtlasSnapshot().areaResults
+    };
+    patchAtlasSnapshot({
+        ...base,
+        stats: buildDashboardStats(base)
     });
     syncAtlasMapLayers(getAtlasSnapshot());
+    enableAtlasMapInteraction((sel) => selectAtlasEntity(sel));
     bus.emit('atlas:opened', getAtlasSnapshot());
     return getAtlasSnapshot();
 }
@@ -127,9 +135,15 @@ export async function previewAtlasImport(files) {
         throw new Error('Select or detect a FiberSwitchLocation workbook and/or ATMS CSV');
     }
     const payload = await buildAtlasImportPayload({ workbookFile, atmsFile });
+    const diff = diffAtlasImport(payload, getAtlasSnapshot());
     return {
-        summary: payload.summary,
-        payload
+        summary: {
+            ...payload.summary,
+            diff: diff.counts,
+            diffDetails: diff
+        },
+        payload,
+        diff
     };
 }
 
@@ -166,12 +180,27 @@ export function selectAtlasEntity(selection) {
         if (drop?.lat != null) flyToAtlasPoint({ lat: drop.lat, lon: drop.lon });
     } else if (selection.kind === 'hub') {
         const hub = snap.hubs.find((h) => h.id === selection.id);
-        if (hub?.lat != null) flyToAtlasPoint({ lat: hub.lat, lon: hub.lon });
+        const hubChannels = snap.channels.filter(
+            (c) => c.primaryHubId === selection.id || c.secondaryHubId === selection.id
+                || (hub && (c.primaryHubCode === hub.hubCode || c.secondaryHubCode === hub.hubCode))
+        );
+        const chIds = new Set(hubChannels.map((c) => c.id));
+        const points = [
+            ...(hub?.lat != null ? [{ lat: hub.lat, lon: hub.lon }] : []),
+            ...snap.drops.filter((d) => chIds.has(d.channelId) && d.lat != null)
+                .map((d) => ({ lat: d.lat, lon: d.lon }))
+        ];
+        if (points.length) fitAtlasPoints(points);
+        else if (hub?.lat != null) flyToAtlasPoint({ lat: hub.lat, lon: hub.lon });
     } else if (selection.kind === 'channel') {
-        const drops = snap.drops.filter((d) => d.channelId === selection.id && d.lat != null);
-        if (drops[0]) flyToAtlasPoint({ lat: drops[0].lat, lon: drops[0].lon }, 12);
+        const drops = snap.drops
+            .filter((d) => d.channelId === selection.id && d.lat != null)
+            .map((d) => ({ lat: d.lat, lon: d.lon }));
+        fitAtlasPoints(drops);
     }
-    syncAtlasMapLayers(snap);
+    const next = getAtlasSnapshot();
+    patchAtlasSnapshot({ stats: buildDashboardStats(next, { scope: 'selection' }) });
+    syncAtlasMapLayers(getAtlasSnapshot());
 }
 
 /**
@@ -241,6 +270,8 @@ export async function pingDrop(dropId) {
 export function runAreaQuery(geometry) {
     const results = queryAtlasInArea(geometry);
     patchAtlasSnapshot({ areaResults: results });
+    const snap = getAtlasSnapshot();
+    patchAtlasSnapshot({ stats: buildDashboardStats(snap, { scope: 'selection' }) });
     return results;
 }
 
@@ -298,7 +329,17 @@ export function stopAtlasMonitor(sessionId) {
 }
 
 export function leaveAtlasMap() {
+    disableAtlasMapInteraction();
     clearAtlasMapLayers();
+}
+
+/**
+ * Refresh dashboard stats for network vs selection scope.
+ * @param {'network'|'selection'} scope
+ */
+export function setDashboardScope(scope) {
+    const snap = getAtlasSnapshot();
+    patchAtlasSnapshot({ stats: buildDashboardStats(snap, { scope }) });
 }
 
 export function updateFindingStatus(findingId, status) {

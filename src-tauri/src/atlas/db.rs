@@ -325,6 +325,42 @@ fn load_snapshot_inner(conn: &Connection) -> Result<Value, String> {
         }
     }
 
+    // Latest ping status per IP (survive restart + import)
+    let mut ping_results = serde_json::Map::new();
+    {
+        let mut stmt = conn
+            .prepare(
+                r#"
+                SELECT pr.target_ip, pr.status, pr.rtt_ms, pr.error, pr.at
+                FROM ping_result pr
+                INNER JOIN (
+                    SELECT target_ip, MAX(rowid) AS max_rowid
+                    FROM ping_result
+                    WHERE target_ip IS NOT NULL AND target_ip != ''
+                    GROUP BY target_ip
+                ) latest ON pr.rowid = latest.max_rowid
+                "#,
+            )
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map([], |r| {
+                Ok((
+                    r.get::<_, String>(0)?,
+                    json!({
+                        "status": r.get::<_, Option<String>>(1)?.unwrap_or_else(|| "untested".into()),
+                        "rttMs": r.get::<_, Option<f64>>(2)?,
+                        "error": r.get::<_, Option<String>>(3)?,
+                        "at": r.get::<_, Option<String>>(4)?,
+                    }),
+                ))
+            })
+            .map_err(|e| e.to_string())?;
+        for row in rows {
+            let (ip, entry) = row.map_err(|e| e.to_string())?;
+            ping_results.insert(ip, entry);
+        }
+    }
+
     Ok(json!({
         "hubs": hubs,
         "channels": channels,
@@ -332,6 +368,7 @@ fn load_snapshot_inner(conn: &Connection) -> Result<Value, String> {
         "drops": drops,
         "devices": devices,
         "findings": findings,
+        "pingResults": ping_results,
     }))
 }
 
@@ -368,11 +405,9 @@ pub fn atlas_import_apply(
     with_conn(&state, |conn| {
         let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
 
-        // Replace operational network tables for this import apply (v1 full refresh)
+        // Replace network entity tables. Keep ping_session / ping_result (keyed by IP).
         tx.execute_batch(
             r#"
-            DELETE FROM ping_result;
-            DELETE FROM ping_session;
             DELETE FROM reconciliation_finding;
             DELETE FROM device;
             DELETE FROM drop_node;

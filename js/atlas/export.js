@@ -101,18 +101,76 @@ ${bodyHtml}
 
 /**
  * @param {import('./types.js').AtlasSnapshot} snap
+ * @param {{ scope?: 'network'|'selection' }} [opts]
  */
-export function buildDashboardStats(snap) {
-    const openFindings = (snap.findings || []).filter((f) => f.status === 'Open');
-    const ips = Object.values(snap.pingResults || {});
-    const reachable = ips.filter((p) => p.status === 'reachable').length;
-    const unreachable = ips.filter((p) => p.status === 'unreachable').length;
+export function buildDashboardStats(snap, opts = {}) {
+    const scope = opts.scope || 'network';
+    let hubs = snap.hubs || [];
+    let channels = snap.channels || [];
+    let drops = snap.drops || [];
+    let devices = snap.devices || [];
+    let sites = snap.sites || [];
+    let findings = snap.findings || [];
+    let scopeLabel = 'Network';
+
+    if (scope === 'selection' && snap.areaResults) {
+        scopeLabel = 'Area';
+        drops = snap.areaResults.drops || [];
+        hubs = snap.areaResults.hubs || [];
+        channels = snap.areaResults.channels || [];
+        devices = snap.areaResults.devices || [];
+        const dropIds = new Set(drops.map((d) => d.id));
+        const siteIds = new Set(drops.map((d) => d.siteId).filter(Boolean));
+        sites = sites.filter((s) => siteIds.has(s.id));
+        findings = findings.filter((f) => !f.entityId || dropIds.has(f.entityId));
+    } else if (scope === 'selection' && snap.selection) {
+        const sel = snap.selection;
+        if (sel.kind === 'hub') {
+            scopeLabel = 'Hub';
+            const hub = hubs.find((h) => h.id === sel.id);
+            hubs = hub ? [hub] : [];
+            channels = channels.filter(
+                (c) => c.primaryHubId === sel.id || c.secondaryHubId === sel.id
+                    || (hub && (c.primaryHubCode === hub.hubCode || c.secondaryHubCode === hub.hubCode))
+            );
+            const chIds = new Set(channels.map((c) => c.id));
+            drops = drops.filter((d) => chIds.has(d.channelId));
+        } else if (sel.kind === 'channel') {
+            scopeLabel = 'Channel';
+            channels = channels.filter((c) => c.id === sel.id);
+            drops = drops.filter((d) => d.channelId === sel.id);
+            const codes = new Set(
+                channels.flatMap((c) => [c.primaryHubCode, c.secondaryHubCode]).filter(Boolean)
+            );
+            hubs = hubs.filter((h) => codes.has(h.hubCode));
+        } else if (sel.kind === 'drop') {
+            scopeLabel = 'Drop';
+            drops = drops.filter((d) => d.id === sel.id);
+            const chId = drops[0]?.channelId;
+            channels = channels.filter((c) => c.id === chId);
+        }
+        const dropIps = new Set(drops.map((d) => d.ip).filter(Boolean));
+        const dropIds = new Set(drops.map((d) => d.id));
+        devices = devices.filter((d) => dropIds.has(d.dropId) || (d.ip && dropIps.has(d.ip)));
+        const siteIds = new Set(drops.map((d) => d.siteId).filter(Boolean));
+        sites = sites.filter((s) => siteIds.has(s.id));
+        findings = findings.filter((f) => !f.entityId || dropIds.has(f.entityId));
+    }
+
+    const openFindings = findings.filter((f) => f.status === 'Open');
+    const scopedIps = new Set(drops.map((d) => d.ip).filter(Boolean));
+    const pingEntries = Object.entries(snap.pingResults || {})
+        .filter(([ip]) => scope === 'network' || scopedIps.has(ip))
+        .map(([, p]) => p);
+    const reachable = pingEntries.filter((p) => p.status === 'reachable').length;
+    const unreachable = pingEntries.filter((p) => p.status === 'unreachable').length;
     return {
-        hubs: snap.hubs?.length || 0,
-        channels: snap.channels?.length || 0,
-        drops: snap.drops?.length || 0,
-        devices: snap.devices?.length || 0,
-        sites: snap.sites?.length || 0,
+        scopeLabel,
+        hubs: hubs.length,
+        channels: channels.length,
+        drops: drops.length,
+        devices: devices.length,
+        sites: sites.length,
         openFindings: openFindings.length,
         missingSiteIds: openFindings.filter((f) => f.findingType === 'missing_site_id').length,
         duplicateIps: openFindings.filter((f) => f.findingType === 'duplicate_ip').length,

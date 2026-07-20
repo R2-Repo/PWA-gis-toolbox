@@ -48,9 +48,12 @@ Atlas source files use a **dedicated path**:
    - ATMS Master Device List `.csv`
 3. **Scan folder** detects the newest matching pair.
 4. **Review** shows counts (sites, switches, findings) without writing.
-5. **Apply (replace DB)** rebuilds the Atlas SQLite network tables from those files.
+5. **Apply (replace DB)** rebuilds Atlas network tables (hubs/channels/drops/devices/findings). **Ping history is kept** (matched by IP).
+6. Review shows a **diff** vs the current DB (new / missing / changed IPs and channels).
 
 Opening Atlas later loads SQLite only — spreadsheets are not re-read until the next Apply.
+
+Map: click hubs/drops to select; channel selection draws a path and fits bounds. Dashboard can scope to Network or Selection.
 
 Manual file pickers remain as a fallback. Do **not** use the header Import / map drop for these sources.
 

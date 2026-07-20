@@ -320,6 +320,12 @@
     padding-left: 18px;
 }
 
+.atlas-import-diff {
+    margin-top: 10px;
+    padding-top: 8px;
+    border-top: 1px dashed var(--border, #cbd5e1);
+}
+
 .atlas-mono {
     font-family: ui-monospace, Consolas, monospace;
     font-size: 11px;

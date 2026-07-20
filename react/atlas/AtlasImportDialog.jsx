@@ -195,11 +195,12 @@ export function AtlasImportDialog({ open, onClose, busy: busyProp, onImported })
                     {counts && (
                         <div className="atlas-import-summary">
                             <p>
-                                Ready to replace Atlas DB from{' '}
+                                Ready to replace Atlas network tables from{' '}
                                 <strong>{summary.workbookName || '—'}</strong>
                                 {' + '}
                                 <strong>{summary.atmsName || '—'}</strong>
                             </p>
+                            <p className="atlas-muted">Ping history is kept (matched by IP). Findings are rebuilt.</p>
                             <ul>
                                 <li>TMD sites: {counts.tmd}</li>
                                 <li>SwitchFiber: {counts.switchFiber}</li>
@@ -207,6 +208,33 @@ export function AtlasImportDialog({ open, onClose, busy: busyProp, onImported })
                                 <li>Hubs / channels / drops / devices: {counts.hubs} / {counts.channels} / {counts.drops} / {counts.devices}</li>
                                 <li>Findings: {counts.findings}</li>
                             </ul>
+                            {summary.diff && !summary.diffDetails?.emptyCurrent && (
+                                <div className="atlas-import-diff">
+                                    <strong>Compared to current DB</strong>
+                                    <ul>
+                                        <li>New IPs: {summary.diff.newIps}</li>
+                                        <li>Missing IPs: {summary.diff.missingIps}</li>
+                                        <li>Changed IPs: {summary.diff.changedIps}</li>
+                                        <li>New / missing channels: {summary.diff.newChannels} / {summary.diff.missingChannels}</li>
+                                        <li>New / missing drops: {summary.diff.newDrops} / {summary.diff.missingDrops}</li>
+                                    </ul>
+                                    {!!summary.diffDetails?.newIps?.length && (
+                                        <p className="atlas-muted">
+                                            Sample new IPs: {summary.diffDetails.newIps.slice(0, 5).join(', ')}
+                                            {summary.diffDetails.newIps.length > 5 ? '…' : ''}
+                                        </p>
+                                    )}
+                                    {!!summary.diffDetails?.missingIps?.length && (
+                                        <p className="atlas-muted">
+                                            Sample missing IPs: {summary.diffDetails.missingIps.slice(0, 5).join(', ')}
+                                            {summary.diffDetails.missingIps.length > 5 ? '…' : ''}
+                                        </p>
+                                    )}
+                                </div>
+                            )}
+                            {summary.diffDetails?.emptyCurrent && (
+                                <p className="atlas-muted">No existing Atlas data — this will be the first load.</p>
+                            )}
                         </div>
                     )}
                 </section>

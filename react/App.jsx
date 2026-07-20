@@ -185,8 +185,16 @@ function AppShell() {
         const refreshCaps = () => {
             setAtlasAvailable(isAtlasAvailable());
             setCanAtlasPing(atlasCapabilities().canPing);
-            restoreWorkspaceMode();
-            setWorkspaceModeState(getWorkspaceMode());
+            const mode = restoreWorkspaceMode();
+            setWorkspaceModeState(mode);
+            if (mode === 'atlas' && isAtlasAvailable()) {
+                void openAtlasWorkspace().catch((err) => {
+                    getPlatformBundle().services?.notifications?.show?.(
+                        err?.message || 'Failed to open Atlas database',
+                        'error'
+                    );
+                });
+            }
         };
         refreshCaps();
         window.addEventListener('gis-platform-ready', refreshCaps);

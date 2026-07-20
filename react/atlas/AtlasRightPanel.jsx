@@ -25,18 +25,25 @@ export function AtlasRightPanel({
     const [tick, setTick] = useState(0);
     const [findingFilter, setFindingFilter] = useState('Open');
     const [monitorInterval, setMonitorInterval] = useState(1);
+    const [dashScope, setDashScope] = useState('network');
 
     useEffect(() => {
         const unsub = [
             bus.on('atlas:changed', () => setTick((t) => t + 1)),
-            bus.on('atlas:selection', () => setTick((t) => t + 1)),
+            bus.on('atlas:selection', () => {
+                setDashScope('selection');
+                setTick((t) => t + 1);
+            }),
             bus.on('atlas:ping', () => setTick((t) => t + 1))
         ];
         return () => unsub.forEach((u) => u?.());
     }, []);
 
     const snap = useMemo(() => getAtlasSnapshot(), [tick]);
-    const stats = useMemo(() => snap.stats || buildDashboardStats(snap), [snap, tick]);
+    const stats = useMemo(
+        () => buildDashboardStats(snap, { scope: dashScope }),
+        [snap, tick, dashScope]
+    );
     const selection = snap.selection;
 
     const schematic = useMemo(() => {
@@ -69,6 +76,24 @@ export function AtlasRightPanel({
     return (
         <div className="atlas-panel atlas-panel-right">
             <CollapsibleSection title="Dashboard" bodyId="atlas-dash">
+                <div className="atlas-toolbar">
+                    <button
+                        type="button"
+                        className={`btn btn-sm${dashScope === 'network' ? ' btn-secondary' : ' btn-ghost'}`}
+                        onClick={() => setDashScope('network')}
+                    >
+                        Network
+                    </button>
+                    <button
+                        type="button"
+                        className={`btn btn-sm${dashScope === 'selection' ? ' btn-secondary' : ' btn-ghost'}`}
+                        onClick={() => setDashScope('selection')}
+                        disabled={!selection && !snap.areaResults}
+                        title="Scope to selected hub/channel/drop or area results"
+                    >
+                        Selection{stats.scopeLabel && stats.scopeLabel !== 'Network' ? ` (${stats.scopeLabel})` : ''}
+                    </button>
+                </div>
                 <div className="atlas-dash-grid">
                     <div className="atlas-dash-card"><span>Hubs</span><strong>{stats.hubs}</strong></div>
                     <div className="atlas-dash-card"><span>Channels</span><strong>{stats.channels}</strong></div>
