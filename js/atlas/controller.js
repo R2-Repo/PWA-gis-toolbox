@@ -23,6 +23,7 @@ import { diffAtlasImport } from './import/diff.js';
 import { buildDashboardStats, exportPingSessionCsv } from './export.js';
 import { startPingSession, stopPingSession } from './monitor.js';
 import { queryAtlasInArea } from './area-query.js';
+import { collectHubIps } from './triage.js';
 import bus from '../core/event-bus.js';
 
 /**
@@ -198,6 +199,16 @@ export function selectAtlasEntity(selection) {
             .filter((d) => d.channelId === selection.id && d.lat != null)
             .map((d) => ({ lat: d.lat, lon: d.lon }));
         fitAtlasPoints(drops);
+    } else if (selection.kind === 'device') {
+        const device = snap.devices.find((d) => d.id === selection.id);
+        const drop = snap.drops.find((d) => d.deviceId === device?.id || (device?.ip && d.ip === device.ip));
+        if (drop?.lat != null) flyToAtlasPoint({ lat: drop.lat, lon: drop.lon });
+        else if (device?.lat != null) flyToAtlasPoint({ lat: device.lat, lon: device.lon });
+    } else if (selection.kind === 'site') {
+        const site = snap.sites.find((s) => s.id === selection.id);
+        const drop = snap.drops.find((d) => d.siteId === selection.id);
+        if (drop?.lat != null) flyToAtlasPoint({ lat: drop.lat, lon: drop.lon });
+        else if (site?.lat != null) flyToAtlasPoint({ lat: site.lat, lon: site.lon });
     }
     const next = getAtlasSnapshot();
     patchAtlasSnapshot({ stats: buildDashboardStats(next, { scope: 'selection' }) });
@@ -266,6 +277,16 @@ export async function pingDrop(dropId) {
 }
 
 /**
+ * @param {string} hubId
+ * @param {'all'|'primary'|'secondary'} [role]
+ */
+export async function pingHub(hubId, role = 'all') {
+    const ips = collectHubIps(hubId, role, getAtlasSnapshot());
+    if (!ips.length) throw new Error('No switch IPs found for this hub');
+    return pingTargets(ips);
+}
+
+/**
  * @param {object} geometry
  */
 export function runAreaQuery(geometry) {
@@ -273,6 +294,13 @@ export function runAreaQuery(geometry) {
     patchAtlasSnapshot({ areaResults: results });
     const snap = getAtlasSnapshot();
     patchAtlasSnapshot({ stats: buildDashboardStats(snap, { scope: 'selection' }) });
+    const points = [
+        ...(results.drops || []).filter((d) => d.lat != null).map((d) => ({ lat: d.lat, lon: d.lon })),
+        ...(results.hubs || []).filter((h) => h.lat != null).map((h) => ({ lat: h.lat, lon: h.lon }))
+    ];
+    if (points.length) fitAtlasPoints(points);
+    // Switch dashboard to Selection scope (areaResults drives triage/stats)
+    bus.emit('atlas:selection', snap.selection || { kind: 'area' });
     return results;
 }
 
@@ -310,6 +338,17 @@ export function startAtlasMonitor(opts) {
             patchAtlasSnapshot({
                 activeSession: { id: sessionId, label: opts.label || 'Monitor', targets: opts.targets, interval: opts.interval, log: [...log] }
             });
+            void db()?.savePingResults?.({
+                sessionId,
+                label: opts.label || 'Monitor',
+                results: [{
+                    ip: row.ip,
+                    status: row.status,
+                    rttMs: row.rttMs,
+                    error: row.error,
+                    at: row.timestamp
+                }]
+            }).catch(() => {});
         },
         onStop: () => {
             patchAtlasSnapshot({ activeSession: null });
@@ -325,6 +364,17 @@ export function stopAtlasMonitor(sessionId) {
     if (id) stopPingSession(id);
     if (active?.log?.length) {
         exportPingSessionCsv(active.log);
+        void db()?.savePingResults?.({
+            sessionId: id,
+            label: active.label || 'Monitor',
+            results: active.log.map((r) => ({
+                ip: r.ip,
+                status: r.status,
+                rttMs: r.rttMs,
+                error: r.error,
+                at: r.timestamp || r.at
+            }))
+        }).catch(() => {});
     }
     patchAtlasSnapshot({ activeSession: null });
 }
@@ -364,12 +414,12 @@ export function selectFindingEntity(finding) {
             return;
         }
         if (finding.entityKind === 'device' || snap.devices.some((d) => d.id === finding.entityId)) {
-            const device = snap.devices.find((d) => d.id === finding.entityId);
-            const drop = snap.drops.find((d) => d.deviceId === device?.id || (device?.ip && d.ip === device.ip));
-            if (drop) {
-                selectAtlasEntity({ kind: 'drop', id: drop.id });
-                return;
-            }
+            selectAtlasEntity({ kind: 'device', id: finding.entityId });
+            return;
+        }
+        if (finding.entityKind === 'site' || snap.sites.some((s) => s.id === finding.entityId)) {
+            selectAtlasEntity({ kind: 'site', id: finding.entityId });
+            return;
         }
     }
     if (finding.ip) {
@@ -377,6 +427,10 @@ export function selectFindingEntity(finding) {
         if (drop) {
             selectAtlasEntity({ kind: 'drop', id: drop.id });
             return;
+        }
+        const device = snap.devices.find((d) => d.ip === finding.ip);
+        if (device) {
+            selectAtlasEntity({ kind: 'device', id: device.id });
         }
     }
 }
@@ -389,6 +443,18 @@ export function updateFindingStatus(findingId, status) {
             : f);
     patchAtlasSnapshot({ findings, stats: buildDashboardStats({ ...snap, findings }) });
     void db()?.updateFinding?.(findingId, { status });
+}
+
+/**
+ * @param {string} findingId
+ * @param {string} notes
+ */
+export function updateFindingNotes(findingId, notes) {
+    const snap = getAtlasSnapshot();
+    const findings = snap.findings.map((f) =>
+        f.id === findingId ? { ...f, notes: notes || '' } : f);
+    patchAtlasSnapshot({ findings });
+    void db()?.updateFinding?.(findingId, { notes: notes || '' });
 }
 
 export { resetAtlasSnapshot };

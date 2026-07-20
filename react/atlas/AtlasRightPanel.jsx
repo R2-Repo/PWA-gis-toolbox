@@ -17,18 +17,23 @@ export function AtlasRightPanel({
     canPing,
     onPingChannel,
     onPingDrop,
+    onPingHub,
     onSelect,
     onPingSelectedIps,
     onStartMonitor,
     onStopMonitor,
     onUpdateFinding,
+    onUpdateFindingNotes,
     onAreaFromDraw,
+    onAreaPolygon,
     onSelectFinding
 }) {
     const [tick, setTick] = useState(0);
     const [findingFilter, setFindingFilter] = useState('Open');
     const [monitorInterval, setMonitorInterval] = useState(1);
     const [dashScope, setDashScope] = useState('network');
+    const [triageMode, setTriageMode] = useState('unreachable');
+    const [noteDrafts, setNoteDrafts] = useState({});
 
     useEffect(() => {
         const unsub = [
@@ -68,6 +73,16 @@ export function AtlasRightPanel({
         return snap.drops.find((d) => d.id === selection.id) || null;
     }, [selection, snap, tick]);
 
+    const deviceDetail = useMemo(() => {
+        if (selection?.kind !== 'device') return null;
+        return snap.devices.find((d) => d.id === selection.id) || null;
+    }, [selection, snap, tick]);
+
+    const siteDetail = useMemo(() => {
+        if (selection?.kind !== 'site') return null;
+        return snap.sites.find((s) => s.id === selection.id) || null;
+    }, [selection, snap, tick]);
+
     const findings = useMemo(() => {
         let list = snap.findings || [];
         if (findingFilter !== 'all') list = list.filter((f) => f.status === findingFilter);
@@ -76,12 +91,13 @@ export function AtlasRightPanel({
 
     const area = snap.areaResults;
 
-    const unreachable = useMemo(
-        () => listScopedDropsByPing(snap, { scope: dashScope }),
-        [snap, tick, dashScope]
+    const triageRows = useMemo(
+        () => listScopedDropsByPing(snap, { scope: dashScope, mode: triageMode }),
+        [snap, tick, dashScope, triageMode]
     );
 
     const dropPing = dropDetail?.ip ? snap.pingResults?.[dropDetail.ip] : null;
+    const devicePing = deviceDetail?.ip ? snap.pingResults?.[deviceDetail.ip] : null;
 
     return (
         <div className="atlas-panel atlas-panel-right">
@@ -134,7 +150,7 @@ export function AtlasRightPanel({
             </CollapsibleSection>
 
             <CollapsibleSection title="Details & schematic" bodyId="atlas-details" defaultOpen>
-                {!selection && <p className="atlas-muted">Select a hub, channel, or drop.</p>}
+                {!selection && <p className="atlas-muted">Select a hub, channel, drop, device, or site.</p>}
                 {dropDetail && (
                     <div className="atlas-detail-block">
                         <h4>{dropDetail.inventoryName || `Drop ${dropDetail.dropNumber}`}</h4>
@@ -170,9 +186,55 @@ export function AtlasRightPanel({
                         )}
                     </div>
                 )}
+                {deviceDetail && (
+                    <div className="atlas-detail-block">
+                        <h4>{deviceDetail.inventoryName || deviceDetail.ip || 'Device'}</h4>
+                        <p>{[deviceDetail.deviceType, deviceDetail.manufacturer, deviceDetail.model].filter(Boolean).join(' · ') || '—'}</p>
+                        <p>IP: {deviceDetail.ip || '—'}</p>
+                        <p className={devicePing && isPingStale(devicePing.at) ? 'atlas-stale-warn' : 'atlas-muted'}>
+                            Ping: {devicePing?.status || 'untested'}
+                            {devicePing?.rttMs != null ? ` · ${devicePing.rttMs} ms` : ''}
+                            {' · '}
+                            {formatPingAge(devicePing?.at)}
+                        </p>
+                        {canPing && deviceDetail.ip && (
+                            <button
+                                type="button"
+                                className="btn btn-secondary btn-sm"
+                                onClick={() => onPingSelectedIps?.([deviceDetail.ip])}
+                            >
+                                Ping device
+                            </button>
+                        )}
+                    </div>
+                )}
+                {siteDetail && (
+                    <div className="atlas-detail-block">
+                        <h4>{siteDetail.inventoryName || siteDetail.siteId || 'Site'}</h4>
+                        <p>Site ID: {siteDetail.siteId || '—'}</p>
+                        <p className="atlas-muted">
+                            {[siteDetail.lat, siteDetail.lon].every((n) => n != null)
+                                ? `${siteDetail.lat}, ${siteDetail.lon}`
+                                : 'No coordinates'}
+                        </p>
+                    </div>
+                )}
                 {hubSummary && (
                     <div className="atlas-detail-block">
                         <h4>{hubSummary.hub.name || hubSummary.hub.hubCode}</h4>
+                        {canPing && (
+                            <div className="atlas-toolbar">
+                                <button type="button" className="btn btn-secondary btn-sm" onClick={() => onPingHub?.(hubSummary.hub.id, 'all')}>
+                                    Ping all hub switches
+                                </button>
+                                <button type="button" className="btn btn-ghost btn-sm" onClick={() => onPingHub?.(hubSummary.hub.id, 'primary')}>
+                                    Ping primary
+                                </button>
+                                <button type="button" className="btn btn-ghost btn-sm" onClick={() => onPingHub?.(hubSummary.hub.id, 'secondary')}>
+                                    Ping secondary
+                                </button>
+                            </div>
+                        )}
                         <p><strong>Primary channels:</strong> {hubSummary.primary.length}</p>
                         <ul className="atlas-simple-list">
                             {hubSummary.primary.map((row) => (
@@ -212,21 +274,38 @@ export function AtlasRightPanel({
                 />
             </CollapsibleSection>
 
-            <CollapsibleSection title="Unreachable triage" bodyId="atlas-triage" defaultOpen>
+            <CollapsibleSection title="Ping triage" bodyId="atlas-triage" defaultOpen>
+                <div className="atlas-toolbar">
+                    {[
+                        ['unreachable', 'Unreachable'],
+                        ['stale', 'Stale'],
+                        ['untested', 'Untested'],
+                        ['attention', 'Needs attention']
+                    ].map(([mode, label]) => (
+                        <button
+                            key={mode}
+                            type="button"
+                            className={`btn btn-sm${triageMode === mode ? ' btn-secondary' : ' btn-ghost'}`}
+                            onClick={() => setTriageMode(mode)}
+                        >
+                            {label}
+                        </button>
+                    ))}
+                </div>
                 <p className="atlas-muted">
-                    Down switches in {dashScope === 'selection' ? 'current selection/area' : 'full network'} ({unreachable.length}).
+                    {triageMode} in {dashScope === 'selection' ? 'current selection/area' : 'full network'} ({triageRows.length}).
                 </p>
-                {canPing && unreachable.length > 0 && (
+                {canPing && triageRows.length > 0 && (
                     <button
                         type="button"
                         className="btn btn-secondary btn-sm"
-                        onClick={() => onPingSelectedIps?.(unreachable.map((r) => r.ip))}
+                        onClick={() => onPingSelectedIps?.(triageRows.map((r) => r.ip))}
                     >
-                        Re-ping unreachable ({unreachable.length})
+                        Re-ping list ({triageRows.length})
                     </button>
                 )}
                 <ul className="atlas-simple-list">
-                    {unreachable.slice(0, 60).map((row) => (
+                    {triageRows.slice(0, 60).map((row) => (
                         <li key={row.drop.id}>
                             <button
                                 type="button"
@@ -236,22 +315,30 @@ export function AtlasRightPanel({
                                 Ch {row.drop.channelNumber || '?'} · D{row.drop.dropNumber ?? '?'} · {row.ip}
                             </button>
                             <span className={`atlas-muted${row.stale ? ' atlas-stale-warn' : ''}`}>
-                                {' '}· {row.age}
+                                {' '}· {row.status} · {row.age}
                             </span>
                         </li>
                     ))}
-                    {!unreachable.length && <li className="atlas-muted">No unreachable switches in this scope.</li>}
+                    {!triageRows.length && <li className="atlas-muted">No matches in this triage mode.</li>}
                 </ul>
             </CollapsibleSection>
 
             <CollapsibleSection title="Area troubleshooting" bodyId="atlas-area" defaultOpen={false}>
-                <p className="atlas-muted">Draw a rectangle or polygon on the map, then run the query.</p>
-                <button type="button" className="btn btn-secondary btn-sm" onClick={() => onAreaFromDraw?.()}>
-                    Query current draw selection
-                </button>
+                <p className="atlas-muted">Draw a rectangle or polygon on the map. Results switch the dashboard to Selection scope.</p>
+                <div className="atlas-toolbar">
+                    <button type="button" className="btn btn-secondary btn-sm" onClick={() => onAreaFromDraw?.()}>
+                        Draw rectangle
+                    </button>
+                    <button type="button" className="btn btn-ghost btn-sm" onClick={() => onAreaPolygon?.()}>
+                        Draw polygon
+                    </button>
+                </div>
                 {area && (
                     <div className="atlas-detail-block">
                         <p>{area.drops.length} drops · {area.channels.length} channels · {area.hubs.length} hubs</p>
+                        {!!area.warnings?.length && (
+                            <p className="atlas-stale-warn">{area.warnings.length} open finding(s) in this area</p>
+                        )}
                         {canPing && (
                             <button
                                 type="button"
@@ -260,6 +347,17 @@ export function AtlasRightPanel({
                             >
                                 Ping area switches
                             </button>
+                        )}
+                        {!!area.warnings?.length && (
+                            <ul className="atlas-simple-list">
+                                {area.warnings.slice(0, 20).map((f) => (
+                                    <li key={f.id}>
+                                        <button type="button" className="atlas-linkish" onClick={() => onSelectFinding?.(f)}>
+                                            {f.findingType}: {f.description}
+                                        </button>
+                                    </li>
+                                ))}
+                            </ul>
                         )}
                         <ul className="atlas-simple-list">
                             {area.drops.slice(0, 40).map((d) => (
@@ -313,6 +411,24 @@ export function AtlasRightPanel({
                                     <strong>{f.findingType}</strong>
                                 </button>
                                 <p>{f.description}</p>
+                                {f.suggestedAction && (
+                                    <p className="atlas-muted">Action: {f.suggestedAction}</p>
+                                )}
+                                <label className="atlas-finding-notes">
+                                    <span className="atlas-muted">Notes</span>
+                                    <textarea
+                                        className="input-sm atlas-finding-notes-input"
+                                        rows={2}
+                                        value={noteDrafts[f.id] ?? f.notes ?? ''}
+                                        onChange={(e) => setNoteDrafts((prev) => ({ ...prev, [f.id]: e.target.value }))}
+                                        onBlur={() => {
+                                            const next = noteDrafts[f.id];
+                                            if (next === undefined || next === (f.notes || '')) return;
+                                            onUpdateFindingNotes?.(f.id, next);
+                                        }}
+                                        placeholder="Operator notes…"
+                                    />
+                                </label>
                                 <div className="atlas-toolbar">
                                     {['Open', 'Reviewed', 'Ignored', 'Resolved'].map((st) => (
                                         <button

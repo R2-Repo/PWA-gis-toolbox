@@ -168,13 +168,30 @@ export function buildDashboardStats(snap, opts = {}) {
             drops = drops.filter((d) => d.id === sel.id);
             const chId = drops[0]?.channelId;
             channels = channels.filter((c) => c.id === chId);
+        } else if (sel.kind === 'device') {
+            scopeLabel = 'Device';
+            const device = devices.find((d) => d.id === sel.id);
+            devices = device ? [device] : [];
+            drops = drops.filter((d) => d.deviceId === sel.id || (device?.ip && d.ip === device.ip));
+            const chId = drops[0]?.channelId;
+            channels = channels.filter((c) => c.id === chId);
+        } else if (sel.kind === 'site') {
+            scopeLabel = 'Site';
+            sites = sites.filter((s) => s.id === sel.id);
+            drops = drops.filter((d) => d.siteId === sel.id);
+            const chIds = new Set(drops.map((d) => d.channelId).filter(Boolean));
+            channels = channels.filter((c) => chIds.has(c.id));
         }
         const dropIps = new Set(drops.map((d) => d.ip).filter(Boolean));
         const dropIds = new Set(drops.map((d) => d.id));
-        devices = devices.filter((d) => dropIds.has(d.dropId) || (d.ip && dropIps.has(d.ip)));
+        if (sel.kind !== 'device') {
+            devices = devices.filter((d) => dropIds.has(d.dropId) || (d.ip && dropIps.has(d.ip)));
+        }
         const siteIds = new Set(drops.map((d) => d.siteId).filter(Boolean));
-        sites = sites.filter((s) => siteIds.has(s.id));
-        findings = findings.filter((f) => !f.entityId || dropIds.has(f.entityId));
+        if (sel.kind !== 'site') {
+            sites = sites.filter((s) => siteIds.has(s.id));
+        }
+        findings = findings.filter((f) => !f.entityId || dropIds.has(f.entityId) || f.entityId === sel.id);
     }
 
     const openFindings = findings.filter((f) => f.status === 'Open');

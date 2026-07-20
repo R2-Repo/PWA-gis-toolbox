@@ -89,11 +89,13 @@ import {
     selectFindingEntity,
     pingChannel,
     pingDrop,
+    pingHub,
     pingTargets,
     runAreaQuery,
     startAtlasMonitor,
     stopAtlasMonitor,
     updateFindingStatus,
+    updateFindingNotes,
     atlasCapabilities,
     leaveAtlasMap
 } from '../js/atlas/controller.js';
@@ -279,6 +281,18 @@ function AppShell() {
             runAreaQuery(geometry);
         } catch (err) {
             getPlatformBundle().services?.notifications?.show?.(err?.message || 'Area query cancelled', 'info');
+        }
+    }, []);
+
+    const onAreaPolygon = useCallback(async () => {
+        try {
+            const geometry = await mapService.startSketchPolygon?.({
+                bannerText: 'Click vertices for Atlas area. Double-click to finish. Esc cancels.'
+            });
+            if (!geometry) return;
+            runAreaQuery(geometry);
+        } catch (err) {
+            getPlatformBundle().services?.notifications?.show?.(err?.message || 'Polygon query cancelled', 'info');
         }
     }, []);
 
@@ -532,12 +546,15 @@ function AppShell() {
                                     canPing={canAtlasPing}
                                     onPingChannel={(id) => void pingChannel(id)}
                                     onPingDrop={(id) => void pingDrop(id)}
+                                    onPingHub={(id, role) => void pingHub(id, role)}
                                     onSelect={selectAtlasEntity}
                                     onPingSelectedIps={(ips) => void pingTargets(ips)}
                                     onStartMonitor={(opts) => startAtlasMonitor(opts)}
                                     onStopMonitor={(id) => stopAtlasMonitor(id)}
                                     onUpdateFinding={updateFindingStatus}
+                                    onUpdateFindingNotes={updateFindingNotes}
                                     onAreaFromDraw={() => void onAreaFromDraw()}
+                                    onAreaPolygon={() => void onAreaPolygon()}
                                     onSelectFinding={selectFindingEntity}
                                 />
                             ) : (

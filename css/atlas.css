@@ -358,6 +358,20 @@
     text-align: left;
 }
 
+.atlas-finding-notes {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin: 6px 0;
+    font-size: 12px;
+}
+
+.atlas-finding-notes-input {
+    width: 100%;
+    resize: vertical;
+    min-height: 44px;
+}
+
 .atlas-mono {
     font-family: ui-monospace, Consolas, monospace;
     font-size: 11px;

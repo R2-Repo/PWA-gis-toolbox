@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { listScopedDropsByPing } from '../js/atlas/triage.js';
+import { collectHubIps, listScopedDropsByPing } from '../js/atlas/triage.js';
 import { formatPingAge, isPingStale, parsePingAt } from '../js/atlas/ping-format.js';
 import { buildImportFindings } from '../js/atlas/import/audit.js';
 
@@ -32,6 +32,43 @@ describe('atlas unreachable triage', () => {
         const rows = listScopedDropsByPing(snap, { scope: 'selection' });
         expect(rows).toHaveLength(1);
         expect(rows[0].ip).toBe('10.0.0.1');
+    });
+
+    it('lists stale and untested modes', () => {
+        const old = new Date(Date.now() - 48 * 3600 * 1000).toISOString();
+        const snap = {
+            drops: [
+                { id: 'd1', channelId: 'c1', channelNumber: '1', dropNumber: 1, ip: '10.0.0.1' },
+                { id: 'd2', channelId: 'c1', channelNumber: '1', dropNumber: 2, ip: '10.0.0.2' },
+                { id: 'd3', channelId: 'c1', channelNumber: '1', dropNumber: 3, ip: '10.0.0.3' }
+            ],
+            pingResults: {
+                '10.0.0.1': { status: 'reachable', at: old },
+                '10.0.0.2': { status: 'reachable', at: new Date().toISOString() }
+            },
+            selection: null
+        };
+        expect(listScopedDropsByPing(snap, { mode: 'stale' }).map((r) => r.ip)).toEqual(['10.0.0.1']);
+        expect(listScopedDropsByPing(snap, { mode: 'untested' }).map((r) => r.ip)).toEqual(['10.0.0.3']);
+        expect(listScopedDropsByPing(snap, { mode: 'attention' }).map((r) => r.ip).sort())
+            .toEqual(['10.0.0.1', '10.0.0.3']);
+    });
+
+    it('collects hub switch ips by role', () => {
+        const snap = {
+            hubs: [{ id: 'h1', hubCode: 'H1' }],
+            channels: [
+                { id: 'c1', primaryHubId: 'h1', primaryHubCode: 'H1' },
+                { id: 'c2', secondaryHubId: 'h1', secondaryHubCode: 'H1' }
+            ],
+            drops: [
+                { id: 'd1', channelId: 'c1', ip: '10.0.0.1' },
+                { id: 'd2', channelId: 'c2', ip: '10.0.0.2' }
+            ]
+        };
+        expect(collectHubIps('h1', 'primary', snap)).toEqual(['10.0.0.1']);
+        expect(collectHubIps('h1', 'secondary', snap)).toEqual(['10.0.0.2']);
+        expect(collectHubIps('h1', 'all', snap).sort()).toEqual(['10.0.0.1', '10.0.0.2']);
     });
 });
 
