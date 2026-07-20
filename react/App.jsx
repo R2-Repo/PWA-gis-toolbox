@@ -92,6 +92,7 @@ import {
     pingHub,
     pingTargets,
     runAreaQuery,
+    clearAreaResults,
     startAtlasMonitor,
     stopAtlasMonitor,
     updateFindingStatus,
@@ -555,6 +556,7 @@ function AppShell() {
                                     onUpdateFindingNotes={updateFindingNotes}
                                     onAreaFromDraw={() => void onAreaFromDraw()}
                                     onAreaPolygon={() => void onAreaPolygon()}
+                                    onClearArea={clearAreaResults}
                                     onSelectFinding={selectFindingEntity}
                                 />
                             ) : (

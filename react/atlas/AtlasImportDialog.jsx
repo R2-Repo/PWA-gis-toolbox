@@ -257,6 +257,12 @@ export function AtlasImportDialog({ open, onClose, busy: busyProp, onImported })
                                             {!!diff.missingChannels?.length && (
                                                 <p><strong>Missing channels:</strong> {diff.missingChannels.join(', ')}</p>
                                             )}
+                                            {!!diff.newDrops?.length && (
+                                                <p><strong>New drops:</strong> {diff.newDrops.join(', ')}</p>
+                                            )}
+                                            {!!diff.missingDrops?.length && (
+                                                <p><strong>Missing drops:</strong> {diff.missingDrops.join(', ')}</p>
+                                            )}
                                         </div>
                                     )}
                                 </div>

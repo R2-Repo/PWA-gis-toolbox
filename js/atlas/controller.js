@@ -21,10 +21,14 @@ import {
 import { buildAtlasImportPayload } from './import/pipeline.js';
 import { diffAtlasImport } from './import/diff.js';
 import { buildDashboardStats, exportPingSessionCsv } from './export.js';
-import { startPingSession, stopPingSession } from './monitor.js';
+import { startPingSession, stopPingSession, stopAllPingSessions } from './monitor.js';
 import { queryAtlasInArea } from './area-query.js';
 import { collectHubIps } from './triage.js';
 import bus from '../core/event-bus.js';
+
+function notify(message, level = 'info') {
+    getPlatformBundle().services?.notifications?.show?.(message, level);
+}
 
 /**
  * @returns {import('../platform/contracts.js').DatabaseService | null}
@@ -175,6 +179,10 @@ export async function runAtlasImport(input) {
  * @param {import('./types.js').AtlasSelection} selection
  */
 export function selectAtlasEntity(selection) {
+    // Entity pick clears area scope so triage/dashboard follow the selection
+    if (selection?.kind && selection.kind !== 'area' && getAtlasSnapshot().areaResults) {
+        patchAtlasSnapshot({ areaResults: null });
+    }
     setAtlasSelection(selection);
     const snap = getAtlasSnapshot();
     if (selection.kind === 'drop') {
@@ -221,41 +229,60 @@ export function selectAtlasEntity(selection) {
 export async function pingTargets(ips) {
     const service = ping();
     if (!service?.pingMany) {
-        throw new Error('ICMP ping requires the Windows desktop app');
+        const err = new Error('ICMP ping requires the Windows desktop app');
+        notify(err.message, 'error');
+        throw err;
     }
     const unique = [...new Set(ips.filter(Boolean))];
+    if (!unique.length) {
+        notify('No IPs to ping', 'warning');
+        return [];
+    }
+    notify(`Pinging ${unique.length} IP${unique.length === 1 ? '' : 's'}…`, 'info');
     const pending = Object.fromEntries(unique.map((ip) => [ip, { status: 'pending', at: new Date().toISOString() }]));
     setPingStatuses(pending);
     syncAtlasMapLayers(getAtlasSnapshot());
 
-    const results = await service.pingMany(unique);
-    /** @type {Record<string, import('./types.js').PingStatusEntry>} */
-    const map = {};
-    for (const r of results) {
-        map[r.ip] = {
-            status: r.status,
-            rttMs: r.rttMs ?? null,
-            error: r.error,
-            at: new Date().toISOString()
-        };
-    }
-    setPingStatuses(map);
-    syncAtlasMapLayers(getAtlasSnapshot());
-
     try {
-        await db()?.savePingResults?.({
-            sessionId: crypto.randomUUID(),
-            label: 'one-shot',
-            results: results.map((r) => ({
-                ...r,
-                at: map[r.ip]?.at
-            }))
-        });
-    } catch {
-        /* persistence optional for one-shot */
-    }
+        const results = await service.pingMany(unique);
+        /** @type {Record<string, import('./types.js').PingStatusEntry>} */
+        const map = {};
+        for (const r of results) {
+            map[r.ip] = {
+                status: r.status,
+                rttMs: r.rttMs ?? null,
+                error: r.error,
+                at: new Date().toISOString()
+            };
+        }
+        setPingStatuses(map);
+        syncAtlasMapLayers(getAtlasSnapshot());
 
-    return results;
+        try {
+            await db()?.savePingResults?.({
+                sessionId: crypto.randomUUID(),
+                label: 'one-shot',
+                results: results.map((r) => ({
+                    ...r,
+                    at: map[r.ip]?.at
+                }))
+            });
+        } catch {
+            /* persistence optional for one-shot */
+        }
+
+        const up = results.filter((r) => r.status === 'reachable').length;
+        const down = results.filter((r) => r.status === 'unreachable').length;
+        const other = results.length - up - down;
+        notify(
+            `Ping done: ${up} up · ${down} down${other ? ` · ${other} other` : ''}`,
+            down && !up ? 'warning' : 'success'
+        );
+        return results;
+    } catch (err) {
+        notify(err?.message || 'Ping failed', 'error');
+        throw err;
+    }
 }
 
 /**
@@ -291,6 +318,8 @@ export async function pingHub(hubId, role = 'all') {
  */
 export function runAreaQuery(geometry) {
     const results = queryAtlasInArea(geometry);
+    // Soft-clear entity selection so area scope is active until next entity pick
+    setAtlasSelection({ kind: 'area', id: 'area' });
     patchAtlasSnapshot({ areaResults: results });
     const snap = getAtlasSnapshot();
     patchAtlasSnapshot({ stats: buildDashboardStats(snap, { scope: 'selection' }) });
@@ -299,9 +328,19 @@ export function runAreaQuery(geometry) {
         ...(results.hubs || []).filter((h) => h.lat != null).map((h) => ({ lat: h.lat, lon: h.lon }))
     ];
     if (points.length) fitAtlasPoints(points);
-    // Switch dashboard to Selection scope (areaResults drives triage/stats)
-    bus.emit('atlas:selection', snap.selection || { kind: 'area' });
+    notify(`Area: ${results.drops.length} drops · ${results.channels.length} channels`, 'info');
     return results;
+}
+
+/** Clear area query results and restore network-scoped stats. */
+export function clearAreaResults() {
+    patchAtlasSnapshot({ areaResults: null });
+    const snap = getAtlasSnapshot();
+    if (snap.selection?.kind === 'area') {
+        setAtlasSelection(null);
+    }
+    patchAtlasSnapshot({ stats: buildDashboardStats(getAtlasSnapshot(), { scope: 'network' }) });
+    syncAtlasMapLayers(getAtlasSnapshot());
 }
 
 /**
@@ -309,6 +348,10 @@ export function runAreaQuery(geometry) {
  * @param {{ targets: string[], interval: number|string, label?: string }} opts
  */
 export function startAtlasMonitor(opts) {
+    if (getAtlasSnapshot().activeSession) {
+        notify('A monitor session is already running — stop it first', 'warning');
+        return null;
+    }
     const sessionId = crypto.randomUUID();
     const log = [];
     patchAtlasSnapshot({
@@ -358,12 +401,17 @@ export function startAtlasMonitor(opts) {
     return handle;
 }
 
-export function stopAtlasMonitor(sessionId) {
+/**
+ * @param {string} [sessionId]
+ * @param {{ exportCsv?: boolean }} [opts]
+ */
+export function stopAtlasMonitor(sessionId, opts = {}) {
+    const exportCsv = opts.exportCsv !== false;
     const active = getAtlasSnapshot().activeSession;
     const id = sessionId || active?.id;
     if (id) stopPingSession(id);
     if (active?.log?.length) {
-        exportPingSessionCsv(active.log);
+        if (exportCsv) exportPingSessionCsv(active.log);
         void db()?.savePingResults?.({
             sessionId: id,
             label: active.label || 'Monitor',
@@ -380,6 +428,8 @@ export function stopAtlasMonitor(sessionId) {
 }
 
 export function leaveAtlasMap() {
+    stopAtlasMonitor(undefined, { exportCsv: false });
+    stopAllPingSessions();
     disableAtlasMapInteraction();
     clearAtlasMapLayers();
 }

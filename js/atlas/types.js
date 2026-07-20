@@ -95,7 +95,7 @@
 
 /**
  * @typedef {Object} AtlasSelection
- * @property {'hub'|'channel'|'drop'|'device'|'site'} kind
+ * @property {'hub'|'channel'|'drop'|'device'|'site'|'area'} kind
  * @property {string} id
  */
 

@@ -58,6 +58,7 @@ export function exportFindingsCsv(findings) {
         status: f.status,
         description: f.description,
         suggestedAction: f.suggestedAction,
+        notes: f.notes || '',
         entityId: f.entityId || '',
         entityKind: f.entityKind || '',
         ip: f.ip || '',
@@ -133,17 +134,8 @@ export function buildDashboardStats(snap, opts = {}) {
     let findings = snap.findings || [];
     let scopeLabel = 'Network';
 
-    if (scope === 'selection' && snap.areaResults) {
-        scopeLabel = 'Area';
-        drops = snap.areaResults.drops || [];
-        hubs = snap.areaResults.hubs || [];
-        channels = snap.areaResults.channels || [];
-        devices = snap.areaResults.devices || [];
-        const dropIds = new Set(drops.map((d) => d.id));
-        const siteIds = new Set(drops.map((d) => d.siteId).filter(Boolean));
-        sites = sites.filter((s) => siteIds.has(s.id));
-        findings = findings.filter((f) => !f.entityId || dropIds.has(f.entityId));
-    } else if (scope === 'selection' && snap.selection) {
+    // Entity selection wins over a stale area query
+    if (scope === 'selection' && snap.selection && snap.selection.kind !== 'area') {
         const sel = snap.selection;
         if (sel.kind === 'hub') {
             scopeLabel = 'Hub';
@@ -191,7 +183,22 @@ export function buildDashboardStats(snap, opts = {}) {
         if (sel.kind !== 'site') {
             sites = sites.filter((s) => siteIds.has(s.id));
         }
-        findings = findings.filter((f) => !f.entityId || dropIds.has(f.entityId) || f.entityId === sel.id);
+        findings = findings.filter((f) => !f.entityId || dropIds.has(f.entityId) || f.entityId === sel.id
+            || (f.ip && dropIps.has(f.ip)));
+    } else if (scope === 'selection' && snap.areaResults) {
+        scopeLabel = 'Area';
+        drops = snap.areaResults.drops || [];
+        hubs = snap.areaResults.hubs || [];
+        channels = snap.areaResults.channels || [];
+        devices = snap.areaResults.devices || [];
+        const dropIds = new Set(drops.map((d) => d.id));
+        const dropIps = new Set(drops.map((d) => d.ip).filter(Boolean));
+        const siteIds = new Set(drops.map((d) => d.siteId).filter(Boolean));
+        sites = sites.filter((s) => siteIds.has(s.id));
+        findings = findings.filter((f) =>
+            (f.entityId && dropIds.has(f.entityId))
+            || (f.ip && dropIps.has(f.ip))
+            || (snap.areaResults.warnings || []).some((w) => w.id === f.id));
     }
 
     const openFindings = findings.filter((f) => f.status === 'Open');

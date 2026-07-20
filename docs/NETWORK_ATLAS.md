@@ -60,10 +60,13 @@ Operator UX:
 - Ping triage: unreachable / stale / untested / needs attention + bulk re-ping
 - Hub detail: ping all / primary / secondary switch sets
 - Area query: rectangle or polygon, fit bounds, Selection scope, open findings in area
+- Area clear + entity selection overrides stale area scope
+- Ping toasts (start + up/down summary)
+- Reconciliation findings follow Network / Selection scope
 - Ping age on drop details / schematic (stale after 24h)
 - Findings: suggested action, editable notes, link to hub/channel/drop/device/site
-- Monitor samples persisted via `savePingResults` (plus CSV on stop)
-- Import Review: full diff lists + CSV export
+- Monitor samples persisted; stop on leave Atlas (CSV only when Stop clicked)
+- Import Review: full diff lists (IPs/channels/drops) + CSV export
 
 Manual file pickers remain as a fallback. Do **not** use the header Import / map drop for these sources.
 

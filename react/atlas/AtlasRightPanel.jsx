@@ -4,7 +4,7 @@ import { getAtlasSnapshot } from '../../js/atlas/store.js';
 import { buildChannelSchematic } from '../../js/atlas/schematic.js';
 import { getHubChannelSummary } from '../../js/atlas/hierarchy.js';
 import { buildDashboardStats, exportDropsCsv, exportFindingsCsv, openPrintableReport } from '../../js/atlas/export.js';
-import { listScopedDropsByPing } from '../../js/atlas/triage.js';
+import { findingsInScope, listScopedDropsByPing } from '../../js/atlas/triage.js';
 import { formatPingAge, formatPingWhen, isPingStale } from '../../js/atlas/ping-format.js';
 import { ChannelSchematic } from './ChannelSchematic.jsx';
 import { CollapsibleSection } from '../ui/CollapsibleSection.jsx';
@@ -26,6 +26,7 @@ export function AtlasRightPanel({
     onUpdateFindingNotes,
     onAreaFromDraw,
     onAreaPolygon,
+    onClearArea,
     onSelectFinding
 }) {
     const [tick, setTick] = useState(0);
@@ -38,8 +39,9 @@ export function AtlasRightPanel({
     useEffect(() => {
         const unsub = [
             bus.on('atlas:changed', () => setTick((t) => t + 1)),
-            bus.on('atlas:selection', () => {
-                setDashScope('selection');
+            bus.on('atlas:selection', (sel) => {
+                if (sel) setDashScope('selection');
+                else setDashScope('network');
                 setTick((t) => t + 1);
             }),
             bus.on('atlas:ping', () => setTick((t) => t + 1))
@@ -84,10 +86,10 @@ export function AtlasRightPanel({
     }, [selection, snap, tick]);
 
     const findings = useMemo(() => {
-        let list = snap.findings || [];
+        let list = findingsInScope(snap, dashScope);
         if (findingFilter !== 'all') list = list.filter((f) => f.status === findingFilter);
         return list;
-    }, [snap.findings, findingFilter, tick]);
+    }, [snap, findingFilter, tick, dashScope]);
 
     const area = snap.areaResults;
 
@@ -178,6 +180,8 @@ export function AtlasRightPanel({
                                 <button
                                     type="button"
                                     className="btn btn-secondary btn-sm"
+                                    disabled={!!snap.activeSession}
+                                    title={snap.activeSession ? 'Stop the active monitor first' : 'Start temporary monitoring'}
                                     onClick={() => onStartMonitor?.({ targets: [dropDetail.ip], interval: monitorInterval, label: dropDetail.inventoryName })}
                                 >
                                     Start monitor
@@ -324,7 +328,7 @@ export function AtlasRightPanel({
             </CollapsibleSection>
 
             <CollapsibleSection title="Area troubleshooting" bodyId="atlas-area" defaultOpen={false}>
-                <p className="atlas-muted">Draw a rectangle or polygon on the map. Results switch the dashboard to Selection scope.</p>
+                <p className="atlas-muted">Draw a rectangle or polygon on the map. Results switch the dashboard to Selection scope. Selecting a hub/channel/drop clears the area.</p>
                 <div className="atlas-toolbar">
                     <button type="button" className="btn btn-secondary btn-sm" onClick={() => onAreaFromDraw?.()}>
                         Draw rectangle
@@ -332,6 +336,11 @@ export function AtlasRightPanel({
                     <button type="button" className="btn btn-ghost btn-sm" onClick={() => onAreaPolygon?.()}>
                         Draw polygon
                     </button>
+                    {area && (
+                        <button type="button" className="btn btn-ghost btn-sm" onClick={() => onClearArea?.()}>
+                            Clear area
+                        </button>
+                    )}
                 </div>
                 {area && (
                     <div className="atlas-detail-block">
@@ -386,6 +395,12 @@ export function AtlasRightPanel({
             </CollapsibleSection>
 
             <CollapsibleSection title="Reconciliation" bodyId="atlas-findings" defaultOpen={false}>
+                <p className="atlas-muted">
+                    {findings.length} finding{findings.length === 1 ? '' : 's'}
+                    {dashScope === 'selection'
+                        ? ` in ${stats.scopeLabel || 'selection'}`
+                        : ' (full network)'}
+                </p>
                 <div className="atlas-toolbar">
                     <select className="input-sm" value={findingFilter} onChange={(e) => setFindingFilter(e.target.value)}>
                         <option value="Open">Open</option>
@@ -394,7 +409,7 @@ export function AtlasRightPanel({
                         <option value="Resolved">Resolved</option>
                         <option value="all">All</option>
                     </select>
-                    <button type="button" className="btn btn-ghost btn-sm" onClick={() => exportFindingsCsv(snap.findings)}>Export CSV</button>
+                    <button type="button" className="btn btn-ghost btn-sm" onClick={() => exportFindingsCsv(findings)}>Export CSV</button>
                 </div>
                 <ul className="atlas-findings-list">
                     {findings.slice(0, 100).map((f) => (

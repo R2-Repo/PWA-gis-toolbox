@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { collectHubIps, listScopedDropsByPing } from '../js/atlas/triage.js';
+import { collectHubIps, dropsInScope, findingsInScope, listScopedDropsByPing } from '../js/atlas/triage.js';
 import { formatPingAge, isPingStale, parsePingAt } from '../js/atlas/ping-format.js';
 import { buildImportFindings } from '../js/atlas/import/audit.js';
 
@@ -69,6 +69,24 @@ describe('atlas unreachable triage', () => {
         expect(collectHubIps('h1', 'primary', snap)).toEqual(['10.0.0.1']);
         expect(collectHubIps('h1', 'secondary', snap)).toEqual(['10.0.0.2']);
         expect(collectHubIps('h1', 'all', snap).sort()).toEqual(['10.0.0.1', '10.0.0.2']);
+    });
+
+    it('entity selection overrides stale areaResults', () => {
+        const snap = {
+            channels: [{ id: 'c1' }, { id: 'c2' }],
+            drops: [
+                { id: 'd1', channelId: 'c1', ip: '10.0.0.1' },
+                { id: 'd2', channelId: 'c2', ip: '10.0.0.2' }
+            ],
+            areaResults: { drops: [{ id: 'd2', channelId: 'c2', ip: '10.0.0.2' }] },
+            selection: { kind: 'channel', id: 'c1' },
+            findings: [
+                { id: 'f1', entityId: 'd1', status: 'Open' },
+                { id: 'f2', entityId: 'd2', status: 'Open' }
+            ]
+        };
+        expect(dropsInScope(snap, 'selection').map((d) => d.id)).toEqual(['d1']);
+        expect(findingsInScope(snap, 'selection').map((f) => f.id)).toEqual(['f1']);
     });
 });
 
