@@ -29,6 +29,7 @@ import {
     normalizeAtlasPrefs,
     serializePrefValue
 } from './prefs.js';
+import { applyFindingStatusPatch, isFindingStatus } from './findings-status.js';
 import bus from '../core/event-bus.js';
 
 function notify(message, level = 'info') {
@@ -652,14 +653,34 @@ export function selectFindingEntity(finding) {
     }
 }
 
+export { applyFindingStatusPatch } from './findings-status.js';
+
 export function updateFindingStatus(findingId, status) {
+    if (!isFindingStatus(status) || !findingId) return;
     const snap = getAtlasSnapshot();
-    const findings = snap.findings.map((f) =>
-        f.id === findingId
-            ? { ...f, status, resolvedAt: status === 'Resolved' ? new Date().toISOString() : f.resolvedAt }
-            : f);
+    const findings = applyFindingStatusPatch(snap.findings, [findingId], status);
     patchAtlasSnapshot({ findings, stats: buildDashboardStats({ ...snap, findings }) });
     void db()?.updateFinding?.(findingId, { status });
+}
+
+/**
+ * Update many findings to the same status (memory once, persist each).
+ * @param {string[]} findingIds
+ * @param {string} status
+ * @returns {Promise<number>}
+ */
+export async function bulkUpdateFindingStatus(findingIds, status) {
+    const ids = [...new Set((findingIds || []).filter(Boolean))];
+    if (!ids.length || !isFindingStatus(status)) return 0;
+    const snap = getAtlasSnapshot();
+    const findings = applyFindingStatusPatch(snap.findings, ids, status);
+    patchAtlasSnapshot({ findings, stats: buildDashboardStats({ ...snap, findings }) });
+    const service = db();
+    if (service?.updateFinding) {
+        await Promise.all(ids.map((id) => service.updateFinding(id, { status }).catch(() => {})));
+    }
+    notify(`Updated ${ids.length} finding${ids.length === 1 ? '' : 's'} → ${status}`, 'success');
+    return ids.length;
 }
 
 /**
@@ -672,6 +693,23 @@ export function updateFindingNotes(findingId, notes) {
         f.id === findingId ? { ...f, notes: notes || '' } : f);
     patchAtlasSnapshot({ findings });
     void db()?.updateFinding?.(findingId, { notes: notes || '' });
+}
+
+/**
+ * Reload network snapshot from SQLite (stops active monitor without CSV if present).
+ * @param {{ forceStopMonitor?: boolean }} [opts]
+ */
+export async function reloadAtlasFromDb(opts = {}) {
+    const active = getAtlasSnapshot().activeSession;
+    if (active) {
+        if (!opts.forceStopMonitor) {
+            throw new Error('A monitor session is active — confirm stop before reload');
+        }
+        stopAtlasMonitor(active.id, { exportCsv: false });
+    }
+    await refreshAtlasFromDb();
+    notify('Reloaded Atlas from database', 'success');
+    return getAtlasSnapshot();
 }
 
 export { resetAtlasSnapshot };

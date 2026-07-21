@@ -13,6 +13,7 @@ import {
     openPrintableReport
 } from '../../js/atlas/export.js';
 import {
+    bulkUpdateFindingStatus,
     deleteAtlasPingSession,
     listAtlasPingSessions,
     loadAtlasPingSession,
@@ -68,6 +69,9 @@ export function AtlasRightPanel({
     const [pastSessions, setPastSessions] = useState([]);
     const [historyDetail, setHistoryDetail] = useState(null);
     const [historyBusy, setHistoryBusy] = useState(false);
+    /** @type {[Set<string>, function]} */
+    const [selectedFindingIds, setSelectedFindingIds] = useState(() => new Set());
+    const [bulkBusy, setBulkBusy] = useState(false);
 
     const changeMonitorInterval = (raw) => {
         const next = Number(raw) || raw;
@@ -221,6 +225,47 @@ export function AtlasRightPanel({
         if (findingTypeFilter !== 'all') list = list.filter((f) => f.findingType === findingTypeFilter);
         return list;
     }, [scopedFindings, findingFilter, findingTypeFilter]);
+
+    const visibleFindings = useMemo(
+        () => (showAllFindings ? findings : findings.slice(0, 100)),
+        [findings, showAllFindings]
+    );
+
+    const toggleFindingSelected = (id) => {
+        setSelectedFindingIds((prev) => {
+            const next = new Set(prev);
+            if (next.has(id)) next.delete(id);
+            else next.add(id);
+            return next;
+        });
+    };
+
+    const selectAllVisibleFindings = () => {
+        setSelectedFindingIds(new Set(visibleFindings.map((f) => f.id)));
+    };
+
+    const clearFindingSelection = () => setSelectedFindingIds(new Set());
+
+    const applyBulkFindingStatus = (status) => {
+        const ids = [...selectedFindingIds].filter((id) => findings.some((f) => f.id === id));
+        if (!ids.length) return;
+        const run = () => {
+            setBulkBusy(true);
+            void bulkUpdateFindingStatus(ids, status)
+                .then(() => clearFindingSelection())
+                .finally(() => setBulkBusy(false));
+        };
+        if (ids.length >= 10) {
+            void confirm(
+                `Mark ${ids.length} findings`,
+                `Set status of ${ids.length} selected finding(s) to “${status}”?`
+            ).then((ok) => {
+                if (ok) run();
+            });
+            return;
+        }
+        run();
+    };
 
     const area = snap.areaResults;
 
@@ -1068,9 +1113,17 @@ export function AtlasRightPanel({
                     {dashScope === 'selection'
                         ? ` in ${stats.scopeLabel || 'selection'}`
                         : ' (full network)'}
+                    {selectedFindingIds.size ? ` · ${selectedFindingIds.size} selected` : ''}
                 </p>
                 <div className="atlas-toolbar">
-                    <select className="input-sm" value={findingFilter} onChange={(e) => setFindingFilter(e.target.value)}>
+                    <select
+                        className="input-sm"
+                        value={findingFilter}
+                        onChange={(e) => {
+                            setFindingFilter(e.target.value);
+                            clearFindingSelection();
+                        }}
+                    >
                         <option value="Open">Open</option>
                         <option value="Reviewed">Reviewed</option>
                         <option value="Ignored">Ignored</option>
@@ -1080,7 +1133,10 @@ export function AtlasRightPanel({
                     <select
                         className="input-sm"
                         value={findingTypeFilter}
-                        onChange={(e) => setFindingTypeFilter(e.target.value)}
+                        onChange={(e) => {
+                            setFindingTypeFilter(e.target.value);
+                            clearFindingSelection();
+                        }}
                         title="Finding type"
                     >
                         <option value="all">All types</option>
@@ -1099,13 +1155,50 @@ export function AtlasRightPanel({
                         </button>
                     )}
                 </div>
+                <div className="atlas-toolbar atlas-findings-bulk">
+                    <button
+                        type="button"
+                        className="btn btn-ghost btn-sm"
+                        disabled={!visibleFindings.length || bulkBusy}
+                        onClick={selectAllVisibleFindings}
+                    >
+                        Select visible ({visibleFindings.length})
+                    </button>
+                    <button
+                        type="button"
+                        className="btn btn-ghost btn-sm"
+                        disabled={!selectedFindingIds.size || bulkBusy}
+                        onClick={clearFindingSelection}
+                    >
+                        Clear
+                    </button>
+                    {['Reviewed', 'Ignored', 'Resolved', 'Open'].map((st) => (
+                        <button
+                            key={st}
+                            type="button"
+                            className="btn btn-secondary btn-sm"
+                            disabled={!selectedFindingIds.size || bulkBusy}
+                            onClick={() => applyBulkFindingStatus(st)}
+                        >
+                            → {st}
+                        </button>
+                    ))}
+                </div>
                 <ul className="atlas-findings-list">
-                    {(showAllFindings ? findings : findings.slice(0, 100)).map((f) => (
+                    {visibleFindings.map((f) => (
                         <li
                             key={f.id}
                             id={`atlas-finding-${f.id}`}
-                            className={focusedFindingId === f.id ? 'atlas-finding--focused' : ''}
+                            className={`${focusedFindingId === f.id ? 'atlas-finding--focused' : ''}${selectedFindingIds.has(f.id) ? ' atlas-finding--selected' : ''}`}
                         >
+                            <label className="atlas-finding-check">
+                                <input
+                                    type="checkbox"
+                                    checked={selectedFindingIds.has(f.id)}
+                                    onChange={() => toggleFindingSelected(f.id)}
+                                    aria-label={`Select finding ${f.findingType}`}
+                                />
+                            </label>
                             <span className={statusClass(f.severity)}>{f.severity}</span>
                             <div>
                                 <button

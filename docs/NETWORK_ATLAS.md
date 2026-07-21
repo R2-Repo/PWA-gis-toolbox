@@ -60,7 +60,8 @@ Operator UX:
 - Hierarchy / search / map: ping dots; reachable+stale shows as warning (orange)
 - Dashboard: inventory counts, wireless/provisional, finding-type cards, ping triage
 - Findings focus: click finding → filter + scroll + highlight row
-- Findings: entityKind chip + Open on map; status/type filters; Show all / CSV
+- Findings: entityKind chip + Open on map; status/type filters; Show all / CSV; bulk select → status
+- Reload DB button (left panel) rehydrates from SQLite; stops active monitor after confirm
 - Ping triage: unreachable / stale / untested / needs attention + per-row Ping
 - Hub map + schematic hubs colored by worst-of switch ping rollup
 - Hub detail: ping all / primary / secondary + start monitor

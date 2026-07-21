@@ -4,6 +4,8 @@ import { getAtlasSnapshot } from '../../js/atlas/store.js';
 import { searchAtlas } from '../../js/atlas/search.js';
 import { buildHierarchyTree } from '../../js/atlas/hierarchy.js';
 import { formatPingWhen, isPingStale } from '../../js/atlas/ping-format.js';
+import { reloadAtlasFromDb } from '../../js/atlas/controller.js';
+import { confirm } from '../../js/ui/modals.js';
 import { CollapsibleSection } from '../ui/CollapsibleSection.jsx';
 
 function containsSelection(node, selection) {
@@ -74,6 +76,7 @@ function HierarchyNode({ node, depth, onSelect, selection }) {
 export function AtlasLeftPanel({ onSelect, onOpenImport }) {
     const [tick, setTick] = useState(0);
     const [query, setQuery] = useState('');
+    const [reloadBusy, setReloadBusy] = useState(false);
 
     useEffect(() => {
         const unsub = [
@@ -94,6 +97,31 @@ export function AtlasLeftPanel({ onSelect, onOpenImport }) {
             <div className="atlas-toolbar">
                 <button type="button" className="btn btn-secondary btn-sm" onClick={onOpenImport}>
                     Import data
+                </button>
+                <button
+                    type="button"
+                    className="btn btn-ghost btn-sm"
+                    disabled={!snap.loaded || reloadBusy}
+                    title="Reload hubs/channels/drops/findings from SQLite"
+                    onClick={() => {
+                        const run = () => {
+                            setReloadBusy(true);
+                            void reloadAtlasFromDb({ forceStopMonitor: !!snap.activeSession })
+                                .finally(() => setReloadBusy(false));
+                        };
+                        if (snap.activeSession) {
+                            void confirm(
+                                'Reload from database',
+                                'An active monitor will be stopped first (no CSV export). Continue?'
+                            ).then((ok) => {
+                                if (ok) run();
+                            });
+                            return;
+                        }
+                        run();
+                    }}
+                >
+                    {reloadBusy ? 'Reloading…' : 'Reload DB'}
                 </button>
                 <span className="atlas-muted atlas-stat">
                     {snap.loaded
