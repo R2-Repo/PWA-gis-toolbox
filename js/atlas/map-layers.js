@@ -2,6 +2,7 @@
  * Atlas-owned MapLibre layers (do not mutate GIS user layers).
  */
 import mapService from '../map/map-service.js';
+import { buildAtlasHoverHtml } from './map-hover.js';
 import { displayPingStatus } from './ping-format.js';
 import { hubPingRollup } from './triage.js';
 
@@ -24,6 +25,8 @@ let clickHandler = null;
 let enterHandler = null;
 /** @type {((e: any) => void) | null} */
 let leaveHandler = null;
+/** @type {any} */
+let hoverPopup = null;
 
 /**
  * @param {import('./types.js').AtlasSnapshot} snap
@@ -45,6 +48,7 @@ export function syncAtlasMapLayers(snap) {
             properties: {
                 atlasKind: 'hub',
                 id: hub.id,
+                hubCode: hub.hubCode || '',
                 label: hub.name || hub.hubCode,
                 pingStatus: hubPingRollup(hub.id, snap),
                 selected: selectedKind === 'hub' && hub.id === selectedId ? 1 : 0
@@ -66,6 +70,8 @@ export function syncAtlasMapLayers(snap) {
                 atlasKind: 'drop',
                 id: drop.id,
                 channelId: drop.channelId || '',
+                channelNumber: drop.channelNumber ?? '',
+                dropNumber: drop.dropNumber ?? '',
                 label: drop.inventoryName || `D${drop.dropNumber ?? '?'}`,
                 ip: drop.ip || '',
                 pingStatus: displayPingStatus(ping),
@@ -280,6 +286,37 @@ export function fitAtlasPoints(points) {
     }
 }
 
+function hideAtlasHoverPopup() {
+    try {
+        hoverPopup?.remove?.();
+    } catch {
+        /* ignore */
+    }
+    hoverPopup = null;
+}
+
+/**
+ * @param {any} map
+ * @param {any} feature
+ */
+function showAtlasHoverPopup(map, feature) {
+    const ml = globalThis.maplibregl;
+    if (!ml?.Popup || !feature?.geometry?.coordinates) return;
+    const html = buildAtlasHoverHtml(feature.properties || {});
+    if (!html) return;
+    hideAtlasHoverPopup();
+    hoverPopup = new ml.Popup({
+        closeButton: false,
+        closeOnClick: false,
+        offset: 14,
+        maxWidth: '260px',
+        className: 'atlas-hover-popup'
+    })
+        .setLngLat(feature.geometry.coordinates)
+        .setHTML(html)
+        .addTo(map);
+}
+
 /**
  * @param {(sel: { kind: 'hub'|'drop', id: string }) => void} onSelect
  */
@@ -293,13 +330,17 @@ export function enableAtlasMapInteraction(onSelect) {
         const hit = feats?.[0];
         if (!hit?.properties?.id || !hit.properties.atlasKind) return;
         const kind = hit.properties.atlasKind === 'hub' ? 'hub' : 'drop';
+        hideAtlasHoverPopup();
         onSelect?.({ kind, id: String(hit.properties.id) });
     };
-    enterHandler = () => {
+    enterHandler = (e) => {
         map.getCanvas().style.cursor = 'pointer';
+        const feat = e.features?.[0];
+        if (feat) showAtlasHoverPopup(map, feat);
     };
     leaveHandler = () => {
         map.getCanvas().style.cursor = '';
+        hideAtlasHoverPopup();
     };
 
     for (const layer of CLICK_LAYERS) {
@@ -311,6 +352,7 @@ export function enableAtlasMapInteraction(onSelect) {
 }
 
 export function disableAtlasMapInteraction() {
+    hideAtlasHoverPopup();
     const map = mapService.getMap?.();
     if (!map) {
         clickHandler = null;

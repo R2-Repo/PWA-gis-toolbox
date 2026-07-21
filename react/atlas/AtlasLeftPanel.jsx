@@ -82,7 +82,15 @@ export function AtlasLeftPanel({ onSelect, onOpenImport }) {
         const unsub = [
             bus.on('atlas:changed', () => setTick((t) => t + 1)),
             bus.on('atlas:selection', () => setTick((t) => t + 1)),
-            bus.on('atlas:ping', () => setTick((t) => t + 1))
+            bus.on('atlas:ping', () => setTick((t) => t + 1)),
+            bus.on('atlas:focus-search', () => {
+                const el = document.getElementById('atlas-search-input');
+                el?.focus?.();
+                el?.select?.();
+            }),
+            bus.on('atlas:search-blur', () => {
+                setQuery('');
+            })
         ];
         return () => unsub.forEach((u) => u?.());
     }, []);
@@ -150,11 +158,12 @@ export function AtlasLeftPanel({ onSelect, onOpenImport }) {
                 </div>
             )}
 
-            <CollapsibleSection title="Search" bodyId="atlas-search">
+            <CollapsibleSection title="Search" bodyId="atlas-search" defaultOpen>
                 <input
+                    id="atlas-search-input"
                     type="search"
                     className="input-sm atlas-search-input"
-                    placeholder="Channel, hub, site, IP, drop…"
+                    placeholder="Channel, hub, site, IP, drop… (press /)"
                     value={query}
                     onChange={(e) => setQuery(e.target.value)}
                 />

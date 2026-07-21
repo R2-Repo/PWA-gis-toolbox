@@ -30,6 +30,7 @@ import {
     serializePrefValue
 } from './prefs.js';
 import { applyFindingStatusPatch, isFindingStatus } from './findings-status.js';
+import { disableAtlasHotkeys, enableAtlasHotkeys } from './hotkeys.js';
 import bus from '../core/event-bus.js';
 
 function notify(message, level = 'info') {
@@ -90,6 +91,10 @@ export async function openAtlasWorkspace() {
     });
     syncAtlasMapLayers(getAtlasSnapshot());
     enableAtlasMapInteraction((sel) => selectAtlasEntity(sel));
+    enableAtlasHotkeys({
+        onFocusSearch: () => bus.emit('atlas:focus-search'),
+        onEscape: () => clearAtlasFocus()
+    });
     bus.emit('atlas:opened', getAtlasSnapshot());
     bus.emit('atlas:prefs', prefs);
     // Retention prune after hydrate (non-blocking for UI)
@@ -598,8 +603,26 @@ export async function pruneAtlasPingSessions(opts = {}) {
 export function leaveAtlasMap() {
     stopAtlasMonitor(undefined, { exportCsv: false });
     stopAllPingSessions();
+    disableAtlasHotkeys();
     disableAtlasMapInteraction();
     clearAtlasMapLayers();
+}
+
+/** Clear area query first, else clear entity selection. */
+export function clearAtlasFocus() {
+    const snap = getAtlasSnapshot();
+    if (snap.areaResults) {
+        clearAreaResults();
+        return;
+    }
+    if (snap.selection) {
+        setAtlasSelection(null);
+        const next = getAtlasSnapshot();
+        patchAtlasSnapshot({
+            stats: buildDashboardStats(next, { scope: next.prefs?.dashScope || 'network' })
+        });
+        syncAtlasMapLayers(getAtlasSnapshot());
+    }
 }
 
 /**
