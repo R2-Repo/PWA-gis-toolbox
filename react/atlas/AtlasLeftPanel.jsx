@@ -4,7 +4,9 @@ import { getAtlasSnapshot } from '../../js/atlas/store.js';
 import { searchAtlasDetailed } from '../../js/atlas/search.js';
 import { buildHierarchyTree } from '../../js/atlas/hierarchy.js';
 import { formatPingWhen, isPingStale } from '../../js/atlas/ping-format.js';
-import { reloadAtlasFromDb } from '../../js/atlas/controller.js';
+import { clearAtlasFocus, reloadAtlasFromDb } from '../../js/atlas/controller.js';
+import { describeAtlasFocus } from '../../js/atlas/focus-label.js';
+import { showAtlasShortcutsHelp } from '../../js/atlas/hotkeys.js';
 import { confirm } from '../../js/ui/modals.js';
 import { CollapsibleSection } from '../ui/CollapsibleSection.jsx';
 
@@ -106,6 +108,7 @@ export function AtlasLeftPanel({ onSelect, onOpenImport }) {
     const selection = snap.selection;
     const isEmptyDb = snap.loaded
         && !(snap.hubs?.length || snap.channels?.length || snap.drops?.length);
+    const focus = useMemo(() => describeAtlasFocus(snap), [snap, tick]);
 
     return (
         <div className="atlas-panel atlas-panel-left">
@@ -138,12 +141,36 @@ export function AtlasLeftPanel({ onSelect, onOpenImport }) {
                 >
                     {reloadBusy ? 'Reloading…' : 'Reload DB'}
                 </button>
+                <button
+                    type="button"
+                    className="btn btn-ghost btn-sm"
+                    title="Keyboard shortcuts (?)"
+                    onClick={() => void showAtlasShortcutsHelp()}
+                >
+                    ?
+                </button>
                 <span className="atlas-muted atlas-stat">
                     {snap.loaded
                         ? `${snap.channels.length} ch · ${snap.drops.length} drops`
                         : 'Not loaded'}
                 </span>
             </div>
+            {focus.canClear ? (
+                <div className="atlas-selection-chip">
+                    <div className="atlas-map-focus-text">
+                        <strong>{focus.title}</strong>
+                        <span className="atlas-muted">{focus.detail}</span>
+                    </div>
+                    <button
+                        type="button"
+                        className="btn btn-ghost btn-sm"
+                        title="Clear selection or area (Esc)"
+                        onClick={() => clearAtlasFocus()}
+                    >
+                        Clear
+                    </button>
+                </div>
+            ) : null}
             {snap.lastImport && (
                 <div
                     className={`atlas-freshness-banner${

@@ -1,0 +1,1923 @@
+{
+  "serviceUrl": "https://central.udot.utah.gov/server/rest/services/Fiber/UDOT_Fiber_Network/MapServer",
+  "layers": {
+    "cabinets": {
+      "id": 0,
+      "name": "Cabinets",
+      "geometryType": "esriGeometryPoint",
+      "url": "https://central.udot.utah.gov/server/rest/services/Fiber/UDOT_Fiber_Network/MapServer/0",
+      "classField": "MODEL",
+      "classes": [
+        {
+          "value": "CCTV(E)-R1",
+          "label": "ITS Cabinet",
+          "color": "#94a3b8",
+          "width": 22,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "CCTV(E)-R2",
+          "label": "ITS Cabinet",
+          "color": "#94a3b8",
+          "width": 22,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "CCTV(E)-R3",
+          "label": "ITS Cabinet",
+          "color": "#94a3b8",
+          "width": 22,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "CCTV(E)-R4",
+          "label": "ITS Cabinet",
+          "color": "#94a3b8",
+          "width": 22,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "CCTV(R)-R1",
+          "label": "ITS Cabinet",
+          "color": "#94a3b8",
+          "width": 22,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "CCTV(R)-R2",
+          "label": "ITS Cabinet",
+          "color": "#94a3b8",
+          "width": 22,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "CCTV(R)-R3",
+          "label": "ITS Cabinet",
+          "color": "#94a3b8",
+          "width": 22,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "CCTV(R)-R4",
+          "label": "ITS Cabinet",
+          "color": "#94a3b8",
+          "width": 22,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "CCTV/TMS(E)-R1",
+          "label": "ITS Cabinet",
+          "color": "#94a3b8",
+          "width": 22,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "CCTV/TMS(E)-R2",
+          "label": "ITS Cabinet",
+          "color": "#94a3b8",
+          "width": 22,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "CCTV/TMS(E)-R3",
+          "label": "ITS Cabinet",
+          "color": "#94a3b8",
+          "width": 22,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "CCTV/TMS(E)-R4",
+          "label": "ITS Cabinet",
+          "color": "#94a3b8",
+          "width": 22,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "CCTV/TMS(R)-R1",
+          "label": "ITS Cabinet",
+          "color": "#94a3b8",
+          "width": 22,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "CCTV/TMS(R)-R2",
+          "label": "ITS Cabinet",
+          "color": "#94a3b8",
+          "width": 22,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "CCTV/TMS(R)-R3",
+          "label": "ITS Cabinet",
+          "color": "#94a3b8",
+          "width": 22,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "CCTV/TMS(R)-R4",
+          "label": "ITS Cabinet",
+          "color": "#94a3b8",
+          "width": 22,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "CCTVPoleM(R)-R1",
+          "label": "ITS Cabinet",
+          "color": "#94a3b8",
+          "width": 22,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "CCTVPoleM(R)-R2",
+          "label": "ITS Cabinet",
+          "color": "#94a3b8",
+          "width": 22,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "CCTVPoleM(R)-R4",
+          "label": "ITS Cabinet",
+          "color": "#94a3b8",
+          "width": 22,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "Gantry Cabinet",
+          "label": "ITS Cabinet",
+          "color": "#94a3b8",
+          "width": 22,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "HARPoleM(E)-R2",
+          "label": "ITS Cabinet",
+          "color": "#94a3b8",
+          "width": 22,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "HARPoleM(E)-R3",
+          "label": "ITS Cabinet",
+          "color": "#94a3b8",
+          "width": 22,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "HARPoleM(E)-R4",
+          "label": "ITS Cabinet",
+          "color": "#94a3b8",
+          "width": 22,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "HARPoleM(R)-R2",
+          "label": "ITS Cabinet",
+          "color": "#94a3b8",
+          "width": 22,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "Irrgation(E)-R1",
+          "label": "ITS Cabinet",
+          "color": "#94a3b8",
+          "width": 22,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "RR(E)-R1",
+          "label": "ITS Cabinet",
+          "color": "#94a3b8",
+          "width": 22,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "RR(E)-R2",
+          "label": "ITS Cabinet",
+          "color": "#94a3b8",
+          "width": 22,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "RR(E)-R3",
+          "label": "ITS Cabinet",
+          "color": "#94a3b8",
+          "width": 22,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "RWIS(E)-R1",
+          "label": "ITS Cabinet",
+          "color": "#94a3b8",
+          "width": 22,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "RWIS(E)-R2",
+          "label": "ITS Cabinet",
+          "color": "#94a3b8",
+          "width": 22,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "RWIS(E)-R3",
+          "label": "ITS Cabinet",
+          "color": "#94a3b8",
+          "width": 22,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "RWIS(E)-R4",
+          "label": "ITS Cabinet",
+          "color": "#94a3b8",
+          "width": 22,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "RWIS(O)-R2",
+          "label": "ITS Cabinet",
+          "color": "#94a3b8",
+          "width": 22,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "RWIS(O)-R3",
+          "label": "ITS Cabinet",
+          "color": "#94a3b8",
+          "width": 22,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "RWIS(R)-R1",
+          "label": "ITS Cabinet",
+          "color": "#94a3b8",
+          "width": 22,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "RWIS(R)-R2",
+          "label": "ITS Cabinet",
+          "color": "#94a3b8",
+          "width": 22,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "RWIS(R)-R3",
+          "label": "ITS Cabinet",
+          "color": "#94a3b8",
+          "width": 22,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "RampMeter(E)-R1",
+          "label": "ITS Cabinet",
+          "color": "#94a3b8",
+          "width": 22,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "RampMeter(E)-R2",
+          "label": "ITS Cabinet",
+          "color": "#94a3b8",
+          "width": 22,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "RampMeter(E)-R3",
+          "label": "ITS Cabinet",
+          "color": "#94a3b8",
+          "width": 22,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "RampMeter(R)-R3",
+          "label": "ITS Cabinet",
+          "color": "#94a3b8",
+          "width": 22,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "TMS(E)-R1",
+          "label": "ITS Cabinet",
+          "color": "#94a3b8",
+          "width": 22,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "TMS(E)-R2",
+          "label": "ITS Cabinet",
+          "color": "#94a3b8",
+          "width": 22,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "TMS(E)-R3",
+          "label": "ITS Cabinet",
+          "color": "#94a3b8",
+          "width": 22,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "TMS(E)-R4",
+          "label": "ITS Cabinet",
+          "color": "#94a3b8",
+          "width": 22,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "TMS(R)-R1",
+          "label": "ITS Cabinet",
+          "color": "#94a3b8",
+          "width": 22,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "TMS(R)-R2",
+          "label": "ITS Cabinet",
+          "color": "#94a3b8",
+          "width": 22,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "TMS(R)-R4",
+          "label": "ITS Cabinet",
+          "color": "#94a3b8",
+          "width": 22,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "TMSPoleM(E)-R2",
+          "label": "ITS Cabinet",
+          "color": "#94a3b8",
+          "width": 22,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "TMSPoleM(E)-R4",
+          "label": "ITS Cabinet",
+          "color": "#94a3b8",
+          "width": 22,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "TMSPoleM(R)-R4",
+          "label": "ITS Cabinet",
+          "color": "#94a3b8",
+          "width": 22,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "TPS(E)-R1",
+          "label": "ITS Cabinet",
+          "color": "#94a3b8",
+          "width": 22,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "Toll(E)-R1",
+          "label": "ITS Cabinet",
+          "color": "#94a3b8",
+          "width": 22,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "Toll(E)-R2",
+          "label": "ITS Cabinet",
+          "color": "#94a3b8",
+          "width": 22,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "Toll(E)-R3",
+          "label": "ITS Cabinet",
+          "color": "#94a3b8",
+          "width": 22,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "VMS (E) -R1",
+          "label": "ITS Cabinet",
+          "color": "#94a3b8",
+          "width": 22,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "VMS (E) -R2",
+          "label": "ITS Cabinet",
+          "color": "#94a3b8",
+          "width": 22,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "VMS (E) -R3",
+          "label": "ITS Cabinet",
+          "color": "#94a3b8",
+          "width": 22,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "VMS (E) -R4",
+          "label": "ITS Cabinet",
+          "color": "#94a3b8",
+          "width": 22,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "VMS (R)-R1",
+          "label": "ITS Cabinet",
+          "color": "#94a3b8",
+          "width": 22,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "VMS (R)-R2",
+          "label": "ITS Cabinet",
+          "color": "#94a3b8",
+          "width": 22,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "VMS (R)-R3",
+          "label": "ITS Cabinet",
+          "color": "#94a3b8",
+          "width": 22,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "VMS (R)-R4",
+          "label": "ITS Cabinet",
+          "color": "#94a3b8",
+          "width": 22,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "WIM(E)-R3",
+          "label": "ITS Cabinet",
+          "color": "#94a3b8",
+          "width": 22,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "WIM(R)-R3",
+          "label": "ITS Cabinet",
+          "color": "#94a3b8",
+          "width": 22,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "TrfSig(E)-R1",
+          "label": "TSC Cabinet",
+          "color": "#94a3b8",
+          "width": 12,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "TrfSig(E)-R2",
+          "label": "TSC Cabinet",
+          "color": "#94a3b8",
+          "width": 12,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "TrfSig(E)-R3",
+          "label": "TSC Cabinet",
+          "color": "#94a3b8",
+          "width": 12,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "TrfSig(E)-R4",
+          "label": "TSC Cabinet",
+          "color": "#94a3b8",
+          "width": 12,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "TrfSig(R)-R1",
+          "label": "TSC Cabinet",
+          "color": "#94a3b8",
+          "width": 12,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "TrfSig(R)-R2",
+          "label": "TSC Cabinet",
+          "color": "#94a3b8",
+          "width": 12,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "TrfSig(R)-R3",
+          "label": "TSC Cabinet",
+          "color": "#94a3b8",
+          "width": 12,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "TrfSig(R)-R4",
+          "label": "TSC Cabinet",
+          "color": "#94a3b8",
+          "width": 12,
+          "style": null,
+          "symbolType": "esriPMS"
+        }
+      ],
+      "labelField": null,
+      "labelMinScale": null,
+      "minScale": 0,
+      "maxScale": 0
+    },
+    "splices": {
+      "id": 2,
+      "name": "Splices",
+      "geometryType": "esriGeometryPoint",
+      "url": "https://central.udot.utah.gov/server/rest/services/Fiber/UDOT_Fiber_Network/MapServer/2",
+      "classField": "MODEL_1",
+      "classes": [
+        {
+          "value": "ButtSplice",
+          "label": "ButtSplice",
+          "color": "#94a3b8",
+          "width": 9,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "RingCut",
+          "label": "RingCut",
+          "color": "#94a3b8",
+          "width": 9,
+          "style": null,
+          "symbolType": "esriPMS"
+        }
+      ],
+      "labelField": null,
+      "labelMinScale": null,
+      "minScale": 0,
+      "maxScale": 0
+    },
+    "boxes": {
+      "id": 4,
+      "name": "Boxes",
+      "geometryType": "esriGeometryPoint",
+      "url": "https://central.udot.utah.gov/server/rest/services/Fiber/UDOT_Fiber_Network/MapServer/4",
+      "classField": "DT_RSCENCLOSURE_NAME",
+      "classes": [
+        {
+          "value": " Border",
+          "label": " Border",
+          "color": "#94a3b8",
+          "width": 12,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": " Existing VAULT-(O)",
+          "label": "Vault",
+          "color": "#94a3b8",
+          "width": 10,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": " Existing VAULT-R1",
+          "label": "Vault",
+          "color": "#94a3b8",
+          "width": 10,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": " Existing VAULT-R2",
+          "label": "Vault",
+          "color": "#94a3b8",
+          "width": 10,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": " Existing VAULT-R3",
+          "label": "Vault",
+          "color": "#94a3b8",
+          "width": 10,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": " NEW VAULT",
+          "label": "Vault",
+          "color": "#94a3b8",
+          "width": 10,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": " Existing VAULT-R4",
+          "label": "Vault",
+          "color": "#94a3b8",
+          "width": 10,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": " NEW VAULT-R1",
+          "label": "Vault",
+          "color": "#94a3b8",
+          "width": 10,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": " NEW VAULT-R3",
+          "label": "Vault",
+          "color": "#94a3b8",
+          "width": 10,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "CUWCD Vault",
+          "label": "Vault",
+          "color": "#94a3b8",
+          "width": 10,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "Exist Vault-Split Em",
+          "label": "Vault",
+          "color": "#94a3b8",
+          "width": 10,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "Existing Vault-CTL",
+          "label": "Vault",
+          "color": "#94a3b8",
+          "width": 10,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "Existing Vault-Direct",
+          "label": "Vault",
+          "color": "#94a3b8",
+          "width": 10,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "Existing Vault-MCI",
+          "label": "Vault",
+          "color": "#94a3b8",
+          "width": 10,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "Existing Vault-Split",
+          "label": "Vault",
+          "color": "#94a3b8",
+          "width": 10,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "Existing Vault-UofU",
+          "label": "Vault",
+          "color": "#94a3b8",
+          "width": 10,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "Provo Vault",
+          "label": "Vault",
+          "color": "#94a3b8",
+          "width": 10,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "ETC Gantry",
+          "label": "ETC Gantry",
+          "color": "#94a3b8",
+          "width": 36,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "New Type III PC-R2",
+          "label": "Type I Box",
+          "color": "#94a3b8",
+          "width": 13,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": " Exist JB-Sandy City",
+          "label": "Type I Box",
+          "color": "#94a3b8",
+          "width": 13,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": " Exist JB-UTA",
+          "label": "Type I Box",
+          "color": "#94a3b8",
+          "width": 13,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": " Exist Type III PC",
+          "label": "Type I Box",
+          "color": "#94a3b8",
+          "width": 13,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "ATR",
+          "label": "Type I Box",
+          "color": "#94a3b8",
+          "width": 13,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "Arrow",
+          "label": "Type I Box",
+          "color": "#94a3b8",
+          "width": 13,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "Crown Castle/UDOT",
+          "label": "Type I Box",
+          "color": "#94a3b8",
+          "width": 13,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "Electrical Type III",
+          "label": "Type I Box",
+          "color": "#94a3b8",
+          "width": 13,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "Crwn Castle Type III",
+          "label": "Type I Box",
+          "color": "#94a3b8",
+          "width": 13,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "Exist JB-AF",
+          "label": "Type I Box",
+          "color": "#94a3b8",
+          "width": 13,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "Exist JB-AF/CentraCo",
+          "label": "Type I Box",
+          "color": "#94a3b8",
+          "width": 13,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "Exist JB-Avative",
+          "label": "Type I Box",
+          "color": "#94a3b8",
+          "width": 13,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "Exist JB-All West",
+          "label": "Type I Box",
+          "color": "#94a3b8",
+          "width": 13,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "Exist JB-Beehive",
+          "label": "Type I Box",
+          "color": "#94a3b8",
+          "width": 13,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "Exist JB-Buried",
+          "label": "Type I Box",
+          "color": "#94a3b8",
+          "width": 13,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "Exist JB-CTL",
+          "label": "Type I Box",
+          "color": "#94a3b8",
+          "width": 13,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "Exist JB-CUWCD",
+          "label": "Type I Box",
+          "color": "#94a3b8",
+          "width": 13,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "Exist JB-CentraCom",
+          "label": "Type I Box",
+          "color": "#94a3b8",
+          "width": 13,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "Exist JB-Comcast",
+          "label": "Type I Box",
+          "color": "#94a3b8",
+          "width": 13,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "Exist JB-Connext",
+          "label": "Type I Box",
+          "color": "#94a3b8",
+          "width": 13,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "Exist JB-Direct",
+          "label": "Type I Box",
+          "color": "#94a3b8",
+          "width": 13,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "Exist JB-EME",
+          "label": "Type I Box",
+          "color": "#94a3b8",
+          "width": 13,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "Exist JB-Eme?",
+          "label": "Type I Box",
+          "color": "#94a3b8",
+          "width": 13,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "Exist JB-Extenet",
+          "label": "Type I Box",
+          "color": "#94a3b8",
+          "width": 13,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "Exist JB-FirstDigital",
+          "label": "Type I Box",
+          "color": "#94a3b8",
+          "width": 13,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": " New Type III PC",
+          "label": "Type I Box",
+          "color": "#94a3b8",
+          "width": 13,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "Exist JB-III County",
+          "label": "Type I Box",
+          "color": "#94a3b8",
+          "width": 13,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "Exist JB-Integra",
+          "label": "Type I Box",
+          "color": "#94a3b8",
+          "width": 13,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "Exist JB-MCI",
+          "label": "Type I Box",
+          "color": "#94a3b8",
+          "width": 13,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "Exist JB-Nextlink",
+          "label": "Type I Box",
+          "color": "#94a3b8",
+          "width": 13,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "Exist JB-Orem",
+          "label": "Type I Box",
+          "color": "#94a3b8",
+          "width": 13,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "Exist JB-Others",
+          "label": "Type I Box",
+          "color": "#94a3b8",
+          "width": 13,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "Exist JB-Parapet",
+          "label": "Type I Box",
+          "color": "#94a3b8",
+          "width": 13,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "Exist JB-Qwest",
+          "label": "Type I Box",
+          "color": "#94a3b8",
+          "width": 13,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "Exist JB-Provo",
+          "label": "Type I Box",
+          "color": "#94a3b8",
+          "width": 13,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "Exist JB-Saratoga Springs",
+          "label": "Type I Box",
+          "color": "#94a3b8",
+          "width": 13,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "Exist JB-South Centr",
+          "label": "Type I Box",
+          "color": "#94a3b8",
+          "width": 13,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "Exist JB-Strata",
+          "label": "Type I Box",
+          "color": "#94a3b8",
+          "width": 13,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "Exist JB-TDS",
+          "label": "Type I Box",
+          "color": "#94a3b8",
+          "width": 13,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "Exist JB-Syringa",
+          "label": "Type I Box",
+          "color": "#94a3b8",
+          "width": 13,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "Exist JB-Terabit",
+          "label": "Type I Box",
+          "color": "#94a3b8",
+          "width": 13,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "Exist JB-UTA",
+          "label": "Type I Box",
+          "color": "#94a3b8",
+          "width": 13,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "Exist JB-Utopia",
+          "label": "Type I Box",
+          "color": "#94a3b8",
+          "width": 13,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "Exist JB-Veracity",
+          "label": "Type I Box",
+          "color": "#94a3b8",
+          "width": 13,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "Exist JB-XO",
+          "label": "Type I Box",
+          "color": "#94a3b8",
+          "width": 13,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "Exist JB-Zayo",
+          "label": "Type I Box",
+          "color": "#94a3b8",
+          "width": 13,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "Exist JB3-Crown Castle",
+          "label": "Type I Box",
+          "color": "#94a3b8",
+          "width": 13,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "Exist JBOREM",
+          "label": "Type I Box",
+          "color": "#94a3b8",
+          "width": 13,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "Exist Type III PC-R1",
+          "label": "Type I Box",
+          "color": "#94a3b8",
+          "width": 13,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "Exist Type III PC-R2",
+          "label": "Type I Box",
+          "color": "#94a3b8",
+          "width": 13,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "Exist Type III PC-R3",
+          "label": "Type I Box",
+          "color": "#94a3b8",
+          "width": 13,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "Exist Type III PC-R4",
+          "label": "Type I Box",
+          "color": "#94a3b8",
+          "width": 13,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "Exist Type III Traffic-R1",
+          "label": "Type I Box",
+          "color": "#94a3b8",
+          "width": 13,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "Exist Type III Traffic-R2",
+          "label": "Type I Box",
+          "color": "#94a3b8",
+          "width": 13,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "Exist Type III Traffic-R3",
+          "label": "Type I Box",
+          "color": "#94a3b8",
+          "width": 13,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "JB Direct Comm",
+          "label": "Type I Box",
+          "color": "#94a3b8",
+          "width": 13,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "New JB-Others",
+          "label": "Type I Box",
+          "color": "#94a3b8",
+          "width": 13,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": " Existing Type I PC",
+          "label": "Type I Box",
+          "color": "#94a3b8",
+          "width": 13,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "Electrical Type I",
+          "label": "Type I Box",
+          "color": "#94a3b8",
+          "width": 13,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "Exist Type I PC-R1",
+          "label": "Type I Box",
+          "color": "#94a3b8",
+          "width": 13,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "Exist Type I PC-R2",
+          "label": "Type I Box",
+          "color": "#94a3b8",
+          "width": 13,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "Exist Type I PC-R3",
+          "label": "Type I Box",
+          "color": "#94a3b8",
+          "width": 13,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "Exist Type I PC-R4",
+          "label": "Type I Box",
+          "color": "#94a3b8",
+          "width": 13,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "Exist Type I Traffic-R1",
+          "label": "Type I Box",
+          "color": "#94a3b8",
+          "width": 13,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "Exist Type I Traffic-R2",
+          "label": "Type I Box",
+          "color": "#94a3b8",
+          "width": 13,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "Exist Type I Traffic-R3",
+          "label": "Type I Box",
+          "color": "#94a3b8",
+          "width": 13,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": " Existing Type II PC",
+          "label": "Type II Box",
+          "color": "#94a3b8",
+          "width": 14,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "Crown Castle Type II",
+          "label": "Type II Box",
+          "color": "#94a3b8",
+          "width": 14,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "Electrical Type II",
+          "label": "Type II Box",
+          "color": "#94a3b8",
+          "width": 14,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "Exist JB-Syringa II",
+          "label": "Type II Box",
+          "color": "#94a3b8",
+          "width": 14,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "Exist JB-II County",
+          "label": "Type II Box",
+          "color": "#94a3b8",
+          "width": 14,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "Exist JB2-Crown Castle",
+          "label": "Type II Box",
+          "color": "#94a3b8",
+          "width": 14,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "Exist Type II PC-R1",
+          "label": "Type II Box",
+          "color": "#94a3b8",
+          "width": 14,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "Exist Type II PC-R2",
+          "label": "Type II Box",
+          "color": "#94a3b8",
+          "width": 14,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "Exist Type II PC-R3",
+          "label": "Type II Box",
+          "color": "#94a3b8",
+          "width": 14,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "Exist Type II PC-R4",
+          "label": "Type II Box",
+          "color": "#94a3b8",
+          "width": 14,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "Exist Type II Traffic-R1",
+          "label": "Type II Box",
+          "color": "#94a3b8",
+          "width": 14,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "Exist Type II Traffic-R2",
+          "label": "Type II Box",
+          "color": "#94a3b8",
+          "width": 14,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "Exist Type II Traffic-R3",
+          "label": "Type II Box",
+          "color": "#94a3b8",
+          "width": 14,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "CCTV",
+          "label": "CCTV",
+          "color": "#94a3b8",
+          "width": 17,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "Node",
+          "label": "Node",
+          "color": "#94a3b8",
+          "width": 14,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "Pole",
+          "label": "Pole",
+          "color": "#94a3b8",
+          "width": 10,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "Power Meter",
+          "label": "Power Meter",
+          "color": "#94a3b8",
+          "width": 10,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "Power Source",
+          "label": "Power Source",
+          "color": "#94a3b8",
+          "width": 7,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "RWIS",
+          "label": "RWIS",
+          "color": "#94a3b8",
+          "width": 9,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "Radio (Master)",
+          "label": "Radio (Master)",
+          "color": "#94a3b8",
+          "width": 7,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "Radio (Slave)",
+          "label": "Radio (Slave)",
+          "color": "#94a3b8",
+          "width": 7,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "Ramp Meter",
+          "label": "Ramp Meter",
+          "color": "#94a3b8",
+          "width": 36,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "NID",
+          "label": "NID",
+          "color": "#94a3b8",
+          "width": 9,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "Transformer on Pole",
+          "label": "Transformer on Pole",
+          "color": "#94a3b8",
+          "width": 9,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "UDOT Sign",
+          "label": "UDOT Sign",
+          "color": "#b2b2b2",
+          "width": 2,
+          "style": "esriSMSCircle",
+          "symbolType": "esriSMS"
+        },
+        {
+          "value": "VMS Over-Head",
+          "label": "VMS Over-Head; VMS Road-Side; VSL Road-Side",
+          "color": "#94a3b8",
+          "width": 62,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "VMS Road-Side",
+          "label": "VMS Over-Head; VMS Road-Side; VSL Road-Side",
+          "color": "#94a3b8",
+          "width": 62,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "VSL Road-Side",
+          "label": "VMS Over-Head; VMS Road-Side; VSL Road-Side",
+          "color": "#94a3b8",
+          "width": 62,
+          "style": null,
+          "symbolType": "esriPMS"
+        }
+      ],
+      "labelField": "BOXLABELS",
+      "labelMinScale": 1000,
+      "minScale": 0,
+      "maxScale": 0
+    },
+    "fiber": {
+      "id": 6,
+      "name": "Fiber",
+      "geometryType": "esriGeometryPolyline",
+      "url": "https://central.udot.utah.gov/server/rest/services/Fiber/UDOT_Fiber_Network/MapServer/6",
+      "classField": "FIBER_SYMBOLS",
+      "classes": [
+        {
+          "value": "2",
+          "label": "2",
+          "color": "#878700",
+          "width": 2,
+          "style": "esriSLSSolid",
+          "symbolType": "esriSLS"
+        },
+        {
+          "value": "4-12",
+          "label": "4-12",
+          "color": "#0000ff",
+          "width": 2,
+          "style": "esriSLSSolid",
+          "symbolType": "esriSLS"
+        },
+        {
+          "value": "18-24",
+          "label": "18-24",
+          "color": "#ff7f00",
+          "width": 2,
+          "style": "esriSLSSolid",
+          "symbolType": "esriSLS"
+        },
+        {
+          "value": "30-36",
+          "label": "30-36",
+          "color": "#008700",
+          "width": 2,
+          "style": "esriSLSSolid",
+          "symbolType": "esriSLS"
+        },
+        {
+          "value": "48",
+          "label": "48",
+          "color": "#694d00",
+          "width": 2,
+          "style": "esriSLSSolid",
+          "symbolType": "esriSLS"
+        },
+        {
+          "value": "54-60",
+          "label": "54-60",
+          "color": "#969696",
+          "width": 2,
+          "style": "esriSLSSolid",
+          "symbolType": "esriSLS"
+        },
+        {
+          "value": "72",
+          "label": "72",
+          "color": "#a0e000",
+          "width": 2,
+          "style": "esriSLSSolid",
+          "symbolType": "esriSLS"
+        },
+        {
+          "value": "96",
+          "label": "96",
+          "color": "#3c3c3c",
+          "width": 2,
+          "style": "esriSLSSolid",
+          "symbolType": "esriSLS"
+        },
+        {
+          "value": "108",
+          "label": "108",
+          "color": "#ffff00",
+          "width": 2,
+          "style": "esriSLSSolid",
+          "symbolType": "esriSLS"
+        },
+        {
+          "value": "120",
+          "label": "120",
+          "color": "#8000a0",
+          "width": 2,
+          "style": "esriSLSSolid",
+          "symbolType": "esriSLS"
+        },
+        {
+          "value": "144",
+          "label": "144",
+          "color": "#00f0f0",
+          "width": 2,
+          "style": "esriSLSSolid",
+          "symbolType": "esriSLS"
+        },
+        {
+          "value": "216",
+          "label": "216",
+          "color": "#005a5a",
+          "width": 2,
+          "style": "esriSLSSolid",
+          "symbolType": "esriSLS"
+        },
+        {
+          "value": "288",
+          "label": "288",
+          "color": "#005a5a",
+          "width": 2,
+          "style": "esriSLSSolid",
+          "symbolType": "esriSLS"
+        },
+        {
+          "value": "432",
+          "label": "432",
+          "color": "#960000",
+          "width": 2,
+          "style": "esriSLSSolid",
+          "symbolType": "esriSLS"
+        },
+        {
+          "value": "864",
+          "label": "864",
+          "color": "#008700",
+          "width": 2,
+          "style": "esriSLSSolid",
+          "symbolType": "esriSLS"
+        },
+        {
+          "value": "Frontier",
+          "label": "Frontier",
+          "color": "#4c0073",
+          "width": 2,
+          "style": "esriSLSSolid",
+          "symbolType": "esriSLS"
+        },
+        {
+          "value": "Power",
+          "label": "Power",
+          "color": "#e60000",
+          "width": 2,
+          "style": "esriSLSSolid",
+          "symbolType": "esriSLS"
+        },
+        {
+          "value": "Strata New",
+          "label": "Strata New",
+          "color": "#ff00c5",
+          "width": 2,
+          "style": "esriSLSSolid",
+          "symbolType": "esriSLS"
+        },
+        {
+          "value": "TDS",
+          "label": "TDS",
+          "color": "#ffebaf",
+          "width": 2,
+          "style": "esriSLSSolid",
+          "symbolType": "esriSLS"
+        }
+      ],
+      "labelField": "Fiber_Label",
+      "labelMinScale": 3000,
+      "minScale": 0,
+      "maxScale": 0
+    },
+    "conduit": {
+      "id": 7,
+      "name": "Conduit",
+      "geometryType": "esriGeometryPolyline",
+      "url": "https://central.udot.utah.gov/server/rest/services/Fiber/UDOT_Fiber_Network/MapServer/7",
+      "classField": "CONDUIT_SYM",
+      "classes": [
+        {
+          "value": "1 in",
+          "label": "1\"",
+          "color": "#ff00c5",
+          "width": 2,
+          "style": "esriSLSDash",
+          "symbolType": "esriSLS"
+        },
+        {
+          "value": "1.25 in",
+          "label": "1.25\"",
+          "color": "#ff7f00",
+          "width": 2,
+          "style": "esriSLSDash",
+          "symbolType": "esriSLS"
+        },
+        {
+          "value": "2 in",
+          "label": "2\"",
+          "color": "#ff00ff",
+          "width": 2,
+          "style": "esriSLSDash",
+          "symbolType": "esriSLS"
+        },
+        {
+          "value": "2.5 in",
+          "label": "2.5\"",
+          "color": "#ffff00",
+          "width": 2,
+          "style": "esriSLSDash",
+          "symbolType": "esriSLS"
+        },
+        {
+          "value": "3 in",
+          "label": "3\"",
+          "color": "#ff0000",
+          "width": 2,
+          "style": "esriSLSDash",
+          "symbolType": "esriSLS"
+        },
+        {
+          "value": "4 in",
+          "label": "4\"",
+          "color": "#0000ff",
+          "width": 2,
+          "style": "esriSLSDash",
+          "symbolType": "esriSLS"
+        },
+        {
+          "value": "Aerial",
+          "label": "Aerial",
+          "color": "#00b5b5",
+          "width": 2,
+          "style": "esriSLSDash",
+          "symbolType": "esriSLS"
+        },
+        {
+          "value": "MicroDuct",
+          "label": "MicroDuct",
+          "color": "#a0e000",
+          "width": 2,
+          "style": "esriSLSDash",
+          "symbolType": "esriSLS"
+        },
+        {
+          "value": "Need As Built",
+          "label": "Need As Built",
+          "color": "#00ffc5",
+          "width": 2,
+          "style": "esriSLSDash",
+          "symbolType": "esriSLS"
+        },
+        {
+          "value": "Under Construction",
+          "label": "Under Construction",
+          "color": "#b2b2b2",
+          "width": 2,
+          "style": "esriSLSDash",
+          "symbolType": "esriSLS"
+        },
+        {
+          "value": "Unverified",
+          "label": "Unverified",
+          "color": "#55ff00",
+          "width": 2,
+          "style": "esriSLSDash",
+          "symbolType": "esriSLS"
+        }
+      ],
+      "labelField": "CustNameRight",
+      "labelMinScale": 1000,
+      "minScale": 0,
+      "maxScale": 0
+    },
+    "building": {
+      "id": 8,
+      "name": "Building",
+      "geometryType": "esriGeometryPoint",
+      "url": "https://central.udot.utah.gov/server/rest/services/Fiber/UDOT_Fiber_Network/MapServer/8",
+      "classField": "MODEL",
+      "classes": [
+        {
+          "value": "Building-R1",
+          "label": "Building",
+          "color": "#94a3b8",
+          "width": 156,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "Building-R2",
+          "label": "Building",
+          "color": "#94a3b8",
+          "width": 156,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "Building-R3",
+          "label": "Building",
+          "color": "#94a3b8",
+          "width": 156,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "Building-R4",
+          "label": "Building",
+          "color": "#94a3b8",
+          "width": 156,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "UEN-Building-R2",
+          "label": "Building",
+          "color": "#94a3b8",
+          "width": 156,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "Hub-Mini-R1",
+          "label": "Hub-Mini",
+          "color": "#94a3b8",
+          "width": 20,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "Hub-Mini-R2",
+          "label": "Hub-Mini",
+          "color": "#94a3b8",
+          "width": 20,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "Hub-Mini-R3",
+          "label": "Hub-Mini",
+          "color": "#94a3b8",
+          "width": 20,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "Hub-Mini-R4",
+          "label": "Hub-Mini",
+          "color": "#94a3b8",
+          "width": 20,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "Hub-R1",
+          "label": "Hub",
+          "color": "#94a3b8",
+          "width": 64,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "Hub-R2",
+          "label": "Hub",
+          "color": "#94a3b8",
+          "width": 64,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "Hub-R3",
+          "label": "Hub",
+          "color": "#94a3b8",
+          "width": 64,
+          "style": null,
+          "symbolType": "esriPMS"
+        },
+        {
+          "value": "Hub-R4",
+          "label": "Hub",
+          "color": "#94a3b8",
+          "width": 64,
+          "style": null,
+          "symbolType": "esriPMS"
+        }
+      ],
+      "labelField": null,
+      "labelMinScale": null,
+      "minScale": 0,
+      "maxScale": 0
+    }
+  }
+}

@@ -420,6 +420,47 @@ button.atlas-dash-card--action:hover {
     box-shadow: none;
 }
 
+.atlas-selection-chip {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px;
+    margin-bottom: 8px;
+    border-radius: 6px;
+    background: #eff6ff;
+    border: 1px solid #bfdbfe;
+    font-size: 12px;
+}
+
+.atlas-selection-chip .atlas-map-focus-text {
+    flex: 1;
+    min-width: 0;
+}
+
+.atlas-shortcuts-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    font-size: 13px;
+}
+
+.atlas-shortcuts-list kbd {
+    display: inline-block;
+    min-width: 1.4em;
+    padding: 2px 6px;
+    margin-right: 8px;
+    border: 1px solid #cbd5e1;
+    border-bottom-width: 2px;
+    border-radius: 4px;
+    background: #f8fafc;
+    font-family: ui-monospace, Consolas, monospace;
+    font-size: 12px;
+    text-align: center;
+}
+
 .atlas-map-focus-text {
     display: flex;
     flex-direction: column;

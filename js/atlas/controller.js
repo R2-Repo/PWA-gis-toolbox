@@ -37,6 +37,11 @@ function notify(message, level = 'info') {
     getPlatformBundle().services?.notifications?.show?.(message, level);
 }
 
+/** Toast helper for Atlas UI modules. */
+export function atlasNotify(message, level = 'info') {
+    notify(message, level);
+}
+
 /**
  * @returns {import('../platform/contracts.js').DatabaseService | null}
  */

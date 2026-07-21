@@ -10,9 +10,11 @@ import {
     exportFindingsCsv,
     exportPingSessionCsv,
     exportTriageCsv,
+    isPartialSessionExport,
     openPrintableReport
 } from '../../js/atlas/export.js';
 import {
+    atlasNotify,
     bulkUpdateFindingStatus,
     deleteAtlasPingSession,
     listAtlasPingSessions,
@@ -282,7 +284,15 @@ export function AtlasRightPanel({
         setSelectedFindingIds(new Set(visibleFindings.map((f) => f.id)));
     };
 
+    const selectAllFilteredFindings = () => {
+        setSelectedFindingIds(new Set(findings.map((f) => f.id)));
+        if (findings.length > 100) setShowAllFindings(true);
+    };
+
     const clearFindingSelection = () => setSelectedFindingIds(new Set());
+
+    const isEmptyDb = snap.loaded
+        && !(snap.hubs?.length || snap.channels?.length || snap.drops?.length);
 
     const applyBulkFindingStatus = (status) => {
         const ids = [...selectedFindingIds].filter((id) => findings.some((f) => f.id === id));
@@ -323,6 +333,12 @@ export function AtlasRightPanel({
     return (
         <div className="atlas-panel atlas-panel-right">
             <CollapsibleSection title="Dashboard" bodyId="atlas-dash">
+                {isEmptyDb ? (
+                    <div className="atlas-empty-cta">
+                        <p><strong>No network data yet</strong></p>
+                        <p className="atlas-muted">Import FiberSwitchLocation + ATMS from the left panel to populate the dashboard.</p>
+                    </div>
+                ) : null}
                 <div className="atlas-toolbar">
                     <button
                         type="button"
@@ -492,7 +508,12 @@ export function AtlasRightPanel({
             </CollapsibleSection>
 
             <CollapsibleSection title="Details & schematic" bodyId="atlas-details" defaultOpen>
-                {!selection && <p className="atlas-muted">Select a hub, channel, drop, device, or site.</p>}
+                {isEmptyDb ? (
+                    <div className="atlas-empty-cta">
+                        <p className="atlas-muted">Import network data to inspect hubs, channels, and schematics.</p>
+                    </div>
+                ) : null}
+                {!isEmptyDb && !selection && <p className="atlas-muted">Select a hub, channel, drop, device, or site.</p>}
                 {dropDetail && (
                     <div className="atlas-detail-block">
                         <h4>{dropDetail.inventoryName || `Drop ${dropDetail.dropNumber}`}</h4>
@@ -747,6 +768,11 @@ export function AtlasRightPanel({
             </CollapsibleSection>
 
             <CollapsibleSection title="Ping triage" bodyId="atlas-triage" defaultOpen>
+                {isEmptyDb ? (
+                    <div className="atlas-empty-cta">
+                        <p className="atlas-muted">No drops to triage until data is imported and pinged.</p>
+                    </div>
+                ) : null}
                 <div className="atlas-toolbar">
                     {[
                         ['unreachable', 'Unreachable'],
@@ -1104,10 +1130,19 @@ export function AtlasRightPanel({
                                             ? 'Exports currently loaded samples only — Load more first for a fuller CSV'
                                             : 'Export loaded samples'
                                     }
-                                    onClick={() => exportPingSessionCsv(historyDetail.results, {
-                                        label: historyDetail.session?.label,
-                                        sessionId: historyDetail.session?.id
-                                    })}
+                                    onClick={() => {
+                                        const total = pastSessions.find((s) => s.id === historyDetail.session?.id)?.sampleCount;
+                                        if (isPartialSessionExport(historyDetail.results.length, total)) {
+                                            atlasNotify(
+                                                `Exported ${historyDetail.results.length} of ${total} samples — Load more for a fuller CSV`,
+                                                'warning'
+                                            );
+                                        }
+                                        exportPingSessionCsv(historyDetail.results, {
+                                            label: historyDetail.session?.label,
+                                            sessionId: historyDetail.session?.id
+                                        });
+                                    }}
                                 >
                                     Export CSV ({historyDetail.results.length})
                                 </button>
@@ -1230,6 +1265,17 @@ export function AtlasRightPanel({
                     >
                         Select visible ({visibleFindings.length})
                     </button>
+                    {findings.length > visibleFindings.length ? (
+                        <button
+                            type="button"
+                            className="btn btn-ghost btn-sm"
+                            disabled={!findings.length || bulkBusy}
+                            onClick={selectAllFilteredFindings}
+                            title="Select every finding matching the current filters"
+                        >
+                            Select all filtered ({findings.length})
+                        </button>
+                    ) : null}
                     <button
                         type="button"
                         className="btn btn-ghost btn-sm"

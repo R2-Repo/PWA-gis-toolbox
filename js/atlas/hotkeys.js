@@ -2,6 +2,7 @@
  * Atlas workspace keyboard shortcuts.
  */
 import bus from '../core/event-bus.js';
+import { showModal } from '../ui/modals.js';
 
 /** @type {((e: KeyboardEvent) => void) | null} */
 let keyHandler = null;
@@ -14,10 +15,29 @@ function isEditableTarget(target) {
     return !!target.closest?.('[contenteditable="true"]');
 }
 
+export function showAtlasShortcutsHelp() {
+    return showModal(
+        'Atlas shortcuts',
+        `<ul class="atlas-shortcuts-list">
+            <li><kbd>/</kbd> Focus search</li>
+            <li><kbd>Esc</kbd> Clear area, then selection (or blur / clear search)</li>
+            <li><kbd>?</kbd> Show this help</li>
+        </ul>
+        <p class="atlas-muted" style="margin:8px 0 0;font-size:12px">Map focus bar and left panel also have Clear.</p>`,
+        {
+            footer: '<button type="button" class="btn btn-primary confirm-btn">Close</button>',
+            onMount: (overlay, close) => {
+                overlay.querySelector('.confirm-btn')?.addEventListener('click', () => close(true));
+            }
+        }
+    );
+}
+
 /**
  * @param {{
  *   onEscape?: () => void,
- *   onFocusSearch?: () => void
+ *   onFocusSearch?: () => void,
+ *   onHelp?: () => void
  * }} handlers
  */
 export function enableAtlasHotkeys(handlers = {}) {
@@ -29,6 +49,14 @@ export function enableAtlasHotkeys(handlers = {}) {
             e.preventDefault();
             handlers.onFocusSearch?.();
             bus.emit('atlas:focus-search');
+            return;
+        }
+        if (e.key === '?' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+            if (isEditableTarget(e.target)) return;
+            e.preventDefault();
+            handlers.onHelp?.();
+            bus.emit('atlas:shortcuts-help');
+            void showAtlasShortcutsHelp();
             return;
         }
         if (e.key === 'Escape') {

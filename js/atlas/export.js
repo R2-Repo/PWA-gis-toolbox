@@ -272,6 +272,18 @@ export function sessionsOlderThan(sessions, days, opts = {}) {
 }
 
 /**
+ * True when CSV would omit samples still only in SQLite.
+ * @param {number} loadedCount
+ * @param {number|null|undefined} sessionSampleCount
+ */
+export function isPartialSessionExport(loadedCount, sessionSampleCount) {
+    const loaded = Number(loadedCount) || 0;
+    const total = Number(sessionSampleCount);
+    if (!Number.isFinite(total) || total <= 0) return false;
+    return loaded < total;
+}
+
+/**
  * Human label for session end state in history UI.
  * @param {{ id?: string, startedAt?: string|null, stoppedAt?: string|null }|null|undefined} session
  * @param {string|null|undefined} [activeSessionId]

@@ -1,0 +1,1440 @@
+{
+  "source": "NewSymbols.xlsx consolidated from Styles(Update) sheets",
+  "updated": "2023-10-09",
+  "symbols": [
+    {
+      "name": "1 IMD 14mm",
+      "description": "1 IMD 14mm (Duct)",
+      "color": "#ffff00",
+      "kind": "duct"
+    },
+    {
+      "name": "10 IMD 10mm",
+      "description": "10 IMD 10mm (Conduit)",
+      "color": "#ffff00",
+      "kind": "other"
+    },
+    {
+      "name": "10 IMD 13mm",
+      "description": "10 IMD 13mm (Conduit)",
+      "color": "#ffff00",
+      "kind": "other"
+    },
+    {
+      "name": "10 IMD 14mm",
+      "description": "10 IMD 14mm (Conduit)",
+      "color": "#ffff00",
+      "kind": "other"
+    },
+    {
+      "name": "11 IMD 10mm",
+      "description": "11 IMD 10mm (Duct)",
+      "color": "#ffff00",
+      "kind": "duct"
+    },
+    {
+      "name": "11 IMD 13mm",
+      "description": "11 IMD 13mm (Duct)",
+      "color": "#ffff00",
+      "kind": "duct"
+    },
+    {
+      "name": "14 IMD 10mm",
+      "description": "14 IMD 10mm (Conduit)",
+      "color": "#ffff00",
+      "kind": "other"
+    },
+    {
+      "name": "14 IMD 13mm",
+      "description": "14 IMD 13mm (Conduit)",
+      "color": "#ffff00",
+      "kind": "other"
+    },
+    {
+      "name": "14 IMD 14mm",
+      "description": "14 IMD 14mm (Conduit)",
+      "color": "#ffff00",
+      "kind": "other"
+    },
+    {
+      "name": "1D Bridge Attachment",
+      "description": "1-D 1.25\" Bridge Attachment  (Conduit)",
+      "color": "#ff7f00",
+      "kind": "other"
+    },
+    {
+      "name": "2 IMD 14mm",
+      "description": "2 IMD 14mm (Duct)",
+      "color": "#ffff00",
+      "kind": "duct"
+    },
+    {
+      "name": "2 MD7 14mm",
+      "description": "2 MD7 14mm (Duct)",
+      "color": "#ffff00",
+      "kind": "duct"
+    },
+    {
+      "name": "288 Micro SMF",
+      "description": "288 Micro SMF (Fiber)",
+      "color": "#005a5a",
+      "kind": "fiber"
+    },
+    {
+      "name": "2D Bridge Attachment",
+      "description": "2-D 1.25\" Bridge Attachment  (Conduit)",
+      "color": "#ff7f00",
+      "kind": "other"
+    },
+    {
+      "name": "2tal8",
+      "description": "2 - 8\" (Conduit)",
+      "color": "#fe0060",
+      "kind": "other"
+    },
+    {
+      "name": "3 IMD 14mm",
+      "description": "3 IMD 14mm (Conduit)",
+      "color": "#ffff00",
+      "kind": "other"
+    },
+    {
+      "name": "4 - 3\"-R# 4tal3",
+      "description": "4 - 3\" (Duct)",
+      "color": "#ff0000",
+      "kind": "duct"
+    },
+    {
+      "name": "48 Micro SMF",
+      "description": "48 Micro SMF (Fiber)",
+      "color": "#694d00",
+      "kind": "fiber"
+    },
+    {
+      "name": "4D",
+      "description": "4D 1\" (Conduit)",
+      "color": "#8000a0",
+      "kind": "other"
+    },
+    {
+      "name": "6 IMD 14mm",
+      "description": "6 IMD 14mm",
+      "color": "#f0f000",
+      "kind": "other"
+    },
+    {
+      "name": "7 IMD 10mm",
+      "description": "7 IMD 10mm (Duct)",
+      "color": "#ffff00",
+      "kind": "duct"
+    },
+    {
+      "name": "8 IMD 10mm",
+      "description": "8 IMD 10mm (Duct)",
+      "color": "#ffff00",
+      "kind": "duct"
+    },
+    {
+      "name": "8-1\"ID",
+      "description": "8-1\" Innerduct (Conduit)",
+      "color": "#ffff00",
+      "kind": "other"
+    },
+    {
+      "name": "9 IMD 10mm",
+      "description": "9 IMD 10mm (Conduit)",
+      "color": "#ffff00",
+      "kind": "other"
+    },
+    {
+      "name": "9 IMD 13mm",
+      "description": "9 IMD 13mm (Conduit)",
+      "color": "#ffff00",
+      "kind": "other"
+    },
+    {
+      "name": "9 IMD 14mm",
+      "description": "9 IMD 14mm (Conduit)",
+      "color": "#ffff00",
+      "kind": "other"
+    },
+    {
+      "name": "96 Micro SMF",
+      "description": "96 Micro SMF (Fiber)",
+      "color": "#3c3c3c",
+      "kind": "fiber"
+    },
+    {
+      "name": "Abandoned / Cut Fiber",
+      "description": "Abandoned / Cut Fiber (Duct)",
+      "color": "#8000a0",
+      "kind": "duct"
+    },
+    {
+      "name": "AF City 12-SMF",
+      "description": "AF City 12-SMF (Fiber)",
+      "color": "#0000ff",
+      "kind": "fiber"
+    },
+    {
+      "name": "AF CITY 1D",
+      "description": "AF CITY 1D (Conduit)",
+      "color": "#ff7f00",
+      "kind": "other"
+    },
+    {
+      "name": "All West 12 SMF",
+      "description": "All West 12 SMF (Fiber)",
+      "color": "#0000ff",
+      "kind": "fiber"
+    },
+    {
+      "name": "All West 144 SMF",
+      "description": "All West 144 SMF (Fiber)",
+      "color": "#00f0f0",
+      "kind": "fiber"
+    },
+    {
+      "name": "All West 144MicroSMF",
+      "description": "All West 144 Micro SMF (Fiber)",
+      "color": "#00f0f0",
+      "kind": "fiber"
+    },
+    {
+      "name": "All West 24 SMF",
+      "description": "All West 24 SMF (Fiber)",
+      "color": "#ff7f00",
+      "kind": "fiber"
+    },
+    {
+      "name": "All West 288 SMF",
+      "description": "All West 288 SMF (Fiber)",
+      "color": "#005a5a",
+      "kind": "fiber"
+    },
+    {
+      "name": "All West 48 SMF",
+      "description": "All West 48 SMF (Fiber)",
+      "color": "#694d00",
+      "kind": "fiber"
+    },
+    {
+      "name": "All West 72 SMF",
+      "description": "All West 72 SMF (Fiber)",
+      "color": "#a0e000",
+      "kind": "fiber"
+    },
+    {
+      "name": "All West 96 SMF",
+      "description": "All West 96 SMF (Fiber)",
+      "color": "#3c3c3c",
+      "kind": "fiber"
+    },
+    {
+      "name": "Avative 12 SMF",
+      "description": "Avative 12 SMF (Fiber)",
+      "color": "#0000ff",
+      "kind": "fiber"
+    },
+    {
+      "name": "Avative 24 SMF",
+      "description": "Avative 24 SMF (Fiber)",
+      "color": "#ff7f00",
+      "kind": "fiber"
+    },
+    {
+      "name": "Avative 48 SMF",
+      "description": "Avative 48 SMF (Fiber)",
+      "color": "#694d00",
+      "kind": "fiber"
+    },
+    {
+      "name": "Avative 6 SMF",
+      "description": "Avative 6 SMF (Fiber)",
+      "color": "#0000ff",
+      "kind": "fiber"
+    },
+    {
+      "name": "Avative 72 SMF",
+      "description": "Avative 72 SMF (Fiber)",
+      "color": "#a0e000",
+      "kind": "fiber"
+    },
+    {
+      "name": "Beehive 144Micro SMF",
+      "description": "Beehive 144 Micro SMF (Fiber)",
+      "color": "#00f0f0",
+      "kind": "fiber"
+    },
+    {
+      "name": "Beehive 24 SMF",
+      "description": "Beehive 24 SMF",
+      "color": "#ff7f00",
+      "kind": "fiber"
+    },
+    {
+      "name": "Beehive 288 SMF",
+      "description": "Beehive 288 SMF (Fiber)",
+      "color": "#005a5a",
+      "kind": "fiber"
+    },
+    {
+      "name": "Beehive 6 SMF",
+      "description": "Beehive 6 SMF (Fiber)",
+      "color": "#0000ff",
+      "kind": "fiber"
+    },
+    {
+      "name": "Beehive 72 SMF",
+      "description": "Beehive 72 SMF (Fiber)",
+      "color": "#a0e000",
+      "kind": "fiber"
+    },
+    {
+      "name": "Beehive 72Micro SMF",
+      "description": "Beehive 72 Micro SMF (Fiber)",
+      "color": "#a0f400",
+      "kind": "fiber"
+    },
+    {
+      "name": "Beehive 96Micro SMF",
+      "description": "Beehive 96 Micro SMF (Fiber)",
+      "color": "#3c3c3c",
+      "kind": "fiber"
+    },
+    {
+      "name": "Bountiful 48 SMF",
+      "description": "Bountiful 48 SMF (Fiber)",
+      "color": "#694d00",
+      "kind": "fiber"
+    },
+    {
+      "name": "Bountiful 96 SMF",
+      "description": "Bountiful 96 SMF (Fiber)",
+      "color": "#3c3c3c",
+      "kind": "fiber"
+    },
+    {
+      "name": "Ccastle 288 Micro",
+      "description": "Crown Castle 288 Micro",
+      "color": "#005a5a",
+      "kind": "other"
+    },
+    {
+      "name": "CentraCom 1/2D",
+      "description": "CentraCom 1/2D 1.25\" (Duct)",
+      "color": "#ff7f00",
+      "kind": "duct"
+    },
+    {
+      "name": "CentraCom 144 Micro",
+      "description": "CentraCom 144 Micro SMF (Fiber)",
+      "color": "#00ffff",
+      "kind": "fiber"
+    },
+    {
+      "name": "Centracom 144 SMF",
+      "description": "Centracom 288 SMF (Fiber)",
+      "color": "#005a5a",
+      "kind": "fiber"
+    },
+    {
+      "name": "CentraCom 216 SMF",
+      "description": "Centracom 216 SMF (Fiber)",
+      "color": "#a5a500",
+      "kind": "fiber"
+    },
+    {
+      "name": "CentraCom 288 Micro SMF",
+      "description": "CentraCom 288 Micro SMF",
+      "color": "#005a5a",
+      "kind": "fiber"
+    },
+    {
+      "name": "CentraCom 72 Micro SMF",
+      "description": "CentraCom 72 Micro SMF",
+      "color": "#a0e000",
+      "kind": "fiber"
+    },
+    {
+      "name": "CentraCom MD4 13mm",
+      "description": "CentraCom MD4 13mm (Conduit)",
+      "color": "#ffff00",
+      "kind": "other"
+    },
+    {
+      "name": "CentraCom-UDOTCircui",
+      "description": "CentraCom Fiber/UDOT Circuit",
+      "color": "#00ffff",
+      "kind": "other"
+    },
+    {
+      "name": "Centurylink 24 SMF",
+      "description": "Centurylink 24 SMF (Fiber)",
+      "color": "#ff7f01",
+      "kind": "fiber"
+    },
+    {
+      "name": "Comcast 144 SMF",
+      "description": "Comcast 144 SMF (Fiber)",
+      "color": "#00ffff",
+      "kind": "fiber"
+    },
+    {
+      "name": "Comcast 96 SMF",
+      "description": "Comcast 96 SMF (Fiber)",
+      "color": "#404040",
+      "kind": "fiber"
+    },
+    {
+      "name": "County 144 Micro SMF (Old Symbol Deleted: UT 144 Micro)",
+      "description": "County 144 Micro SMF (Fiber)",
+      "color": "#00ffff",
+      "kind": "fiber"
+    },
+    {
+      "name": "County 72 Micro SMF",
+      "description": "County 72 Micro SMF (Fiber)",
+      "color": "#a0e000",
+      "kind": "fiber"
+    },
+    {
+      "name": "CountyNeedAsBuilt",
+      "description": "County - Need As Built (Conduit)",
+      "color": "#00fea0",
+      "kind": "other"
+    },
+    {
+      "name": "Crown Castle 48 SMF",
+      "description": "Crown Castle 48 SMF (Fiber)",
+      "color": "#694d00",
+      "kind": "fiber"
+    },
+    {
+      "name": "CrownCastle 192/25",
+      "description": "Crown Castle 192/25 SMF (Fiber w/ Copper)",
+      "color": "#ff00ff",
+      "kind": "fiber"
+    },
+    {
+      "name": "CTL 144 Micro SMF",
+      "description": "Centurylink 144 Micro SMF (Fiber)",
+      "color": "#00ffff",
+      "kind": "fiber"
+    },
+    {
+      "name": "DC 96 Micro SMF",
+      "description": "DC 96 Micro SMF (Fiber)",
+      "color": "#3c3c3c",
+      "kind": "fiber"
+    },
+    {
+      "name": "Direct",
+      "description": "Direct - 1.25\" (Conduit)",
+      "color": "#ff7f00",
+      "kind": "other"
+    },
+    {
+      "name": "Direct 2",
+      "description": "Direct 2 - 1.25\" (Conduit)",
+      "color": "#ff7f00",
+      "kind": "other"
+    },
+    {
+      "name": "Direct 2 SMF",
+      "description": "Direct 2 SMF (Fiber)",
+      "color": "#696900",
+      "kind": "fiber"
+    },
+    {
+      "name": "Direct 24 SMF",
+      "description": "Direct 24 SMF (Fiber)",
+      "color": "#ff7f00",
+      "kind": "fiber"
+    },
+    {
+      "name": "Direct 3",
+      "description": "Direct 3 - 1.25\" (Conduit)",
+      "color": "#ff7f00",
+      "kind": "other"
+    },
+    {
+      "name": "Direct 48 SMF",
+      "description": "Direct 48 SMF (Fiber)",
+      "color": "#694d00",
+      "kind": "fiber"
+    },
+    {
+      "name": "Emery 144 Micro SMF",
+      "description": "Emery 144 Micro SMF (Fiber)",
+      "color": "#00ffff",
+      "kind": "fiber"
+    },
+    {
+      "name": "Emery 216 Micro",
+      "description": "Emery 216 Micro SMF (Fiber)",
+      "color": "#a5a500",
+      "kind": "fiber"
+    },
+    {
+      "name": "Emery 24 Micro SMF",
+      "description": "Emery 24 Micro SMF (Fiber)",
+      "color": "#ff7f00",
+      "kind": "fiber"
+    },
+    {
+      "name": "Emery 3 - 1.25",
+      "description": "Emery 3 - 1.25 (Conduit)",
+      "color": "#ff7f00",
+      "kind": "other"
+    },
+    {
+      "name": "Emery 48 Micro SMF",
+      "description": "Emery 48 Micro SMF (Fiber)",
+      "color": "#694d00",
+      "kind": "fiber"
+    },
+    {
+      "name": "Extenet 144 SMF",
+      "description": "Extenet 144 SMF (Fiber)",
+      "color": "#00f0f0",
+      "kind": "fiber"
+    },
+    {
+      "name": "Extenet 24 Micro SMF",
+      "description": "Extentet 24 Micro SMF (Fiber)",
+      "color": "#ff7f00",
+      "kind": "fiber"
+    },
+    {
+      "name": "Extenet 24 SMF",
+      "description": "Extenet 24 SMF (Fiber)",
+      "color": "#ff7f00",
+      "kind": "fiber"
+    },
+    {
+      "name": "Extenet 288 SMF",
+      "description": "Extenet 288 SMF (Fiber)",
+      "color": "#005a5a",
+      "kind": "fiber"
+    },
+    {
+      "name": "Extenet 288Micro SMF",
+      "description": "Extenet 288 Micro SMF (Fiber)",
+      "color": "#005a5a",
+      "kind": "fiber"
+    },
+    {
+      "name": "Extenet 48",
+      "description": "Extenet 48 SMF (Fiber)",
+      "color": "#694d00",
+      "kind": "fiber"
+    },
+    {
+      "name": "FD 12 SMF",
+      "description": "First Digital 12 SMF (Fiber)",
+      "color": "#0000ff",
+      "kind": "fiber"
+    },
+    {
+      "name": "FD 24 SMF",
+      "description": "FD 24 SMF",
+      "color": "#ff7f00",
+      "kind": "fiber"
+    },
+    {
+      "name": "FD 6 SMF",
+      "description": "First Digital 6 SMF (Fiber)",
+      "color": "#0000ff",
+      "kind": "fiber"
+    },
+    {
+      "name": "FD 72 SMF",
+      "description": "First Digital 72 SMF (Fiber)",
+      "color": "#a0e000",
+      "kind": "fiber"
+    },
+    {
+      "name": "FD 96 SMF",
+      "description": "First Digital 96 SMF (Fiber)",
+      "color": "#3c3c3c",
+      "kind": "fiber"
+    },
+    {
+      "name": "FTV (South Central)",
+      "description": "FTV South Central",
+      "color": "#00b4b4",
+      "kind": "other"
+    },
+    {
+      "name": "FTV (Utopia Circuit)",
+      "description": "FTV Utopia Circuit",
+      "color": "#00b4b4",
+      "kind": "other"
+    },
+    {
+      "name": "In Design",
+      "description": "In Design (Conduit)",
+      "color": "#8000a0",
+      "kind": "other"
+    },
+    {
+      "name": "IRRIG",
+      "description": "Irrigation Control (Duct Enclosure)",
+      "color": null,
+      "kind": "point"
+    },
+    {
+      "name": "JB1TS",
+      "description": "Exist Type I Traffic-R# (Enclosure)",
+      "color": null,
+      "kind": "point"
+    },
+    {
+      "name": "JB2CC JB3CC",
+      "description": "Crown Castle Junction Boxes (Type II) (Type III)",
+      "color": null,
+      "kind": "other"
+    },
+    {
+      "name": "JB2TS",
+      "description": "Exist Type II Traffic-R# (Enclosure)",
+      "color": null,
+      "kind": "point"
+    },
+    {
+      "name": "JB3AVA",
+      "description": "Avative Junction Box",
+      "color": null,
+      "kind": "other"
+    },
+    {
+      "name": "JB3AW",
+      "description": "All West JB (Enclosure)",
+      "color": null,
+      "kind": "point"
+    },
+    {
+      "name": "JB3DC",
+      "description": "DC JB (Junction Box)",
+      "color": null,
+      "kind": "point"
+    },
+    {
+      "name": "JB3Nxt",
+      "description": "Exist JB-Netlink (Junction Box)",
+      "color": null,
+      "kind": "point"
+    },
+    {
+      "name": "JB3Qwe",
+      "description": "Qwest JB (Enclosure)",
+      "color": null,
+      "kind": "point"
+    },
+    {
+      "name": "JB3Str",
+      "description": "Strata Juction Box (Cell)",
+      "color": null,
+      "kind": "other"
+    },
+    {
+      "name": "JB3TS",
+      "description": "Exist Type III Traffic-R# (Enclosure)",
+      "color": null,
+      "kind": "point"
+    },
+    {
+      "name": "JB3VER",
+      "description": "Veracity Junction Box",
+      "color": null,
+      "kind": "other"
+    },
+    {
+      "name": "JB3XO",
+      "description": "Exist JB-XO (Junction Box)",
+      "color": null,
+      "kind": "point"
+    },
+    {
+      "name": "JBCnxt",
+      "description": "Connext Box",
+      "color": null,
+      "kind": "other"
+    },
+    {
+      "name": "JBCOMC",
+      "description": "Comcast Junction Box (Duct Enclosure)",
+      "color": "#000000",
+      "kind": "point"
+    },
+    {
+      "name": "JBCUWC",
+      "description": "CUWCD Juncion Box (Enclosure)",
+      "color": null,
+      "kind": "point"
+    },
+    {
+      "name": "JBDrct",
+      "description": "Direct Communications Junction Box",
+      "color": null,
+      "kind": "other"
+    },
+    {
+      "name": "JBMCI",
+      "description": "Exist JB-MCI (MCI JB)",
+      "color": null,
+      "kind": "point"
+    },
+    {
+      "name": "JBPARA",
+      "description": "Parapet Box (Enclosure)",
+      "color": null,
+      "kind": "point"
+    },
+    {
+      "name": "JBSS",
+      "description": "Saratoga Springs",
+      "color": null,
+      "kind": "other"
+    },
+    {
+      "name": "Kaysville City",
+      "description": "Kaysville City (Conduit)",
+      "color": "#ff7f00",
+      "kind": "other"
+    },
+    {
+      "name": "Lehi City 72 SMF",
+      "description": "Lehi City 72 SMF (Fiber)",
+      "color": "#a0e000",
+      "kind": "fiber"
+    },
+    {
+      "name": "Logan City 144 SMF",
+      "description": "Logan City 144 SMF (Fiber)",
+      "color": "#00f0f0",
+      "kind": "fiber"
+    },
+    {
+      "name": "MCI",
+      "description": "MCI 3inch (MCI 3\")",
+      "color": null,
+      "kind": "other"
+    },
+    {
+      "name": "MCI 1D",
+      "description": "MCI 1D (MCI 1D 1.25\")",
+      "color": "#ff7f00",
+      "kind": "other"
+    },
+    {
+      "name": "MCI 24 SMF",
+      "description": "MCI 24 SMF",
+      "color": "#ff7f00",
+      "kind": "fiber"
+    },
+    {
+      "name": "MCI 432 Micro SMF",
+      "description": "MCI 432 Micro SMF (Fiber)",
+      "color": "#8000a0",
+      "kind": "fiber"
+    },
+    {
+      "name": "MCI 432 SMF",
+      "description": "MCI 432 SMF (Fiber)",
+      "color": "#8000a0",
+      "kind": "fiber"
+    },
+    {
+      "name": "MCI 864 SMF",
+      "description": "MCI 864 SMF",
+      "color": "#008700",
+      "kind": "fiber"
+    },
+    {
+      "name": "MD2 10mm",
+      "description": "MD2 10mm (Conduit)",
+      "color": "#ffff00",
+      "kind": "other"
+    },
+    {
+      "name": "MD2 14mm",
+      "description": "MD2 14mm (Conduit)",
+      "color": "#ffff00",
+      "kind": "other"
+    },
+    {
+      "name": "MD3 10mm",
+      "description": "MD3 10mm (Conduit)",
+      "color": "#ffff00",
+      "kind": "other"
+    },
+    {
+      "name": "MD3 13mm",
+      "description": "MD3 13mm (Conduit)",
+      "color": "#ffff00",
+      "kind": "other"
+    },
+    {
+      "name": "MD3 14mm",
+      "description": "MD3 14mm (Conduit)",
+      "color": "#ffff00",
+      "kind": "other"
+    },
+    {
+      "name": "Nextlink 144 SMF",
+      "description": "Nextlink 144 SMF (Fiber)",
+      "color": "#00ffff",
+      "kind": "fiber"
+    },
+    {
+      "name": "Ogden City 12 SMF",
+      "description": "Ogden City 12 SMF",
+      "color": "#0000ff",
+      "kind": "fiber"
+    },
+    {
+      "name": "Ogden City 144 SMF",
+      "description": "Ogden City 144 SMF (Fiber)",
+      "color": "#00f0f0",
+      "kind": "fiber"
+    },
+    {
+      "name": "Ogden/UDOT 1D",
+      "description": "Ogden/UDOT 1D (Conduit)",
+      "color": "#ff7f00",
+      "kind": "other"
+    },
+    {
+      "name": "OPSPE \"Endpoint\"",
+      "description": "Optic Splice Enpoint (Splice)",
+      "color": "#ffff00",
+      "kind": "point"
+    },
+    {
+      "name": "OPSPO",
+      "description": "Others (Splice Can)",
+      "color": "#8000a0",
+      "kind": "point"
+    },
+    {
+      "name": "Power",
+      "description": "Power (Fiber)",
+      "color": "#ff0000",
+      "kind": "fiber"
+    },
+    {
+      "name": "Provo 144 Micro SMF",
+      "description": "Provo Micro 144 SMF (Fiber)",
+      "color": "#00f0f0",
+      "kind": "fiber"
+    },
+    {
+      "name": "Provo 1D",
+      "description": "Provo City 1D  (Conduit)",
+      "color": "#ff7f00",
+      "kind": "other"
+    },
+    {
+      "name": "Provo 48 Micro SMF",
+      "description": "Provo 48 Micro SMF (Fiber)",
+      "color": "#694d00",
+      "kind": "fiber"
+    },
+    {
+      "name": "Qwest 144 SMF",
+      "description": "Qwest 144 SMF (Fiber)",
+      "color": "#00f0f0",
+      "kind": "fiber"
+    },
+    {
+      "name": "RWIS-O",
+      "description": "RWIS (Offline)",
+      "color": "#ff0000",
+      "kind": "point"
+    },
+    {
+      "name": "RWIS-P",
+      "description": "RWIS (Proposed)",
+      "color": null,
+      "kind": "point"
+    },
+    {
+      "name": "Sandy City 1D",
+      "description": "Sandy City 1D 1.25\" (Duct)",
+      "color": "#ff7f00",
+      "kind": "duct"
+    },
+    {
+      "name": "Sandy City 48 Micro",
+      "description": "Sandy City 48 Micro SMF (Fiber)",
+      "color": "#694d00",
+      "kind": "fiber"
+    },
+    {
+      "name": "Sandy City 48 SMF",
+      "description": "Sandy City 48 SMF (Fiber)",
+      "color": "#694d00",
+      "kind": "fiber"
+    },
+    {
+      "name": "Sandy City 6 SMF",
+      "description": "Sandy City 6 SMF  (Fiber)",
+      "color": "#0000ff",
+      "kind": "fiber"
+    },
+    {
+      "name": "Sandy City 96 Micro",
+      "description": "Sandy City 96 Micro SMF",
+      "color": "#3c3c3c",
+      "kind": "fiber"
+    },
+    {
+      "name": "Sandy City tal2",
+      "description": "Sandy City 2\" (Duct)",
+      "color": "#ff00ff",
+      "kind": "duct"
+    },
+    {
+      "name": "SandyCity24SMF",
+      "description": "Sandy City 24 SMF",
+      "color": "#ff7f00",
+      "kind": "fiber"
+    },
+    {
+      "name": "SFCN 6-SMF",
+      "description": "SFCN 6-SMF (Fiber)",
+      "color": "#0000ff",
+      "kind": "fiber"
+    },
+    {
+      "name": "Shallow Depth",
+      "description": "Shallow Depth (Conduit)",
+      "color": "#00fea0",
+      "kind": "other"
+    },
+    {
+      "name": "Shallow Depth 1D",
+      "description": "Shallow Depth 1D (Duct)",
+      "color": "#ff7f00",
+      "kind": "duct"
+    },
+    {
+      "name": "South Central - Need As  Built",
+      "description": "South Central - Need As Built (Conduit)",
+      "color": "#00fea0",
+      "kind": "other"
+    },
+    {
+      "name": "SS 1D",
+      "description": "Saratoga Springs 1D (Conduit)",
+      "color": "#ff7f00",
+      "kind": "other"
+    },
+    {
+      "name": "Strata 144 Micro SMF",
+      "description": "Strata 144 Micro SMF (Fiber)",
+      "color": "#00f0f0",
+      "kind": "fiber"
+    },
+    {
+      "name": "Strata 144 SMF",
+      "description": "Strata 144 SMF (Fiber)",
+      "color": "#00f0f0",
+      "kind": "fiber"
+    },
+    {
+      "name": "Strata MD3 14mm",
+      "description": "Strata MD3 14mm (Conduit)",
+      "color": "#ffff00",
+      "kind": "other"
+    },
+    {
+      "name": "Strata MD4 14mm",
+      "description": "Strata MD4 14mm (Conduit)",
+      "color": "#ffff00",
+      "kind": "other"
+    },
+    {
+      "name": "Strata New",
+      "description": "Strata SMF (Fiber)",
+      "color": "#00f0f0",
+      "kind": "fiber"
+    },
+    {
+      "name": "Style Name: Trade Pending  - Centurylink Point Symbol: TradePendingCTL",
+      "description": "Trade Pending - Centurylink (Duct)",
+      "color": "#00f0f0",
+      "kind": "duct"
+    },
+    {
+      "name": "Symbol: UDOT/Syringa MD7 14m  Style: UDOT/Syringa MD7 14mm",
+      "description": "UDOT/Syringa MD7 14mm (Duct)",
+      "color": "#ffff00",
+      "kind": "duct"
+    },
+    {
+      "name": "Syringa 12 SMF",
+      "description": "Syringa 12 SMF (Fiber)",
+      "color": "#0000f0",
+      "kind": "fiber"
+    },
+    {
+      "name": "Syringa 24 SMF",
+      "description": "Syringa 24 SMF (Fiber)",
+      "color": "#ff7f00",
+      "kind": "fiber"
+    },
+    {
+      "name": "Syringa 432 SMF",
+      "description": "Syringa 432 SMF (Fiber)",
+      "color": "#8000a0",
+      "kind": "fiber"
+    },
+    {
+      "name": "Syringa 48 Micro SMF",
+      "description": "Syringa 48 Micro SMF (Fiber)",
+      "color": "#694d00",
+      "kind": "fiber"
+    },
+    {
+      "name": "Syringa 6 SMF",
+      "description": "Syringa 6 SMF (Fiber)",
+      "color": "#0000ff",
+      "kind": "fiber"
+    },
+    {
+      "name": "Syringa 72 SMF",
+      "description": "Syringa 72-SMF (Fiber)",
+      "color": "#a0e000",
+      "kind": "fiber"
+    },
+    {
+      "name": "Syringa Micro 144 SMF",
+      "description": "Syringa 144 Micro SMF (Fiber)",
+      "color": "#00ffff",
+      "kind": "fiber"
+    },
+    {
+      "name": "Syringa Micro 96 SMF",
+      "description": "Syringa Micro 96 SMF (Fiber)",
+      "color": "#3c3c3c",
+      "kind": "fiber"
+    },
+    {
+      "name": "Syringa/Direct144SMF",
+      "description": "Syringa/Direct 144 SMF (Fiber)",
+      "color": "#00ffff",
+      "kind": "fiber"
+    },
+    {
+      "name": "tal8",
+      "description": "8\" (Conduit)",
+      "color": "#fe0060",
+      "kind": "other"
+    },
+    {
+      "name": "TDS",
+      "description": "TDS (Fiber)",
+      "color": "#00f0f0",
+      "kind": "fiber"
+    },
+    {
+      "name": "TDS - Aerial",
+      "description": "TDS - Aerial (Duct)",
+      "color": "#00b4b4",
+      "kind": "duct"
+    },
+    {
+      "name": "Telco Handoff",
+      "description": "Telco Handoff (Conduit)",
+      "color": "#00ff00",
+      "kind": "other"
+    },
+    {
+      "name": "TELCOH",
+      "description": "Telco Handoff (Splice)",
+      "color": "#ff0000",
+      "kind": "point"
+    },
+    {
+      "name": "Terabit 288 Micro",
+      "description": "Terabit 288 Micro SMF  (Fiber)",
+      "color": "#005a5a",
+      "kind": "fiber"
+    },
+    {
+      "name": "Terabit 432 SMF",
+      "description": "Terabit 432 SMF (Fiber)",
+      "color": "#8000a0",
+      "kind": "fiber"
+    },
+    {
+      "name": "Terabit 72 Micro SMF",
+      "description": "Terabit 72 Micro SMF (Fiber)",
+      "color": "#a0e000",
+      "kind": "fiber"
+    },
+    {
+      "name": "Trade Pending - 1 Trade Pending - 2 Trade Pending - 3",
+      "description": "Trade Pending 1,2,3",
+      "color": "#00f0f0",
+      "kind": "other"
+    },
+    {
+      "name": "UDOT 12 Micro SMF",
+      "description": "UDOT 12 Micro SMF  (Fiber)",
+      "color": "#0000ff",
+      "kind": "fiber"
+    },
+    {
+      "name": "UDOT 120/Plains 24",
+      "description": "UDOT 120/Plains 24 SMF (Fiber)",
+      "color": "#00ffff",
+      "kind": "fiber"
+    },
+    {
+      "name": "UDOT 48/Plains 24",
+      "description": "UDOT 48/Plains 24 SMF (Fiber)",
+      "color": "#a0e000",
+      "kind": "fiber"
+    },
+    {
+      "name": "UDOT/CentraCom 5",
+      "description": "UDOT/CentraCom 5 - 1.25\" (Conduit)",
+      "color": "#ff7f00",
+      "kind": "other"
+    },
+    {
+      "name": "UDOT/Extenet 1D",
+      "description": "UDOT/Extenet 1D (Duct)",
+      "color": "#ff7f00",
+      "kind": "duct"
+    },
+    {
+      "name": "UDOT/FirstDigital 1D",
+      "description": "UDOT/First Digital 1D (Duct)",
+      "color": "#ff7f00",
+      "kind": "duct"
+    },
+    {
+      "name": "UDOT/OremCity144SMF",
+      "description": "UDOT/Orem City 144 SMF (Fiber)",
+      "color": "#00f0f0",
+      "kind": "fiber"
+    },
+    {
+      "name": "UDOT/Plains 48 SMF",
+      "description": "UDOT/Plains 48 SMF (Fiber)",
+      "color": "#694d00",
+      "kind": "fiber"
+    },
+    {
+      "name": "UDOT/Syringa MD7 13mm",
+      "description": "UDOT / Syringa MD7 16/13mm (Duct)",
+      "color": "#ffff00",
+      "kind": "duct"
+    },
+    {
+      "name": "UEN 96-SMF",
+      "description": "UEN 96 SMF (Fiber)",
+      "color": "#404040",
+      "kind": "fiber"
+    },
+    {
+      "name": "UENBLD (UEN-Building-R2)",
+      "description": "UEN Building (Building)",
+      "color": "#00ff00",
+      "kind": "point"
+    },
+    {
+      "name": "Under Construction",
+      "description": "Under Construction (Conduit)",
+      "color": "#00f0f0",
+      "kind": "other"
+    },
+    {
+      "name": "UofU",
+      "description": "UofU 6inch (University of Utah 6\")",
+      "color": "#fe0060",
+      "kind": "other"
+    },
+    {
+      "name": "UofU 360 SMF",
+      "description": "UofU 360 SMF (Fiber)",
+      "color": "#8000a0",
+      "kind": "fiber"
+    },
+    {
+      "name": "UofU 48 SMF",
+      "description": "UofU 48 SMF (Fiber)",
+      "color": "#694d00",
+      "kind": "fiber"
+    },
+    {
+      "name": "UofU 72 SMF",
+      "description": "UofU 72 SMF (Fiber)",
+      "color": "#a0e000",
+      "kind": "fiber"
+    },
+    {
+      "name": "UofU Tunnel",
+      "description": "UofU Tunnel (Conduit)",
+      "color": "#00fea0",
+      "kind": "other"
+    },
+    {
+      "name": "UT County 144 Micro",
+      "description": "Utah County 144 Micro SMF (Fiber)",
+      "color": "#00f0f0",
+      "kind": "fiber"
+    },
+    {
+      "name": "UTA 12 SMF",
+      "description": "UTA 12 SMF (Fiber)",
+      "color": "#0000ff",
+      "kind": "fiber"
+    },
+    {
+      "name": "UTA 144 Micro SMF",
+      "description": "UTA 144 Micro SMF (Fiber)",
+      "color": "#00f0f0",
+      "kind": "fiber"
+    },
+    {
+      "name": "UTA 144 SMF",
+      "description": "UTA 144 SMF (Fiber)",
+      "color": "#00f0f0",
+      "kind": "fiber"
+    },
+    {
+      "name": "UTA 24 SMF",
+      "description": "UTA 24 SMF (Fiber)",
+      "color": "#ff7f00",
+      "kind": "fiber"
+    },
+    {
+      "name": "UTA 48 SMF",
+      "description": "UTA 48 SMF (Fiber)",
+      "color": "#694d00",
+      "kind": "fiber"
+    },
+    {
+      "name": "UTA 54 SMF",
+      "description": "UTA 54 SMF Line Style  (9x6 XSection created for it.)",
+      "color": null,
+      "kind": "fiber"
+    },
+    {
+      "name": "Utopia 12 SMF",
+      "description": "Utopia 12 SMF",
+      "color": "#0000ff",
+      "kind": "fiber"
+    },
+    {
+      "name": "Utopia 144 Micro SMF",
+      "description": "Utopia 144 Micro SMF",
+      "color": "#00f0f0",
+      "kind": "fiber"
+    },
+    {
+      "name": "Utopia 144 SMF",
+      "description": "Utopia 144 SMF",
+      "color": "#00ffff",
+      "kind": "fiber"
+    },
+    {
+      "name": "Utopia 192 SMF",
+      "description": "Utopia 192 SMF (Fiber)",
+      "color": "#ff00ff",
+      "kind": "fiber"
+    },
+    {
+      "name": "Utopia 216 SMF",
+      "description": "Utopia 216 SMF (Fiber)",
+      "color": "#a5a500",
+      "kind": "fiber"
+    },
+    {
+      "name": "Utopia 24 Micro SMF",
+      "description": "Utopia 24 Micro SMF (Fiber)",
+      "color": "#ff7f00",
+      "kind": "fiber"
+    },
+    {
+      "name": "Utopia 288 Micro SMF",
+      "description": "Utopia 288 Micro SMF (Fiber)",
+      "color": "#005a5a",
+      "kind": "fiber"
+    },
+    {
+      "name": "Utopia 36 SMF",
+      "description": "Utopia 36 SMF (Fiber)",
+      "color": "#008700",
+      "kind": "fiber"
+    },
+    {
+      "name": "Utopia 432 SMF",
+      "description": "Utopia 432 SMF (Fiber)",
+      "color": "#8000a0",
+      "kind": "fiber"
+    },
+    {
+      "name": "Utopia 48 Micro SMF",
+      "description": "Utopia 48 Micro SMF",
+      "color": "#694d00",
+      "kind": "fiber"
+    },
+    {
+      "name": "Utopia 72 Micro SMF",
+      "description": "Utopia 72 Micro SMF (Fiber)",
+      "color": "#a0e000",
+      "kind": "fiber"
+    },
+    {
+      "name": "Utopia 96 Micro SMF",
+      "description": "Utopia 96 Micro SMF (Fiber)",
+      "color": "#404040",
+      "kind": "fiber"
+    },
+    {
+      "name": "Utopia 96 SMF",
+      "description": "Utopia 96 SMF (Fiber)",
+      "color": "#3c3c3c",
+      "kind": "fiber"
+    },
+    {
+      "name": "Utopia MD4 14mm",
+      "description": "Utopia MD4 14mm (Duct)",
+      "color": "#ffff00",
+      "kind": "duct"
+    },
+    {
+      "name": "Utopia MD7 14mm",
+      "description": "Utopia MD7 14mm (Duct)",
+      "color": "#ffff00",
+      "kind": "duct"
+    },
+    {
+      "name": "UVU 72 SMF UVU 24 SMF UVU 12 SMF",
+      "description": "UVU 72 SMF UVU 24 SMF UVU 12 SMF (Fiber)",
+      "color": "#a0f400",
+      "kind": "fiber"
+    },
+    {
+      "name": "Veracity 144 SMF",
+      "description": "Veracity 144 SMF (Fiber)",
+      "color": "#00ffff",
+      "kind": "fiber"
+    },
+    {
+      "name": "Veracity 288 SMF",
+      "description": "Veracity 288 SMF (Fiber)",
+      "color": "#005a5a",
+      "kind": "fiber"
+    },
+    {
+      "name": "Veracity 48 SMF",
+      "description": "Veracity 48 SMF (Fiber)",
+      "color": "#694d00",
+      "kind": "fiber"
+    },
+    {
+      "name": "Veracity 96 SMF",
+      "description": "Veracity 96 SMF (Fiber)",
+      "color": "#404040",
+      "kind": "fiber"
+    },
+    {
+      "name": "Verasity 48 SMF",
+      "description": "Verasity 48 SMF (Fiber)",
+      "color": "#694d00",
+      "kind": "fiber"
+    },
+    {
+      "name": "VExDrc",
+      "description": "Direct Communications Vault",
+      "color": "#ff0000",
+      "kind": "point"
+    },
+    {
+      "name": "VExMCI",
+      "description": "Existing Vault MCI (MCI Vault)",
+      "color": "#ff0000",
+      "kind": "point"
+    },
+    {
+      "name": "VExUoU",
+      "description": "Existing Vault U of U (U of U Vault)",
+      "color": "#ff0000",
+      "kind": "point"
+    },
+    {
+      "name": "Washington City 1D",
+      "description": "Washington City 1D (Duct)",
+      "color": "#ff7f00",
+      "kind": "duct"
+    },
+    {
+      "name": "XO 144 SMF",
+      "description": "XO 144 SMF (Fiber)",
+      "color": "#00f0f0",
+      "kind": "fiber"
+    },
+    {
+      "name": "XO 216 SMF",
+      "description": "XO 216 SMF (Fiber)",
+      "color": null,
+      "kind": "fiber"
+    },
+    {
+      "name": "XO 24 SMF",
+      "description": "XO 24 SMF (Fiber)",
+      "color": "#ff7f00",
+      "kind": "fiber"
+    },
+    {
+      "name": "XO 96 SMF",
+      "description": "XO 96 SMF",
+      "color": "#404040",
+      "kind": "fiber"
+    },
+    {
+      "name": "Zayo 144 Micro SMF",
+      "description": "Zayo 144 Micro SMF (Fiber)",
+      "color": "#00ffff",
+      "kind": "fiber"
+    },
+    {
+      "name": "Zayo 144 SMF",
+      "description": "Zayo 144 SMF (Fiber)",
+      "color": "#00f0f0",
+      "kind": "fiber"
+    },
+    {
+      "name": "Zayo 288 SMF",
+      "description": "Zayo 288 SMF (Fiber)",
+      "color": "#005a5a",
+      "kind": "fiber"
+    },
+    {
+      "name": "Zayo 432 SMF",
+      "description": "Zayo 432 SMF (Fiber)",
+      "color": "#960000",
+      "kind": "fiber"
+    },
+    {
+      "name": "Zayo 864 SMF",
+      "description": "Zayo 864 SMF (Fiber)",
+      "color": "#008700",
+      "kind": "fiber"
+    },
+    {
+      "name": "Zayo 96 Micro SMF",
+      "description": "Zayo 96 Micro SMF (Fiber)",
+      "color": "#3c3c3c",
+      "kind": "fiber"
+    }
+  ]
+}

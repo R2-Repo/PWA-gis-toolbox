@@ -48,7 +48,7 @@ export function AtlasMapChrome({ onOpenImport }) {
                     >
                         Clear
                     </button>
-                    <span className="atlas-map-focus-hint atlas-muted">Esc</span>
+                    <span className="atlas-map-focus-hint atlas-muted" title="Esc clears · ? shortcuts">Esc · ?</span>
                 </div>
                 {isEmptyDb ? (
                     <div className="atlas-map-empty-cta">

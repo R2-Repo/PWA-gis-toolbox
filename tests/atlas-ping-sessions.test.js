@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
     formatSessionEndLabel,
     isMonitorHistorySession,
+    isPartialSessionExport,
     sessionsOlderThan
 } from '../js/atlas/export.js';
 
@@ -23,6 +24,12 @@ describe('atlas ping session history helpers', () => {
         ];
         const stale = sessionsOlderThan(sessions, 30, { excludeSessionId: 'active' });
         expect(stale.map((s) => s.id)).toEqual(['old']);
+    });
+
+    it('detects partial session CSV exports', () => {
+        expect(isPartialSessionExport(40, 120)).toBe(true);
+        expect(isPartialSessionExport(120, 120)).toBe(false);
+        expect(isPartialSessionExport(40, null)).toBe(false);
     });
 
     it('labels incomplete sessions without stoppedAt', () => {
