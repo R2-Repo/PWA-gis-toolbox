@@ -3,8 +3,8 @@ import bus from '../../js/core/event-bus.js';
 import { getAtlasSnapshot } from '../../js/atlas/store.js';
 import { buildChannelSchematic } from '../../js/atlas/schematic.js';
 import { getHubChannelSummary } from '../../js/atlas/hierarchy.js';
-import { buildDashboardStats, exportDropsCsv, exportFindingsCsv, openPrintableReport } from '../../js/atlas/export.js';
-import { findingsInScope, listScopedDropsByPing } from '../../js/atlas/triage.js';
+import { buildDashboardStats, exportDropsCsv, exportFindingsCsv, findingsTableHtml, openPrintableReport } from '../../js/atlas/export.js';
+import { collectHubIps, findingsInScope, listScopedDropsByPing } from '../../js/atlas/triage.js';
 import { formatPingAge, formatPingWhen, isPingStale } from '../../js/atlas/ping-format.js';
 import { ChannelSchematic } from './ChannelSchematic.jsx';
 import { CollapsibleSection } from '../ui/CollapsibleSection.jsx';
@@ -31,10 +31,20 @@ export function AtlasRightPanel({
 }) {
     const [tick, setTick] = useState(0);
     const [findingFilter, setFindingFilter] = useState('Open');
+    const [findingTypeFilter, setFindingTypeFilter] = useState('all');
     const [monitorInterval, setMonitorInterval] = useState(1);
     const [dashScope, setDashScope] = useState('network');
     const [triageMode, setTriageMode] = useState('unreachable');
     const [noteDrafts, setNoteDrafts] = useState({});
+
+    const focusFindings = (type = 'all', status = 'Open') => {
+        setFindingFilter(status);
+        setFindingTypeFilter(type);
+        // scroll reconciliation into view if present
+        requestAnimationFrame(() => {
+            document.getElementById('atlas-findings')?.scrollIntoView?.({ behavior: 'smooth', block: 'nearest' });
+        });
+    };
 
     useEffect(() => {
         const unsub = [
@@ -102,11 +112,22 @@ export function AtlasRightPanel({
         };
     }, [selection, snap, tick]);
 
+    const scopedFindings = useMemo(
+        () => findingsInScope(snap, dashScope),
+        [snap, tick, dashScope]
+    );
+
+    const findingTypes = useMemo(() => {
+        const set = new Set(scopedFindings.map((f) => f.findingType).filter(Boolean));
+        return [...set].sort();
+    }, [scopedFindings]);
+
     const findings = useMemo(() => {
-        let list = findingsInScope(snap, dashScope);
+        let list = scopedFindings;
         if (findingFilter !== 'all') list = list.filter((f) => f.status === findingFilter);
+        if (findingTypeFilter !== 'all') list = list.filter((f) => f.findingType === findingTypeFilter);
         return list;
-    }, [snap, findingFilter, tick, dashScope]);
+    }, [scopedFindings, findingFilter, findingTypeFilter]);
 
     const area = snap.areaResults;
 
@@ -149,9 +170,30 @@ export function AtlasRightPanel({
                     <div className="atlas-dash-card"><span>Channels</span><strong>{stats.channels}</strong></div>
                     <div className="atlas-dash-card"><span>Drops</span><strong>{stats.drops}</strong></div>
                     <div className="atlas-dash-card"><span>Devices</span><strong>{stats.devices}</strong></div>
-                    <div className="atlas-dash-card"><span>Open findings</span><strong>{stats.openFindings}</strong></div>
-                    <div className="atlas-dash-card"><span>Missing Site IDs</span><strong>{stats.missingSiteIds}</strong></div>
-                    <div className="atlas-dash-card"><span>Duplicate IPs</span><strong>{stats.duplicateIps}</strong></div>
+                    <button
+                        type="button"
+                        className="atlas-dash-card atlas-dash-card--action"
+                        onClick={() => focusFindings('all', 'Open')}
+                        title="Show open findings"
+                    >
+                        <span>Open findings</span><strong>{stats.openFindings}</strong>
+                    </button>
+                    <button
+                        type="button"
+                        className="atlas-dash-card atlas-dash-card--action"
+                        onClick={() => focusFindings('missing_site_id', 'Open')}
+                        title="Filter missing Site IDs"
+                    >
+                        <span>Missing Site IDs</span><strong>{stats.missingSiteIds}</strong>
+                    </button>
+                    <button
+                        type="button"
+                        className="atlas-dash-card atlas-dash-card--action"
+                        onClick={() => focusFindings('duplicate_ip', 'Open')}
+                        title="Filter duplicate IPs"
+                    >
+                        <span>Duplicate IPs</span><strong>{stats.duplicateIps}</strong>
+                    </button>
                     <div className="atlas-dash-card"><span>Ping up/down</span><strong>{stats.pingReachable}/{stats.pingUnreachable}</strong></div>
                 </div>
                 <div className="atlas-toolbar">
@@ -176,7 +218,9 @@ export function AtlasRightPanel({
                               <tr><td>Open findings</td><td>${stats.openFindings}</td></tr>
                               <tr><td>Missing Site IDs</td><td>${stats.missingSiteIds}</td></tr>
                               <tr><td>Duplicate IPs</td><td>${stats.duplicateIps}</td></tr>
-                              <tr><td>Ping up/down</td><td>${stats.pingReachable}/${stats.pingUnreachable}</td></tr></table>`
+                              <tr><td>Ping up/down</td><td>${stats.pingReachable}/${stats.pingUnreachable}</td></tr></table>
+                              <h2>Findings</h2>
+                              ${findingsTableHtml(scopedFindings.filter((f) => f.status === 'Open'))}`
                         })}
                     >
                         Printable report
@@ -192,6 +236,7 @@ export function AtlasRightPanel({
                         <p>Channel {dropDetail.channelNumber} · Drop {dropDetail.dropNumber ?? '—'}</p>
                         <p>IP: {dropDetail.ip || '—'}</p>
                         <p>{[dropDetail.manufacturer, dropDetail.model].filter(Boolean).join(' · ') || '—'}</p>
+                        {dropDetail.wireless ? <p className="atlas-tag">Wireless</p> : null}
                         <p className={dropPing && isPingStale(dropPing.at) ? 'atlas-stale-warn' : 'atlas-muted'}>
                             Ping: {dropPing?.status || 'untested'}
                             {dropPing?.rttMs != null ? ` · ${dropPing.rttMs} ms` : ''}
@@ -228,6 +273,17 @@ export function AtlasRightPanel({
                         <h4>{deviceDetail.inventoryName || deviceDetail.ip || 'Device'}</h4>
                         <p>{[deviceDetail.deviceType, deviceDetail.manufacturer, deviceDetail.model].filter(Boolean).join(' · ') || '—'}</p>
                         <p>IP: {deviceDetail.ip || '—'}</p>
+                        {deviceDetail.provisional ? <p className="atlas-tag atlas-tag--warn">Provisional</p> : null}
+                        {(deviceDetail.gateway || deviceDetail.subnet || deviceDetail.subnetMask) && (
+                            <p className="atlas-muted">
+                                {[
+                                    deviceDetail.gateway ? `GW ${deviceDetail.gateway}` : null,
+                                    deviceDetail.subnet ? `Subnet ${deviceDetail.subnet}` : null,
+                                    deviceDetail.subnetMask ? `Mask ${deviceDetail.subnetMask}` : null
+                                ].filter(Boolean).join(' · ')}
+                            </p>
+                        )}
+                        {deviceDetail.status && <p className="atlas-muted">Status: {deviceDetail.status}</p>}
                         <p className={devicePing && isPingStale(devicePing.at) ? 'atlas-stale-warn' : 'atlas-muted'}>
                             Ping: {devicePing?.status || 'untested'}
                             {devicePing?.rttMs != null ? ` · ${devicePing.rttMs} ms` : ''}
@@ -289,13 +345,32 @@ export function AtlasRightPanel({
                         </p>
                         <p>{channelDetail.dropCount} drops · {channelDetail.ipCount} with IP</p>
                         {canPing && channelDetail.ipCount > 0 && (
-                            <button
-                                type="button"
-                                className="btn btn-secondary btn-sm"
-                                onClick={() => onPingChannel?.(channelDetail.channel.id)}
-                            >
-                                Ping channel
-                            </button>
+                            <div className="atlas-toolbar">
+                                <button
+                                    type="button"
+                                    className="btn btn-secondary btn-sm"
+                                    onClick={() => onPingChannel?.(channelDetail.channel.id)}
+                                >
+                                    Ping channel
+                                </button>
+                                <button
+                                    type="button"
+                                    className="btn btn-ghost btn-sm"
+                                    disabled={!!snap.activeSession}
+                                    onClick={() => {
+                                        const ips = (snap.drops || [])
+                                            .filter((d) => d.channelId === channelDetail.channel.id && d.ip)
+                                            .map((d) => d.ip);
+                                        onStartMonitor?.({
+                                            targets: ips,
+                                            interval: monitorInterval,
+                                            label: `Channel ${channelDetail.channel.channelNumber}`
+                                        });
+                                    }}
+                                >
+                                    Start monitor
+                                </button>
+                            </div>
                         )}
                     </div>
                 )}
@@ -312,6 +387,21 @@ export function AtlasRightPanel({
                                 </button>
                                 <button type="button" className="btn btn-ghost btn-sm" onClick={() => onPingHub?.(hubSummary.hub.id, 'secondary')}>
                                     Ping secondary
+                                </button>
+                                <button
+                                    type="button"
+                                    className="btn btn-ghost btn-sm"
+                                    disabled={!!snap.activeSession}
+                                    onClick={() => {
+                                        const ips = collectHubIps(hubSummary.hub.id, 'all', snap);
+                                        onStartMonitor?.({
+                                            targets: ips,
+                                            interval: monitorInterval,
+                                            label: hubSummary.hub.name || hubSummary.hub.hubCode
+                                        });
+                                    }}
+                                >
+                                    Start monitor
                                 </button>
                             </div>
                         )}
@@ -349,6 +439,11 @@ export function AtlasRightPanel({
                     schematic={schematic}
                     canPing={canPing}
                     onSelectDrop={(id) => onSelect?.({ kind: 'drop', id })}
+                    onSelectHub={(id, hubCode) => {
+                        const hub = (snap.hubs || []).find((h) => h.id === id)
+                            || (snap.hubs || []).find((h) => h.hubCode === hubCode);
+                        if (hub) onSelect?.({ kind: 'hub', id: hub.id });
+                    }}
                     onPingChannel={onPingChannel}
                     onPingDrop={onPingDrop}
                 />
@@ -537,6 +632,17 @@ export function AtlasRightPanel({
                         <option value="Ignored">Ignored</option>
                         <option value="Resolved">Resolved</option>
                         <option value="all">All</option>
+                    </select>
+                    <select
+                        className="input-sm"
+                        value={findingTypeFilter}
+                        onChange={(e) => setFindingTypeFilter(e.target.value)}
+                        title="Finding type"
+                    >
+                        <option value="all">All types</option>
+                        {findingTypes.map((t) => (
+                            <option key={t} value={t}>{t}</option>
+                        ))}
                     </select>
                     <button type="button" className="btn btn-ghost btn-sm" onClick={() => exportFindingsCsv(findings)}>Export CSV</button>
                 </div>

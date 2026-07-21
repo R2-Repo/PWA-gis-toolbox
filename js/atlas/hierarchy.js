@@ -63,17 +63,24 @@ export function buildHierarchyTree() {
                     meta: `${drops.length} drops`,
                     children: drops.map((d) => {
                         const device = snap.devices.find((dev) => dev.id === d.deviceId || (d.ip && dev.ip === d.ip));
+                        const pingStatus = d.ip
+                            ? (snap.pingResults?.[d.ip]?.status || 'untested')
+                            : null;
                         return {
                             id: d.id,
                             label: `D${d.dropNumber ?? '?'} · ${d.inventoryName || d.ip || 'drop'}`,
                             kind: 'drop',
                             meta: d.ip || '',
+                            pingStatus,
                             children: device
                                 ? [{
                                     id: device.id,
                                     label: device.ip || device.model || 'device',
                                     kind: 'device',
                                     meta: device.model || device.deviceType || '',
+                                    pingStatus: device.ip
+                                        ? (snap.pingResults?.[device.ip]?.status || 'untested')
+                                        : null,
                                     children: []
                                 }]
                                 : []

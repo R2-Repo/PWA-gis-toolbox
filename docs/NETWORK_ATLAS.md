@@ -57,14 +57,18 @@ Map: click hubs/drops to select; channel selection draws a path and fits bounds.
 
 Operator UX:
 - Last-import freshness banner on the left panel
+- Hierarchy/search: selection highlight, auto-expand, ping status dots
+- Dashboard cards drill into Reconciliation (open / missing Site ID / duplicate IP)
+- Findings filter by status + type
 - Ping triage: unreachable / stale / untested / needs attention + bulk re-ping
-- Hub detail: ping all / primary / secondary switch sets
+- Hub detail: ping all / primary / secondary + start monitor
 - Area query: rectangle or polygon, map overlay, fit bounds, Selection scope, open findings
 - Area clear + entity selection overrides stale area scope
-- Scoped drops CSV / printable report (Network vs Selection)
-- Channel schematic shows open finding badges per drop
-- Channel summary + site drops list with ping
-- Monitor from drop, triage list, or area; live sample tail
+- Scoped drops CSV (includes ping columns) / printable report with findings table
+- Channel schematic: finding badges, wireless tag, clickable hubs
+- Channel/site detail with ping + monitor
+- Device detail: gateway/subnet/provisional
+- Monitor from drop, channel, hub, triage, or area; live sample tail
 - Ping toasts (start + up/down summary)
 - Reconciliation findings follow Network / Selection scope
 - Ping age on drop details / schematic (stale after 24h)

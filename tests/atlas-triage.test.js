@@ -5,6 +5,9 @@ import { buildImportFindings } from '../js/atlas/import/audit.js';
 import { queryAtlasInArea, pointInGeometry } from '../js/atlas/area-query.js';
 import { getAtlasSnapshot, patchAtlasSnapshot, resetAtlasSnapshot } from '../js/atlas/store.js';
 import { buildChannelSchematic } from '../js/atlas/schematic.js';
+import { buildHierarchyTree } from '../js/atlas/hierarchy.js';
+import { searchAtlas } from '../js/atlas/search.js';
+import { findingsTableHtml, rowsToCsv } from '../js/atlas/export.js';
 
 describe('atlas ping format', () => {
     it('parses unix seconds and ISO', () => {
@@ -148,6 +151,38 @@ describe('atlas area + schematic', () => {
         const dropNode = schematic?.nodes.find((n) => n.id === 'd1');
         expect(dropNode?.warnings).toHaveLength(1);
         expect(getAtlasSnapshot().channels).toHaveLength(1);
+    });
+
+    it('adds pingStatus on hierarchy drops and search hits', () => {
+        patchAtlasSnapshot({
+            hubs: [{ id: 'h1', hubCode: 'H1', name: 'Hub H1' }],
+            channels: [{ id: 'c1', channelNumber: '1', primaryHubCode: 'H1', secondaryHubCode: 'H2' }],
+            drops: [{ id: 'd1', channelId: 'c1', dropNumber: 1, ip: '10.0.0.1', inventoryName: 'Site A' }],
+            devices: [],
+            pingResults: { '10.0.0.1': { status: 'unreachable', at: new Date().toISOString() } }
+        });
+        const tree = buildHierarchyTree();
+        const hub = tree[0]?.children?.find((n) => n.id === 'h1');
+        const drop = hub?.children?.[0]?.children?.[0];
+        expect(drop?.pingStatus).toBe('unreachable');
+        const hits = searchAtlas('10.0.0.1');
+        expect(hits[0]?.pingStatus).toBe('unreachable');
+    });
+
+    it('builds findings table html and drops csv ping columns', () => {
+        const html = findingsTableHtml([
+            { findingType: 'duplicate_ip', severity: 'warning', status: 'Open', description: 'dup', ip: '1.1.1.1' }
+        ]);
+        expect(html).toContain('duplicate_ip');
+        expect(html).toContain('1.1.1.1');
+        const csv = rowsToCsv([{
+            channel: '1',
+            drop: 1,
+            pingStatus: 'reachable',
+            pingRttMs: 12
+        }]);
+        expect(csv).toContain('pingStatus');
+        expect(csv).toContain('reachable');
     });
 });
 

@@ -1,6 +1,13 @@
 import { formatPingAge, isPingStale } from '../../js/atlas/ping-format.js';
 
-export function ChannelSchematic({ schematic, onSelectDrop, onPingChannel, onPingDrop, canPing }) {
+export function ChannelSchematic({
+    schematic,
+    onSelectDrop,
+    onSelectHub,
+    onPingChannel,
+    onPingDrop,
+    canPing
+}) {
     if (!schematic) {
         return <p className="atlas-muted">Select a channel to view its schematic.</p>;
     }
@@ -29,9 +36,11 @@ export function ChannelSchematic({ schematic, onSelectDrop, onPingChannel, onPin
                             className={`atlas-schematic-node atlas-schematic-node--${node.kind} atlas-ping--${node.ping?.status || 'untested'}${node.kind === 'drop' && isPingStale(node.ping?.at) ? ' atlas-ping--stale' : ''}${node.warnings?.length ? ' atlas-schematic-node--warn' : ''}`}
                             onClick={() => {
                                 if (node.kind === 'drop') onSelectDrop?.(node.id);
+                                else if (node.kind === 'hub') onSelectHub?.(node.id, node.hubCode);
                             }}
                             title={[
                                 node.ip || node.label,
+                                node.wireless ? 'wireless' : null,
                                 ...(node.warnings || []).map((w) => w.findingType)
                             ].filter(Boolean).join(' · ')}
                         >
@@ -39,6 +48,7 @@ export function ChannelSchematic({ schematic, onSelectDrop, onPingChannel, onPin
                             {node.inventoryName && <span className="atlas-schematic-sub">{node.inventoryName}</span>}
                             {node.ip && <span className="atlas-schematic-sub">{node.ip}</span>}
                             {node.model && <span className="atlas-schematic-sub">{node.model}</span>}
+                            {node.wireless ? <span className="atlas-schematic-warn">Wireless</span> : null}
                             {!!node.warnings?.length && (
                                 <span className="atlas-schematic-warn">
                                     {node.warnings.length} finding{node.warnings.length === 1 ? '' : 's'}

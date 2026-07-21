@@ -39,18 +39,50 @@ export function rowsToCsv(rows) {
 export function exportDropsCsv(snap, opts = {}) {
     const scope = opts.scope || 'network';
     const drops = dropsInScope(snap, scope);
-    const rows = drops.map((d) => ({
-        channel: d.channelNumber,
-        drop: d.dropNumber,
-        inventoryName: d.inventoryName,
-        ip: d.ip,
-        model: d.model,
-        manufacturer: d.manufacturer,
-        lat: d.lat,
-        lon: d.lon
-    }));
+    const rows = drops.map((d) => {
+        const ping = d.ip ? snap.pingResults?.[d.ip] : null;
+        return {
+            channel: d.channelNumber,
+            drop: d.dropNumber,
+            inventoryName: d.inventoryName,
+            ip: d.ip,
+            model: d.model,
+            manufacturer: d.manufacturer,
+            wireless: d.wireless ? 'yes' : '',
+            lat: d.lat,
+            lon: d.lon,
+            pingStatus: ping?.status || 'untested',
+            pingRttMs: ping?.rttMs ?? '',
+            pingAt: ping?.at || ''
+        };
+    });
     const suffix = scope === 'selection' ? 'selection' : 'network';
     downloadTextFile(`atlas-drops-${suffix}-${Date.now()}.csv`, rowsToCsv(rows));
+}
+
+/**
+ * HTML table rows for a printable findings list.
+ * @param {import('./types.js').AtlasFinding[]} findings
+ * @param {number} [limit=40]
+ */
+export function findingsTableHtml(findings, limit = 40) {
+    const list = (findings || []).slice(0, limit);
+    if (!list.length) return '<p class="muted">No findings in this scope.</p>';
+    const rows = list.map((f) =>
+        `<tr><td>${escHtml(f.findingType)}</td><td>${escHtml(f.severity)}</td><td>${escHtml(f.status)}</td><td>${escHtml(f.description)}</td><td>${escHtml(f.ip || '')}</td></tr>`
+    ).join('');
+    const more = (findings || []).length > limit
+        ? `<p class="muted">Showing ${limit} of ${findings.length}.</p>`
+        : '';
+    return `${more}<table><tr><th>Type</th><th>Severity</th><th>Status</th><th>Description</th><th>IP</th></tr>${rows}</table>`;
+}
+
+function escHtml(v) {
+    return String(v ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
 }
 
 /**

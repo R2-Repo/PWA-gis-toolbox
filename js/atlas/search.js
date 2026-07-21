@@ -48,7 +48,10 @@ export function searchAtlas(query, limit = 50) {
                 kind: 'drop',
                 id: drop.id,
                 label: drop.inventoryName || `Drop ${drop.dropNumber ?? '?'}`,
-                meta: `Ch ${drop.channelNumber || '?'} · D${drop.dropNumber ?? '?'} · ${drop.ip || 'no IP'}`
+                meta: `Ch ${drop.channelNumber || '?'} · D${drop.dropNumber ?? '?'} · ${drop.ip || 'no IP'}`,
+                pingStatus: drop.ip
+                    ? (snap.pingResults?.[drop.ip]?.status || 'untested')
+                    : null
             });
         }
         if (hits.length >= limit) return hits;
@@ -74,7 +77,10 @@ export function searchAtlas(query, limit = 50) {
                 kind: 'device',
                 id: dev.id,
                 label: dev.ip || dev.inventoryName || dev.id,
-                meta: [dev.model, dev.deviceType].filter(Boolean).join(' · ')
+                meta: [dev.model, dev.deviceType].filter(Boolean).join(' · '),
+                pingStatus: dev.ip
+                    ? (snap.pingResults?.[dev.ip]?.status || 'untested')
+                    : null
             });
         }
         if (hits.length >= limit) return hits;

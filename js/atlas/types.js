@@ -64,6 +64,9 @@
  * @property {string} [priHub]
  * @property {string} [secHub]
  * @property {string} [source]
+ * @property {boolean} [provisional]
+ * @property {number|null} [lat]
+ * @property {number|null} [lon]
  */
 
 /**
