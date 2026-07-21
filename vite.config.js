@@ -172,7 +172,8 @@ export default defineConfig(({ mode }) => {
     clearScreen: false,
     envPrefix: ['VITE_', 'TAURI_ENV_*'],
     server: {
-      port: 5174,
+      // Desktop uses 9417 (away from common Vite 5173/5174). Web/PWA stays on 5174.
+      port: isDesktop ? 9417 : 5174,
       strictPort: true,
       host: host || false,
       hmr: host

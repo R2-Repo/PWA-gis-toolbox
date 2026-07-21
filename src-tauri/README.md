@@ -12,7 +12,7 @@ Private Windows 11 application that hosts the same React/MapLibre frontend as th
 
 ```bash
 npm install
-npm run dev:desktop        # Tauri window + desktop Vite (port 5174)
+npm run dev:desktop        # Tauri window + desktop Vite (port 9417)
 npm run build:desktop      # frontend only → dist-desktop/
 npm run build:desktop:app  # package .msi / NSIS installer
 ```

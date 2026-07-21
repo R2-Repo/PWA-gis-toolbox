@@ -103,8 +103,9 @@ npm run dev              # web/PWA dev server
 npm run build            # production web build → dist/ (used by Pages deploy)
 npm run build:web        # explicit web build → dist-web/
 npm run build:desktop    # Windows frontend build → dist-desktop/ (no PWA SW)
-npm run dev:desktop:ui   # desktop Vite mode in a browser (no Tauri window)
-npm run dev:desktop      # Tauri Windows shell + desktop Vite (requires Rust + Windows)
+npm run dev:desktop:ui   # desktop Vite mode in a browser (port 9417; no Tauri window)
+npm run dev:desktop      # Tauri Windows shell + desktop Vite on port 9417 (requires Rust + Windows)
+                         # Or double-click Start-Desktop-Dev.bat (frees 9417 first, keeps window open)
 npm run build:desktop:app # package Windows installer via Tauri (Windows machine)
 npm test                 # run tests
 ```
