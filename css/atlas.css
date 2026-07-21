@@ -362,6 +362,116 @@ button.atlas-dash-card--action:hover {
     font-size: 12px;
 }
 
+.app-layout.atlas-workspace-active #map-container {
+    position: relative;
+}
+
+.atlas-map-chrome {
+    position: absolute;
+    z-index: 5;
+    top: 10px;
+    left: 10px;
+    right: 10px;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 8px;
+    pointer-events: none;
+}
+
+.atlas-map-chrome > * {
+    pointer-events: auto;
+}
+
+.atlas-map-focus-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    max-width: min(520px, 100%);
+    padding: 8px 10px;
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.94);
+    border: 1px solid #e2e8f0;
+    box-shadow: 0 4px 14px rgba(15, 23, 42, 0.12);
+    font-size: 12px;
+}
+
+.atlas-map-focus-text {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+    flex: 1;
+}
+
+.atlas-map-focus-text strong {
+    font-size: 13px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.atlas-map-focus-hint {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.atlas-map-legend {
+    padding: 8px 10px;
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.94);
+    border: 1px solid #e2e8f0;
+    box-shadow: 0 4px 14px rgba(15, 23, 42, 0.12);
+    font-size: 11px;
+    min-width: 140px;
+}
+
+.atlas-map-legend-toggle {
+    border: none;
+    background: transparent;
+    padding: 0;
+    font: inherit;
+    font-weight: 600;
+    cursor: pointer;
+    color: #0f172a;
+}
+
+.atlas-map-legend-list {
+    list-style: none;
+    margin: 8px 0 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.atlas-map-legend-list li {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.atlas-map-legend-swatch {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.atlas-map-legend-swatch--ring {
+    background: transparent !important;
+    border: 2px solid;
+    box-sizing: border-box;
+}
+
+.atlas-map-legend-swatch--line {
+    border-radius: 2px;
+    height: 3px;
+    width: 14px;
+}
+
 .atlas-finding-sev {
     flex-shrink: 0;
     font-size: 10px;

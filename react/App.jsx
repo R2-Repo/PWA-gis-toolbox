@@ -77,6 +77,7 @@ import { WorkspaceTabs } from './atlas/WorkspaceTabs.jsx';
 import { AtlasLeftPanel } from './atlas/AtlasLeftPanel.jsx';
 import { AtlasRightPanel } from './atlas/AtlasRightPanel.jsx';
 import { AtlasImportDialog } from './atlas/AtlasImportDialog.jsx';
+import { AtlasMapChrome } from './atlas/AtlasMapChrome.jsx';
 import {
     isAtlasAvailable,
     getWorkspaceMode,
@@ -510,6 +511,7 @@ function AppShell() {
                                 setTimeout(() => mapService.resize(), 100);
                             }}
                         />
+                        {workspaceMode === 'atlas' ? <AtlasMapChrome /> : null}
                         <div className="map-overlay" id="map-drop-overlay">
                             <div>
                                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" style={{ width: 48, height: 48 }}>
