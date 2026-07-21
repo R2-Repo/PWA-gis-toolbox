@@ -30,6 +30,7 @@ import {
     PREF_TRIAGE_MODE
 } from '../../js/atlas/prefs.js';
 import { formatSessionEndLabel } from '../../js/atlas/export.js';
+import { uniqueIps } from '../../js/atlas/clipboard.js';
 import { collectHubIps, findingsInScope, listScopedDropsByPing } from '../../js/atlas/triage.js';
 import { formatPingAge, formatPingWhen, isPingStale } from '../../js/atlas/ping-format.js';
 import { confirm } from '../../js/ui/modals.js';
@@ -271,6 +272,11 @@ export function AtlasRightPanel({
         () => (showAllFindings ? findings : findings.slice(0, 100)),
         [findings, showAllFindings]
     );
+
+    const selectedFindingIps = useMemo(() => {
+        const rows = findings.filter((f) => selectedFindingIds.has(f.id));
+        return uniqueIps(rows.map((f) => f.ip));
+    }, [findings, selectedFindingIds]);
 
     const toggleFindingSelected = (id) => {
         setSelectedFindingIds((prev) => {
@@ -1328,6 +1334,31 @@ export function AtlasRightPanel({
                     >
                         Clear
                     </button>
+                    <CopyIpsButton
+                        ips={selectedFindingIps}
+                        label="Copy selected IPs"
+                        disabled={bulkBusy || !selectedFindingIps.length}
+                    />
+                    {canPing ? (
+                        <button
+                            type="button"
+                            className="btn btn-secondary btn-sm"
+                            disabled={bulkBusy || !selectedFindingIps.length}
+                            title={
+                                selectedFindingIps.length
+                                    ? `Ping ${selectedFindingIps.length} unique IP${selectedFindingIps.length === 1 ? '' : 's'} from selection`
+                                    : 'Selected findings have no IPs'
+                            }
+                            onClick={() => {
+                                setBulkBusy(true);
+                                void Promise.resolve(onPingSelectedIps?.(selectedFindingIps))
+                                    .catch(() => {})
+                                    .finally(() => setBulkBusy(false));
+                            }}
+                        >
+                            Ping selected ({selectedFindingIps.length})
+                        </button>
+                    ) : null}
                     {['Reviewed', 'Ignored', 'Resolved', 'Open'].map((st) => (
                         <button
                             key={st}

@@ -69,7 +69,7 @@ Operator UX:
 - Import history: past `import_batch` rows with counts + diff summary (keep last 50 on apply)
 - Dashboard: inventory counts, wireless/provisional, finding-type cards, ping triage
 - Findings focus: click finding → filter + scroll + highlight row
-- Findings: entityKind chip + Open on map; status/type filters; Show all / CSV; bulk select → status
+- Findings: entityKind chip + Open on map; status/type filters; Show all / CSV; bulk select → status / Copy IPs / Ping selected
 - Reload DB button (left panel) rehydrates from SQLite; stops active monitor after confirm
 - Ping triage: unreachable / stale / untested / needs attention + per-row Ping
 - Hub map + schematic hubs colored by worst-of switch ping rollup
