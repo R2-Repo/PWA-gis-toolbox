@@ -1,4 +1,5 @@
 import { displayPingStatus, formatPingAge } from '../../js/atlas/ping-format.js';
+import { CopyIp, CopyIpsButton } from './CopyIp.jsx';
 
 export function ChannelSchematic({
     schematic,
@@ -22,6 +23,7 @@ export function ChannelSchematic({
                         {openFindings} open
                     </span>
                 )}
+                <CopyIpsButton ips={nodes.map((n) => n.ip)} />
                 {canPing && (
                     <button type="button" className="btn btn-secondary btn-sm" onClick={() => onPingChannel?.(channel.id)}>
                         Ping channel
@@ -76,6 +78,7 @@ export function ChannelSchematic({
                                 Finding
                             </button>
                         )}
+                        {node.ip ? <CopyIp ip={node.ip} /> : null}
                         {canPing && node.kind === 'drop' && node.ip && (
                             <button
                                 type="button"

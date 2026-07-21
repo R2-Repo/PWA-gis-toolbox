@@ -1,7 +1,12 @@
 import { RENDER_LIMITS } from '../map/render-limits.js';
 
 /** Vector service kinds that stream GeoJSON features into the map. */
-export const VECTOR_SERVICE_KINDS = new Set(['arcgis-featureserver', 'geojson-feed', 'wfs']);
+export const VECTOR_SERVICE_KINDS = new Set([
+    'arcgis-featureserver',
+    'arcgis-mapserver-vector',
+    'geojson-feed',
+    'wfs'
+]);
 
 /**
  * @param {string} [kind]

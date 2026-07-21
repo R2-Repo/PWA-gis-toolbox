@@ -1210,6 +1210,23 @@ function _openImportFlowModal(flowProps = {}) {
             const { mountImportFlowDialog } = await import('../../react/tools/mountImportFlowDialog.jsx');
             const { listCatalogLiveLayers } = await import('../live-layers/catalog-schema.js');
             const { addCatalogLayerToMap } = await import('../live-layers/live-layer-bootstrap.js');
+            const { getPlatformBundle } = await import('../platform/create-platform.js');
+            const { hasCapability } = await import('../platform/contracts.js');
+            const platformBundle = getPlatformBundle({ showToast });
+            const desktopUdotAvailable = hasCapability(platformBundle.platform, 'localSqlite')
+                && !!platformBundle.services?.udotFiberDb
+                && platformBundle.platform?.runtime === 'windows';
+
+            let udotSyncMeta = null;
+            if (desktopUdotAvailable) {
+                try {
+                    await platformBundle.services.udotFiberDb.open();
+                    udotSyncMeta = await platformBundle.services.udotFiberDb.getSyncMeta();
+                } catch {
+                    udotSyncMeta = null;
+                }
+            }
+
             const mounted = mountImportFlowDialog(root, {
                 onCancel: () => close(),
                 hasActiveFence: hasActiveImportFence(),
@@ -1261,6 +1278,36 @@ function _openImportFlowModal(flowProps = {}) {
                         showErrorToast(handleError(error, 'Import', 'Add live layer'));
                     }
                 },
+                desktopUdotFiber: desktopUdotAvailable ? {
+                    available: true,
+                    busy: false,
+                    syncMeta: udotSyncMeta,
+                    onSync: async (force) => {
+                        try {
+                            const { syncUdotFiberDbIfStale } = await import('../symbology/udot-fiber/desktop-sync.js');
+                            showToast(force ? 'Force-syncing UDOT Fiber…' : 'Checking UDOT Fiber sync…', 'info');
+                            const result = await syncUdotFiberDbIfStale({ force: !!force });
+                            if (result.skipped) {
+                                showToast(`UDOT Fiber DB fresh (${result.reason})`, 'success');
+                            } else {
+                                showToast('UDOT Fiber Network synced to local DB', 'success');
+                            }
+                            close();
+                            _openImportFlowModal({ ...flowProps, initialLiveLayersView: true });
+                        } catch (error) {
+                            showErrorToast(handleError(error, 'Import', 'UDOT Fiber sync'));
+                        }
+                    },
+                    onLoadLocal: async () => {
+                        close();
+                        try {
+                            const { addUdotFiberFromLocalDb } = await import('../symbology/udot-fiber/map-loader.js');
+                            await addUdotFiberFromLocalDb({ mapService, showToast, refreshUI }, { syncFirst: false });
+                        } catch (error) {
+                            showErrorToast(handleError(error, 'Import', 'UDOT Fiber local load'));
+                        }
+                    }
+                } : null,
                 ...flowProps
             });
             watchOverlayUnmount(overlay, () => mounted.unmount?.());
@@ -3952,6 +3999,22 @@ export function bootstrapAppFromUrl() {
 export async function bootstrapDesktopPlatform() {
     try {
         await refreshPlatformBundle({ showToast });
+        // Background UDOT Fiber SQLite sync when stale (24h) — never blocks UI
+        void (async () => {
+            try {
+                const { platform, services } = getPlatformBundle({ showToast });
+                if (platform?.runtime !== 'windows' || !services?.udotFiberDb) return;
+                const { syncUdotFiberDbIfStale } = await import('../symbology/udot-fiber/desktop-sync.js');
+                const result = await syncUdotFiberDbIfStale({ force: false });
+                if (!result?.skipped) {
+                    logger.info('UDOTFiber', 'Background sync completed', result?.counts || {});
+                }
+            } catch (syncErr) {
+                logger.warn('UDOTFiber', 'Background sync skipped/failed', {
+                    message: syncErr?.message || String(syncErr)
+                });
+            }
+        })();
     } catch (err) {
         logger.warn('Platform', 'Desktop handshake failed', {
             message: err?.message || String(err)

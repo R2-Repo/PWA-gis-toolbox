@@ -10,13 +10,13 @@ import {
     exportFindingsCsv,
     exportPingSessionCsv,
     exportTriageCsv,
-    isPartialSessionExport,
     openPrintableReport
 } from '../../js/atlas/export.js';
 import {
     atlasNotify,
     bulkUpdateFindingStatus,
     deleteAtlasPingSession,
+    exportAtlasPingSessionFullCsv,
     listAtlasPingSessions,
     loadAtlasPingSession,
     pruneAtlasPingSessions,
@@ -34,6 +34,7 @@ import { collectHubIps, findingsInScope, listScopedDropsByPing } from '../../js/
 import { formatPingAge, formatPingWhen, isPingStale } from '../../js/atlas/ping-format.js';
 import { confirm } from '../../js/ui/modals.js';
 import { ChannelSchematic } from './ChannelSchematic.jsx';
+import { CopyIp, CopyIpsButton } from './CopyIp.jsx';
 import { CollapsibleSection } from '../ui/CollapsibleSection.jsx';
 
 function statusClass(status) {
@@ -518,7 +519,7 @@ export function AtlasRightPanel({
                     <div className="atlas-detail-block">
                         <h4>{dropDetail.inventoryName || `Drop ${dropDetail.dropNumber}`}</h4>
                         <p>Channel {dropDetail.channelNumber} · Drop {dropDetail.dropNumber ?? '—'}</p>
-                        <p>IP: {dropDetail.ip || '—'}</p>
+                        <p>IP: <CopyIp ip={dropDetail.ip} /></p>
                         <p>{[dropDetail.manufacturer, dropDetail.model].filter(Boolean).join(' · ') || '—'}</p>
                         {dropDetail.wireless ? <p className="atlas-tag">Wireless</p> : null}
                         <p className={dropPing && isPingStale(dropPing.at) ? 'atlas-stale-warn' : 'atlas-muted'}>
@@ -528,8 +529,11 @@ export function AtlasRightPanel({
                             {formatPingAge(dropPing?.at)}
                             {dropPing?.at ? ` (${formatPingWhen(dropPing.at)})` : ''}
                         </p>
-                        {canPing && dropDetail.ip && (
+                        {dropDetail.ip ? (
                             <div className="atlas-toolbar">
+                                <CopyIpsButton ips={[dropDetail.ip]} label="Copy IP" />
+                                {canPing ? (
+                                    <>
                                 <button type="button" className="btn btn-secondary btn-sm" onClick={() => onPingDrop?.(dropDetail.id)}>Ping once</button>
                                 <select className="input-sm" value={monitorInterval} onChange={(e) => changeMonitorInterval(e.target.value)}>
                                     <option value="continuous">Continuous (~5s)</option>
@@ -548,23 +552,24 @@ export function AtlasRightPanel({
                                 >
                                     Start monitor
                                 </button>
+                                    </>
+                                ) : null}
                             </div>
-                        )}
+                        ) : null}
                     </div>
                 )}
                 {deviceDetail && (
                     <div className="atlas-detail-block">
                         <h4>{deviceDetail.inventoryName || deviceDetail.ip || 'Device'}</h4>
                         <p>{[deviceDetail.deviceType, deviceDetail.manufacturer, deviceDetail.model].filter(Boolean).join(' · ') || '—'}</p>
-                        <p>IP: {deviceDetail.ip || '—'}</p>
+                        <p>IP: <CopyIp ip={deviceDetail.ip} /></p>
                         {deviceDetail.provisional ? <p className="atlas-tag atlas-tag--warn">Provisional</p> : null}
                         {(deviceDetail.gateway || deviceDetail.subnet || deviceDetail.subnetMask) && (
                             <p className="atlas-muted">
-                                {[
-                                    deviceDetail.gateway ? `GW ${deviceDetail.gateway}` : null,
-                                    deviceDetail.subnet ? `Subnet ${deviceDetail.subnet}` : null,
-                                    deviceDetail.subnetMask ? `Mask ${deviceDetail.subnetMask}` : null
-                                ].filter(Boolean).join(' · ')}
+                                {deviceDetail.gateway ? <>GW <CopyIp ip={deviceDetail.gateway} />{' · '}</> : null}
+                                {deviceDetail.subnet ? `Subnet ${deviceDetail.subnet}` : null}
+                                {deviceDetail.subnet && deviceDetail.subnetMask ? ' · ' : null}
+                                {deviceDetail.subnetMask ? `Mask ${deviceDetail.subnetMask}` : null}
                             </p>
                         )}
                         {deviceDetail.status && <p className="atlas-muted">Status: {deviceDetail.status}</p>}
@@ -574,34 +579,39 @@ export function AtlasRightPanel({
                             {' · '}
                             {formatPingAge(devicePing?.at)}
                         </p>
-                        {canPing && deviceDetail.ip && (
+                        {deviceDetail.ip ? (
                             <div className="atlas-toolbar">
-                                <button
-                                    type="button"
-                                    className="btn btn-secondary btn-sm"
-                                    onClick={() => onPingSelectedIps?.([deviceDetail.ip])}
-                                >
-                                    Ping device
-                                </button>
-                                <select className="input-sm" value={monitorInterval} onChange={(e) => changeMonitorInterval(e.target.value)}>
-                                    <option value="continuous">Continuous (~5s)</option>
-                                    <option value={1}>Every 1 min</option>
-                                    <option value={5}>Every 5 min</option>
-                                </select>
-                                <button
-                                    type="button"
-                                    className="btn btn-ghost btn-sm"
-                                    disabled={!!snap.activeSession}
-                                    onClick={() => onStartMonitor?.({
-                                        targets: [deviceDetail.ip],
-                                        interval: monitorInterval,
-                                        label: deviceDetail.inventoryName || deviceDetail.ip
-                                    })}
-                                >
-                                    Start monitor
-                                </button>
+                                <CopyIpsButton ips={[deviceDetail.ip]} label="Copy IP" />
+                                {canPing ? (
+                                    <>
+                                        <button
+                                            type="button"
+                                            className="btn btn-secondary btn-sm"
+                                            onClick={() => onPingSelectedIps?.([deviceDetail.ip])}
+                                        >
+                                            Ping device
+                                        </button>
+                                        <select className="input-sm" value={monitorInterval} onChange={(e) => changeMonitorInterval(e.target.value)}>
+                                            <option value="continuous">Continuous (~5s)</option>
+                                            <option value={1}>Every 1 min</option>
+                                            <option value={5}>Every 5 min</option>
+                                        </select>
+                                        <button
+                                            type="button"
+                                            className="btn btn-ghost btn-sm"
+                                            disabled={!!snap.activeSession}
+                                            onClick={() => onStartMonitor?.({
+                                                targets: [deviceDetail.ip],
+                                                interval: monitorInterval,
+                                                label: deviceDetail.inventoryName || deviceDetail.ip
+                                            })}
+                                        >
+                                            Start monitor
+                                        </button>
+                                    </>
+                                ) : null}
                             </div>
-                        )}
+                        ) : null}
                     </div>
                 )}
                 {siteDetail && (
@@ -618,8 +628,10 @@ export function AtlasRightPanel({
                             {siteDrops.map((d) => (
                                 <li key={d.id}>
                                     <button type="button" className="atlas-linkish" onClick={() => onSelect?.({ kind: 'drop', id: d.id })}>
-                                        Ch {d.channelNumber || '?'} · D{d.dropNumber ?? '?'} · {d.ip || 'no IP'}
+                                        Ch {d.channelNumber || '?'} · D{d.dropNumber ?? '?'}
                                     </button>
+                                    {' · '}
+                                    <CopyIp ip={d.ip} />
                                     {canPing && d.ip && (
                                         <button type="button" className="btn btn-ghost btn-sm" onClick={() => onPingDrop?.(d.id)}>Ping</button>
                                     )}
@@ -627,27 +639,32 @@ export function AtlasRightPanel({
                             ))}
                             {!siteDrops.length && <li className="atlas-muted">No linked drops.</li>}
                         </ul>
-                        {canPing && siteDrops.some((d) => d.ip) && (
+                        {siteDrops.some((d) => d.ip) && (
                             <div className="atlas-toolbar">
-                                <button
-                                    type="button"
-                                    className="btn btn-secondary btn-sm"
-                                    onClick={() => onPingSelectedIps?.(siteDrops.map((d) => d.ip).filter(Boolean))}
-                                >
-                                    Ping site switches
-                                </button>
-                                <button
-                                    type="button"
-                                    className="btn btn-ghost btn-sm"
-                                    disabled={!!snap.activeSession}
-                                    onClick={() => onStartMonitor?.({
-                                        targets: siteDrops.map((d) => d.ip).filter(Boolean),
-                                        interval: monitorInterval,
-                                        label: siteDetail.inventoryName || siteDetail.siteId || 'Site'
-                                    })}
-                                >
-                                    Start monitor
-                                </button>
+                                <CopyIpsButton ips={siteDrops.map((d) => d.ip)} />
+                                {canPing ? (
+                                    <>
+                                        <button
+                                            type="button"
+                                            className="btn btn-secondary btn-sm"
+                                            onClick={() => onPingSelectedIps?.(siteDrops.map((d) => d.ip).filter(Boolean))}
+                                        >
+                                            Ping site switches
+                                        </button>
+                                        <button
+                                            type="button"
+                                            className="btn btn-ghost btn-sm"
+                                            disabled={!!snap.activeSession}
+                                            onClick={() => onStartMonitor?.({
+                                                targets: siteDrops.map((d) => d.ip).filter(Boolean),
+                                                interval: monitorInterval,
+                                                label: siteDetail.inventoryName || siteDetail.siteId || 'Site'
+                                            })}
+                                        >
+                                            Start monitor
+                                        </button>
+                                    </>
+                                ) : null}
                             </div>
                         )}
                     </div>
@@ -661,32 +678,41 @@ export function AtlasRightPanel({
                             Secondary hub: {channelDetail.channel.secondaryHubCode || '—'}
                         </p>
                         <p>{channelDetail.dropCount} drops · {channelDetail.ipCount} with IP</p>
-                        {canPing && channelDetail.ipCount > 0 && (
+                        {channelDetail.ipCount > 0 && (
                             <div className="atlas-toolbar">
-                                <button
-                                    type="button"
-                                    className="btn btn-secondary btn-sm"
-                                    onClick={() => onPingChannel?.(channelDetail.channel.id)}
-                                >
-                                    Ping channel
-                                </button>
-                                <button
-                                    type="button"
-                                    className="btn btn-ghost btn-sm"
-                                    disabled={!!snap.activeSession}
-                                    onClick={() => {
-                                        const ips = (snap.drops || [])
-                                            .filter((d) => d.channelId === channelDetail.channel.id && d.ip)
-                                            .map((d) => d.ip);
-                                        onStartMonitor?.({
-                                            targets: ips,
-                                            interval: monitorInterval,
-                                            label: `Channel ${channelDetail.channel.channelNumber}`
-                                        });
-                                    }}
-                                >
-                                    Start monitor
-                                </button>
+                                <CopyIpsButton
+                                    ips={(snap.drops || [])
+                                        .filter((d) => d.channelId === channelDetail.channel.id)
+                                        .map((d) => d.ip)}
+                                />
+                                {canPing ? (
+                                    <>
+                                        <button
+                                            type="button"
+                                            className="btn btn-secondary btn-sm"
+                                            onClick={() => onPingChannel?.(channelDetail.channel.id)}
+                                        >
+                                            Ping channel
+                                        </button>
+                                        <button
+                                            type="button"
+                                            className="btn btn-ghost btn-sm"
+                                            disabled={!!snap.activeSession}
+                                            onClick={() => {
+                                                const ips = (snap.drops || [])
+                                                    .filter((d) => d.channelId === channelDetail.channel.id && d.ip)
+                                                    .map((d) => d.ip);
+                                                onStartMonitor?.({
+                                                    targets: ips,
+                                                    interval: monitorInterval,
+                                                    label: `Channel ${channelDetail.channel.channelNumber}`
+                                                });
+                                            }}
+                                        >
+                                            Start monitor
+                                        </button>
+                                    </>
+                                ) : null}
                             </div>
                         )}
                     </div>
@@ -694,8 +720,10 @@ export function AtlasRightPanel({
                 {hubSummary && (
                     <div className="atlas-detail-block">
                         <h4>{hubSummary.hub.name || hubSummary.hub.hubCode}</h4>
-                        {canPing && (
-                            <div className="atlas-toolbar">
+                        <div className="atlas-toolbar">
+                            <CopyIpsButton ips={collectHubIps(hubSummary.hub.id, 'all', snap)} />
+                            {canPing ? (
+                                <>
                                 <button type="button" className="btn btn-secondary btn-sm" onClick={() => onPingHub?.(hubSummary.hub.id, 'all')}>
                                     Ping all hub switches
                                 </button>
@@ -720,8 +748,9 @@ export function AtlasRightPanel({
                                 >
                                     Start monitor
                                 </button>
-                            </div>
-                        )}
+                                </>
+                            ) : null}
+                        </div>
                         <p><strong>Primary channels:</strong> {hubSummary.primary.length}</p>
                         <ul className="atlas-simple-list">
                             {hubSummary.primary.map((row) => (
@@ -795,6 +824,7 @@ export function AtlasRightPanel({
                 </p>
                 {triageRows.length > 0 && (
                     <div className="atlas-toolbar">
+                        <CopyIpsButton ips={triageRows.map((r) => r.ip)} />
                         {canPing && (
                             <>
                                 <button
@@ -850,8 +880,10 @@ export function AtlasRightPanel({
                                 className="atlas-linkish"
                                 onClick={() => onSelect?.({ kind: 'drop', id: row.drop.id })}
                             >
-                                Ch {row.drop.channelNumber || '?'} · D{row.drop.dropNumber ?? '?'} · {row.ip}
+                                Ch {row.drop.channelNumber || '?'} · D{row.drop.dropNumber ?? '?'}
                             </button>
+                            {' · '}
+                            <CopyIp ip={row.ip} />
                             <span className={`atlas-muted${row.stale ? ' atlas-stale-warn' : ''}`}>
                                 {' '}· {row.status} · {row.age}
                             </span>
@@ -888,6 +920,7 @@ export function AtlasRightPanel({
                             <p className="atlas-stale-warn">{area.warnings.length} open finding(s) in this area</p>
                         )}
                         <div className="atlas-toolbar">
+                            <CopyIpsButton ips={area.drops.map((d) => d.ip)} />
                             {canPing && (
                                 <>
                                     <button
@@ -980,7 +1013,7 @@ export function AtlasRightPanel({
                             <ul className="atlas-simple-list atlas-monitor-tail">
                                 {monitorTail.map((row, i) => (
                                     <li key={`${row.timestamp || row.at}-${row.ip}-${i}`}>
-                                        <span className="atlas-mono">{row.ip}</span>
+                                        <CopyIp ip={row.ip} />
                                         {' · '}
                                         {row.status}
                                         {row.rttMs != null ? ` · ${row.rttMs} ms` : ''}
@@ -1120,31 +1153,41 @@ export function AtlasRightPanel({
                                             : '';
                                     })()}
                                 </span>
+                                <CopyIpsButton
+                                    ips={historyDetail.results.map((r) => r.ip)}
+                                    disabled={historyBusy}
+                                />
+                                <button
+                                    type="button"
+                                    className="btn btn-secondary btn-sm"
+                                    disabled={historyBusy || !historyDetail.session?.id}
+                                    title="Export every sample for this session from the database"
+                                    onClick={() => {
+                                        const id = historyDetail.session?.id;
+                                        if (!id) return;
+                                        setHistoryBusy(true);
+                                        void exportAtlasPingSessionFullCsv(id, {
+                                            label: historyDetail.session?.label
+                                        })
+                                            .catch((err) => {
+                                                atlasNotify(err?.message || 'Full export failed', 'error');
+                                            })
+                                            .finally(() => setHistoryBusy(false));
+                                    }}
+                                >
+                                    Export full CSV
+                                </button>
                                 <button
                                     type="button"
                                     className="btn btn-ghost btn-sm"
                                     disabled={historyBusy}
-                                    title={
-                                        (pastSessions.find((s) => s.id === historyDetail.session?.id)?.sampleCount || 0)
-                                        > historyDetail.results.length
-                                            ? 'Exports currently loaded samples only — Load more first for a fuller CSV'
-                                            : 'Export loaded samples'
-                                    }
-                                    onClick={() => {
-                                        const total = pastSessions.find((s) => s.id === historyDetail.session?.id)?.sampleCount;
-                                        if (isPartialSessionExport(historyDetail.results.length, total)) {
-                                            atlasNotify(
-                                                `Exported ${historyDetail.results.length} of ${total} samples — Load more for a fuller CSV`,
-                                                'warning'
-                                            );
-                                        }
-                                        exportPingSessionCsv(historyDetail.results, {
-                                            label: historyDetail.session?.label,
-                                            sessionId: historyDetail.session?.id
-                                        });
-                                    }}
+                                    title="Export only samples currently loaded in this panel"
+                                    onClick={() => exportPingSessionCsv(historyDetail.results, {
+                                        label: historyDetail.session?.label,
+                                        sessionId: historyDetail.session?.id
+                                    })}
                                 >
-                                    Export CSV ({historyDetail.results.length})
+                                    Export loaded ({historyDetail.results.length})
                                 </button>
                                 <button
                                     type="button"
@@ -1174,7 +1217,7 @@ export function AtlasRightPanel({
                             <ul className="atlas-simple-list atlas-monitor-tail">
                                 {historyDetail.results.slice(0, historyVisible).map((row, i) => (
                                     <li key={`${row.at}-${row.ip}-${i}`}>
-                                        <span className="atlas-mono">{row.ip}</span>
+                                        <CopyIp ip={row.ip} />
                                         {' · '}
                                         {row.status}
                                         {row.rttMs != null ? ` · ${row.rttMs} ms` : ''}
@@ -1245,6 +1288,7 @@ export function AtlasRightPanel({
                             <option key={t} value={t}>{t}</option>
                         ))}
                     </select>
+                    <CopyIpsButton ips={findings.map((f) => f.ip)} />
                     <button type="button" className="btn btn-ghost btn-sm" onClick={() => exportFindingsCsv(findings)}>Export CSV</button>
                     {findings.length > 100 && (
                         <button
@@ -1325,7 +1369,7 @@ export function AtlasRightPanel({
                                 {(f.entityKind || f.entityId || f.ip) ? (
                                     <p className="atlas-finding-entity">
                                         {f.entityKind ? <span className="atlas-tag">{f.entityKind}</span> : null}
-                                        {f.ip ? <span className="atlas-mono">{f.ip}</span> : null}
+                                        {f.ip ? <CopyIp ip={f.ip} /> : null}
                                         {(f.entityId || f.ip) ? (
                                             <button
                                                 type="button"

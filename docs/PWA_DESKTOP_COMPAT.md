@@ -107,6 +107,7 @@ You do **not** need to retest the entire product after every change — only the
 ## Related
 
 - Plan / architecture: [`PWA_DESKTOP_WORKFLOW_PLAN.md`](./PWA_DESKTOP_WORKFLOW_PLAN.md)
+- UDOT Fiber symbology (shared style pack + desktop SQLite): [`UDOT_FIBER_SYMBOLOGY.md`](./UDOT_FIBER_SYMBOLOGY.md)
 - Contracts: `js/platform/contracts.js`
 - Skills: `.cursor/skills/fix-pwa/`, `fix-desktop/`, `feature-both/`, `pwa-desktop-compat/`
 - Rules: `.cursor/rules/fix-pwa.mdc`, `fix-desktop.mdc`, `feature-both.mdc`, `platform-shared.mdc`

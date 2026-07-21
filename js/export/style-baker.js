@@ -2,6 +2,7 @@
  * Bake smart styling rules into portable per-feature symbology (Simplestyle / KML props).
  */
 import { resolveFeatureStyle, isSmartStyleActive } from '../map/style-engine.js';
+import { resolveStyle as resolveUdotFiberFeatureStyle } from '../symbology/udot-fiber/resolve-style.js';
 
 /**
  * @param {object|null} geometry
@@ -24,6 +25,18 @@ export function bakeFeatureSimpleStyle(feature, layerStyle) {
     if (!layerStyle || !isSmartStyleActive(layerStyle)) return null;
     const kind = geometryKindFromFeature(feature.geometry);
     const s = resolveFeatureStyle(layerStyle, feature, kind);
+
+    // Prefer Bentley/ArcGIS resolved color when style pack metadata is present
+    const udotKey = layerStyle?._udotFiber?.layerKey;
+    if (udotKey) {
+        const udot = resolveUdotFiberFeatureStyle(udotKey, feature?.properties || {});
+        if (udot?.color) {
+            s.strokeColor = udot.color;
+            s.fillColor = udot.color;
+            if (udot.width && kind === 'line') s.strokeWidth = udot.width;
+        }
+    }
+
     const props = {
         stroke: s.strokeColor,
         'stroke-width': s.strokeWidth,

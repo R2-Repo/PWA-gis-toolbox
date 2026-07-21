@@ -1,7 +1,7 @@
 import { LIVE_LAYERS } from './catalog.js';
 
 /**
- * @typedef {'wms' | 'arcgis-mapserver' | 'arcgis-featureserver' | 'wfs' | 'geojson-feed'} ServiceKind
+ * @typedef {'wms' | 'arcgis-mapserver' | 'arcgis-mapserver-vector' | 'arcgis-featureserver' | 'wfs' | 'geojson-feed'} ServiceKind
  */
 
 /**

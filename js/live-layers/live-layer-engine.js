@@ -4,6 +4,7 @@ import { getLayers } from '../core/state.js';
 import bus from '../core/event-bus.js';
 import { compilePaint, getBaseFlatStyle } from '../map/style-engine.js';
 import { RENDER_LIMITS } from '../map/render-limits.js';
+import { buildMapLabelLayerSpec, resolveLayerLabels } from '../map/map-labels.js';
 import { inferServiceKind } from './catalog-schema.js';
 import { resolveServiceLayerStyle, scalePaintOpacity } from './live-layer-styles.js';
 import {
@@ -12,6 +13,11 @@ import {
     pruneSelectionToViewport,
     tagServiceFeatures
 } from './live-layer-viewport.js';
+import {
+    ensureUdotGlyphImage,
+    resolvePointGlyph
+} from '../symbology/udot-fiber/glyphs.js';
+import { matchUdotFiberLayerUrl } from '../symbology/udot-fiber/constants.js';
 import logger from '../core/logger.js';
 
 export {
@@ -140,7 +146,7 @@ export async function addServiceLayer(mapManager, dataset, colorIndex = 0, optio
             getRuntimeMap(mapManager).set(dataset.id, runtime);
             scheduleServiceRefresh(mapManager, dataset.id);
         } else {
-            if (kind === 'arcgis-featureserver') {
+            if (kind === 'arcgis-featureserver' || kind === 'arcgis-mapserver-vector') {
                 await ensureFeatureServerMetadata(dataset, runtime);
             }
 
@@ -152,7 +158,9 @@ export async function addServiceLayer(mapManager, dataset, colorIndex = 0, optio
                 type: 'geojson',
                 data: { type: 'FeatureCollection', features: [] }
             });
-            runtime.mapLayerIds = addVectorLayers(map, dataset.id, sourceId, layerStyle, opacity);
+            runtime.mapLayerIds = addVectorLayers(map, dataset.id, sourceId, layerStyle, opacity, {
+                serviceUrl: runtime.url
+            });
 
             mapManager.dataLayers.set(dataset.id, {
                 sourceId,
@@ -230,9 +238,13 @@ function buildRasterTileUrl(runtime, service) {
 
 /**
  * @param {import('maplibre-gl').Map} map
+ * @param {string} datasetId
+ * @param {string} sourceId
  * @param {ReturnType<typeof resolveServiceLayerStyle>} layerStyle
+ * @param {number} opacity
+ * @param {{ serviceUrl?: string }} [opts]
  */
-function addVectorLayers(map, datasetId, sourceId, layerStyle, opacity) {
+function addVectorLayers(map, datasetId, sourceId, layerStyle, opacity, opts = {}) {
     const ids = [];
     const polygonId = `svc-lyr-${datasetId}-fill`;
     const lineId = `svc-lyr-${datasetId}-line`;
@@ -277,7 +289,73 @@ function addVectorLayers(map, datasetId, sourceId, layerStyle, opacity) {
     });
 
     ids.push(polygonId, lineId, pointId);
+
+    const labelCfg = resolveLayerLabels(layerStyle, null);
+    if (labelCfg) {
+        const labelSpec = buildMapLabelLayerSpec(datasetId, sourceId, labelCfg, false);
+        if (labelSpec) {
+            labelSpec.id = `svc-${labelSpec.id}`;
+            if (layerStyle?.labels?.color != null) {
+                labelSpec.paint = {
+                    ...labelSpec.paint,
+                    'text-color': layerStyle.labels.color
+                };
+            }
+            map.addLayer(labelSpec);
+            ids.push(labelSpec.id);
+        }
+    }
+
+    const udotMatch = matchUdotFiberLayerUrl(opts.serviceUrl);
+    if (udotMatch && layerStyle?._udotFiber?.geometry === 'point') {
+        const glyphLayerId = `svc-lyr-${datasetId}-glyph`;
+        ensureUdotGlyphImage(map, 'square-x', '#00ff00', 18);
+        ensureUdotGlyphImage(map, 'bowtie', '#ff0000', 18);
+        ensureUdotGlyphImage(map, 'dashed-box', '#ffffff', 18);
+        ensureUdotGlyphImage(map, 'diamond', '#ffff00', 18);
+        ensureUdotGlyphImage(map, 'circle', styPoint.fillColor || '#ffffff', 16);
+        map.addLayer({
+            id: glyphLayerId,
+            type: 'symbol',
+            source: sourceId,
+            filter: ['all',
+                ['match', ['geometry-type'], ['Point', 'MultiPoint'], true, false],
+                ['has', '_udotGlyph']
+            ],
+            layout: {
+                'icon-image': ['get', '_udotGlyph'],
+                'icon-size': 1,
+                'icon-allow-overlap': true,
+                'icon-ignore-placement': true
+            }
+        });
+        ids.push(glyphLayerId);
+    }
+
     return ids;
+}
+
+/**
+ * Stamp procedural glyph image ids onto UDOT Fiber point features.
+ * @param {string} serviceUrl
+ * @param {object[]} features
+ * @param {import('maplibre-gl').Map} map
+ */
+function decorateUdotFiberGlyphProps(serviceUrl, features, map) {
+    const match = matchUdotFiberLayerUrl(serviceUrl);
+    if (!match || !features?.length) return features;
+    return features.map((feature) => {
+        const hit = resolvePointGlyph(match.key, feature.properties || {});
+        if (!hit) return feature;
+        const imageId = ensureUdotGlyphImage(map, hit.glyph, hit.color || '#ffffff', 18);
+        return {
+            ...feature,
+            properties: {
+                ...feature.properties,
+                _udotGlyph: imageId
+            }
+        };
+    });
 }
 
 /**
@@ -298,7 +376,8 @@ export async function refreshServiceLayer(mapManager, layerId) {
     try {
         const raw = await fetchVectorData(map, runtime);
         const limited = applyRenderLimits(raw.features || []);
-        const tagged = tagServiceFeatures(layerId, limited.features, runtime.objectIdField);
+        let tagged = tagServiceFeatures(layerId, limited.features, runtime.objectIdField);
+        tagged = decorateUdotFiberGlyphProps(runtime.url, tagged, map);
         const geojson = { type: 'FeatureCollection', features: tagged };
 
         runtime.viewportCache = geojson;
@@ -383,7 +462,7 @@ async function fetchVectorData(map, runtime) {
         return { type: 'FeatureCollection', features: [] };
     }
 
-    if (runtime.kind === 'arcgis-featureserver') {
+    if (runtime.kind === 'arcgis-featureserver' || runtime.kind === 'arcgis-mapserver-vector') {
         return fetchArcgisFeatureServerViewport(map, runtime);
     }
 

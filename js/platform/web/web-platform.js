@@ -3,6 +3,7 @@ import { createWebComputeService } from './web-compute-service.js';
 import { createWebJobService } from './web-job-service.js';
 import { createWebWindowService } from './web-window-service.js';
 import { createWebAtlasDbService } from './web-atlas-db-service.js';
+import { createWebUdotFiberDbService } from './web-udot-fiber-db-service.js';
 import { createWebPingService } from './web-ping-service.js';
 
 /**
@@ -59,6 +60,7 @@ export function createWebPlatform(opts = {}) {
             jobs: createWebJobService(),
             windows: createWebWindowService(),
             atlasDb: createWebAtlasDbService(),
+            udotFiberDb: createWebUdotFiberDbService(),
             ping: createWebPingService(),
             notifications: {
                 show: showToast

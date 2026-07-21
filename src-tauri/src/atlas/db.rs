@@ -746,7 +746,9 @@ pub fn atlas_ping_list_sessions(
     })
 }
 
-/// Load one session + recent samples (newest first).
+/// Load one session + samples.
+/// Default: newest-first with `limit` (UI preview).
+/// `all: true`: chronological ASC with a high safety cap (full CSV export).
 #[tauri::command]
 pub fn atlas_ping_load_session(
     payload: Value,
@@ -755,11 +757,23 @@ pub fn atlas_ping_load_session(
     with_conn(&state, |conn| {
         let session_id = json_str(payload.get("sessionId"))
             .ok_or_else(|| "sessionId is required".to_string())?;
-        let limit = payload
-            .get("limit")
-            .and_then(|v| v.as_i64())
-            .unwrap_or(200)
-            .clamp(1, 5000);
+        let load_all = payload
+            .get("all")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        let limit = if load_all {
+            payload
+                .get("limit")
+                .and_then(|v| v.as_i64())
+                .unwrap_or(500_000)
+                .clamp(1, 500_000)
+        } else {
+            payload
+                .get("limit")
+                .and_then(|v| v.as_i64())
+                .unwrap_or(200)
+                .clamp(1, 5000)
+        };
 
         let session: Option<Value> = conn
             .query_row(
@@ -781,17 +795,22 @@ pub fn atlas_ping_load_session(
             return Err(format!("Ping session not found: {session_id}"));
         };
 
-        let mut stmt = conn
-            .prepare(
-                r#"
+        let order = if load_all {
+            "ASC"
+        } else {
+            "DESC"
+        };
+        let sql = format!(
+            r#"
                 SELECT target_ip, status, rtt_ms, error, at
                 FROM ping_result
                 WHERE session_id = ?1
-                ORDER BY COALESCE(at, '') DESC
+                ORDER BY COALESCE(at, '') {order}
                 LIMIT ?2
-                "#,
-            )
-            .map_err(|e| e.to_string())?;
+                "#
+        );
+
+        let mut stmt = conn.prepare(&sql).map_err(|e| e.to_string())?;
         let rows = stmt
             .query_map(params![session_id, limit], |r| {
                 Ok(json!({
@@ -814,6 +833,7 @@ pub fn atlas_ping_load_session(
         Ok(json!({
             "session": session,
             "results": results,
+            "all": load_all,
         }))
     })
 }

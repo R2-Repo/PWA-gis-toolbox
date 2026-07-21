@@ -537,12 +537,37 @@ export async function listAtlasPingSessions(opts = {}) {
 /**
  * Load samples for a past session.
  * @param {string} sessionId
- * @param {{ limit?: number }} [opts]
+ * @param {{ limit?: number, all?: boolean }} [opts]
  */
 export async function loadAtlasPingSession(sessionId, opts = {}) {
     const service = db();
     if (!service?.loadPingSession) throw new Error('Ping session history unavailable');
-    return service.loadPingSession({ sessionId, limit: opts.limit ?? 200 });
+    return service.loadPingSession({
+        sessionId,
+        limit: opts.limit ?? (opts.all ? 500000 : 200),
+        all: opts.all === true
+    });
+}
+
+/**
+ * Export every sample for a session from SQLite (chronological).
+ * @param {string} sessionId
+ * @param {{ label?: string }} [opts]
+ * @returns {Promise<number>} row count exported
+ */
+export async function exportAtlasPingSessionFullCsv(sessionId, opts = {}) {
+    if (!sessionId) return 0;
+    const detail = await loadAtlasPingSession(sessionId, { all: true });
+    const results = detail?.results || [];
+    exportPingSessionCsv(results, {
+        label: opts.label || detail?.session?.label,
+        sessionId
+    });
+    notify(
+        `Exported ${results.length} sample${results.length === 1 ? '' : 's'}`,
+        'success'
+    );
+    return results.length;
 }
 
 /**

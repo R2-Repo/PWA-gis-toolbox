@@ -61,7 +61,9 @@ Operator UX:
 - Map hover tooltips (hub/drop label, IP, ping); `/` focuses search, `Esc` clears area then selection
 - Map focus bar (current selection/area + Clear) and collapsible ping legend
 - Monitor history Load more (screen + DB); search Show more when truncated; empty-DB import CTA
-- Operator finish: `?` shortcuts help; left selection Clear chip; select all filtered findings; partial session CSV toast
+- Operator finish: `?` shortcuts help; left selection Clear chip; select all filtered findings
+- Monitor history: Export full CSV from SQLite (all samples); Export loaded for preview only
+- Copy IP: click any IP; Copy IPs on triage / hub / channel / site / area / findings / schematic
 - Dashboard: inventory counts, wireless/provisional, finding-type cards, ping triage
 - Findings focus: click finding → filter + scroll + highlight row
 - Findings: entityKind chip + Open on map; status/type filters; Show all / CSV; bulk select → status

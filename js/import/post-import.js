@@ -10,6 +10,7 @@ import { processInChunks } from '../core/task-runner.js';
 import { isSmartStyleActive } from '../map/style-engine.js';
 import { getLayerDefaultColor } from '../map/layer-palette.js';
 import { detectEmbeddedSimpleStyle, convertLayerSimpleStyleToSmart } from '../map/style-import.js';
+import { resolveUdotFiberStyleForDataset } from '../symbology/udot-fiber/resolve-style.js';
 
 /**
  * @param {object|object[]|null|undefined} result
@@ -215,6 +216,25 @@ export function applyImportLayerStyles(ds, options) {
 
     if (ds._kmlStyle && !mapService.getLayerStyle(ds.id)) {
         mapService.setLayerStyle(ds.id, { ...ds._kmlStyle });
+    }
+
+    // UDOT Fiber Network MapServer — apply shared ArcGIS/Bentley style pack
+    const udotStyle = resolveUdotFiberStyleForDataset(ds);
+    if (udotStyle && !isSmartStyleActive(mapService.getLayerStyle(ds.id))) {
+        if (udotStyle.labels?.enabled) {
+            ds._mapLabels = {
+                field: udotStyle.labels.field,
+                placement: udotStyle.labels.placement,
+                minZoom: udotStyle.labels.minZoom,
+                maxZoom: udotStyle.labels.maxZoom,
+                size: udotStyle.labels.size,
+                color: udotStyle.labels.color,
+                haloColor: udotStyle.labels.haloColor,
+                haloWidth: udotStyle.labels.haloWidth
+            };
+        }
+        mapService.restyleLayer(ds.id, ds, udotStyle);
+        return ds;
     }
 
     if (ds.geojson?.features?.length) {

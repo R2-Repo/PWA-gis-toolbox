@@ -66,6 +66,8 @@ export function ImportFlowDialog({
 
     onAddCatalogLiveLayer,
 
+    desktopUdotFiber = null,
+
     onOptimizeImport,
 
     hasActiveFence = false,
@@ -701,6 +703,8 @@ export function ImportFlowDialog({
                     layers={catalogLiveLayers}
 
                     onAddCatalogLiveLayer={onAddCatalogLiveLayer}
+
+                    desktopUdotFiber={desktopUdotFiber}
 
                 />
 

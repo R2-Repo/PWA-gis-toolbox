@@ -746,6 +746,30 @@ button.atlas-dash-card--action:hover {
     word-break: break-all;
 }
 
+.atlas-copy-ip {
+    border: none;
+    background: none;
+    padding: 0;
+    margin: 0;
+    color: var(--primary, #2563eb);
+    cursor: pointer;
+    font: inherit;
+    font-family: ui-monospace, Consolas, monospace;
+    font-size: 11px;
+    word-break: break-all;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+
+.atlas-copy-ip:hover {
+    color: var(--primary-hover, #1d4ed8);
+}
+
+.atlas-copy-ip:focus-visible {
+    outline: 2px solid var(--primary, #2563eb);
+    outline-offset: 2px;
+}
+
 .atlas-modal h2 {
     margin: 0 0 8px;
     font-size: 18px;

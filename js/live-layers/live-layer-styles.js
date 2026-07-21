@@ -1,6 +1,14 @@
 import { createDefaultStyle, normalizeStyle } from '../map/style-engine.js';
 import { expandCatalogEntry, resolveLiveLayer } from './catalog-schema.js';
 import { LIVE_LAYERS } from './catalog.js';
+export {
+    UDOT_FIBER_STYLE,
+    UDOT_CONDUIT_STYLE,
+    UDOT_CABINETS_STYLE,
+    UDOT_BOXES_STYLE,
+    UDOT_SPLICES_STYLE,
+    UDOT_BUILDING_STYLE
+} from '../symbology/udot-fiber/styles.js';
 
 /** @typedef {import('../map/style-engine.js').ReturnType<typeof createDefaultStyle>} LayerStyle */
 

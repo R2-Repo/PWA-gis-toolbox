@@ -2,6 +2,7 @@ mod atlas;
 mod jobs;
 mod sidecar;
 mod temp_files;
+mod udot_fiber;
 
 use atlas::{
     atlas_db_load_snapshot, atlas_db_open, atlas_finding_update, atlas_import_apply,
@@ -10,6 +11,10 @@ use atlas::{
     atlas_ping_delete_sessions, atlas_ping_finalize_session, atlas_ping_list_sessions,
     atlas_ping_load_session, atlas_ping_many, atlas_ping_one, atlas_ping_save, atlas_pref_get,
     atlas_pref_get_all, atlas_pref_set, AtlasDbState, AtlasPingState,
+};
+use udot_fiber::{
+    udot_fiber_db_open, udot_fiber_get_sync_meta, udot_fiber_load_all_layers, udot_fiber_load_layer,
+    udot_fiber_replace_layer, udot_fiber_set_sync_meta, UdotFiberDbState,
 };
 use jobs::{job_cancel, job_start, sidecar_health, JobRegistry};
 use serde_json::{json, Value};
@@ -99,6 +104,7 @@ pub fn run() {
         .manage(Arc::new(JobRegistry::default()))
         .manage(Arc::new(AtlasDbState::default()))
         .manage(Arc::new(AtlasPingState::default()))
+        .manage(Arc::new(UdotFiberDbState::default()))
         .setup(|app| {
             // Warm the sidecar health cache during startup (non-fatal).
             let state = app.state::<SidecarState>();
@@ -138,7 +144,13 @@ pub fn run() {
             atlas_finding_update,
             atlas_ping_one,
             atlas_ping_many,
-            atlas_ping_cancel
+            atlas_ping_cancel,
+            udot_fiber_db_open,
+            udot_fiber_get_sync_meta,
+            udot_fiber_set_sync_meta,
+            udot_fiber_replace_layer,
+            udot_fiber_load_layer,
+            udot_fiber_load_all_layers
         ])
         .run(tauri::generate_context!())
         .expect("error while running GIS Toolbox desktop shell");

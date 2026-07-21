@@ -105,7 +105,7 @@
  * @property {(payload: object) => Promise<object>} applyImport
  * @property {(payload: object) => Promise<void>} [savePingResults]
  * @property {(payload?: { limit?: number, includeOneShot?: boolean }) => Promise<{ sessions: object[] }>} [listPingSessions]
- * @property {(payload: { sessionId: string, limit?: number }) => Promise<{ session: object, results: object[] }>} [loadPingSession]
+ * @property {(payload: { sessionId: string, limit?: number, all?: boolean }) => Promise<{ session: object, results: object[], all?: boolean }>} [loadPingSession]
  * @property {(payload: { sessionId: string, stoppedAt?: string }) => Promise<void>} [finalizePingSession]
  * @property {(payload: { sessionId: string }) => Promise<void>} [deletePingSession]
  * @property {(payload: { sessionIds: string[] }) => Promise<{ deleted: number }>} [deletePingSessions]
@@ -117,6 +117,18 @@
  * @property {() => Promise<void>} [openImportInbox]
  * @property {() => Promise<{ path: string, files: object[] }>} [listImportInbox]
  * @property {(path: string) => Promise<{ name: string, path: string, ext: string, base64: string }>} [readImportFile]
+ */
+
+/**
+ * Statewide UDOT Fiber Network cache (desktop SQLite).
+ *
+ * @typedef {Object} UdotFiberDbService
+ * @property {() => Promise<void>} open
+ * @property {() => Promise<object>} getSyncMeta
+ * @property {(payload: object) => Promise<void>} setSyncMeta
+ * @property {(payload: { layerKey: string, layerId?: number, name?: string, features: object[] }) => Promise<object>} replaceLayer
+ * @property {(payload: { layerKey: string }) => Promise<object>} loadLayer
+ * @property {() => Promise<{ layers: Record<string, object> }>} loadAllLayers
  */
 
 /**
@@ -142,6 +154,7 @@
  * @property {NotificationService} notifications
  * @property {WindowService} [windows]
  * @property {DatabaseService} [atlasDb]
+ * @property {UdotFiberDbService} [udotFiberDb]
  * @property {PingService} [ping]
  */
 

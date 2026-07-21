@@ -3,6 +3,7 @@ import { createWindowsComputeService } from './windows-compute-service.js';
 import { createWindowsJobService } from './windows-job-service.js';
 import { createWindowsWindowService } from './windows-window-service.js';
 import { createWindowsAtlasDbService } from './windows-atlas-db-service.js';
+import { createWindowsUdotFiberDbService } from './windows-udot-fiber-db-service.js';
 import { createWindowsPingService } from './windows-ping-service.js';
 import { invokeCommand, isTauriAvailable } from './tauri-bridge.js';
 
@@ -76,6 +77,7 @@ export function createWindowsPlatform(opts = {}) {
             jobs,
             windows: createWindowsWindowService(),
             atlasDb: createWindowsAtlasDbService(),
+            udotFiberDb: createWindowsUdotFiberDbService(),
             ping: createWindowsPingService(),
             notifications: {
                 show: showToast

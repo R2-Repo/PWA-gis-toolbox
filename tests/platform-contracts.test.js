@@ -76,6 +76,16 @@ describe('platform contracts', () => {
         await expect(services.jobs.start({ operation: 'generate-contours', input: {} })).rejects.toThrow(/Windows desktop/i);
     });
 
+    it('exposes udotFiberDb on both platforms (web stub rejects)', async () => {
+        const web = createWebPlatform();
+        expect(web.services.udotFiberDb?.open).toBeTypeOf('function');
+        await expect(web.services.udotFiberDb.open()).rejects.toThrow(/Windows desktop/i);
+
+        const win = createWindowsPlatform();
+        expect(win.services.udotFiberDb?.open).toBeTypeOf('function');
+        expect(win.services.udotFiberDb?.loadAllLayers).toBeTypeOf('function');
+    });
+
     it('shows geojson-file-summary only when nativeFiles + pythonCompute are available', () => {
         const required = ['pythonCompute', 'nativeFiles'];
         const web = createWebPlatform().platform;

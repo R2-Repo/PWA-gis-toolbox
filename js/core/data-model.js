@@ -146,7 +146,12 @@ export function isServiceLayer(layer) {
     return layer?.type === 'service';
 }
 
-const LIVE_VECTOR_KINDS = new Set(['arcgis-featureserver', 'geojson-feed', 'wfs']);
+const LIVE_VECTOR_KINDS = new Set([
+    'arcgis-featureserver',
+    'arcgis-mapserver-vector',
+    'geojson-feed',
+    'wfs'
+]);
 
 /** Live service layers that stream vector features (viewport-scoped). */
 export function isLiveVectorLayer(layer) {
