@@ -73,6 +73,7 @@ Operator UX:
 - Device detail: gateway/subnet/provisional
 - Monitor from drop/hub/channel/site/device/triage/area; section auto-opens when active
 - Past monitor sessions: list from SQLite, view samples, re-export CSV (one-shot pings hidden)
+- Operator prefs (SQLite `atlas_pref`): default monitor interval, dashboard scope, triage mode
 - Ping toasts (start + up/down summary)
 - Reconciliation findings follow Network / Selection scope
 - Ping age on drop details / schematic (stale after 24h)

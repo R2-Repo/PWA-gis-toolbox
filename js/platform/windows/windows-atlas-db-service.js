@@ -29,6 +29,15 @@ export function createWindowsAtlasDbService() {
         async finalizePingSession(payload) {
             await invokeCommand('atlas_ping_finalize_session', { payload });
         },
+        async getPref(payload) {
+            return invokeCommand('atlas_pref_get', { payload });
+        },
+        async getAllPrefs() {
+            return invokeCommand('atlas_pref_get_all');
+        },
+        async setPref(payload) {
+            await invokeCommand('atlas_pref_set', { payload });
+        },
         async updateFinding(findingId, patch) {
             await invokeCommand('atlas_finding_update', { findingId, patch });
         },

@@ -3,6 +3,7 @@
  * Shared domain code reads from here; persistence goes through platform services.
  */
 import bus from '../core/event-bus.js';
+import { defaultAtlasPrefs } from './prefs.js';
 
 /** @type {import('./types.js').AtlasSnapshot} */
 const snapshot = {
@@ -18,7 +19,8 @@ const snapshot = {
     areaResults: null,
     activeSession: null,
     stats: null,
-    lastImport: null
+    lastImport: null,
+    prefs: defaultAtlasPrefs()
 };
 
 /**
@@ -83,5 +85,6 @@ export function resetAtlasSnapshot() {
     snapshot.activeSession = null;
     snapshot.stats = null;
     snapshot.lastImport = null;
+    snapshot.prefs = defaultAtlasPrefs();
     bus.emit('atlas:changed', snapshot);
 }

@@ -24,6 +24,11 @@ import { buildDashboardStats, exportPingSessionCsv } from './export.js';
 import { startPingSession, stopPingSession, stopAllPingSessions } from './monitor.js';
 import { queryAtlasInArea } from './area-query.js';
 import { collectHubIps } from './triage.js';
+import {
+    defaultAtlasPrefs,
+    normalizeAtlasPrefs,
+    serializePrefValue
+} from './prefs.js';
 import bus from '../core/event-bus.js';
 
 function notify(message, level = 'info') {
@@ -62,6 +67,7 @@ export async function openAtlasWorkspace() {
     }
     await service.open();
     const data = await service.loadSnapshot();
+    const prefs = await loadAtlasPrefs();
     const pingResults = data.pingResults || {};
     const base = {
         loaded: true,
@@ -74,16 +80,65 @@ export async function openAtlasWorkspace() {
         pingResults,
         lastImport: data.lastImport || null,
         selection: getAtlasSnapshot().selection,
-        areaResults: getAtlasSnapshot().areaResults
+        areaResults: getAtlasSnapshot().areaResults,
+        prefs
     };
     patchAtlasSnapshot({
         ...base,
-        stats: buildDashboardStats(base)
+        stats: buildDashboardStats(base, { scope: prefs.dashScope })
     });
     syncAtlasMapLayers(getAtlasSnapshot());
     enableAtlasMapInteraction((sel) => selectAtlasEntity(sel));
     bus.emit('atlas:opened', getAtlasSnapshot());
+    bus.emit('atlas:prefs', prefs);
     return getAtlasSnapshot();
+}
+
+/**
+ * @returns {Promise<ReturnType<typeof defaultAtlasPrefs>>}
+ */
+export async function loadAtlasPrefs() {
+    if (!atlasCapabilities().available) return defaultAtlasPrefs();
+    const service = db();
+    if (!service?.getAllPrefs) return defaultAtlasPrefs();
+    try {
+        const res = await service.getAllPrefs();
+        return normalizeAtlasPrefs(res?.prefs || {});
+    } catch {
+        return defaultAtlasPrefs();
+    }
+}
+
+/**
+ * Persist one operator preference and patch the in-memory snapshot.
+ * @param {string} key
+ * @param {string|number|null|undefined} value
+ */
+export async function setAtlasPref(key, value) {
+    const serialized = serializePrefValue(key, value);
+    if (value != null && value !== '' && serialized === null) {
+        return getAtlasSnapshot().prefs || defaultAtlasPrefs();
+    }
+    const service = db();
+    if (atlasCapabilities().available && service?.setPref) {
+        try {
+            await service.setPref({ key, value: serialized });
+        } catch {
+            /* prefs optional */
+        }
+    }
+    const current = getAtlasSnapshot().prefs || defaultAtlasPrefs();
+    const raw = {
+        'monitor.interval': String(current.monitorInterval),
+        'dashboard.scope': current.dashScope,
+        'triage.mode': current.triageMode
+    };
+    if (serialized == null) delete raw[key];
+    else raw[key] = serialized;
+    const prefs = normalizeAtlasPrefs(raw);
+    patchAtlasSnapshot({ prefs });
+    bus.emit('atlas:prefs', prefs);
+    return prefs;
 }
 
 export async function refreshAtlasFromDb() {

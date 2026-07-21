@@ -12,7 +12,13 @@ import {
     exportTriageCsv,
     openPrintableReport
 } from '../../js/atlas/export.js';
-import { listAtlasPingSessions, loadAtlasPingSession } from '../../js/atlas/controller.js';
+import { listAtlasPingSessions, loadAtlasPingSession, setAtlasPref } from '../../js/atlas/controller.js';
+import {
+    defaultAtlasPrefs,
+    PREF_DASHBOARD_SCOPE,
+    PREF_MONITOR_INTERVAL,
+    PREF_TRIAGE_MODE
+} from '../../js/atlas/prefs.js';
 import { collectHubIps, findingsInScope, listScopedDropsByPing } from '../../js/atlas/triage.js';
 import { formatPingAge, formatPingWhen, isPingStale } from '../../js/atlas/ping-format.js';
 import { ChannelSchematic } from './ChannelSchematic.jsx';
@@ -38,12 +44,13 @@ export function AtlasRightPanel({
     onClearArea,
     onSelectFinding
 }) {
+    const initialPrefs = getAtlasSnapshot().prefs || defaultAtlasPrefs();
     const [tick, setTick] = useState(0);
     const [findingFilter, setFindingFilter] = useState('Open');
     const [findingTypeFilter, setFindingTypeFilter] = useState('all');
-    const [monitorInterval, setMonitorInterval] = useState(1);
-    const [dashScope, setDashScope] = useState('network');
-    const [triageMode, setTriageMode] = useState('unreachable');
+    const [monitorInterval, setMonitorInterval] = useState(initialPrefs.monitorInterval);
+    const [dashScope, setDashScope] = useState(initialPrefs.dashScope);
+    const [triageMode, setTriageMode] = useState(initialPrefs.triageMode);
     const [noteDrafts, setNoteDrafts] = useState({});
     const [showAllTriage, setShowAllTriage] = useState(false);
     const [showAllFindings, setShowAllFindings] = useState(false);
@@ -52,6 +59,22 @@ export function AtlasRightPanel({
     const [pastSessions, setPastSessions] = useState([]);
     const [historyDetail, setHistoryDetail] = useState(null);
     const [historyBusy, setHistoryBusy] = useState(false);
+
+    const changeMonitorInterval = (raw) => {
+        const next = Number(raw) || raw;
+        setMonitorInterval(next);
+        void setAtlasPref(PREF_MONITOR_INTERVAL, next);
+    };
+
+    const changeDashScope = (scope, { persist = true } = {}) => {
+        setDashScope(scope);
+        if (persist) void setAtlasPref(PREF_DASHBOARD_SCOPE, scope);
+    };
+
+    const changeTriageMode = (mode, { persist = true } = {}) => {
+        setTriageMode(mode);
+        if (persist) void setAtlasPref(PREF_TRIAGE_MODE, mode);
+    };
 
     const focusFindings = (type = 'all', status = 'Open') => {
         setFindingFilter(status);
@@ -76,7 +99,7 @@ export function AtlasRightPanel({
     };
 
     const focusTriage = (mode) => {
-        setTriageMode(mode);
+        changeTriageMode(mode, { persist: true });
         requestAnimationFrame(() => {
             document.getElementById('atlas-triage')?.scrollIntoView?.({ behavior: 'smooth', block: 'nearest' });
         });
@@ -89,16 +112,33 @@ export function AtlasRightPanel({
     };
 
     useEffect(() => {
+        const applyPrefs = (prefs) => {
+            if (!prefs) return;
+            setMonitorInterval(prefs.monitorInterval);
+            setTriageMode(prefs.triageMode);
+            if (!getAtlasSnapshot().selection) {
+                setDashScope(prefs.dashScope);
+            }
+        };
         const unsub = [
             bus.on('atlas:changed', () => setTick((t) => t + 1)),
             bus.on('atlas:selection', (sel) => {
-                if (sel) setDashScope('selection');
-                else setDashScope('network');
+                if (sel) changeDashScope('selection', { persist: false });
+                else {
+                    const scope = getAtlasSnapshot().prefs?.dashScope || 'network';
+                    changeDashScope(scope, { persist: false });
+                }
                 setTick((t) => t + 1);
             }),
             bus.on('atlas:ping', () => setTick((t) => t + 1)),
-            bus.on('atlas:ping-sessions', () => refreshPastSessions())
+            bus.on('atlas:ping-sessions', () => refreshPastSessions()),
+            bus.on('atlas:prefs', applyPrefs),
+            bus.on('atlas:opened', () => {
+                applyPrefs(getAtlasSnapshot().prefs);
+                refreshPastSessions();
+            })
         ];
+        applyPrefs(getAtlasSnapshot().prefs);
         refreshPastSessions();
         return () => unsub.forEach((u) => u?.());
     }, []);
@@ -195,16 +235,17 @@ export function AtlasRightPanel({
                     <button
                         type="button"
                         className={`btn btn-sm${dashScope === 'network' ? ' btn-secondary' : ' btn-ghost'}`}
-                        onClick={() => setDashScope('network')}
+                        onClick={() => changeDashScope('network')}
+                        title="Default scope when nothing is selected (saved)"
                     >
                         Network
                     </button>
                     <button
                         type="button"
                         className={`btn btn-sm${dashScope === 'selection' ? ' btn-secondary' : ' btn-ghost'}`}
-                        onClick={() => setDashScope('selection')}
+                        onClick={() => changeDashScope('selection')}
                         disabled={!selection && !snap.areaResults}
-                        title="Scope to selected hub/channel/drop or area results"
+                        title="Scope to selected hub/channel/drop or area results (saved as default)"
                     >
                         Selection{stats.scopeLabel && stats.scopeLabel !== 'Network' ? ` (${stats.scopeLabel})` : ''}
                     </button>
@@ -377,7 +418,7 @@ export function AtlasRightPanel({
                         {canPing && dropDetail.ip && (
                             <div className="atlas-toolbar">
                                 <button type="button" className="btn btn-secondary btn-sm" onClick={() => onPingDrop?.(dropDetail.id)}>Ping once</button>
-                                <select className="input-sm" value={monitorInterval} onChange={(e) => setMonitorInterval(Number(e.target.value) || e.target.value)}>
+                                <select className="input-sm" value={monitorInterval} onChange={(e) => changeMonitorInterval(e.target.value)}>
                                     <option value="continuous">Continuous (~5s)</option>
                                     <option value={1}>Every 1 min</option>
                                     <option value={2}>Every 2 min</option>
@@ -429,7 +470,7 @@ export function AtlasRightPanel({
                                 >
                                     Ping device
                                 </button>
-                                <select className="input-sm" value={monitorInterval} onChange={(e) => setMonitorInterval(Number(e.target.value) || e.target.value)}>
+                                <select className="input-sm" value={monitorInterval} onChange={(e) => changeMonitorInterval(e.target.value)}>
                                     <option value="continuous">Continuous (~5s)</option>
                                     <option value={1}>Every 1 min</option>
                                     <option value={5}>Every 5 min</option>
@@ -625,7 +666,7 @@ export function AtlasRightPanel({
                             key={mode}
                             type="button"
                             className={`btn btn-sm${triageMode === mode ? ' btn-secondary' : ' btn-ghost'}`}
-                            onClick={() => setTriageMode(mode)}
+                            onClick={() => changeTriageMode(mode)}
                         >
                             {label}
                         </button>
@@ -658,7 +699,7 @@ export function AtlasRightPanel({
                                 >
                                     Start monitor
                                 </button>
-                                <select className="input-sm" value={monitorInterval} onChange={(e) => setMonitorInterval(Number(e.target.value) || e.target.value)}>
+                                <select className="input-sm" value={monitorInterval} onChange={(e) => changeMonitorInterval(e.target.value)}>
                                     <option value="continuous">Continuous (~5s)</option>
                                     <option value={1}>Every 1 min</option>
                                     <option value={5}>Every 5 min</option>
@@ -757,7 +798,7 @@ export function AtlasRightPanel({
                                     type="button"
                                     className="btn btn-ghost btn-sm"
                                     onClick={() => {
-                                        setDashScope('selection');
+                                        changeDashScope('selection', { persist: false });
                                         focusFindings('all', 'Open');
                                     }}
                                 >

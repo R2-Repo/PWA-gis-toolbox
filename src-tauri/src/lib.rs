@@ -8,7 +8,8 @@ use atlas::{
     atlas_import_inbox_ensure, atlas_import_inbox_list, atlas_import_inbox_open,
     atlas_import_read_file, atlas_ping_cancel, atlas_ping_finalize_session,
     atlas_ping_list_sessions, atlas_ping_load_session, atlas_ping_many, atlas_ping_one,
-    atlas_ping_save, AtlasDbState, AtlasPingState,
+    atlas_ping_save, atlas_pref_get, atlas_pref_get_all, atlas_pref_set, AtlasDbState,
+    AtlasPingState,
 };
 use jobs::{job_cancel, job_start, sidecar_health, JobRegistry};
 use serde_json::{json, Value};
@@ -129,6 +130,9 @@ pub fn run() {
             atlas_ping_list_sessions,
             atlas_ping_load_session,
             atlas_ping_finalize_session,
+            atlas_pref_get,
+            atlas_pref_get_all,
+            atlas_pref_set,
             atlas_finding_update,
             atlas_ping_one,
             atlas_ping_many,

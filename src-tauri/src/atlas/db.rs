@@ -857,6 +857,109 @@ fn chrono_like_now() -> String {
         .unwrap_or_else(|_| "0".into())
 }
 
+fn is_allowed_pref_key(key: &str) -> bool {
+    matches!(
+        key,
+        "monitor.interval" | "dashboard.scope" | "triage.mode"
+    )
+}
+
+fn is_allowed_pref_value(key: &str, value: &str) -> bool {
+    match key {
+        "monitor.interval" => matches!(value, "continuous" | "1" | "2" | "5" | "30" | "60"),
+        "dashboard.scope" => matches!(value, "network" | "selection"),
+        "triage.mode" => matches!(value, "unreachable" | "stale" | "untested" | "attention"),
+        _ => false,
+    }
+}
+
+/// Get one preference value.
+#[tauri::command]
+pub fn atlas_pref_get(
+    payload: Value,
+    state: tauri::State<'_, Arc<AtlasDbState>>,
+) -> Result<Value, String> {
+    with_conn(&state, |conn| {
+        let key = json_str(payload.get("key")).ok_or_else(|| "key is required".to_string())?;
+        if !is_allowed_pref_key(&key) {
+            return Err(format!("Unsupported preference key: {key}"));
+        }
+        let value: Option<String> = conn
+            .query_row(
+                "SELECT value FROM atlas_pref WHERE key = ?1",
+                params![key],
+                |r| r.get(0),
+            )
+            .optional()
+            .map_err(|e| e.to_string())?;
+        Ok(json!({ "key": key, "value": value }))
+    })
+}
+
+/// Get all known preferences (missing keys omitted).
+#[tauri::command]
+pub fn atlas_pref_get_all(
+    state: tauri::State<'_, Arc<AtlasDbState>>,
+) -> Result<Value, String> {
+    with_conn(&state, |conn| {
+        let mut stmt = conn
+            .prepare("SELECT key, value FROM atlas_pref")
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map([], |r| {
+                Ok((r.get::<_, String>(0)?, r.get::<_, Option<String>>(1)?))
+            })
+            .map_err(|e| e.to_string())?;
+        let mut prefs = serde_json::Map::new();
+        for row in rows {
+            let (key, value) = row.map_err(|e| e.to_string())?;
+            if is_allowed_pref_key(&key) {
+                prefs.insert(key, json!(value));
+            }
+        }
+        Ok(json!({ "prefs": prefs }))
+    })
+}
+
+/// Upsert one preference.
+#[tauri::command]
+pub fn atlas_pref_set(
+    payload: Value,
+    state: tauri::State<'_, Arc<AtlasDbState>>,
+) -> Result<(), String> {
+    with_conn(&state, |conn| {
+        let key = json_str(payload.get("key")).ok_or_else(|| "key is required".to_string())?;
+        if !is_allowed_pref_key(&key) {
+            return Err(format!("Unsupported preference key: {key}"));
+        }
+        let value = match payload.get("value") {
+            None | Some(Value::Null) => None,
+            Some(Value::String(s)) => Some(s.clone()),
+            Some(Value::Number(n)) => Some(n.to_string()),
+            Some(Value::Bool(b)) => Some(b.to_string()),
+            Some(_) => return Err("Preference value must be a string or number".into()),
+        };
+        if let Some(v) = value {
+            if v.len() > 200 {
+                return Err("Preference value too long".into());
+            }
+            if !is_allowed_pref_value(&key, &v) {
+                return Err(format!("Unsupported preference value for {key}"));
+            }
+            conn.execute(
+                "INSERT INTO atlas_pref (key, value) VALUES (?1, ?2)
+                 ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                params![key, v],
+            )
+            .map_err(|e| e.to_string())?;
+        } else {
+            conn.execute("DELETE FROM atlas_pref WHERE key = ?1", params![key])
+                .map_err(|e| e.to_string())?;
+        }
+        Ok(())
+    })
+}
+
 #[tauri::command]
 pub fn atlas_finding_update(
     finding_id: String,
