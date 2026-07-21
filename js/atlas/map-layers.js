@@ -2,6 +2,7 @@
  * Atlas-owned MapLibre layers (do not mutate GIS user layers).
  */
 import mapService from '../map/map-service.js';
+import { displayPingStatus } from './ping-format.js';
 import { hubPingRollup } from './triage.js';
 
 const SOURCE_ID = 'atlas-network';
@@ -67,7 +68,7 @@ export function syncAtlasMapLayers(snap) {
                 channelId: drop.channelId || '',
                 label: drop.inventoryName || `D${drop.dropNumber ?? '?'}`,
                 ip: drop.ip || '',
-                pingStatus: ping?.status || 'untested',
+                pingStatus: displayPingStatus(ping),
                 selected
             }
         });

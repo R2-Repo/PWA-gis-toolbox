@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { channelPingRollup, collectHubIps, dropsInScope, findingsInScope, hubPingRollup, listScopedDropsByPing } from '../js/atlas/triage.js';
-import { formatPingAge, isPingStale, parsePingAt } from '../js/atlas/ping-format.js';
+import { displayPingStatus, formatPingAge, isPingStale, parsePingAt } from '../js/atlas/ping-format.js';
 import { buildImportFindings } from '../js/atlas/import/audit.js';
 import { queryAtlasInArea, pointInGeometry } from '../js/atlas/area-query.js';
 import { getAtlasSnapshot, patchAtlasSnapshot, resetAtlasSnapshot } from '../js/atlas/store.js';
@@ -25,6 +25,14 @@ describe('atlas ping format', () => {
         expect(formatPingAge(null)).toBe('no ping yet');
         expect(isPingStale(null)).toBe(true);
         expect(isPingStale(new Date().toISOString(), 24)).toBe(false);
+    });
+
+    it('maps reachable+stale to warning display status', () => {
+        const staleAt = new Date(Date.now() - 48 * 3600 * 1000).toISOString();
+        expect(displayPingStatus({ status: 'reachable', at: staleAt })).toBe('warning');
+        expect(displayPingStatus({ status: 'reachable', at: new Date().toISOString() })).toBe('reachable');
+        expect(displayPingStatus({ status: 'unreachable', at: staleAt })).toBe('unreachable');
+        expect(displayPingStatus(null)).toBe('untested');
     });
 });
 
@@ -176,6 +184,31 @@ describe('atlas area + schematic', () => {
         const dropNode = schematic?.nodes.find((n) => n.id === 'd1');
         expect(dropNode?.warnings).toHaveLength(1);
         expect(getAtlasSnapshot().channels).toHaveLength(1);
+    });
+
+    it('attaches channel-level findings to schematic hubs', () => {
+        patchAtlasSnapshot({
+            hubs: [{ id: 'h1', hubCode: 'H1' }, { id: 'h2', hubCode: 'H2' }],
+            channels: [{
+                id: 'c1',
+                channelNumber: '12',
+                primaryHubId: 'h1',
+                secondaryHubId: 'h2',
+                primaryHubCode: 'H1',
+                secondaryHubCode: 'H2'
+            }],
+            drops: [{ id: 'd1', channelId: 'c1', dropNumber: 1, ip: '10.0.0.1' }],
+            pingResults: {},
+            findings: [
+                { id: 'f-ch', status: 'Open', entityId: 'c1', entityKind: 'channel', findingType: 'missing_channel' },
+                { id: 'f-sec', status: 'Open', entityId: 'h2', entityKind: 'hub', findingType: 'missing_secondary_hub' }
+            ]
+        });
+        const schematic = buildChannelSchematic('c1');
+        const primary = schematic?.nodes.find((n) => n.role === 'primary');
+        const secondary = schematic?.nodes.find((n) => n.role === 'secondary');
+        expect(primary?.warnings?.some((w) => w.id === 'f-ch')).toBe(true);
+        expect(secondary?.warnings?.some((w) => w.id === 'f-sec')).toBe(true);
     });
 
     it('sets schematic hub ping from rollup', () => {

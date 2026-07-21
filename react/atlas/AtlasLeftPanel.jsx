@@ -3,7 +3,7 @@ import bus from '../../js/core/event-bus.js';
 import { getAtlasSnapshot } from '../../js/atlas/store.js';
 import { searchAtlas } from '../../js/atlas/search.js';
 import { buildHierarchyTree } from '../../js/atlas/hierarchy.js';
-import { formatPingWhen } from '../../js/atlas/ping-format.js';
+import { formatPingWhen, isPingStale } from '../../js/atlas/ping-format.js';
 import { CollapsibleSection } from '../ui/CollapsibleSection.jsx';
 
 function containsSelection(node, selection) {
@@ -102,7 +102,11 @@ export function AtlasLeftPanel({ onSelect, onOpenImport }) {
                 </span>
             </div>
             {snap.lastImport && (
-                <div className="atlas-freshness-banner">
+                <div
+                    className={`atlas-freshness-banner${
+                        isPingStale(snap.lastImport.importedAt, 168) ? ' atlas-freshness-banner--stale' : ''
+                    }`}
+                >
                     <strong>Last import</strong>
                     <span>
                         {snap.lastImport.workbookName || 'workbook'}
@@ -112,6 +116,9 @@ export function AtlasLeftPanel({ onSelect, onOpenImport }) {
                         {snap.lastImport.batchDate || formatPingWhen(snap.lastImport.importedAt)}
                         {snap.lastImport.importedAt ? ` · ${formatPingWhen(snap.lastImport.importedAt)}` : ''}
                     </span>
+                    {isPingStale(snap.lastImport.importedAt, 168) ? (
+                        <span className="atlas-stale-warn">Older than 7 days — consider re-importing.</span>
+                    ) : null}
                 </div>
             )}
 

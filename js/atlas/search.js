@@ -2,17 +2,19 @@
  * Universal Atlas search over in-memory snapshot.
  */
 import { getAtlasSnapshot } from './store.js';
+import { displayPingStatus } from './ping-format.js';
+import { channelPingRollup, hubPingRollup, ipsPingRollup } from './triage.js';
 
 /**
  * @param {string} query
  * @param {number} [limit=50]
- * @returns {Array<{ kind: string, id: string, label: string, meta?: string }>}
+ * @returns {Array<{ kind: string, id: string, label: string, meta?: string, pingStatus?: string|null }>}
  */
 export function searchAtlas(query, limit = 50) {
     const q = String(query || '').trim().toLowerCase();
     if (!q) return [];
     const snap = getAtlasSnapshot();
-    /** @type {Array<{ kind: string, id: string, label: string, meta?: string }>} */
+    /** @type {Array<{ kind: string, id: string, label: string, meta?: string, pingStatus?: string|null }>} */
     const hits = [];
 
     for (const ch of snap.channels) {
@@ -21,7 +23,8 @@ export function searchAtlas(query, limit = 50) {
                 kind: 'channel',
                 id: ch.id,
                 label: `Channel ${ch.channelNumber}`,
-                meta: [ch.primaryHubCode, ch.secondaryHubCode].filter(Boolean).join(' → ')
+                meta: [ch.primaryHubCode, ch.secondaryHubCode].filter(Boolean).join(' → '),
+                pingStatus: channelPingRollup(ch.id, snap)
             });
         }
         if (hits.length >= limit) return hits;
@@ -30,7 +33,13 @@ export function searchAtlas(query, limit = 50) {
     for (const hub of snap.hubs) {
         const hay = `${hub.hubCode} ${hub.name || ''}`.toLowerCase();
         if (hay.includes(q)) {
-            hits.push({ kind: 'hub', id: hub.id, label: hub.name || `Hub ${hub.hubCode}`, meta: hub.hubCode });
+            hits.push({
+                kind: 'hub',
+                id: hub.id,
+                label: hub.name || `Hub ${hub.hubCode}`,
+                meta: hub.hubCode,
+                pingStatus: hubPingRollup(hub.id, snap)
+            });
         }
         if (hits.length >= limit) return hits;
     }
@@ -44,14 +53,13 @@ export function searchAtlas(query, limit = 50) {
             drop.siteId
         ].join(' ').toLowerCase();
         if (hay.includes(q)) {
+            const ping = drop.ip ? snap.pingResults?.[drop.ip] : null;
             hits.push({
                 kind: 'drop',
                 id: drop.id,
                 label: drop.inventoryName || `Drop ${drop.dropNumber ?? '?'}`,
                 meta: `Ch ${drop.channelNumber || '?'} · D${drop.dropNumber ?? '?'} · ${drop.ip || 'no IP'}`,
-                pingStatus: drop.ip
-                    ? (snap.pingResults?.[drop.ip]?.status || 'untested')
-                    : null
+                pingStatus: drop.ip ? displayPingStatus(ping) : null
             });
         }
         if (hits.length >= limit) return hits;
@@ -60,11 +68,15 @@ export function searchAtlas(query, limit = 50) {
     for (const site of snap.sites) {
         const hay = `${site.inventoryName || ''} ${site.siteId || ''}`.toLowerCase();
         if (hay.includes(q)) {
+            const ips = (snap.drops || [])
+                .filter((d) => d.siteId === site.id && d.ip)
+                .map((d) => d.ip);
             hits.push({
                 kind: 'site',
                 id: site.id,
                 label: site.inventoryName || site.siteId || site.id,
-                meta: site.siteId || ''
+                meta: site.siteId || '',
+                pingStatus: ips.length ? ipsPingRollup(ips, snap) : null
             });
         }
         if (hits.length >= limit) return hits;
@@ -73,14 +85,13 @@ export function searchAtlas(query, limit = 50) {
     for (const dev of snap.devices) {
         const hay = `${dev.ip || ''} ${dev.inventoryName || ''} ${dev.model || ''}`.toLowerCase();
         if (hay.includes(q)) {
+            const ping = dev.ip ? snap.pingResults?.[dev.ip] : null;
             hits.push({
                 kind: 'device',
                 id: dev.id,
                 label: dev.ip || dev.inventoryName || dev.id,
                 meta: [dev.model, dev.deviceType].filter(Boolean).join(' · '),
-                pingStatus: dev.ip
-                    ? (snap.pingResults?.[dev.ip]?.status || 'untested')
-                    : null
+                pingStatus: dev.ip ? displayPingStatus(ping) : null
             });
         }
         if (hits.length >= limit) return hits;

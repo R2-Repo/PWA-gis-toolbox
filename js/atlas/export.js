@@ -362,6 +362,8 @@ export function buildDashboardStats(snap, opts = {}) {
         missingChannel: openFindings.filter((f) => f.findingType === 'missing_channel').length,
         missingDrop: openFindings.filter((f) => f.findingType === 'missing_drop').length,
         missingSecondaryHub: openFindings.filter((f) => f.findingType === 'missing_secondary_hub').length,
+        wirelessDrops: drops.filter((d) => d.wireless).length,
+        provisionalDevices: devices.filter((d) => d.provisional).length,
         pingReachable: reachable,
         pingUnreachable: unreachable,
         pingStale,

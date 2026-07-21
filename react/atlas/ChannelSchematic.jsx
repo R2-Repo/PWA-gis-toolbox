@@ -1,4 +1,4 @@
-import { formatPingAge, isPingStale } from '../../js/atlas/ping-format.js';
+import { displayPingStatus, formatPingAge } from '../../js/atlas/ping-format.js';
 
 export function ChannelSchematic({
     schematic,
@@ -34,7 +34,7 @@ export function ChannelSchematic({
                         {idx > 0 && <div className="atlas-schematic-arrow" aria-hidden="true">→</div>}
                         <button
                             type="button"
-                            className={`atlas-schematic-node atlas-schematic-node--${node.kind} atlas-ping--${node.ping?.status || 'untested'}${node.kind === 'drop' && isPingStale(node.ping?.at) ? ' atlas-ping--stale' : ''}${node.warnings?.length ? ' atlas-schematic-node--warn' : ''}`}
+                            className={`atlas-schematic-node atlas-schematic-node--${node.kind} atlas-ping--${displayPingStatus(node.ping)}${node.warnings?.length ? ' atlas-schematic-node--warn' : ''}`}
                             onClick={() => {
                                 if (node.kind === 'drop') onSelectDrop?.(node.id);
                                 else if (node.kind === 'hub') onSelectHub?.(node.id, node.hubCode);

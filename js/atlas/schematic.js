@@ -39,6 +39,10 @@ export function buildChannelSchematic(channelId) {
             f.entityId === channelId
             || (f.entityId && dropIds.has(f.entityId))
             || (f.ip && dropIps.has(f.ip))
+            || (f.entityKind === 'hub' && (
+                f.entityId === channel.primaryHubId
+                || f.entityId === channel.secondaryHubId
+            ))
         ));
 
     /** @type {Map<string, object[]>} */
@@ -54,6 +58,18 @@ export function buildChannelSchematic(channelId) {
         findingsByDrop.get(dropId).push(f);
     }
 
+    const dropLinkedIds = new Set();
+    for (const list of findingsByDrop.values()) {
+        for (const f of list) dropLinkedIds.add(f.id);
+    }
+
+    const channelLevel = openFindings.filter((f) => !dropLinkedIds.has(f.id));
+    const secondaryHubWarnings = channelLevel.filter((f) =>
+        f.entityId === channel.secondaryHubId
+        || f.findingType === 'missing_secondary_hub');
+    const secondaryIds = new Set(secondaryHubWarnings.map((f) => f.id));
+    const primaryHubWarnings = channelLevel.filter((f) => !secondaryIds.has(f.id));
+
     /** @type {Array<object>} */
     const nodes = [];
 
@@ -65,7 +81,7 @@ export function buildChannelSchematic(channelId) {
         hubCode: channel.primaryHubCode,
         ip: null,
         ping: resolveHubPing(snap, channel.primaryHubId, channel.primaryHubCode),
-        warnings: []
+        warnings: primaryHubWarnings
     });
 
     for (const drop of drops) {
@@ -95,7 +111,7 @@ export function buildChannelSchematic(channelId) {
         hubCode: channel.secondaryHubCode,
         ip: null,
         ping: resolveHubPing(snap, channel.secondaryHubId, channel.secondaryHubCode),
-        warnings: []
+        warnings: secondaryHubWarnings
     });
 
     return {

@@ -52,3 +52,13 @@ export function isPingStale(at, staleHours = 24) {
     if (!d) return true;
     return Date.now() - d.getTime() > staleHours * 3600 * 1000;
 }
+
+/**
+ * Map/UI display status: reachable but stale → warning.
+ * @param {{ status?: string, at?: string|number|null }|null|undefined} entry
+ */
+export function displayPingStatus(entry) {
+    const status = entry?.status || 'untested';
+    if (status === 'reachable' && isPingStale(entry?.at)) return 'warning';
+    return status;
+}

@@ -420,6 +420,20 @@ button.atlas-dash-card--action:hover {
     font-size: 11px;
 }
 
+.atlas-freshness-banner--stale {
+    background: #fff7ed;
+    border: 1px solid #fdba74;
+}
+
+.atlas-finding-entity {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    margin: 4px 0;
+    font-size: 11px;
+}
+
 .atlas-stale-warn {
     color: #b45309 !important;
 }

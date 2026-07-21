@@ -201,6 +201,8 @@ export function AtlasRightPanel({
                     <div className="atlas-dash-card"><span>Channels</span><strong>{stats.channels}</strong></div>
                     <div className="atlas-dash-card"><span>Drops</span><strong>{stats.drops}</strong></div>
                     <div className="atlas-dash-card"><span>Devices</span><strong>{stats.devices}</strong></div>
+                    <div className="atlas-dash-card"><span>Wireless drops</span><strong>{stats.wirelessDrops || 0}</strong></div>
+                    <div className="atlas-dash-card"><span>Provisional</span><strong>{stats.provisionalDevices || 0}</strong></div>
                     <button
                         type="button"
                         className="atlas-dash-card atlas-dash-card--action"
@@ -783,9 +785,15 @@ export function AtlasRightPanel({
                 )}
             </CollapsibleSection>
 
-            <CollapsibleSection title="Monitoring" bodyId="atlas-monitor" defaultOpen={false}>
+            <CollapsibleSection
+                title={snap.activeSession ? 'Monitoring · active' : 'Monitoring'}
+                bodyId="atlas-monitor"
+                defaultOpen={false}
+                expandWhen={!!snap.activeSession}
+            >
                 {snap.activeSession ? (
                     <div>
+                        <p className="atlas-stale-warn">Live session — this panel opens when monitoring starts.</p>
                         <p>
                             {snap.activeSession.label || 'Monitor'}
                             {' · '}
@@ -811,7 +819,10 @@ export function AtlasRightPanel({
                         )}
                     </div>
                 ) : (
-                    <p className="atlas-muted">Start a monitor from a drop, triage list, or area results.</p>
+                    <p className="atlas-muted">
+                        No active session. Start from a drop, hub, channel, site, device, triage list, or area results.
+                        This section opens automatically when a monitor starts.
+                    </p>
                 )}
             </CollapsibleSection>
 
@@ -870,6 +881,21 @@ export function AtlasRightPanel({
                                 >
                                     <strong>{f.findingType}</strong>
                                 </button>
+                                {(f.entityKind || f.entityId || f.ip) ? (
+                                    <p className="atlas-finding-entity">
+                                        {f.entityKind ? <span className="atlas-tag">{f.entityKind}</span> : null}
+                                        {f.ip ? <span className="atlas-mono">{f.ip}</span> : null}
+                                        {(f.entityId || f.ip) ? (
+                                            <button
+                                                type="button"
+                                                className="atlas-linkish"
+                                                onClick={() => focusFinding(f)}
+                                            >
+                                                Open on map
+                                            </button>
+                                        ) : null}
+                                    </p>
+                                ) : null}
                                 <p>{f.description}</p>
                                 {f.suggestedAction && (
                                     <p className="atlas-muted">Action: {f.suggestedAction}</p>

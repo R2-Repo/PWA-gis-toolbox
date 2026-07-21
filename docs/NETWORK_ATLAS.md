@@ -56,22 +56,22 @@ Opening Atlas later loads SQLite only — spreadsheets are not re-read until the
 Map: click hubs/drops to select; channel selection draws a path and fits bounds. Dashboard can scope to Network or Selection.
 
 Operator UX:
-- Last-import freshness banner on the left panel
-- Hierarchy: hubs/channels/sites with ping dots; Sites branch; selection highlight
-- Dashboard cards for all major finding types + ping triage modes
+- Last-import freshness banner (warns after 7 days)
+- Hierarchy / search / map: ping dots; reachable+stale shows as warning (orange)
+- Dashboard: inventory counts, wireless/provisional, finding-type cards, ping triage
 - Findings focus: click finding → filter + scroll + highlight row
-- Findings filter by status + type; Show all / triage CSV export
+- Findings: entityKind chip + Open on map; status/type filters; Show all / CSV
 - Ping triage: unreachable / stale / untested / needs attention + per-row Ping
 - Hub map + schematic hubs colored by worst-of switch ping rollup
 - Hub detail: ping all / primary / secondary + start monitor
 - Area query + View area findings → Reconciliation
 - Area clear + entity selection overrides stale area scope
 - Scoped drops CSV / printable report (triage stats + finding-type breakdown)
-- Channel schematic: finding badges (click → finding), wireless tag, clickable hubs
+- Channel schematic: drop + hub/channel finding badges, wireless tag, clickable hubs
 - Wireless inferred on import from ATMS device type / model
 - Channel/site/device detail with ping + monitor
 - Device detail: gateway/subnet/provisional
-- Monitor from drop, channel, hub, site, device, triage, or area; live sample tail
+- Monitor from drop/hub/channel/site/device/triage/area; section auto-opens when active
 - Ping toasts (start + up/down summary)
 - Reconciliation findings follow Network / Selection scope
 - Ping age on drop details / schematic (stale after 24h)
