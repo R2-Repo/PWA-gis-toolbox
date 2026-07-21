@@ -444,8 +444,25 @@ button.atlas-dash-card--action:hover {
     list-style: none;
     margin: 6px 0 0;
     padding: 0;
-    max-height: 180px;
+    max-height: 220px;
     overflow: auto;
+}
+
+.atlas-session-item {
+    display: flex;
+    align-items: stretch;
+    gap: 4px;
+    margin-bottom: 4px;
+}
+
+.atlas-session-item .atlas-session-row {
+    flex: 1;
+    margin-bottom: 0;
+}
+
+.atlas-session-delete {
+    align-self: center;
+    flex-shrink: 0;
 }
 
 .atlas-session-row {

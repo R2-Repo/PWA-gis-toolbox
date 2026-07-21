@@ -5,19 +5,27 @@
 export const PREF_MONITOR_INTERVAL = 'monitor.interval';
 export const PREF_DASHBOARD_SCOPE = 'dashboard.scope';
 export const PREF_TRIAGE_MODE = 'triage.mode';
+export const PREF_SESSIONS_RETENTION_DAYS = 'sessions.retentionDays';
 
 const INTERVAL_VALUES = new Set(['continuous', '1', '2', '5', '30', '60']);
 const SCOPE_VALUES = new Set(['network', 'selection']);
 const TRIAGE_VALUES = new Set(['unreachable', 'stale', 'untested', 'attention']);
+const RETENTION_VALUES = new Set(['0', '7', '30', '90']);
 
 /**
- * @returns {{ monitorInterval: number|string, dashScope: 'network'|'selection', triageMode: string }}
+ * @returns {{
+ *   monitorInterval: number|string,
+ *   dashScope: 'network'|'selection',
+ *   triageMode: string,
+ *   sessionsRetentionDays: number
+ * }}
  */
 export function defaultAtlasPrefs() {
     return {
         monitorInterval: 1,
         dashScope: 'network',
-        triageMode: 'unreachable'
+        triageMode: 'unreachable',
+        sessionsRetentionDays: 30
     };
 }
 
@@ -46,6 +54,14 @@ export function normalizeAtlasPrefs(raw) {
         prefs.triageMode = String(triageRaw);
     }
 
+    const retentionRaw = raw[PREF_SESSIONS_RETENTION_DAYS] ?? raw.sessionsRetentionDays;
+    if (retentionRaw != null && retentionRaw !== '') {
+        const s = String(retentionRaw);
+        if (RETENTION_VALUES.has(s)) {
+            prefs.sessionsRetentionDays = Number(s);
+        }
+    }
+
     return prefs;
 }
 
@@ -67,6 +83,10 @@ export function serializePrefValue(key, value) {
     if (key === PREF_TRIAGE_MODE) {
         const s = String(value);
         return TRIAGE_VALUES.has(s) ? s : null;
+    }
+    if (key === PREF_SESSIONS_RETENTION_DAYS) {
+        const s = String(value);
+        return RETENTION_VALUES.has(s) ? s : null;
     }
     return null;
 }

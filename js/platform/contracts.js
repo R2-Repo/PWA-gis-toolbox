@@ -107,6 +107,8 @@
  * @property {(payload?: { limit?: number, includeOneShot?: boolean }) => Promise<{ sessions: object[] }>} [listPingSessions]
  * @property {(payload: { sessionId: string, limit?: number }) => Promise<{ session: object, results: object[] }>} [loadPingSession]
  * @property {(payload: { sessionId: string, stoppedAt?: string }) => Promise<void>} [finalizePingSession]
+ * @property {(payload: { sessionId: string }) => Promise<void>} [deletePingSession]
+ * @property {(payload: { sessionIds: string[] }) => Promise<{ deleted: number }>} [deletePingSessions]
  * @property {(payload: { key: string }) => Promise<{ key: string, value: string|null }>} [getPref]
  * @property {() => Promise<{ prefs: Record<string, string|null> }>} [getAllPrefs]
  * @property {(payload: { key: string, value: string|number|null }) => Promise<void>} [setPref]

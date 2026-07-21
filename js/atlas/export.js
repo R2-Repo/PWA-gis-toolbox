@@ -1,6 +1,7 @@
 /**
  * Atlas CSV / printable report helpers.
  */
+import { formatPingWhen, parsePingAt } from './ping-format.js';
 import { dropsInScope, listScopedDropsByPing } from './triage.js';
 
 /**
@@ -250,6 +251,39 @@ export function exportPingSessionCsv(results, opts = {}) {
 export function isMonitorHistorySession(session) {
     const label = String(session?.label || '').trim().toLowerCase();
     return label !== 'one-shot';
+}
+
+/**
+ * Sessions older than N days (ISO or unix `startedAt`).
+ * @param {Array<{ id?: string, startedAt?: string|null }>} sessions
+ * @param {number} days
+ * @param {{ excludeSessionId?: string|null }} [opts]
+ */
+export function sessionsOlderThan(sessions, days, opts = {}) {
+    const n = Number(days);
+    if (!Number.isFinite(n) || n <= 0) return [];
+    const cutoff = Date.now() - n * 86400000;
+    const excludeId = opts.excludeSessionId || null;
+    return (sessions || []).filter((s) => {
+        if (excludeId && s.id === excludeId) return false;
+        const t = parsePingAt(s.startedAt)?.getTime();
+        return t != null && t < cutoff;
+    });
+}
+
+/**
+ * Human label for session end state in history UI.
+ * @param {{ id?: string, startedAt?: string|null, stoppedAt?: string|null }|null|undefined} session
+ * @param {string|null|undefined} [activeSessionId]
+ */
+export function formatSessionEndLabel(session, activeSessionId = null) {
+    if (!session) return '';
+    if (activeSessionId && session.id === activeSessionId) return 'active';
+    if (session.stoppedAt) return formatPingWhen(session.stoppedAt);
+    const started = parsePingAt(session.startedAt);
+    if (!started) return 'incomplete';
+    if (Date.now() - started.getTime() > 2 * 3600 * 1000) return 'incomplete';
+    return 'open';
 }
 
 /**

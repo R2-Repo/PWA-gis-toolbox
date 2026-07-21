@@ -12,15 +12,24 @@ import {
     exportTriageCsv,
     openPrintableReport
 } from '../../js/atlas/export.js';
-import { listAtlasPingSessions, loadAtlasPingSession, setAtlasPref } from '../../js/atlas/controller.js';
+import {
+    deleteAtlasPingSession,
+    listAtlasPingSessions,
+    loadAtlasPingSession,
+    pruneAtlasPingSessions,
+    setAtlasPref
+} from '../../js/atlas/controller.js';
 import {
     defaultAtlasPrefs,
     PREF_DASHBOARD_SCOPE,
     PREF_MONITOR_INTERVAL,
+    PREF_SESSIONS_RETENTION_DAYS,
     PREF_TRIAGE_MODE
 } from '../../js/atlas/prefs.js';
+import { formatSessionEndLabel } from '../../js/atlas/export.js';
 import { collectHubIps, findingsInScope, listScopedDropsByPing } from '../../js/atlas/triage.js';
 import { formatPingAge, formatPingWhen, isPingStale } from '../../js/atlas/ping-format.js';
+import { confirm } from '../../js/ui/modals.js';
 import { ChannelSchematic } from './ChannelSchematic.jsx';
 import { CollapsibleSection } from '../ui/CollapsibleSection.jsx';
 
@@ -890,6 +899,48 @@ export function AtlasRightPanel({
                         >
                             Refresh
                         </button>
+                        <button
+                            type="button"
+                            className="btn btn-ghost btn-sm"
+                            disabled={historyBusy || !pastSessions.length}
+                            title="Delete sessions older than the retention setting"
+                            onClick={() => {
+                                const days = snap.prefs?.sessionsRetentionDays ?? 30;
+                                if (!days) {
+                                    void confirm(
+                                        'Retention is off',
+                                        'Choose Keep 7/30/90 days in the dropdown, then use Prune old again.'
+                                    );
+                                    return;
+                                }
+                                void confirm(
+                                    'Prune old sessions',
+                                    `Delete monitor sessions older than ${days} days? Active session is kept.`
+                                ).then((ok) => {
+                                    if (!ok) return;
+                                    setHistoryBusy(true);
+                                    void pruneAtlasPingSessions({ olderThanDays: days })
+                                        .then(() => {
+                                            if (historyDetail?.session?.id) setHistoryDetail(null);
+                                            refreshPastSessions();
+                                        })
+                                        .finally(() => setHistoryBusy(false));
+                                });
+                            }}
+                        >
+                            Prune old
+                        </button>
+                        <select
+                            className="input-sm"
+                            title="Auto-delete sessions older than this when Atlas opens (0 = off)"
+                            value={String(snap.prefs?.sessionsRetentionDays ?? 30)}
+                            onChange={(e) => void setAtlasPref(PREF_SESSIONS_RETENTION_DAYS, e.target.value)}
+                        >
+                            <option value="0">Keep forever</option>
+                            <option value="7">Keep 7 days</option>
+                            <option value="30">Keep 30 days</option>
+                            <option value="90">Keep 90 days</option>
+                        </select>
                     </div>
                     {!pastSessions.length ? (
                         <p className="atlas-muted">No saved monitor sessions yet (one-shot pings are hidden).</p>
@@ -897,8 +948,9 @@ export function AtlasRightPanel({
                         <ul className="atlas-session-list">
                             {pastSessions.map((s) => {
                                 const selected = historyDetail?.session?.id === s.id;
+                                const endLabel = formatSessionEndLabel(s, snap.activeSession?.id);
                                 return (
-                                    <li key={s.id}>
+                                    <li key={s.id} className="atlas-session-item">
                                         <button
                                             type="button"
                                             className={`atlas-session-row${selected ? ' atlas-session-row--selected' : ''}`}
@@ -914,11 +966,39 @@ export function AtlasRightPanel({
                                             <strong>{s.label || 'Monitor'}</strong>
                                             <span className="atlas-muted">
                                                 {formatPingWhen(s.startedAt)}
-                                                {s.stoppedAt ? ` → ${formatPingWhen(s.stoppedAt)}` : ' · running?'}
+                                                {' → '}
+                                                {endLabel === 'incomplete' ? (
+                                                    <span className="atlas-stale-warn">incomplete</span>
+                                                ) : endLabel}
                                             </span>
                                             <span className="atlas-muted">
                                                 {s.sampleCount || 0} samples · {s.targetCount || 0} IP(s)
                                             </span>
+                                        </button>
+                                        <button
+                                            type="button"
+                                            className="btn btn-ghost btn-sm atlas-session-delete"
+                                            disabled={historyBusy || s.id === snap.activeSession?.id}
+                                            title={s.id === snap.activeSession?.id ? 'Stop the active monitor first' : 'Delete session'}
+                                            onClick={() => {
+                                                void confirm(
+                                                    'Delete monitor session',
+                                                    `Delete “${s.label || 'Monitor'}” and its samples?`
+                                                ).then((ok) => {
+                                                    if (!ok) return;
+                                                    setHistoryBusy(true);
+                                                    void deleteAtlasPingSession(s.id)
+                                                        .then((deleted) => {
+                                                            if (deleted && historyDetail?.session?.id === s.id) {
+                                                                setHistoryDetail(null);
+                                                            }
+                                                            refreshPastSessions();
+                                                        })
+                                                        .finally(() => setHistoryBusy(false));
+                                                });
+                                            }}
+                                        >
+                                            Delete
                                         </button>
                                     </li>
                                 );
@@ -940,6 +1020,30 @@ export function AtlasRightPanel({
                                     })}
                                 >
                                     Export CSV
+                                </button>
+                                <button
+                                    type="button"
+                                    className="btn btn-ghost btn-sm"
+                                    disabled={historyBusy || historyDetail.session?.id === snap.activeSession?.id}
+                                    onClick={() => {
+                                        const id = historyDetail.session?.id;
+                                        if (!id) return;
+                                        void confirm(
+                                            'Delete monitor session',
+                                            `Delete “${historyDetail.session?.label || 'Monitor'}” and its samples?`
+                                        ).then((ok) => {
+                                            if (!ok) return;
+                                            setHistoryBusy(true);
+                                            void deleteAtlasPingSession(id)
+                                                .then((deleted) => {
+                                                    if (deleted) setHistoryDetail(null);
+                                                    refreshPastSessions();
+                                                })
+                                                .finally(() => setHistoryBusy(false));
+                                        });
+                                    }}
+                                >
+                                    Delete
                                 </button>
                             </div>
                             <ul className="atlas-simple-list atlas-monitor-tail">

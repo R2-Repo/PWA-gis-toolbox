@@ -20,7 +20,7 @@ import {
 } from './map-layers.js';
 import { buildAtlasImportPayload } from './import/pipeline.js';
 import { diffAtlasImport } from './import/diff.js';
-import { buildDashboardStats, exportPingSessionCsv } from './export.js';
+import { buildDashboardStats, exportPingSessionCsv, sessionsOlderThan } from './export.js';
 import { startPingSession, stopPingSession, stopAllPingSessions } from './monitor.js';
 import { queryAtlasInArea } from './area-query.js';
 import { collectHubIps } from './triage.js';
@@ -91,6 +91,13 @@ export async function openAtlasWorkspace() {
     enableAtlasMapInteraction((sel) => selectAtlasEntity(sel));
     bus.emit('atlas:opened', getAtlasSnapshot());
     bus.emit('atlas:prefs', prefs);
+    // Retention prune after hydrate (non-blocking for UI)
+    if (prefs.sessionsRetentionDays > 0) {
+        void pruneAtlasPingSessions({
+            olderThanDays: prefs.sessionsRetentionDays,
+            quiet: true
+        }).catch(() => {});
+    }
     return getAtlasSnapshot();
 }
 
@@ -131,7 +138,8 @@ export async function setAtlasPref(key, value) {
     const raw = {
         'monitor.interval': String(current.monitorInterval),
         'dashboard.scope': current.dashScope,
-        'triage.mode': current.triageMode
+        'triage.mode': current.triageMode,
+        'sessions.retentionDays': String(current.sessionsRetentionDays)
     };
     if (serialized == null) delete raw[key];
     else raw[key] = serialized;
@@ -524,6 +532,66 @@ export async function loadAtlasPingSession(sessionId, opts = {}) {
     const service = db();
     if (!service?.loadPingSession) throw new Error('Ping session history unavailable');
     return service.loadPingSession({ sessionId, limit: opts.limit ?? 200 });
+}
+
+/**
+ * @param {string} sessionId
+ */
+export async function deleteAtlasPingSession(sessionId) {
+    if (!sessionId) return false;
+    const activeId = getAtlasSnapshot().activeSession?.id;
+    if (activeId && sessionId === activeId) {
+        notify('Stop the active monitor before deleting it', 'warning');
+        return false;
+    }
+    const service = db();
+    if (!service?.deletePingSession) throw new Error('Ping session delete unavailable');
+    await service.deletePingSession({ sessionId });
+    bus.emit('atlas:ping-sessions');
+    notify('Monitor session deleted', 'success');
+    return true;
+}
+
+/**
+ * Delete sessions older than N days (excludes active session).
+ * @param {{ olderThanDays?: number, quiet?: boolean }} [opts]
+ * @returns {Promise<number>} deleted count
+ */
+export async function pruneAtlasPingSessions(opts = {}) {
+    const days = opts.olderThanDays
+        ?? getAtlasSnapshot().prefs?.sessionsRetentionDays
+        ?? 30;
+    if (!days || days <= 0) return 0;
+    const service = db();
+    if (!service?.deletePingSessions && !service?.deletePingSession) return 0;
+
+    const sessions = await listAtlasPingSessions({ limit: 500 });
+    const stale = sessionsOlderThan(sessions, days, {
+        excludeSessionId: getAtlasSnapshot().activeSession?.id
+    });
+    if (!stale.length) {
+        if (!opts.quiet) notify('No old monitor sessions to prune', 'info');
+        return 0;
+    }
+    const ids = stale.map((s) => s.id).filter(Boolean);
+    let deleted = 0;
+    if (service.deletePingSessions) {
+        for (let i = 0; i < ids.length; i += 200) {
+            const chunk = ids.slice(i, i + 200);
+            const res = await service.deletePingSessions({ sessionIds: chunk });
+            deleted += res?.deleted ?? chunk.length;
+        }
+    } else {
+        for (const id of ids) {
+            await service.deletePingSession({ sessionId: id });
+            deleted += 1;
+        }
+    }
+    bus.emit('atlas:ping-sessions');
+    if (!opts.quiet) {
+        notify(`Pruned ${deleted} monitor session${deleted === 1 ? '' : 's'} older than ${days}d`, 'success');
+    }
+    return deleted;
 }
 
 export function leaveAtlasMap() {

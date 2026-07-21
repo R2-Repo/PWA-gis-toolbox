@@ -132,7 +132,7 @@
  * @property {object|null} areaResults
  * @property {object|null} activeSession
  * @property {object|null} stats
- * @property {{ monitorInterval: number|string, dashScope: 'network'|'selection', triageMode: string }} [prefs]
+ * @property {{ monitorInterval: number|string, dashScope: 'network'|'selection', triageMode: string, sessionsRetentionDays: number }} [prefs]
  */
 
 export {};

@@ -837,6 +837,57 @@ pub fn atlas_ping_finalize_session(
     })
 }
 
+fn delete_ping_session_row(conn: &Connection, session_id: &str) -> Result<(), String> {
+    conn.execute(
+        "DELETE FROM ping_result WHERE session_id = ?1",
+        params![session_id],
+    )
+    .map_err(|e| e.to_string())?;
+    conn.execute("DELETE FROM ping_session WHERE id = ?1", params![session_id])
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Delete one monitor session and its samples.
+#[tauri::command]
+pub fn atlas_ping_delete_session(
+    payload: Value,
+    state: tauri::State<'_, Arc<AtlasDbState>>,
+) -> Result<(), String> {
+    with_conn(&state, |conn| {
+        let session_id = json_str(payload.get("sessionId"))
+            .ok_or_else(|| "sessionId is required".to_string())?;
+        delete_ping_session_row(conn, &session_id)?;
+        Ok(())
+    })
+}
+
+/// Delete many sessions (max 200). Returns how many were removed.
+#[tauri::command]
+pub fn atlas_ping_delete_sessions(
+    payload: Value,
+    state: tauri::State<'_, Arc<AtlasDbState>>,
+) -> Result<Value, String> {
+    with_conn(&state, |conn| {
+        let ids: Vec<String> = payload
+            .get("sessionIds")
+            .and_then(|v| v.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                    .take(200)
+                    .collect()
+            })
+            .unwrap_or_default();
+        let mut deleted = 0i64;
+        for id in ids {
+            delete_ping_session_row(conn, &id)?;
+            deleted += 1;
+        }
+        Ok(json!({ "deleted": deleted }))
+    })
+}
+
 fn chrono_like_now() -> String {
     // Prefer ISO-8601 UTC when available (Windows); fall back to unix seconds.
     #[cfg(windows)]
@@ -860,7 +911,7 @@ fn chrono_like_now() -> String {
 fn is_allowed_pref_key(key: &str) -> bool {
     matches!(
         key,
-        "monitor.interval" | "dashboard.scope" | "triage.mode"
+        "monitor.interval" | "dashboard.scope" | "triage.mode" | "sessions.retentionDays"
     )
 }
 
@@ -869,6 +920,7 @@ fn is_allowed_pref_value(key: &str, value: &str) -> bool {
         "monitor.interval" => matches!(value, "continuous" | "1" | "2" | "5" | "30" | "60"),
         "dashboard.scope" => matches!(value, "network" | "selection"),
         "triage.mode" => matches!(value, "unreachable" | "stale" | "untested" | "attention"),
+        "sessions.retentionDays" => matches!(value, "0" | "7" | "30" | "90"),
         _ => false,
     }
 }

@@ -29,6 +29,12 @@ export function createWindowsAtlasDbService() {
         async finalizePingSession(payload) {
             await invokeCommand('atlas_ping_finalize_session', { payload });
         },
+        async deletePingSession(payload) {
+            await invokeCommand('atlas_ping_delete_session', { payload });
+        },
+        async deletePingSessions(payload) {
+            return invokeCommand('atlas_ping_delete_sessions', { payload });
+        },
         async getPref(payload) {
             return invokeCommand('atlas_pref_get', { payload });
         },

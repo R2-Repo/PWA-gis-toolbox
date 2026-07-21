@@ -18,6 +18,8 @@ export function createWebAtlasDbService() {
         listPingSessions: unavailable,
         loadPingSession: unavailable,
         finalizePingSession: unavailable,
+        deletePingSession: unavailable,
+        deletePingSessions: unavailable,
         getPref: unavailable,
         getAllPrefs: unavailable,
         setPref: unavailable,
