@@ -1,7 +1,23 @@
 /**
  * Operator triage helpers (unreachable / stale / untested in current scope).
  */
-import { formatPingAge, isPingStale } from './ping-format.js';
+import { displayPingStatus, formatPingAge, getPingEntry, isPingStale } from './ping-format.js';
+
+/** @type {Record<string, number>} higher = worse (tie-break for majority fill) */
+const FILL_RANK = {
+    unreachable: 5,
+    intermittent: 4,
+    stale_unreachable: 3,
+    no_ip: 2,
+    stale_reachable: 2,
+    reachable: 1,
+    pending: 0,
+    untested: 0,
+    mixed: 0
+};
+
+const PROBLEM_STATUSES = new Set(['unreachable', 'intermittent', 'stale_unreachable']);
+const UP_STATUSES = new Set(['reachable', 'stale_reachable']);
 
 /**
  * @param {import('./types.js').AtlasSnapshot} snap
@@ -100,25 +116,36 @@ export function listScopedDropsByPing(snap, opts = {}) {
     return drops
         .filter((d) => d.ip)
         .map((d) => {
-            const ping = snap.pingResults?.[d.ip] || { status: 'untested' };
-            const status = ping.status || 'untested';
+            const ping = getPingEntry(snap.pingResults, d.ip) || { status: 'untested' };
+            const raw = ping.status || 'untested';
+            const display = displayPingStatus(ping, { hasIp: true });
             return {
                 drop: d,
                 ip: d.ip,
-                status,
+                status: raw,
+                displayStatus: display,
                 rttMs: ping.rttMs ?? null,
                 at: ping.at || null,
                 age: formatPingAge(ping.at),
                 stale: isPingStale(ping.at),
-                untested: status === 'untested' || !status
+                untested: raw === 'untested' || !raw
             };
         })
         .filter((row) => {
-            if (mode === 'unreachable') return row.status === 'unreachable';
-            if (mode === 'stale') return row.stale && row.status !== 'untested';
+            if (mode === 'unreachable') {
+                return row.displayStatus === 'unreachable' || row.displayStatus === 'stale_unreachable';
+            }
+            if (mode === 'stale') {
+                return row.displayStatus === 'stale_reachable' || row.displayStatus === 'stale_unreachable';
+            }
             if (mode === 'untested' || includeUntested) return row.untested;
             if (mode === 'attention') {
-                return row.status === 'unreachable' || row.untested || row.stale;
+                return row.displayStatus === 'unreachable'
+                    || row.displayStatus === 'stale_unreachable'
+                    || row.displayStatus === 'stale_reachable'
+                    || row.displayStatus === 'intermittent'
+                    || row.untested
+                    || row.stale;
             }
             return false;
         })
@@ -155,49 +182,100 @@ export function collectHubIps(hubId, role = 'all', snap) {
 }
 
 /**
- * Worst-of rollup across a list of IPs.
+ * Majority + issue rollup across switch IPs (hubs / channels).
  * @param {string[]} ips
  * @param {import('./types.js').AtlasSnapshot} snap
- * @returns {'unreachable'|'pending'|'warning'|'reachable'|'untested'}
+ * @returns {{ status: string, fillStatus: string, issue: 0|1 }}
  */
-export function ipsPingRollup(ips, snap) {
+export function describeIpsPingRollup(ips, snap) {
     const list = [...new Set((ips || []).filter(Boolean))];
-    if (!list.length) return 'untested';
-    let hasUnreachable = false;
-    let hasPending = false;
-    let hasReachable = false;
-    let hasStale = false;
-    let hasUntested = false;
+    if (!list.length) {
+        return { status: 'untested', fillStatus: 'untested', issue: 0 };
+    }
+
+    /** @type {string[]} */
+    const statuses = [];
     for (const ip of list) {
-        const ping = snap.pingResults?.[ip];
-        const status = ping?.status || 'untested';
-        if (status === 'unreachable') hasUnreachable = true;
-        else if (status === 'pending') hasPending = true;
-        else if (status === 'reachable') {
-            hasReachable = true;
-            if (isPingStale(ping?.at)) hasStale = true;
-        } else {
-            hasUntested = true;
+        const ping = getPingEntry(snap.pingResults, ip);
+        statuses.push(displayPingStatus(ping || { status: 'untested' }, { hasIp: true }));
+    }
+
+    const forMajority = statuses.filter((s) => s !== 'pending');
+    if (!forMajority.length) {
+        return { status: 'pending', fillStatus: 'pending', issue: 0 };
+    }
+
+    /** @type {Record<string, number>} */
+    const counts = {};
+    for (const s of forMajority) {
+        counts[s] = (counts[s] || 0) + 1;
+    }
+
+    let fillStatus = 'untested';
+    let bestCount = -1;
+    let bestRank = -1;
+    for (const [s, c] of Object.entries(counts)) {
+        const rank = FILL_RANK[s] ?? 0;
+        if (c > bestCount || (c === bestCount && rank > bestRank)) {
+            bestCount = c;
+            bestRank = rank;
+            fillStatus = s;
         }
     }
-    if (hasUnreachable) return 'unreachable';
-    if (hasPending) return 'pending';
-    if (hasStale || (hasReachable && hasUntested)) return 'warning';
-    if (hasReachable) return 'reachable';
-    return 'untested';
+
+    const hasProblem = forMajority.some((s) => PROBLEM_STATUSES.has(s));
+    const hasUp = forMajority.some((s) => UP_STATUSES.has(s));
+    const mixed = hasProblem && hasUp;
+    const issue = /** @type {0|1} */ (hasProblem ? 1 : 0);
+
+    return {
+        status: mixed ? 'mixed' : fillStatus,
+        fillStatus,
+        issue
+    };
 }
 
 /**
- * Worst-of rollup for hub map / tree coloring.
+ * @param {string[]} ips
+ * @param {import('./types.js').AtlasSnapshot} snap
+ * @returns {string}
+ */
+export function ipsPingRollup(ips, snap) {
+    return describeIpsPingRollup(ips, snap).status;
+}
+
+/**
+ * Hub device ping (official Hub List IP) — same display rules as a drop.
+ * Child switch problems are exposed only via `issue` (map red center).
+ * @param {string} hubId
+ * @param {import('./types.js').AtlasSnapshot} snap
+ * @returns {{ status: string, fillStatus: string, issue: 0|1, childStatus: string }}
+ */
+export function describeHubPing(hubId, snap) {
+    const hub = (snap.hubs || []).find((h) => h.id === hubId);
+    const hubIp = hub?.hubIp != null ? String(hub.hubIp).trim() : '';
+    const hasIp = Boolean(hubIp);
+    const ping = hasIp ? getPingEntry(snap.pingResults, hubIp) : null;
+    const status = displayPingStatus(ping, { hasIp });
+    const children = describeIpsPingRollup(collectHubIps(hubId, 'all', snap), snap);
+    return {
+        status,
+        fillStatus: status,
+        issue: children.issue,
+        childStatus: children.status
+    };
+}
+
+/**
+ * Hub map / tree color from the hub's own IP ping (not channel-switch rollup).
  * @param {string} hubId
  * @param {import('./types.js').AtlasSnapshot} snap
  */
 export function hubPingRollup(hubId, snap) {
-    return ipsPingRollup(collectHubIps(hubId, 'all', snap), snap);
+    return describeHubPing(hubId, snap).status;
 }
 
 /**
- * Worst-of rollup for a channel's switch IPs.
  * @param {string} channelId
  * @param {import('./types.js').AtlasSnapshot} snap
  */

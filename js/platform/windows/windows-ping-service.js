@@ -11,14 +11,16 @@ export function createWindowsPingService() {
         async pingOne(ip, opts = {}) {
             return invokeCommand('atlas_ping_one', {
                 ip,
-                timeoutMs: opts.timeoutMs ?? 2000
+                timeoutMs: opts.timeoutMs ?? 2000,
+                count: opts.count ?? 4
             });
         },
         async pingMany(ips, opts = {}) {
             return invokeCommand('atlas_ping_many', {
                 ips,
                 timeoutMs: opts.timeoutMs ?? 2000,
-                concurrency: opts.concurrency ?? 8
+                concurrency: opts.concurrency ?? 8,
+                count: opts.count ?? 4
             });
         },
         async cancel(sessionId) {

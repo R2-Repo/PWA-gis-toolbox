@@ -30,12 +30,76 @@ import {
     normalizeAtlasPrefs,
     serializePrefValue
 } from './prefs.js';
+import { normalizePingIp, normalizePingResultsMap } from './ping-format.js';
 import { applyFindingStatusPatch, isFindingStatus } from './findings-status.js';
 import { disableAtlasHotkeys, enableAtlasHotkeys } from './hotkeys.js';
+import { getWorkspaceMode } from './workspace.js';
+import dualScreenCoordinator from '../dual-screen/coordinator.js';
 import bus from '../core/event-bus.js';
+
+/** @type {(() => void) | null} */
+let atlasPingMapSyncOff = null;
+
+/** Keep map symbology in lockstep with any pingResults mutation. */
+function ensureAtlasPingMapSync() {
+    if (atlasPingMapSyncOff) return;
+    atlasPingMapSyncOff = bus.on('atlas:ping', () => {
+        if (!isAtlasWorkspaceOpen()) return;
+        syncAtlasMapLayers(getAtlasSnapshot());
+    });
+}
 
 function notify(message, level = 'info') {
     getPlatformBundle().services?.notifications?.show?.(message, level);
+}
+
+/** @type {(() => void) | null} */
+let atlasDualScreenTeardown = null;
+
+function isAtlasWorkspaceOpen() {
+    return Boolean(getAtlasSnapshot().loaded) && getWorkspaceMode() === 'atlas';
+}
+
+/** Re-apply Atlas overlays after dual-screen secondary ready or primary restore. */
+function remountAtlasMapLayers() {
+    if (!isAtlasWorkspaceOpen()) return;
+    syncAtlasMapLayers(getAtlasSnapshot());
+    if (!dualScreenCoordinator.isActive) {
+        enableAtlasMapInteraction(
+            (sel) => selectAtlasEntity(sel),
+            undefined,
+            () => clearAtlasFocus()
+        );
+    }
+}
+
+function installAtlasDualScreenHooks() {
+    if (atlasDualScreenTeardown) return;
+    const unsubs = [
+        bus.on('dual-screen:secondary-ready', () => {
+            if (!isAtlasWorkspaceOpen()) return;
+            syncAtlasMapLayers(getAtlasSnapshot());
+        }),
+        bus.on('dual-screen:primary-restored', () => {
+            remountAtlasMapLayers();
+        }),
+        bus.on('atlas:pick', (sel) => {
+            if (!isAtlasWorkspaceOpen()) return;
+            if (sel?.kind && sel?.id) selectAtlasEntity(sel);
+        }),
+        bus.on('atlas:clear-focus', () => {
+            if (!isAtlasWorkspaceOpen()) return;
+            clearAtlasFocus();
+        })
+    ];
+    atlasDualScreenTeardown = () => {
+        for (const off of unsubs) off?.();
+        atlasDualScreenTeardown = null;
+    };
+}
+
+function uninstallAtlasDualScreenHooks() {
+    atlasDualScreenTeardown?.();
 }
 
 /** Toast helper for Atlas UI modules. */
@@ -76,7 +140,7 @@ export async function openAtlasWorkspace() {
     await service.open();
     const data = await service.loadSnapshot();
     const prefs = await loadAtlasPrefs();
-    const pingResults = data.pingResults || {};
+    const pingResults = normalizePingResultsMap(data.pingResults || {});
     const base = {
         loaded: true,
         hubs: data.hubs || [],
@@ -95,8 +159,16 @@ export async function openAtlasWorkspace() {
         ...base,
         stats: buildDashboardStats(base, { scope: prefs.dashScope })
     });
+    installAtlasDualScreenHooks();
+    ensureAtlasPingMapSync();
     syncAtlasMapLayers(getAtlasSnapshot());
-    enableAtlasMapInteraction((sel) => selectAtlasEntity(sel));
+    if (!dualScreenCoordinator.isActive) {
+        enableAtlasMapInteraction(
+            (sel) => selectAtlasEntity(sel),
+            undefined,
+            () => clearAtlasFocus()
+        );
+    }
     enableAtlasHotkeys({
         onFocusSearch: () => bus.emit('atlas:focus-search'),
         onEscape: () => clearAtlasFocus()
@@ -152,7 +224,8 @@ export async function setAtlasPref(key, value) {
         'dashboard.scope': current.dashScope,
         'triage.mode': current.triageMode,
         'sessions.retentionDays': String(current.sessionsRetentionDays),
-        'map.pingFilter': current.mapPingFilter || 'all'
+        'map.pingFilter': current.mapPingFilter || 'all',
+        'ping.count': String(current.pingCount ?? 4)
     };
     if (serialized == null) delete raw[key];
     else raw[key] = serialized;
@@ -350,30 +423,34 @@ export async function pingTargets(ips) {
         notify(err.message, 'error');
         throw err;
     }
-    const unique = [...new Set(ips.filter(Boolean))];
+    const unique = [...new Set(ips.map((ip) => normalizePingIp(ip)).filter(Boolean))];
     if (!unique.length) {
         notify('No IPs to ping', 'warning');
         return [];
     }
+    const pingCount = Number(getAtlasSnapshot().prefs?.pingCount) || 4;
     notify(`Pinging ${unique.length} IP${unique.length === 1 ? '' : 's'}…`, 'info');
     const pending = Object.fromEntries(unique.map((ip) => [ip, { status: 'pending', at: new Date().toISOString() }]));
     setPingStatuses(pending);
-    syncAtlasMapLayers(getAtlasSnapshot());
 
     try {
-        const results = await service.pingMany(unique);
+        const results = await service.pingMany(unique, { count: pingCount });
         /** @type {Record<string, import('./types.js').PingStatusEntry>} */
         const map = {};
         for (const r of results) {
-            map[r.ip] = {
+            const ip = normalizePingIp(r.ip);
+            if (!ip) continue;
+            map[ip] = {
                 status: r.status,
                 rttMs: r.rttMs ?? null,
                 error: r.error,
-                at: new Date().toISOString()
+                at: new Date().toISOString(),
+                sent: r.sent,
+                received: r.received,
+                lossPct: r.lossPct
             };
         }
         setPingStatuses(map);
-        syncAtlasMapLayers(getAtlasSnapshot());
 
         try {
             await db()?.savePingResults?.({
@@ -390,10 +467,11 @@ export async function pingTargets(ips) {
 
         const up = results.filter((r) => r.status === 'reachable').length;
         const down = results.filter((r) => r.status === 'unreachable').length;
-        const other = results.length - up - down;
+        const intermittent = results.filter((r) => r.status === 'intermittent').length;
+        const other = results.length - up - down - intermittent;
         notify(
-            `Ping done: ${up} up · ${down} down${other ? ` · ${other} other` : ''}`,
-            down && !up ? 'warning' : 'success'
+            `Ping done: ${up} up · ${down} down${intermittent ? ` · ${intermittent} intermittent` : ''}${other ? ` · ${other} other` : ''}`,
+            down && !up && !intermittent ? 'warning' : 'success'
         );
         return results;
     } catch (err) {
@@ -422,10 +500,18 @@ export async function pingDrop(dropId) {
 
 /**
  * @param {string} hubId
- * @param {'all'|'primary'|'secondary'} [role]
+ * @param {'hub'|'all'|'primary'|'secondary'} [role]
+ *   `hub` = official Hub List IP only; other roles = channel switch IPs
  */
 export async function pingHub(hubId, role = 'all') {
-    const ips = collectHubIps(hubId, role, getAtlasSnapshot());
+    const snap = getAtlasSnapshot();
+    if (role === 'hub') {
+        const hub = (snap.hubs || []).find((h) => h.id === hubId);
+        const ip = normalizePingIp(hub?.hubIp);
+        if (!ip) throw new Error('Hub has no IP');
+        return pingTargets([ip]);
+    }
+    const ips = collectHubIps(hubId, role, snap);
     if (!ips.length) throw new Error('No switch IPs found for this hub');
     return pingTargets(ips);
 }
@@ -493,7 +579,8 @@ export function startAtlasMonitor(opts) {
         pingFn: async (targets) => {
             const service = ping();
             if (!service?.pingMany) throw new Error('Ping unavailable');
-            return service.pingMany(targets);
+            const count = Number(getAtlasSnapshot().prefs?.pingCount) || 4;
+            return service.pingMany(targets, { count });
         },
         onResult: (row) => {
             log.push(row);
@@ -502,7 +589,10 @@ export function startAtlasMonitor(opts) {
                     status: row.status,
                     rttMs: row.rttMs,
                     error: row.error,
-                    at: row.timestamp
+                    at: row.timestamp,
+                    sent: row.sent,
+                    received: row.received,
+                    lossPct: row.lossPct
                 }
             });
             syncAtlasMapLayers(getAtlasSnapshot());
@@ -679,6 +769,7 @@ export function leaveAtlasMap() {
     disableAtlasHotkeys();
     disableAtlasMapInteraction();
     clearAtlasMapLayers();
+    uninstallAtlasDualScreenHooks();
 }
 
 /** Clear area query first, else clear entity selection. */

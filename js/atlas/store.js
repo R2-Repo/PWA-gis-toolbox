@@ -3,6 +3,7 @@
  * Shared domain code reads from here; persistence goes through platform services.
  */
 import bus from '../core/event-bus.js';
+import { normalizePingIp, normalizePingResultsMap } from './ping-format.js';
 import { defaultAtlasPrefs } from './prefs.js';
 
 /** @type {import('./types.js').AtlasSnapshot} */
@@ -51,16 +52,22 @@ export function setAtlasSelection(selection) {
  * @param {import('./types.js').PingStatusEntry} entry
  */
 export function setPingStatus(ip, entry) {
-    snapshot.pingResults = { ...snapshot.pingResults, [ip]: entry };
-    bus.emit('atlas:ping', { ip, entry, pingResults: snapshot.pingResults });
+    const key = normalizePingIp(ip);
+    if (!key || !entry) return;
+    snapshot.pingResults = { ...snapshot.pingResults, [key]: entry };
+    bus.emit('atlas:ping', { ip: key, entry, pingResults: snapshot.pingResults });
+    bus.emit('atlas:changed', snapshot);
 }
 
 /**
  * @param {Record<string, import('./types.js').PingStatusEntry>} map
  */
 export function setPingStatuses(map) {
-    snapshot.pingResults = { ...snapshot.pingResults, ...map };
+    const normalized = normalizePingResultsMap(map);
+    if (!Object.keys(normalized).length) return;
+    snapshot.pingResults = { ...snapshot.pingResults, ...normalized };
     bus.emit('atlas:ping', { pingResults: snapshot.pingResults });
+    bus.emit('atlas:changed', snapshot);
 }
 
 export function clearPingStatuses() {

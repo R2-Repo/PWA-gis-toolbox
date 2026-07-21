@@ -29,6 +29,10 @@ export const MessageType = {
     MAP_RPC: 'MAP_RPC',
     MAP_RPC_RESULT: 'MAP_RPC_RESULT',
     MAP_CMD: 'MAP_CMD',
+    /** Secondary → primary: Atlas hub/drop click */
+    ATLAS_PICK: 'ATLAS_PICK',
+    /** Secondary → primary: click empty map to clear Atlas selection/area */
+    ATLAS_CLEAR: 'ATLAS_CLEAR',
     BYE: 'BYE',
     PING: 'PING',
     PONG: 'PONG'

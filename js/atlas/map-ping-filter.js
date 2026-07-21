@@ -8,7 +8,9 @@ export const MAP_PING_FILTER_VALUES = Object.freeze([
     'attention',
     'unreachable',
     'warning',
-    'untested'
+    'untested',
+    'intermittent',
+    'no_ip'
 ]);
 
 /**
@@ -19,10 +21,24 @@ export const MAP_PING_FILTER_VALUES = Object.freeze([
 export function statusesForMapPingFilter(filter) {
     const mode = String(filter || 'all');
     if (mode === 'all') return null;
-    if (mode === 'unreachable') return ['unreachable'];
-    if (mode === 'warning') return ['warning'];
+    if (mode === 'unreachable') return ['unreachable', 'stale_unreachable'];
+    if (mode === 'warning') return ['stale_reachable', 'stale_unreachable', 'warning'];
     if (mode === 'untested') return ['untested', 'pending'];
-    if (mode === 'attention') return ['unreachable', 'warning', 'untested', 'pending'];
+    if (mode === 'intermittent') return ['intermittent'];
+    if (mode === 'no_ip') return ['no_ip'];
+    if (mode === 'attention') {
+        return [
+            'unreachable',
+            'stale_unreachable',
+            'stale_reachable',
+            'warning',
+            'intermittent',
+            'untested',
+            'pending',
+            'no_ip',
+            'mixed'
+        ];
+    }
     return null;
 }
 
@@ -71,9 +87,13 @@ export function mapPingFilterLabel(filter) {
         case 'unreachable':
             return 'Unreachable';
         case 'warning':
-            return 'Stale / warning';
+            return 'Stale';
         case 'untested':
             return 'Untested';
+        case 'intermittent':
+            return 'Intermittent';
+        case 'no_ip':
+            return 'No IP';
         default:
             return 'All pings';
     }

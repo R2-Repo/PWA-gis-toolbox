@@ -2,7 +2,7 @@
  * Region → Hub → Channel → Drop → Device (+ Sites) tree builders.
  */
 import { getAtlasSnapshot } from './store.js';
-import { displayPingStatus } from './ping-format.js';
+import { displayPingStatus, getPingEntry } from './ping-format.js';
 import { channelPingRollup, hubPingRollup, ipsPingRollup } from './triage.js';
 
 /**
@@ -68,7 +68,7 @@ export function buildHierarchyTree() {
                     children: drops.map((d) => {
                         const device = snap.devices.find((dev) => dev.id === d.deviceId || (d.ip && dev.ip === d.ip));
                         const pingStatus = d.ip
-                            ? displayPingStatus(snap.pingResults?.[d.ip])
+                            ? displayPingStatus(getPingEntry(snap.pingResults, d.ip), { hasIp: true })
                             : null;
                         return {
                             id: d.id,
@@ -83,7 +83,7 @@ export function buildHierarchyTree() {
                                     kind: 'device',
                                     meta: device.model || device.deviceType || '',
                                     pingStatus: device.ip
-                                        ? displayPingStatus(snap.pingResults?.[device.ip])
+                                        ? displayPingStatus(getPingEntry(snap.pingResults, device.ip), { hasIp: true })
                                         : null,
                                     children: []
                                 }]
@@ -135,7 +135,7 @@ export function buildHierarchyTree() {
                         kind: 'drop',
                         meta: d.channelNumber ? `Ch ${d.channelNumber}` : '',
                         pingStatus: d.ip
-                            ? displayPingStatus(snap.pingResults?.[d.ip])
+                            ? displayPingStatus(getPingEntry(snap.pingResults, d.ip), { hasIp: true })
                             : null,
                         children: []
                     }))

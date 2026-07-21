@@ -1033,6 +1033,7 @@ fn is_allowed_pref_key(key: &str) -> bool {
             | "triage.mode"
             | "sessions.retentionDays"
             | "map.pingFilter"
+            | "ping.count"
     )
 }
 
@@ -1042,9 +1043,17 @@ fn is_allowed_pref_value(key: &str, value: &str) -> bool {
         "dashboard.scope" => matches!(value, "network" | "selection"),
         "triage.mode" => matches!(value, "unreachable" | "stale" | "untested" | "attention"),
         "sessions.retentionDays" => matches!(value, "0" | "7" | "30" | "90"),
-        "map.pingFilter" => {
-            matches!(value, "all" | "attention" | "unreachable" | "warning" | "untested")
-        }
+        "map.pingFilter" => matches!(
+            value,
+            "all"
+                | "attention"
+                | "unreachable"
+                | "warning"
+                | "untested"
+                | "intermittent"
+                | "no_ip"
+        ),
+        "ping.count" => matches!(value, "1" | "2" | "4" | "8"),
         _ => false,
     }
 }

@@ -3,7 +3,7 @@ import bus from '../../js/core/event-bus.js';
 import { getAtlasSnapshot } from '../../js/atlas/store.js';
 import { searchAtlasDetailed } from '../../js/atlas/search.js';
 import { buildHierarchyTree } from '../../js/atlas/hierarchy.js';
-import { formatPingWhen, isPingStale } from '../../js/atlas/ping-format.js';
+import { formatPingWhen } from '../../js/atlas/ping-format.js';
 import { clearAtlasFocus, listAtlasImportBatches, reloadAtlasFromDb } from '../../js/atlas/controller.js';
 import {
     describeImportBatch,
@@ -190,83 +190,6 @@ export function AtlasLeftPanel({ onSelect, onOpenImport }) {
                     </button>
                 </div>
             ) : null}
-            {snap.lastImport && (
-                <div
-                    className={`atlas-freshness-banner${
-                        isPingStale(snap.lastImport.importedAt, 168) ? ' atlas-freshness-banner--stale' : ''
-                    }`}
-                >
-                    <strong>Last import</strong>
-                    <span>
-                        {snap.lastImport.workbookName || 'workbook'}
-                        {snap.lastImport.atmsName ? ` + ${snap.lastImport.atmsName}` : ''}
-                    </span>
-                    <span className="atlas-muted">
-                        {snap.lastImport.batchDate || formatPingWhen(snap.lastImport.importedAt)}
-                        {snap.lastImport.importedAt ? ` · ${formatPingWhen(snap.lastImport.importedAt)}` : ''}
-                    </span>
-                    {formatImportBatchCounts(snap.lastImport) ? (
-                        <span className="atlas-muted">{formatImportBatchCounts(snap.lastImport)}</span>
-                    ) : null}
-                    {isPingStale(snap.lastImport.importedAt, 168) ? (
-                        <span className="atlas-stale-warn">Older than 7 days — consider re-importing.</span>
-                    ) : null}
-                </div>
-            )}
-
-            <CollapsibleSection title="Import history" bodyId="atlas-import-history" defaultOpen={false}>
-                <p className="atlas-muted atlas-import-history-note">
-                    Counts and diff from each Apply (not restorable). Network tables always reflect the latest Apply.
-                </p>
-                {!importBatches.length ? (
-                    <p className="atlas-muted">
-                        {batchesBusy ? 'Loading…' : 'No import batches yet.'}
-                    </p>
-                ) : (
-                    <ul className="atlas-session-list">
-                        {importBatches.map((batch) => {
-                            const { title, files } = describeImportBatch(batch);
-                            const isCurrent = batch.id === snap.lastImport?.id;
-                            const countsLine = formatImportBatchCounts(batch);
-                            const diffLine = formatImportBatchDiff(batch);
-                            return (
-                                <li key={batch.id} className="atlas-session-item">
-                                    <div
-                                        className={`atlas-session-row${isCurrent ? ' atlas-session-row--selected' : ''}`}
-                                    >
-                                        <strong>
-                                            {title}
-                                            {isCurrent ? <span className="atlas-tag"> current</span> : null}
-                                        </strong>
-                                        {files && files !== title ? (
-                                            <span className="atlas-muted">{files}</span>
-                                        ) : null}
-                                        {countsLine ? <span>{countsLine}</span> : null}
-                                        {diffLine ? <span className="atlas-muted">{diffLine}</span> : null}
-                                        <span className="atlas-muted">
-                                            {formatPingWhen(batch.importedAt)}
-                                        </span>
-                                    </div>
-                                </li>
-                            );
-                        })}
-                    </ul>
-                )}
-                <div className="atlas-toolbar">
-                    <button
-                        type="button"
-                        className="btn btn-ghost btn-sm"
-                        disabled={batchesBusy}
-                        onClick={refreshImportBatches}
-                    >
-                        {batchesBusy ? 'Refreshing…' : 'Refresh'}
-                    </button>
-                    <button type="button" className="btn btn-secondary btn-sm" onClick={onOpenImport}>
-                        Import data
-                    </button>
-                </div>
-            </CollapsibleSection>
-
             <CollapsibleSection title="Search" bodyId="atlas-search" defaultOpen>
                 <input
                     id="atlas-search-input"
@@ -332,6 +255,59 @@ export function AtlasLeftPanel({ onSelect, onOpenImport }) {
                         />
                     ))
                 )}
+            </CollapsibleSection>
+
+            <CollapsibleSection title="Import history" bodyId="atlas-import-history" defaultOpen={false}>
+                <p className="atlas-muted atlas-import-history-note">
+                    Counts and diff from each Apply (not restorable). Network tables always reflect the latest Apply.
+                </p>
+                {!importBatches.length ? (
+                    <p className="atlas-muted">
+                        {batchesBusy ? 'Loading…' : 'No import batches yet.'}
+                    </p>
+                ) : (
+                    <ul className="atlas-session-list">
+                        {importBatches.map((batch) => {
+                            const { title, files } = describeImportBatch(batch);
+                            const isCurrent = batch.id === snap.lastImport?.id;
+                            const countsLine = formatImportBatchCounts(batch);
+                            const diffLine = formatImportBatchDiff(batch);
+                            return (
+                                <li key={batch.id} className="atlas-session-item">
+                                    <div
+                                        className={`atlas-session-row${isCurrent ? ' atlas-session-row--selected' : ''}`}
+                                    >
+                                        <strong>
+                                            {title}
+                                            {isCurrent ? <span className="atlas-tag"> current</span> : null}
+                                        </strong>
+                                        {files && files !== title ? (
+                                            <span className="atlas-muted">{files}</span>
+                                        ) : null}
+                                        {countsLine ? <span>{countsLine}</span> : null}
+                                        {diffLine ? <span className="atlas-muted">{diffLine}</span> : null}
+                                        <span className="atlas-muted">
+                                            {formatPingWhen(batch.importedAt)}
+                                        </span>
+                                    </div>
+                                </li>
+                            );
+                        })}
+                    </ul>
+                )}
+                <div className="atlas-toolbar">
+                    <button
+                        type="button"
+                        className="btn btn-ghost btn-sm"
+                        disabled={batchesBusy}
+                        onClick={refreshImportBatches}
+                    >
+                        {batchesBusy ? 'Refreshing…' : 'Refresh'}
+                    </button>
+                    <button type="button" className="btn btn-secondary btn-sm" onClick={onOpenImport}>
+                        Import data
+                    </button>
+                </div>
             </CollapsibleSection>
         </div>
     );

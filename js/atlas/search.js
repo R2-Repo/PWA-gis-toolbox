@@ -2,7 +2,7 @@
  * Universal Atlas search over in-memory snapshot.
  */
 import { getAtlasSnapshot } from './store.js';
-import { displayPingStatus } from './ping-format.js';
+import { displayPingStatus, getPingEntry } from './ping-format.js';
 import { channelPingRollup, hubPingRollup, ipsPingRollup } from './triage.js';
 
 /**
@@ -66,13 +66,13 @@ export function searchAtlasDetailed(query, limit = 50) {
                 drop.siteId
             ].join(' ').toLowerCase();
             if (hay.includes(q)) {
-                const ping = drop.ip ? snap.pingResults?.[drop.ip] : null;
+                const ping = drop.ip ? getPingEntry(snap.pingResults, drop.ip) : null;
                 if (push({
                     kind: 'drop',
                     id: drop.id,
                     label: drop.inventoryName || `Drop ${drop.dropNumber ?? '?'}`,
                     meta: `Ch ${drop.channelNumber || '?'} · D${drop.dropNumber ?? '?'} · ${drop.ip || 'no IP'}`,
-                    pingStatus: drop.ip ? displayPingStatus(ping) : null
+                    pingStatus: drop.ip ? displayPingStatus(ping, { hasIp: true }) : null
                 })) break;
             }
         }
@@ -100,13 +100,13 @@ export function searchAtlasDetailed(query, limit = 50) {
         for (const dev of snap.devices || []) {
             const hay = `${dev.ip || ''} ${dev.inventoryName || ''} ${dev.model || ''}`.toLowerCase();
             if (hay.includes(q)) {
-                const ping = dev.ip ? snap.pingResults?.[dev.ip] : null;
+                const ping = dev.ip ? getPingEntry(snap.pingResults, dev.ip) : null;
                 if (push({
                     kind: 'device',
                     id: dev.id,
                     label: dev.ip || dev.inventoryName || dev.id,
                     meta: [dev.model, dev.deviceType].filter(Boolean).join(' · '),
-                    pingStatus: dev.ip ? displayPingStatus(ping) : null
+                    pingStatus: dev.ip ? displayPingStatus(ping, { hasIp: true }) : null
                 })) break;
             }
         }

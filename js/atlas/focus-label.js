@@ -103,14 +103,23 @@ export function describeAtlasFocus(snap) {
 
 /** Ping legend entries matching map-layers colors. */
 export const ATLAS_PING_LEGEND = [
-    { key: 'reachable', label: 'Reachable', color: '#16a34a' },
-    { key: 'unreachable', label: 'Unreachable', color: '#dc2626' },
-    { key: 'warning', label: 'Stale / mixed', color: '#ea580c' },
+    { key: 'reachable', label: 'Reachable', color: '#39ff14' },
+    { key: 'unreachable', label: 'Unreachable', color: '#ff2d2d' },
+    { key: 'stale_reachable', label: 'Stale up', color: '#4d7c4d' },
+    { key: 'stale_unreachable', label: 'Stale down', color: '#7a3a3a' },
+    { key: 'intermittent', label: 'Intermittent', color: '#facc15' },
+    { key: 'no_ip', label: 'No IP / no channel halo', color: '#0a0a0a' },
+    { key: 'mixed', label: 'Hub mixed', color: '#a78bfa' },
     { key: 'pending', label: 'Pending', color: '#ca8a04' },
     { key: 'untested', label: 'Untested', color: '#94a3b8' }
 ];
 
 export const ATLAS_MAP_LEGEND_EXTRA = [
-    { key: 'selected', label: 'Selected', color: '#f59e0b', ring: true },
+    { key: 'drop_core', label: 'Drop (has channel)', color: '#2563eb' },
+    { key: 'drop_no_ip', label: 'Drop (no IP, blue)', color: '#2563eb' },
+    { key: 'drop_no_channel', label: 'Drop (no channel, gray)', color: '#cbd5e1' },
+    { key: 'selected', label: 'Selected', color: '#ff2bd6', ring: true },
+    { key: 'hub', label: 'Hub (square)', color: '#94a3b8' },
+    { key: 'hub_issue', label: 'Hub issue', color: '#ff2d2d' },
     { key: 'channel', label: 'Channel path', color: '#2563eb', line: true }
 ];

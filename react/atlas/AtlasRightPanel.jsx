@@ -26,13 +26,14 @@ import {
     defaultAtlasPrefs,
     PREF_DASHBOARD_SCOPE,
     PREF_MONITOR_INTERVAL,
+    PREF_PING_COUNT,
     PREF_SESSIONS_RETENTION_DAYS,
     PREF_TRIAGE_MODE
 } from '../../js/atlas/prefs.js';
 import { formatSessionEndLabel } from '../../js/atlas/export.js';
 import { uniqueIps } from '../../js/atlas/clipboard.js';
 import { collectHubIps, findingsInScope, listScopedDropsByPing } from '../../js/atlas/triage.js';
-import { formatPingAge, formatPingWhen, isPingStale } from '../../js/atlas/ping-format.js';
+import { formatPingAge, formatPingWhen, getPingEntry, isPingStale } from '../../js/atlas/ping-format.js';
 import { confirm } from '../../js/ui/modals.js';
 import { ChannelSchematic } from './ChannelSchematic.jsx';
 import { CopyIp, CopyIpsButton } from './CopyIp.jsx';
@@ -63,6 +64,7 @@ export function AtlasRightPanel({
     const [findingFilter, setFindingFilter] = useState('Open');
     const [findingTypeFilter, setFindingTypeFilter] = useState('all');
     const [monitorInterval, setMonitorInterval] = useState(initialPrefs.monitorInterval);
+    const [pingCount, setPingCount] = useState(initialPrefs.pingCount ?? 4);
     const [dashScope, setDashScope] = useState(initialPrefs.dashScope);
     const [triageMode, setTriageMode] = useState(initialPrefs.triageMode);
     const [noteDrafts, setNoteDrafts] = useState({});
@@ -121,6 +123,12 @@ export function AtlasRightPanel({
         void setAtlasPref(PREF_MONITOR_INTERVAL, next);
     };
 
+    const changePingCount = (raw) => {
+        const next = Number(raw) || 4;
+        setPingCount(next);
+        void setAtlasPref(PREF_PING_COUNT, next);
+    };
+
     const changeDashScope = (scope, { persist = true } = {}) => {
         setDashScope(scope);
         if (persist) void setAtlasPref(PREF_DASHBOARD_SCOPE, scope);
@@ -170,6 +178,7 @@ export function AtlasRightPanel({
         const applyPrefs = (prefs) => {
             if (!prefs) return;
             setMonitorInterval(prefs.monitorInterval);
+            setPingCount(prefs.pingCount ?? 4);
             setTriageMode(prefs.triageMode);
             if (!getAtlasSnapshot().selection) {
                 setDashScope(prefs.dashScope);
@@ -339,7 +348,7 @@ export function AtlasRightPanel({
 
     return (
         <div className="atlas-panel atlas-panel-right">
-            <CollapsibleSection title="Dashboard" bodyId="atlas-dash">
+            <CollapsibleSection title="Dashboard" bodyId="atlas-dash" defaultOpen={false}>
                 {isEmptyDb ? (
                     <div className="atlas-empty-cta">
                         <p><strong>No network data yet</strong></p>
@@ -541,6 +550,17 @@ export function AtlasRightPanel({
                                 {canPing ? (
                                     <>
                                 <button type="button" className="btn btn-secondary btn-sm" onClick={() => onPingDrop?.(dropDetail.id)}>Ping once</button>
+                                <select
+                                    className="input-sm"
+                                    value={pingCount}
+                                    onChange={(e) => changePingCount(e.target.value)}
+                                    title="ICMP packets per ping"
+                                >
+                                    <option value={1}>1 pkt</option>
+                                    <option value={2}>2 pkt</option>
+                                    <option value={4}>4 pkt</option>
+                                    <option value={8}>8 pkt</option>
+                                </select>
                                 <select className="input-sm" value={monitorInterval} onChange={(e) => changeMonitorInterval(e.target.value)}>
                                     <option value="continuous">Continuous (~5s)</option>
                                     <option value={1}>Every 1 min</option>
@@ -734,7 +754,21 @@ export function AtlasRightPanel({
                         </p>
                         {hubSummary.hub.hubIp ? (
                             <p>Hub IP: <CopyIp ip={hubSummary.hub.hubIp} /></p>
-                        ) : null}
+                        ) : (
+                            <p className="atlas-muted">No hub IP (add via Hub List import)</p>
+                        )}
+                        {(() => {
+                            const hubPing = getPingEntry(snap.pingResults, hubSummary.hub.hubIp);
+                            if (!hubPing) return null;
+                            return (
+                                <p className={isPingStale(hubPing.at) ? 'atlas-stale-warn' : 'atlas-muted'}>
+                                    Hub ping: {hubPing.status}
+                                    {hubPing.rttMs != null ? ` · ${hubPing.rttMs} ms` : ''}
+                                    {' · '}
+                                    {formatPingAge(hubPing.at)}
+                                </p>
+                            );
+                        })()}
                         {hubSummary.hub.channelsSubnet ? (
                             <p className="atlas-muted">Channels subnet: {hubSummary.hub.channelsSubnet}</p>
                         ) : null}
@@ -758,7 +792,20 @@ export function AtlasRightPanel({
                             />
                             {canPing ? (
                                 <>
-                                <button type="button" className="btn btn-secondary btn-sm" onClick={() => onPingHub?.(hubSummary.hub.id, 'all')}>
+                                {hubSummary.hub.hubIp ? (
+                                    <button
+                                        type="button"
+                                        className="btn btn-secondary btn-sm"
+                                        onClick={() => onPingHub?.(hubSummary.hub.id, 'hub')}
+                                    >
+                                        Ping hub IP
+                                    </button>
+                                ) : null}
+                                <button
+                                    type="button"
+                                    className={`btn btn-sm${hubSummary.hub.hubIp ? ' btn-ghost' : ' btn-secondary'}`}
+                                    onClick={() => onPingHub?.(hubSummary.hub.id, 'all')}
+                                >
                                     Ping all hub switches
                                 </button>
                                 <button type="button" className="btn btn-ghost btn-sm" onClick={() => onPingHub?.(hubSummary.hub.id, 'primary')}>
@@ -852,6 +899,22 @@ export function AtlasRightPanel({
                             {label}
                         </button>
                     ))}
+                    {canPing ? (
+                        <label className="atlas-muted" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                            Ping packets
+                            <select
+                                className="input-sm"
+                                value={pingCount}
+                                onChange={(e) => changePingCount(e.target.value)}
+                                title="ICMP packets per target (intermittent if success rate &gt;0% and &lt;75%)"
+                            >
+                                <option value={1}>1</option>
+                                <option value={2}>2</option>
+                                <option value={4}>4</option>
+                                <option value={8}>8</option>
+                            </select>
+                        </label>
+                    ) : null}
                 </div>
                 <p className="atlas-muted">
                     {triageMode} in {dashScope === 'selection' ? 'current selection/area' : 'full network'} ({triageRows.length}).

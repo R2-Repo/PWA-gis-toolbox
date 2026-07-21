@@ -1,6 +1,20 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { channelPingRollup, collectHubIps, dropsInScope, findingsInScope, hubPingRollup, listScopedDropsByPing } from '../js/atlas/triage.js';
-import { displayPingStatus, formatPingAge, isPingStale, parsePingAt } from '../js/atlas/ping-format.js';
+import {
+    channelPingRollup,
+    collectHubIps,
+    describeHubPing,
+    dropsInScope,
+    findingsInScope,
+    hubPingRollup,
+    listScopedDropsByPing
+} from '../js/atlas/triage.js';
+import {
+    classifyPingCounts,
+    displayPingStatus,
+    formatPingAge,
+    isPingStale,
+    parsePingAt
+} from '../js/atlas/ping-format.js';
 import { buildImportFindings } from '../js/atlas/import/audit.js';
 import { queryAtlasInArea, pointInGeometry } from '../js/atlas/area-query.js';
 import { getAtlasSnapshot, patchAtlasSnapshot, resetAtlasSnapshot } from '../js/atlas/store.js';
@@ -27,12 +41,23 @@ describe('atlas ping format', () => {
         expect(isPingStale(new Date().toISOString(), 24)).toBe(false);
     });
 
-    it('maps reachable+stale to warning display status', () => {
+    it('maps stale up/down, no_ip, and legacy warning', () => {
         const staleAt = new Date(Date.now() - 48 * 3600 * 1000).toISOString();
-        expect(displayPingStatus({ status: 'reachable', at: staleAt })).toBe('warning');
+        expect(displayPingStatus({ status: 'reachable', at: staleAt })).toBe('stale_reachable');
         expect(displayPingStatus({ status: 'reachable', at: new Date().toISOString() })).toBe('reachable');
-        expect(displayPingStatus({ status: 'unreachable', at: staleAt })).toBe('unreachable');
+        expect(displayPingStatus({ status: 'unreachable', at: staleAt })).toBe('stale_unreachable');
+        expect(displayPingStatus({ status: 'unreachable', at: new Date().toISOString() })).toBe('unreachable');
+        expect(displayPingStatus({ status: 'warning', at: new Date().toISOString() })).toBe('stale_reachable');
+        expect(displayPingStatus(null, { hasIp: false })).toBe('no_ip');
         expect(displayPingStatus(null)).toBe('untested');
+        expect(displayPingStatus({ status: 'intermittent' })).toBe('intermittent');
+    });
+
+    it('classifies multi-packet ratios', () => {
+        expect(classifyPingCounts(4, 0)).toBe('unreachable');
+        expect(classifyPingCounts(4, 2)).toBe('intermittent');
+        expect(classifyPingCounts(4, 3)).toBe('reachable');
+        expect(classifyPingCounts(4, 4)).toBe('reachable');
     });
 });
 
@@ -94,20 +119,49 @@ describe('atlas unreachable triage', () => {
         expect(collectHubIps('h1', 'all', snap).sort()).toEqual(['10.0.0.1', '10.0.0.2']);
     });
 
-    it('rolls up hub ping to worst status', () => {
+    it('colors hub from hub IP ping; child problems set issue flag', () => {
+        const now = new Date().toISOString();
         const snap = {
-            hubs: [{ id: 'h1', hubCode: 'H1' }],
+            hubs: [{ id: 'h1', hubCode: 'H1', hubIp: '10.9.9.1' }],
             channels: [{ id: 'c1', primaryHubId: 'h1', primaryHubCode: 'H1' }],
             drops: [
                 { id: 'd1', channelId: 'c1', ip: '10.0.0.1' },
                 { id: 'd2', channelId: 'c1', ip: '10.0.0.2' }
             ],
             pingResults: {
-                '10.0.0.1': { status: 'reachable', at: new Date().toISOString() },
-                '10.0.0.2': { status: 'unreachable', at: new Date().toISOString() }
+                '10.9.9.1': { status: 'unreachable', at: now },
+                '10.0.0.1': { status: 'reachable', at: now },
+                '10.0.0.2': { status: 'unreachable', at: now }
             }
         };
         expect(hubPingRollup('h1', snap)).toBe('unreachable');
+        const detail = describeHubPing('h1', snap);
+        expect(detail.fillStatus).toBe('unreachable');
+        expect(detail.issue).toBe(1);
+        expect(detail.childStatus).toBe('mixed');
+    });
+
+    it('hub without IP is no_ip; child issue still rolls up', () => {
+        const now = new Date().toISOString();
+        const snap = {
+            hubs: [{ id: 'h1', hubCode: 'H1' }],
+            channels: [{ id: 'c1', primaryHubId: 'h1', primaryHubCode: 'H1' }],
+            drops: [
+                { id: 'd1', channelId: 'c1', ip: '10.0.0.1' },
+                { id: 'd2', channelId: 'c1', ip: '10.0.0.2' },
+                { id: 'd3', channelId: 'c1', ip: '10.0.0.3' }
+            ],
+            pingResults: {
+                '10.0.0.1': { status: 'reachable', at: now },
+                '10.0.0.2': { status: 'reachable', at: now },
+                '10.0.0.3': { status: 'unreachable', at: now }
+            }
+        };
+        const detail = describeHubPing('h1', snap);
+        expect(detail.status).toBe('no_ip');
+        expect(detail.fillStatus).toBe('no_ip');
+        expect(detail.issue).toBe(1);
+        expect(detail.childStatus).toBe('mixed');
     });
 
     it('entity selection overrides stale areaResults', () => {
@@ -211,9 +265,10 @@ describe('atlas area + schematic', () => {
         expect(secondary?.warnings?.some((w) => w.id === 'f-sec')).toBe(true);
     });
 
-    it('sets schematic hub ping from rollup', () => {
+    it('sets schematic hub ping from hub IP', () => {
+        const now = new Date().toISOString();
         patchAtlasSnapshot({
-            hubs: [{ id: 'h1', hubCode: 'H1' }],
+            hubs: [{ id: 'h1', hubCode: 'H1', hubIp: '10.9.9.1' }],
             channels: [{
                 id: 'c1',
                 channelNumber: '1',
@@ -226,14 +281,15 @@ describe('atlas area + schematic', () => {
                 { id: 'd2', channelId: 'c1', dropNumber: 2, ip: '10.0.0.2' }
             ],
             pingResults: {
-                '10.0.0.1': { status: 'reachable', at: new Date().toISOString() },
-                '10.0.0.2': { status: 'unreachable', at: new Date().toISOString() }
+                '10.9.9.1': { status: 'reachable', at: now },
+                '10.0.0.1': { status: 'reachable', at: now },
+                '10.0.0.2': { status: 'unreachable', at: now }
             },
             findings: []
         });
         const schematic = buildChannelSchematic('c1');
         const primary = schematic?.nodes.find((n) => n.role === 'primary');
-        expect(primary?.ping?.status).toBe('unreachable');
+        expect(primary?.ping?.status).toBe('reachable');
     });
 
     it('counts findings by type', () => {
@@ -251,7 +307,7 @@ describe('atlas area + schematic', () => {
 
     it('adds pingStatus on hierarchy hubs/channels/drops and sites branch', () => {
         patchAtlasSnapshot({
-            hubs: [{ id: 'h1', hubCode: 'H1', name: 'Hub H1' }],
+            hubs: [{ id: 'h1', hubCode: 'H1', name: 'Hub H1', hubIp: '10.9.9.1' }],
             channels: [{ id: 'c1', channelNumber: '1', primaryHubId: 'h1', primaryHubCode: 'H1', secondaryHubCode: 'H2' }],
             drops: [{
                 id: 'd1',
@@ -263,17 +319,32 @@ describe('atlas area + schematic', () => {
             }],
             sites: [{ id: 's1', inventoryName: 'Site A', siteId: 'S-1' }],
             devices: [],
-            pingResults: { '10.0.0.1': { status: 'unreachable', at: new Date().toISOString() } }
+            pingResults: {
+                '10.9.9.1': { status: 'reachable', at: new Date().toISOString() },
+                '10.0.0.1': { status: 'unreachable', at: new Date().toISOString() }
+            }
         });
         const tree = buildHierarchyTree();
         const hub = tree[0]?.children?.find((n) => n.id === 'h1');
-        expect(hub?.pingStatus).toBe('unreachable');
+        expect(hub?.pingStatus).toBe('reachable');
         expect(hub?.children?.[0]?.pingStatus).toBe('unreachable');
         expect(channelPingRollup('c1', getAtlasSnapshot())).toBe('unreachable');
         const sitesRoot = tree[0]?.children?.find((n) => n.id === 'sites-root');
         expect(sitesRoot?.children?.[0]?.kind).toBe('site');
         const hits = searchAtlas('10.0.0.1');
         expect(hits[0]?.pingStatus).toBe('unreachable');
+    });
+
+    it('attention triage includes intermittent', () => {
+        const snap = {
+            drops: [
+                { id: 'd1', channelId: 'c1', channelNumber: '1', dropNumber: 1, ip: '10.0.0.1' }
+            ],
+            pingResults: {
+                '10.0.0.1': { status: 'intermittent', at: new Date().toISOString() }
+            }
+        };
+        expect(listScopedDropsByPing(snap, { mode: 'attention' }).map((r) => r.ip)).toEqual(['10.0.0.1']);
     });
 
     it('builds findings table html and drops csv ping columns', () => {

@@ -2,6 +2,7 @@
  * Channel schematic: Primary Hub → D1 → D2 → … → Secondary Hub
  */
 import { getAtlasSnapshot } from './store.js';
+import { getPingEntry } from './ping-format.js';
 import { hubPingRollup } from './triage.js';
 
 /**
@@ -85,7 +86,7 @@ export function buildChannelSchematic(channelId) {
     });
 
     for (const drop of drops) {
-        const ping = drop.ip ? snap.pingResults[drop.ip] : null;
+        const ping = drop.ip ? getPingEntry(snap.pingResults, drop.ip) : null;
         const warnings = findingsByDrop.get(drop.id) || [];
         nodes.push({
             kind: 'drop',

@@ -57,12 +57,17 @@ Opening Atlas later loads SQLite only — spreadsheets are not re-read until the
 
 Map: click hubs/drops to select; channel selection draws a path and fits bounds. Dashboard can scope to Network or Selection.
 
+**Dual screen:** Atlas hubs/drops/channel/area overlays are **not** GIS `getLayers()` entries. When dual-screen is active they sync to the secondary map via BroadcastChannel `MAP_CMD` (`atlasSync` / `atlasClear`), not the GIS `SNAPSHOT` path. Second-screen clicks relay as `ATLAS_PICK` → primary selection.
+
 Operator UX:
 - Last-import freshness banner (warns after 7 days)
-- Hierarchy / search / map: ping dots; reachable+stale shows as warning (orange)
+- Hierarchy / search / map: ping dots (blue drop cores; status halos: green/red/stale/intermittent/no-IP)
+- Stale after 24h applies to last-known reachable **and** unreachable (`stale_reachable` / `stale_unreachable`)
+- Multi-packet ICMP (pref `ping.count`, default 4): intermittent when success rate &gt;0% and &lt;75%
+- Hubs: square fill from hub IP ping (same statuses as drops); small red center when any child switch is down/intermittent/stale-down
 - Map hover tooltips (hub/drop label, IP, ping); `/` focuses search, `Esc` clears area then selection
 - Map focus bar (current selection/area + Clear) and collapsible ping legend
-- Map ping filter (all / needs attention / unreachable / warning / untested); pref `map.pingFilter`
+- Map ping filter (all / attention / unreachable / stale / untested / intermittent / no IP); pref `map.pingFilter`
 - Monitor history Load more (screen + DB); search Show more when truncated; empty-DB import CTA
 - Operator finish: `?` shortcuts help; left selection Clear chip; select all filtered findings
 - Monitor history: Export full CSV from SQLite (all samples); Export loaded for preview only
@@ -74,7 +79,7 @@ Operator UX:
 - Findings: entityKind chip + Open on map; status/type filters; Show all / CSV; bulk select → status / Copy IPs / Ping / Start monitor
 - Reload DB button (left panel) rehydrates from SQLite; stops active monitor after confirm
 - Ping triage: unreachable / stale / untested / needs attention + per-row Ping
-- Hub map + schematic hubs colored by worst-of switch ping rollup
+- Hub map + schematic hubs colored by majority rollup (`mixed` + issue center when up+down)
 - Hub detail: ping all / primary / secondary + start monitor
 - Area query + View area findings → Reconciliation
 - Area clear + entity selection overrides stale area scope
@@ -85,10 +90,10 @@ Operator UX:
 - Device detail: gateway/subnet/provisional
 - Monitor from drop/hub/channel/site/device/triage/area/selected findings; section auto-opens when active
 - Past monitor sessions: list / view / re-export CSV / delete; prune by retention (default 30d on open)
-- Operator prefs (SQLite `atlas_pref`): monitor interval, dashboard scope, triage mode, session retention, map ping filter
-- Ping toasts (start + up/down summary)
+- Operator prefs (SQLite `atlas_pref`): monitor interval, ping packet count, dashboard scope, triage mode, session retention, map ping filter
+- Ping toasts (start + up/down/intermittent summary)
 - Reconciliation findings follow Network / Selection scope
-- Ping age on drop details / schematic (stale after 24h)
+- Ping age on drop details / schematic (stale after 24h for up and down)
 - Findings: suggested action, editable notes, link to hub/channel/drop/device/site
 - Monitor samples persisted; stop on leave Atlas (CSV only when Stop clicked)
 - Import Review: findings-by-type summary + full diff lists + changed-IP details + CSV

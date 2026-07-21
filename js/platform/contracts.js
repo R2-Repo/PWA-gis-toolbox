@@ -135,15 +135,18 @@
 /**
  * @typedef {Object} PingResult
  * @property {string} ip
- * @property {'reachable'|'unreachable'|'warning'} status
+ * @property {'reachable'|'unreachable'|'intermittent'} status
  * @property {number|null} [rttMs]
+ * @property {number} [sent]
+ * @property {number} [received]
+ * @property {number} [lossPct]
  * @property {string} [error]
  */
 
 /**
  * @typedef {Object} PingService
- * @property {(ip: string, opts?: { timeoutMs?: number }) => Promise<PingResult>} pingOne
- * @property {(ips: string[], opts?: { timeoutMs?: number, concurrency?: number }) => Promise<PingResult[]>} pingMany
+ * @property {(ip: string, opts?: { timeoutMs?: number, count?: number }) => Promise<PingResult>} pingOne
+ * @property {(ips: string[], opts?: { timeoutMs?: number, concurrency?: number, count?: number }) => Promise<PingResult[]>} pingMany
  * @property {(sessionId: string) => Promise<void>} [cancel]
  */
 

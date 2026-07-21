@@ -25,6 +25,7 @@ import {
     openSecondaryMapWindow
 } from './window-open.js';
 import { syncBasemapToggleActive } from '../map/basemap-catalog.js';
+import bus from '../core/event-bus.js';
 
 const POLL_MS = 500;
 const ACTIVATE_HANDSHAKE_MS = 5000;
@@ -311,6 +312,7 @@ class DualScreenCoordinator {
             });
 
             scheduleMapResizeAfterLayout(mapService);
+            bus.emit('dual-screen:primary-restored');
         };
 
         if (!mapService.getMap()) {
@@ -355,10 +357,26 @@ class DualScreenCoordinator {
                     const resolve = this._activateResolve;
                     this._activateResolve = null;
                     resolve?.(true);
+                    // Secondary is live; mirror GIS snapshot + notify Atlas overlays.
+                    this._secondaryReady = true;
+                    this.sendSnapshot();
+                    bus.emit('dual-screen:secondary-ready');
                     return;
                 }
                 this._secondaryReady = true;
                 this.sendSnapshot();
+                bus.emit('dual-screen:secondary-ready');
+                break;
+            case MessageType.ATLAS_PICK:
+                if (msg.payload?.kind && msg.payload?.id) {
+                    bus.emit('atlas:pick', {
+                        kind: msg.payload.kind,
+                        id: String(msg.payload.id)
+                    });
+                }
+                break;
+            case MessageType.ATLAS_CLEAR:
+                bus.emit('atlas:clear-focus');
                 break;
             case MessageType.VIEWPORT:
                 if (msg.payload) {
@@ -525,9 +543,14 @@ class DualScreenCoordinator {
         });
     }
 
-    broadcastMapCmd(action, data = {}) {
+    /**
+     * @param {string} action
+     * @param {object} [data]
+     * @param {{ focusMap?: boolean }} [options]
+     */
+    broadcastMapCmd(action, data = {}, options = {}) {
         if (!this._channel) return;
-        if (this.isActive) this.focusMapWindow();
+        if (this.isActive && options.focusMap !== false) this.focusMapWindow();
         this._channel.post(createMessage('primary', MessageType.MAP_CMD, { action, ...data }));
     }
 

@@ -7,12 +7,22 @@ export const PREF_DASHBOARD_SCOPE = 'dashboard.scope';
 export const PREF_TRIAGE_MODE = 'triage.mode';
 export const PREF_SESSIONS_RETENTION_DAYS = 'sessions.retentionDays';
 export const PREF_MAP_PING_FILTER = 'map.pingFilter';
+export const PREF_PING_COUNT = 'ping.count';
 
 const INTERVAL_VALUES = new Set(['continuous', '1', '2', '5', '30', '60']);
 const SCOPE_VALUES = new Set(['network', 'selection']);
 const TRIAGE_VALUES = new Set(['unreachable', 'stale', 'untested', 'attention']);
 const RETENTION_VALUES = new Set(['0', '7', '30', '90']);
-const MAP_PING_FILTER_VALUES = new Set(['all', 'attention', 'unreachable', 'warning', 'untested']);
+const MAP_PING_FILTER_VALUES = new Set([
+    'all',
+    'attention',
+    'unreachable',
+    'warning',
+    'untested',
+    'intermittent',
+    'no_ip'
+]);
+const PING_COUNT_VALUES = new Set(['1', '2', '4', '8']);
 
 /**
  * @returns {{
@@ -20,7 +30,8 @@ const MAP_PING_FILTER_VALUES = new Set(['all', 'attention', 'unreachable', 'warn
  *   dashScope: 'network'|'selection',
  *   triageMode: string,
  *   sessionsRetentionDays: number,
- *   mapPingFilter: string
+ *   mapPingFilter: string,
+ *   pingCount: number
  * }}
  */
 export function defaultAtlasPrefs() {
@@ -29,7 +40,8 @@ export function defaultAtlasPrefs() {
         dashScope: 'network',
         triageMode: 'unreachable',
         sessionsRetentionDays: 30,
-        mapPingFilter: 'all'
+        mapPingFilter: 'all',
+        pingCount: 4
     };
 }
 
@@ -71,6 +83,14 @@ export function normalizeAtlasPrefs(raw) {
         prefs.mapPingFilter = String(mapFilterRaw);
     }
 
+    const pingCountRaw = raw[PREF_PING_COUNT] ?? raw.pingCount;
+    if (pingCountRaw != null && pingCountRaw !== '') {
+        const s = String(pingCountRaw);
+        if (PING_COUNT_VALUES.has(s)) {
+            prefs.pingCount = Number(s);
+        }
+    }
+
     return prefs;
 }
 
@@ -100,6 +120,10 @@ export function serializePrefValue(key, value) {
     if (key === PREF_MAP_PING_FILTER) {
         const s = String(value);
         return MAP_PING_FILTER_VALUES.has(s) ? s : null;
+    }
+    if (key === PREF_PING_COUNT) {
+        const s = String(value);
+        return PING_COUNT_VALUES.has(s) ? s : null;
     }
     return null;
 }

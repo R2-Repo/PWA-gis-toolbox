@@ -90,7 +90,7 @@
  */
 
 /**
- * @typedef {'reachable'|'unreachable'|'pending'|'warning'|'untested'} PingReachability
+ * @typedef {'reachable'|'unreachable'|'pending'|'intermittent'|'untested'|'warning'|'stale_reachable'|'stale_unreachable'|'no_ip'|'mixed'} PingReachability
  */
 
 /**
@@ -99,6 +99,9 @@
  * @property {number|null} [rttMs]
  * @property {string} [error]
  * @property {string} [at]
+ * @property {number} [sent]
+ * @property {number} [received]
+ * @property {number} [lossPct]
  */
 
 /**
@@ -137,7 +140,7 @@
  * @property {object|null} areaResults
  * @property {object|null} activeSession
  * @property {object|null} stats
- * @property {{ monitorInterval: number|string, dashScope: 'network'|'selection', triageMode: string, sessionsRetentionDays: number, mapPingFilter: string }} [prefs]
+ * @property {{ monitorInterval: number|string, dashScope: 'network'|'selection', triageMode: string, sessionsRetentionDays: number, mapPingFilter: string, pingCount: number }} [prefs]
  */
 
 export {};

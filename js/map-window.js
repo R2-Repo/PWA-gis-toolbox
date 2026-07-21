@@ -19,12 +19,19 @@ import {
 import { setupMapPrintMenu } from './map/map-export.js';
 import { mountBasemapToggle, syncBasemapToggleActive } from './map/basemap-catalog.js';
 import { isTauriShellPresent } from './platform/create-platform.js';
+import {
+    applyAtlasMapToMap,
+    clearAtlasMapFromMap,
+    enableAtlasMapInteraction,
+    disableAtlasMapInteraction
+} from './atlas/map-layers.js';
 
 const ROLE = 'secondary';
 const QUEUED_MESSAGE_TYPES = new Set([
     MessageType.SNAPSHOT,
     MessageType.LAYER_ADD,
-    MessageType.LAYER_STYLE
+    MessageType.LAYER_STYLE,
+    MessageType.MAP_CMD
 ]);
 
 let channel = null;
@@ -236,8 +243,21 @@ function onMapReady() {
     post(MessageType.HELLO, {});
 }
 
+function wireAtlasSecondaryInteraction() {
+    const map = mapService.getMap();
+    if (!map) return;
+    enableAtlasMapInteraction(
+        (sel) => {
+            if (!sel?.kind || !sel?.id) return;
+            post(MessageType.ATLAS_PICK, { kind: sel.kind, id: sel.id });
+        },
+        map,
+        () => post(MessageType.ATLAS_CLEAR, {})
+    );
+}
+
 function applyMapCmd(payload) {
-    const { action, geojson, duration, options, layerId, range, latitude, style, dataset } = payload || {};
+    const { action, geojson, duration, options, layerId, range, latitude, style, dataset, payload: atlasPayload } = payload || {};
     switch (action) {
         case 'showTempFeature':
             mapService.showTempFeature(geojson, duration ?? 10000, options);
@@ -257,6 +277,18 @@ function applyMapCmd(payload) {
         case 'cancelInteraction':
             mapService.cancelInteraction?.();
             break;
+        case 'atlasSync': {
+            const map = mapService.getMap();
+            if (!map || !atlasPayload) break;
+            applyAtlasMapToMap(map, atlasPayload);
+            wireAtlasSecondaryInteraction();
+            break;
+        }
+        case 'atlasClear': {
+            disableAtlasMapInteraction();
+            clearAtlasMapFromMap(mapService.getMap());
+            break;
+        }
         case 'setLayerScaleRange': {
             const map = mapService.getMap();
             if (!layerId || !range || !map) break;
