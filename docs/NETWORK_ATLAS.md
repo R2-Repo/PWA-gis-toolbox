@@ -69,7 +69,7 @@ Operator UX:
 - Import history: past `import_batch` rows with counts + diff summary (keep last 50 on apply)
 - Dashboard: inventory counts, wireless/provisional, finding-type cards, ping triage
 - Findings focus: click finding → filter + scroll + highlight row
-- Findings: entityKind chip + Open on map; status/type filters; Show all / CSV; bulk select → status / Copy IPs / Ping selected
+- Findings: entityKind chip + Open on map; status/type filters; Show all / CSV; bulk select → status / Copy IPs / Ping / Start monitor
 - Reload DB button (left panel) rehydrates from SQLite; stops active monitor after confirm
 - Ping triage: unreachable / stale / untested / needs attention + per-row Ping
 - Hub map + schematic hubs colored by worst-of switch ping rollup
@@ -81,7 +81,7 @@ Operator UX:
 - Wireless inferred on import from ATMS device type / model
 - Channel/site/device detail with ping + monitor
 - Device detail: gateway/subnet/provisional
-- Monitor from drop/hub/channel/site/device/triage/area; section auto-opens when active
+- Monitor from drop/hub/channel/site/device/triage/area/selected findings; section auto-opens when active
 - Past monitor sessions: list / view / re-export CSV / delete; prune by retention (default 30d on open)
 - Operator prefs (SQLite `atlas_pref`): monitor interval, dashboard scope, triage mode, session retention, map ping filter
 - Ping toasts (start + up/down summary)

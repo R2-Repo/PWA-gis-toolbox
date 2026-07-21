@@ -1340,24 +1340,56 @@ export function AtlasRightPanel({
                         disabled={bulkBusy || !selectedFindingIps.length}
                     />
                     {canPing ? (
-                        <button
-                            type="button"
-                            className="btn btn-secondary btn-sm"
-                            disabled={bulkBusy || !selectedFindingIps.length}
-                            title={
-                                selectedFindingIps.length
-                                    ? `Ping ${selectedFindingIps.length} unique IP${selectedFindingIps.length === 1 ? '' : 's'} from selection`
-                                    : 'Selected findings have no IPs'
-                            }
-                            onClick={() => {
-                                setBulkBusy(true);
-                                void Promise.resolve(onPingSelectedIps?.(selectedFindingIps))
-                                    .catch(() => {})
-                                    .finally(() => setBulkBusy(false));
-                            }}
-                        >
-                            Ping selected ({selectedFindingIps.length})
-                        </button>
+                        <>
+                            <button
+                                type="button"
+                                className="btn btn-secondary btn-sm"
+                                disabled={bulkBusy || !selectedFindingIps.length}
+                                title={
+                                    selectedFindingIps.length
+                                        ? `Ping ${selectedFindingIps.length} unique IP${selectedFindingIps.length === 1 ? '' : 's'} from selection`
+                                        : 'Selected findings have no IPs'
+                                }
+                                onClick={() => {
+                                    setBulkBusy(true);
+                                    void Promise.resolve(onPingSelectedIps?.(selectedFindingIps))
+                                        .catch(() => {})
+                                        .finally(() => setBulkBusy(false));
+                                }}
+                            >
+                                Ping selected ({selectedFindingIps.length})
+                            </button>
+                            <button
+                                type="button"
+                                className="btn btn-ghost btn-sm"
+                                disabled={bulkBusy || !selectedFindingIps.length || !!snap.activeSession}
+                                title={
+                                    snap.activeSession
+                                        ? 'Stop the active monitor first'
+                                        : selectedFindingIps.length
+                                            ? `Monitor ${selectedFindingIps.length} unique IP${selectedFindingIps.length === 1 ? '' : 's'} from selection`
+                                            : 'Selected findings have no IPs'
+                                }
+                                onClick={() => onStartMonitor?.({
+                                    targets: selectedFindingIps,
+                                    interval: monitorInterval,
+                                    label: `Findings (${selectedFindingIps.length} IP${selectedFindingIps.length === 1 ? '' : 's'})`
+                                })}
+                            >
+                                Start monitor
+                            </button>
+                            <select
+                                className="input-sm"
+                                value={monitorInterval}
+                                disabled={bulkBusy || !selectedFindingIps.length}
+                                onChange={(e) => changeMonitorInterval(e.target.value)}
+                                title="Monitor interval for selected findings"
+                            >
+                                <option value="continuous">Continuous (~5s)</option>
+                                <option value={1}>Every 1 min</option>
+                                <option value={5}>Every 5 min</option>
+                            </select>
+                        </>
                     ) : null}
                     {['Reviewed', 'Ignored', 'Resolved', 'Open'].map((st) => (
                         <button
