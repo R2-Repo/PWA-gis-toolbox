@@ -433,6 +433,13 @@ button.atlas-dash-card--action:hover {
     text-align: left;
 }
 
+.atlas-finding--focused {
+    outline: 2px solid #f59e0b;
+    outline-offset: 2px;
+    background: #fffbeb;
+    border-radius: 6px;
+}
+
 .atlas-finding-notes {
     display: flex;
     flex-direction: column;

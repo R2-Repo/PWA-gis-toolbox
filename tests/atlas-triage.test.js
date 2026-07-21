@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { collectHubIps, dropsInScope, findingsInScope, hubPingRollup, listScopedDropsByPing } from '../js/atlas/triage.js';
+import { channelPingRollup, collectHubIps, dropsInScope, findingsInScope, hubPingRollup, listScopedDropsByPing } from '../js/atlas/triage.js';
 import { formatPingAge, isPingStale, parsePingAt } from '../js/atlas/ping-format.js';
 import { buildImportFindings } from '../js/atlas/import/audit.js';
 import { queryAtlasInArea, pointInGeometry } from '../js/atlas/area-query.js';
@@ -216,18 +216,29 @@ describe('atlas area + schematic', () => {
         ]);
     });
 
-    it('adds pingStatus on hierarchy drops and search hits', () => {
+    it('adds pingStatus on hierarchy hubs/channels/drops and sites branch', () => {
         patchAtlasSnapshot({
             hubs: [{ id: 'h1', hubCode: 'H1', name: 'Hub H1' }],
-            channels: [{ id: 'c1', channelNumber: '1', primaryHubCode: 'H1', secondaryHubCode: 'H2' }],
-            drops: [{ id: 'd1', channelId: 'c1', dropNumber: 1, ip: '10.0.0.1', inventoryName: 'Site A' }],
+            channels: [{ id: 'c1', channelNumber: '1', primaryHubId: 'h1', primaryHubCode: 'H1', secondaryHubCode: 'H2' }],
+            drops: [{
+                id: 'd1',
+                channelId: 'c1',
+                dropNumber: 1,
+                ip: '10.0.0.1',
+                inventoryName: 'Site A',
+                siteId: 's1'
+            }],
+            sites: [{ id: 's1', inventoryName: 'Site A', siteId: 'S-1' }],
             devices: [],
             pingResults: { '10.0.0.1': { status: 'unreachable', at: new Date().toISOString() } }
         });
         const tree = buildHierarchyTree();
         const hub = tree[0]?.children?.find((n) => n.id === 'h1');
-        const drop = hub?.children?.[0]?.children?.[0];
-        expect(drop?.pingStatus).toBe('unreachable');
+        expect(hub?.pingStatus).toBe('unreachable');
+        expect(hub?.children?.[0]?.pingStatus).toBe('unreachable');
+        expect(channelPingRollup('c1', getAtlasSnapshot())).toBe('unreachable');
+        const sitesRoot = tree[0]?.children?.find((n) => n.id === 'sites-root');
+        expect(sitesRoot?.children?.[0]?.kind).toBe('site');
         const hits = searchAtlas('10.0.0.1');
         expect(hits[0]?.pingStatus).toBe('unreachable');
     });

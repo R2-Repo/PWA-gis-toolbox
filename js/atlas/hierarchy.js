@@ -1,7 +1,8 @@
 /**
- * Region → Hub → Channel → Drop → Device tree builders.
+ * Region → Hub → Channel → Drop → Device (+ Sites) tree builders.
  */
 import { getAtlasSnapshot } from './store.js';
+import { channelPingRollup, hubPingRollup, ipsPingRollup } from './triage.js';
 
 /**
  * @returns {Array<{ id: string, label: string, kind: string, children: object[] }>}
@@ -52,6 +53,7 @@ export function buildHierarchyTree() {
             label: hub.name || `Hub ${hub.hubCode}`,
             kind: 'hub',
             meta: hub.hubCode,
+            pingStatus: hubPingRollup(hub.id, snap),
             children: uniqueChannels.map((ch) => {
                 const drops = snap.drops
                     .filter((d) => d.channelId === ch.id)
@@ -61,6 +63,7 @@ export function buildHierarchyTree() {
                     label: `Channel ${ch.channelNumber}`,
                     kind: 'channel',
                     meta: `${drops.length} drops`,
+                    pingStatus: channelPingRollup(ch.id, snap),
                     children: drops.map((d) => {
                         const device = snap.devices.find((dev) => dev.id === d.deviceId || (d.ip && dev.ip === d.ip));
                         const pingStatus = d.ip
@@ -101,8 +104,42 @@ export function buildHierarchyTree() {
                 id: ch.id,
                 label: `Channel ${ch.channelNumber}`,
                 kind: 'channel',
+                pingStatus: channelPingRollup(ch.id, snap),
                 children: []
             }))
+        });
+    }
+
+    const sites = [...(snap.sites || [])].sort((a, b) =>
+        String(a.inventoryName || a.siteId || a.id)
+            .localeCompare(String(b.inventoryName || b.siteId || b.id)));
+    if (sites.length) {
+        region.children.push({
+            id: 'sites-root',
+            label: `Sites (${sites.length})`,
+            kind: 'region',
+            meta: 'by inventory',
+            children: sites.map((site) => {
+                const siteDrops = (snap.drops || []).filter((d) => d.siteId === site.id);
+                const ips = siteDrops.map((d) => d.ip).filter(Boolean);
+                return {
+                    id: site.id,
+                    label: site.inventoryName || site.siteId || site.id,
+                    kind: 'site',
+                    meta: site.siteId || `${siteDrops.length} drops`,
+                    pingStatus: ips.length ? ipsPingRollup(ips, snap) : null,
+                    children: siteDrops.map((d) => ({
+                        id: d.id,
+                        label: `D${d.dropNumber ?? '?'} · ${d.ip || 'drop'}`,
+                        kind: 'drop',
+                        meta: d.channelNumber ? `Ch ${d.channelNumber}` : '',
+                        pingStatus: d.ip
+                            ? (snap.pingResults?.[d.ip]?.status || 'untested')
+                            : null,
+                        children: []
+                    }))
+                };
+            })
         });
     }
 

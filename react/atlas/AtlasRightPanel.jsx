@@ -4,11 +4,11 @@ import { getAtlasSnapshot } from '../../js/atlas/store.js';
 import { buildChannelSchematic } from '../../js/atlas/schematic.js';
 import { getHubChannelSummary } from '../../js/atlas/hierarchy.js';
 import {
+    buildAtlasReportHtml,
     buildDashboardStats,
     exportDropsCsv,
     exportFindingsCsv,
     exportTriageCsv,
-    findingsTableHtml,
     openPrintableReport
 } from '../../js/atlas/export.js';
 import { collectHubIps, findingsInScope, listScopedDropsByPing } from '../../js/atlas/triage.js';
@@ -46,12 +46,27 @@ export function AtlasRightPanel({
     const [showAllTriage, setShowAllTriage] = useState(false);
     const [showAllFindings, setShowAllFindings] = useState(false);
     const [showAllArea, setShowAllArea] = useState(false);
+    const [focusedFindingId, setFocusedFindingId] = useState(null);
 
     const focusFindings = (type = 'all', status = 'Open') => {
         setFindingFilter(status);
         setFindingTypeFilter(type);
+        setFocusedFindingId(null);
         requestAnimationFrame(() => {
             document.getElementById('atlas-findings')?.scrollIntoView?.({ behavior: 'smooth', block: 'nearest' });
+        });
+    };
+
+    const focusFinding = (f) => {
+        if (!f) return;
+        setFindingFilter(f.status || 'Open');
+        setFindingTypeFilter(f.findingType || 'all');
+        setFocusedFindingId(f.id);
+        setShowAllFindings(true);
+        onSelectFinding?.(f);
+        requestAnimationFrame(() => {
+            document.getElementById('atlas-findings')?.scrollIntoView?.({ behavior: 'smooth', block: 'nearest' });
+            document.getElementById(`atlas-finding-${f.id}`)?.scrollIntoView?.({ behavior: 'smooth', block: 'nearest' });
         });
     };
 
@@ -253,6 +268,30 @@ export function AtlasRightPanel({
                     <button
                         type="button"
                         className="atlas-dash-card atlas-dash-card--action"
+                        onClick={() => focusFindings('missing_channel', 'Open')}
+                        title="Filter missing channel"
+                    >
+                        <span>Missing channel</span><strong>{stats.missingChannel || 0}</strong>
+                    </button>
+                    <button
+                        type="button"
+                        className="atlas-dash-card atlas-dash-card--action"
+                        onClick={() => focusFindings('missing_drop', 'Open')}
+                        title="Filter missing drop number"
+                    >
+                        <span>Missing drop</span><strong>{stats.missingDrop || 0}</strong>
+                    </button>
+                    <button
+                        type="button"
+                        className="atlas-dash-card atlas-dash-card--action"
+                        onClick={() => focusFindings('missing_secondary_hub', 'Open')}
+                        title="Filter missing secondary hub"
+                    >
+                        <span>Missing sec hub</span><strong>{stats.missingSecondaryHub || 0}</strong>
+                    </button>
+                    <button
+                        type="button"
+                        className="atlas-dash-card atlas-dash-card--action"
                         onClick={() => focusTriage('unreachable')}
                         title="Open unreachable triage"
                     >
@@ -296,18 +335,7 @@ export function AtlasRightPanel({
                         className="btn btn-ghost btn-sm"
                         onClick={() => openPrintableReport({
                             title: 'ITS Network Atlas Report',
-                            bodyHtml: `<p class="muted">Scope: ${stats.scopeLabel || (dashScope === 'selection' ? 'Selection' : 'Network')}</p>
-                              <table><tr><th>Metric</th><th>Value</th></tr>
-                              <tr><td>Hubs</td><td>${stats.hubs}</td></tr>
-                              <tr><td>Channels</td><td>${stats.channels}</td></tr>
-                              <tr><td>Drops</td><td>${stats.drops}</td></tr>
-                              <tr><td>Devices</td><td>${stats.devices}</td></tr>
-                              <tr><td>Open findings</td><td>${stats.openFindings}</td></tr>
-                              <tr><td>Missing Site IDs</td><td>${stats.missingSiteIds}</td></tr>
-                              <tr><td>Duplicate IPs</td><td>${stats.duplicateIps}</td></tr>
-                              <tr><td>Ping up/down</td><td>${stats.pingReachable}/${stats.pingUnreachable}</td></tr></table>
-                              <h2>Findings</h2>
-                              ${findingsTableHtml(scopedFindings.filter((f) => f.status === 'Open'))}`
+                            bodyHtml: buildAtlasReportHtml(snap, stats, scopedFindings)
                         })}
                     >
                         Printable report
@@ -564,12 +592,7 @@ export function AtlasRightPanel({
                             || (snap.hubs || []).find((h) => h.hubCode === hubCode);
                         if (hub) onSelect?.({ kind: 'hub', id: hub.id });
                     }}
-                    onSelectFinding={(f) => {
-                        onSelectFinding?.(f);
-                        requestAnimationFrame(() => {
-                            document.getElementById('atlas-findings')?.scrollIntoView?.({ behavior: 'smooth', block: 'nearest' });
-                        });
-                    }}
+                    onSelectFinding={focusFinding}
                     onPingChannel={onPingChannel}
                     onPingDrop={onPingDrop}
                 />
@@ -690,43 +713,57 @@ export function AtlasRightPanel({
                         {!!area.warnings?.length && (
                             <p className="atlas-stale-warn">{area.warnings.length} open finding(s) in this area</p>
                         )}
-                        {canPing && (
-                            <div className="atlas-toolbar">
-                                <button
-                                    type="button"
-                                    className="btn btn-secondary btn-sm"
-                                    onClick={() => onPingSelectedIps?.(area.drops.map((d) => d.ip).filter(Boolean))}
-                                >
-                                    Ping area switches
-                                </button>
+                        <div className="atlas-toolbar">
+                            {canPing && (
+                                <>
+                                    <button
+                                        type="button"
+                                        className="btn btn-secondary btn-sm"
+                                        onClick={() => onPingSelectedIps?.(area.drops.map((d) => d.ip).filter(Boolean))}
+                                    >
+                                        Ping area switches
+                                    </button>
+                                    <button
+                                        type="button"
+                                        className="btn btn-ghost btn-sm"
+                                        disabled={!!snap.activeSession || !area.drops.some((d) => d.ip)}
+                                        onClick={() => onStartMonitor?.({
+                                            targets: area.drops.map((d) => d.ip).filter(Boolean),
+                                            interval: monitorInterval,
+                                            label: 'Area monitor'
+                                        })}
+                                    >
+                                        Start monitor
+                                    </button>
+                                </>
+                            )}
+                            {!!area.warnings?.length && (
                                 <button
                                     type="button"
                                     className="btn btn-ghost btn-sm"
-                                    disabled={!!snap.activeSession || !area.drops.some((d) => d.ip)}
-                                    onClick={() => onStartMonitor?.({
-                                        targets: area.drops.map((d) => d.ip).filter(Boolean),
-                                        interval: monitorInterval,
-                                        label: 'Area monitor'
-                                    })}
+                                    onClick={() => {
+                                        setDashScope('selection');
+                                        focusFindings('all', 'Open');
+                                    }}
                                 >
-                                    Start monitor
+                                    View area findings
                                 </button>
-                            </div>
-                        )}
-                        {(area.warnings?.length > 20 || area.drops.length > 40) && (
-                            <button
-                                type="button"
-                                className="btn btn-ghost btn-sm"
-                                onClick={() => setShowAllArea((v) => !v)}
-                            >
-                                {showAllArea ? 'Show less' : 'Show all area results'}
-                            </button>
-                        )}
+                            )}
+                            {(area.warnings?.length > 20 || area.drops.length > 40) && (
+                                <button
+                                    type="button"
+                                    className="btn btn-ghost btn-sm"
+                                    onClick={() => setShowAllArea((v) => !v)}
+                                >
+                                    {showAllArea ? 'Show less' : 'Show all area results'}
+                                </button>
+                            )}
+                        </div>
                         {!!area.warnings?.length && (
                             <ul className="atlas-simple-list">
                                 {(showAllArea ? area.warnings : area.warnings.slice(0, 20)).map((f) => (
                                     <li key={f.id}>
-                                        <button type="button" className="atlas-linkish" onClick={() => onSelectFinding?.(f)}>
+                                        <button type="button" className="atlas-linkish" onClick={() => focusFinding(f)}>
                                             {f.findingType}: {f.description}
                                         </button>
                                     </li>
@@ -817,13 +854,17 @@ export function AtlasRightPanel({
                 </div>
                 <ul className="atlas-findings-list">
                     {(showAllFindings ? findings : findings.slice(0, 100)).map((f) => (
-                        <li key={f.id}>
+                        <li
+                            key={f.id}
+                            id={`atlas-finding-${f.id}`}
+                            className={focusedFindingId === f.id ? 'atlas-finding--focused' : ''}
+                        >
                             <span className={statusClass(f.severity)}>{f.severity}</span>
                             <div>
                                 <button
                                     type="button"
                                     className="atlas-linkish atlas-finding-title"
-                                    onClick={() => onSelectFinding?.(f)}
+                                    onClick={() => focusFinding(f)}
                                     disabled={!f.entityId && !f.ip}
                                     title={f.entityId || f.ip ? 'Show on map / details' : 'No linked entity'}
                                 >

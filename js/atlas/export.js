@@ -86,6 +86,42 @@ function escHtml(v) {
 }
 
 /**
+ * Full printable report body for current dashboard scope.
+ * @param {import('./types.js').AtlasSnapshot} snap
+ * @param {ReturnType<typeof buildDashboardStats>} stats
+ * @param {import('./types.js').AtlasFinding[]} scopedFindings
+ */
+export function buildAtlasReportHtml(snap, stats, scopedFindings) {
+    const open = (scopedFindings || []).filter((f) => f.status === 'Open');
+    const typeRows = countFindingsByType(open, { openOnly: true })
+        .map((r) => `<tr><td>${escHtml(r.type)}</td><td>${r.count}</td></tr>`)
+        .join('');
+    const scopeKey = stats.scopeLabel === 'Network' ? 'network' : 'selection';
+    const wirelessCount = dropsInScope(snap, scopeKey).filter((d) => d.wireless).length;
+
+    return `<p class="muted">Scope: ${escHtml(stats.scopeLabel || 'Network')}</p>
+<table><tr><th>Metric</th><th>Value</th></tr>
+<tr><td>Hubs</td><td>${stats.hubs}</td></tr>
+<tr><td>Channels</td><td>${stats.channels}</td></tr>
+<tr><td>Drops</td><td>${stats.drops}</td></tr>
+<tr><td>Devices</td><td>${stats.devices}</td></tr>
+<tr><td>Sites</td><td>${stats.sites}</td></tr>
+<tr><td>Wireless drops</td><td>${wirelessCount}</td></tr>
+<tr><td>Open findings</td><td>${stats.openFindings}</td></tr>
+<tr><td>Ping up/down</td><td>${stats.pingReachable}/${stats.pingUnreachable}</td></tr>
+<tr><td>Stale pings</td><td>${stats.pingStale || 0}</td></tr>
+<tr><td>Untested</td><td>${stats.pingUntested || 0}</td></tr>
+<tr><td>Needs attention</td><td>${stats.pingAttention || 0}</td></tr>
+</table>
+<h2>Open findings by type</h2>
+${typeRows
+        ? `<table><tr><th>Type</th><th>Count</th></tr>${typeRows}</table>`
+        : '<p class="muted">No open findings.</p>'}
+<h2>Open findings</h2>
+${findingsTableHtml(open)}`;
+}
+
+/**
  * @param {import('./types.js').AtlasFinding[]} findings
  */
 export function exportFindingsCsv(findings) {
@@ -323,6 +359,9 @@ export function buildDashboardStats(snap, opts = {}) {
         damagedHubValue: openFindings.filter((f) => f.findingType === 'damaged_hub_value').length,
         workbookNotInAtms: openFindings.filter((f) => f.findingType === 'workbook_not_in_atms').length,
         missingSwitchfiber: openFindings.filter((f) => f.findingType === 'missing_switchfiber').length,
+        missingChannel: openFindings.filter((f) => f.findingType === 'missing_channel').length,
+        missingDrop: openFindings.filter((f) => f.findingType === 'missing_drop').length,
+        missingSecondaryHub: openFindings.filter((f) => f.findingType === 'missing_secondary_hub').length,
         pingReachable: reachable,
         pingUnreachable: unreachable,
         pingStale,

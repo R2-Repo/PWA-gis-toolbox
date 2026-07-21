@@ -155,20 +155,20 @@ export function collectHubIps(hubId, role = 'all', snap) {
 }
 
 /**
- * Worst-of rollup for hub map coloring.
- * @param {string} hubId
+ * Worst-of rollup across a list of IPs.
+ * @param {string[]} ips
  * @param {import('./types.js').AtlasSnapshot} snap
  * @returns {'unreachable'|'pending'|'warning'|'reachable'|'untested'}
  */
-export function hubPingRollup(hubId, snap) {
-    const ips = collectHubIps(hubId, 'all', snap);
-    if (!ips.length) return 'untested';
+export function ipsPingRollup(ips, snap) {
+    const list = [...new Set((ips || []).filter(Boolean))];
+    if (!list.length) return 'untested';
     let hasUnreachable = false;
     let hasPending = false;
     let hasReachable = false;
     let hasStale = false;
     let hasUntested = false;
-    for (const ip of ips) {
+    for (const ip of list) {
         const ping = snap.pingResults?.[ip];
         const status = ping?.status || 'untested';
         if (status === 'unreachable') hasUnreachable = true;
@@ -185,4 +185,25 @@ export function hubPingRollup(hubId, snap) {
     if (hasStale || (hasReachable && hasUntested)) return 'warning';
     if (hasReachable) return 'reachable';
     return 'untested';
+}
+
+/**
+ * Worst-of rollup for hub map / tree coloring.
+ * @param {string} hubId
+ * @param {import('./types.js').AtlasSnapshot} snap
+ */
+export function hubPingRollup(hubId, snap) {
+    return ipsPingRollup(collectHubIps(hubId, 'all', snap), snap);
+}
+
+/**
+ * Worst-of rollup for a channel's switch IPs.
+ * @param {string} channelId
+ * @param {import('./types.js').AtlasSnapshot} snap
+ */
+export function channelPingRollup(channelId, snap) {
+    const ips = (snap.drops || [])
+        .filter((d) => d.channelId === channelId && d.ip)
+        .map((d) => d.ip);
+    return ipsPingRollup(ips, snap);
 }

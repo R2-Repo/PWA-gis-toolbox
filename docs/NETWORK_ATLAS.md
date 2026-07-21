@@ -57,15 +57,16 @@ Map: click hubs/drops to select; channel selection draws a path and fits bounds.
 
 Operator UX:
 - Last-import freshness banner on the left panel
-- Hierarchy/search: selection highlight, auto-expand, ping status dots
-- Dashboard cards for major finding types + ping triage modes
+- Hierarchy: hubs/channels/sites with ping dots; Sites branch; selection highlight
+- Dashboard cards for all major finding types + ping triage modes
+- Findings focus: click finding → filter + scroll + highlight row
 - Findings filter by status + type; Show all / triage CSV export
 - Ping triage: unreachable / stale / untested / needs attention + per-row Ping
 - Hub map + schematic hubs colored by worst-of switch ping rollup
 - Hub detail: ping all / primary / secondary + start monitor
-- Area query: rectangle or polygon, map overlay, fit bounds, Selection scope, open findings
+- Area query + View area findings → Reconciliation
 - Area clear + entity selection overrides stale area scope
-- Scoped drops CSV (includes ping columns) / printable report with findings table
+- Scoped drops CSV / printable report (triage stats + finding-type breakdown)
 - Channel schematic: finding badges (click → finding), wireless tag, clickable hubs
 - Wireless inferred on import from ATMS device type / model
 - Channel/site/device detail with ping + monitor
