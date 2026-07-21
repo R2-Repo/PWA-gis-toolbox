@@ -14,6 +14,7 @@ export function createWebAtlasDbService() {
         open: unavailable,
         loadSnapshot: unavailable,
         applyImport: unavailable,
+        listImportBatches: unavailable,
         savePingResults: unavailable,
         listPingSessions: unavailable,
         loadPingSession: unavailable,

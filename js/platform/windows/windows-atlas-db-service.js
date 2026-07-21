@@ -17,6 +17,9 @@ export function createWindowsAtlasDbService() {
         async applyImport(payload) {
             return invokeCommand('atlas_import_apply', { payload });
         },
+        async listImportBatches(payload = {}) {
+            return invokeCommand('atlas_import_list_batches', { payload });
+        },
         async savePingResults(payload) {
             await invokeCommand('atlas_ping_save', { payload });
         },

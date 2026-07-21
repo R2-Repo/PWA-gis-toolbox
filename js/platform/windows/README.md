@@ -11,7 +11,7 @@
 | `windows-compute-service.js` | Routes allow-listed ops through the job service |
 | `windows-job-service.js` | Starts Rust jobs; streams progress/log/result events |
 | `windows-platform.js` | Assembles `platform` + `services` for WidgetContext |
-| `windows-atlas-db-service.js` | Network Atlas SQLite + import inbox (`atlas_db_*` / `atlas_import_inbox_*`) |
+| `windows-atlas-db-service.js` | Network Atlas SQLite + import inbox (`atlas_db_*` / `atlas_import_*`) |
 | `windows-ping-service.js` | Network Atlas ICMP ping (`atlas_ping_*`) |
 
 ## Native operations

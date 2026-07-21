@@ -250,6 +250,23 @@ export async function runAtlasImport(input) {
 }
 
 /**
+ * List past import batch metadata (newest first). Not restorable.
+ * @param {{ limit?: number }} [opts]
+ * @returns {Promise<object[]>}
+ */
+export async function listAtlasImportBatches(opts = {}) {
+    if (!atlasCapabilities().available) return [];
+    const service = db();
+    if (!service?.listImportBatches) return [];
+    try {
+        const res = await service.listImportBatches(opts);
+        return res?.batches || [];
+    } catch {
+        return [];
+    }
+}
+
+/**
  * @param {import('./types.js').AtlasSelection} selection
  */
 export function selectAtlasEntity(selection) {

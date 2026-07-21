@@ -614,11 +614,71 @@ pub fn atlas_import_apply(
             }
         }
 
+        // Keep metadata history bounded (entities/raw are already replaced above).
+        // Nested SELECT materializes ids so SQLite allows DELETE on the same table.
+        tx.execute(
+            r#"
+            DELETE FROM import_batch
+            WHERE id NOT IN (
+                SELECT id FROM (
+                    SELECT id FROM import_batch
+                    ORDER BY imported_at DESC
+                    LIMIT 50
+                )
+            )
+            "#,
+            [],
+        )
+        .map_err(|e| e.to_string())?;
+
         tx.commit().map_err(|e| e.to_string())?;
         Ok(payload
             .get("summary")
             .cloned()
             .unwrap_or_else(|| json!({ "ok": true })))
+    })
+}
+
+/// List past import batch metadata (newest first). Not restorable — apply replaces network tables.
+#[tauri::command]
+pub fn atlas_import_list_batches(
+    payload: Value,
+    state: tauri::State<'_, Arc<AtlasDbState>>,
+) -> Result<Value, String> {
+    with_conn(&state, |conn| {
+        let limit = payload
+            .get("limit")
+            .and_then(|v| v.as_i64())
+            .unwrap_or(50)
+            .clamp(1, 200);
+
+        let mut stmt = conn
+            .prepare(
+                r#"
+                SELECT id, batch_date, imported_at, workbook_name, atms_name
+                FROM import_batch
+                ORDER BY imported_at DESC
+                LIMIT ?1
+                "#,
+            )
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map(params![limit], |r| {
+                Ok(json!({
+                    "id": r.get::<_, String>(0)?,
+                    "batchDate": r.get::<_, Option<String>>(1)?,
+                    "importedAt": r.get::<_, String>(2)?,
+                    "workbookName": r.get::<_, Option<String>>(3)?,
+                    "atmsName": r.get::<_, Option<String>>(4)?,
+                }))
+            })
+            .map_err(|e| e.to_string())?;
+
+        let mut batches = Vec::new();
+        for row in rows {
+            batches.push(row.map_err(|e| e.to_string())?);
+        }
+        Ok(json!({ "batches": batches }))
     })
 }
 

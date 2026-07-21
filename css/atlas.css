@@ -637,6 +637,11 @@ button.atlas-dash-card--action:hover {
     border: 1px solid #fdba74;
 }
 
+.atlas-import-history-note {
+    margin: 0 0 8px;
+    font-size: 11px;
+}
+
 .atlas-finding-entity {
     display: flex;
     flex-wrap: wrap;

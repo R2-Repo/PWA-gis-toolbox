@@ -103,6 +103,7 @@
  * @property {() => Promise<void>} open
  * @property {() => Promise<object>} loadSnapshot
  * @property {(payload: object) => Promise<object>} applyImport
+ * @property {(payload?: { limit?: number }) => Promise<{ batches: object[] }>} [listImportBatches]
  * @property {(payload: object) => Promise<void>} [savePingResults]
  * @property {(payload?: { limit?: number, includeOneShot?: boolean }) => Promise<{ sessions: object[] }>} [listPingSessions]
  * @property {(payload: { sessionId: string, limit?: number, all?: boolean }) => Promise<{ session: object, results: object[], all?: boolean }>} [loadPingSession]

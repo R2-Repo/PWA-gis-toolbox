@@ -4,7 +4,8 @@ import { getAtlasSnapshot } from '../../js/atlas/store.js';
 import { searchAtlasDetailed } from '../../js/atlas/search.js';
 import { buildHierarchyTree } from '../../js/atlas/hierarchy.js';
 import { formatPingWhen, isPingStale } from '../../js/atlas/ping-format.js';
-import { clearAtlasFocus, reloadAtlasFromDb } from '../../js/atlas/controller.js';
+import { clearAtlasFocus, listAtlasImportBatches, reloadAtlasFromDb } from '../../js/atlas/controller.js';
+import { describeImportBatch } from '../../js/atlas/import/batch-format.js';
 import { describeAtlasFocus } from '../../js/atlas/focus-label.js';
 import { showAtlasShortcutsHelp } from '../../js/atlas/hotkeys.js';
 import { confirm } from '../../js/ui/modals.js';
@@ -80,10 +81,24 @@ export function AtlasLeftPanel({ onSelect, onOpenImport }) {
     const [query, setQuery] = useState('');
     const [reloadBusy, setReloadBusy] = useState(false);
     const [searchLimit, setSearchLimit] = useState(50);
+    const [importBatches, setImportBatches] = useState([]);
+    const [batchesBusy, setBatchesBusy] = useState(false);
+
+    const refreshImportBatches = () => {
+        setBatchesBusy(true);
+        void listAtlasImportBatches({ limit: 50 })
+            .then((rows) => setImportBatches(rows || []))
+            .catch(() => setImportBatches([]))
+            .finally(() => setBatchesBusy(false));
+    };
 
     useEffect(() => {
+        refreshImportBatches();
         const unsub = [
-            bus.on('atlas:changed', () => setTick((t) => t + 1)),
+            bus.on('atlas:changed', () => {
+                setTick((t) => t + 1);
+                refreshImportBatches();
+            }),
             bus.on('atlas:selection', () => setTick((t) => t + 1)),
             bus.on('atlas:ping', () => setTick((t) => t + 1)),
             bus.on('atlas:focus-search', () => {
@@ -191,6 +206,55 @@ export function AtlasLeftPanel({ onSelect, onOpenImport }) {
                     ) : null}
                 </div>
             )}
+
+            <CollapsibleSection title="Import history" bodyId="atlas-import-history" defaultOpen={false}>
+                <p className="atlas-muted atlas-import-history-note">
+                    Metadata only — past applies are not restorable. Network tables always reflect the latest Apply.
+                </p>
+                {!importBatches.length ? (
+                    <p className="atlas-muted">
+                        {batchesBusy ? 'Loading…' : 'No import batches yet.'}
+                    </p>
+                ) : (
+                    <ul className="atlas-session-list">
+                        {importBatches.map((batch) => {
+                            const { title, files } = describeImportBatch(batch);
+                            const isCurrent = batch.id === snap.lastImport?.id;
+                            return (
+                                <li key={batch.id} className="atlas-session-item">
+                                    <div
+                                        className={`atlas-session-row${isCurrent ? ' atlas-session-row--selected' : ''}`}
+                                    >
+                                        <strong>
+                                            {title}
+                                            {isCurrent ? <span className="atlas-tag"> current</span> : null}
+                                        </strong>
+                                        {files && files !== title ? (
+                                            <span className="atlas-muted">{files}</span>
+                                        ) : null}
+                                        <span className="atlas-muted">
+                                            {formatPingWhen(batch.importedAt)}
+                                        </span>
+                                    </div>
+                                </li>
+                            );
+                        })}
+                    </ul>
+                )}
+                <div className="atlas-toolbar">
+                    <button
+                        type="button"
+                        className="btn btn-ghost btn-sm"
+                        disabled={batchesBusy}
+                        onClick={refreshImportBatches}
+                    >
+                        {batchesBusy ? 'Refreshing…' : 'Refresh'}
+                    </button>
+                    <button type="button" className="btn btn-secondary btn-sm" onClick={onOpenImport}>
+                        Import data
+                    </button>
+                </div>
+            </CollapsibleSection>
 
             <CollapsibleSection title="Search" bodyId="atlas-search" defaultOpen>
                 <input
