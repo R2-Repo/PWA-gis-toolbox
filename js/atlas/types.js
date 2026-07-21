@@ -10,6 +10,11 @@
  * @property {number|null} [lat]
  * @property {number|null} [lon]
  * @property {string} [regionId]
+ * @property {string} [aka]
+ * @property {string} [hubIp]
+ * @property {string} [channelsSubnet]
+ * @property {boolean} [isShed]
+ * @property {boolean} [fromOfficialList]
  */
 
 /**

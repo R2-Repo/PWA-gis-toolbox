@@ -46,7 +46,8 @@ Atlas source files use a **dedicated path**:
 2. Copy into that folder:
    - `FiberSwitchLocation YYYY-MM-DD.xlsx`
    - ATMS Master Device List `.csv`
-3. **Scan folder** detects the newest matching pair.
+   - Hub List `.csv` (optional — official hub lat/lon, AKA, Hub IP, region; required for hub map pins)
+3. **Scan folder** detects the newest matching sources.
 4. **Review** shows counts (sites, switches, findings) without writing.
 5. **Apply (replace DB)** rebuilds Atlas network tables (hubs/channels/drops/devices/findings). **Ping history is kept** (matched by IP). Each apply appends an `import_batch` row (kept to the newest 50) with a compact `summary_json` (entity counts + diff counts).
 6. Review shows a **diff** vs the current DB (new / missing / changed IPs and channels).
@@ -67,6 +68,7 @@ Operator UX:
 - Monitor history: Export full CSV from SQLite (all samples); Export loaded for preview only
 - Copy IP: click any IP; Copy IPs on triage / hub / channel / site / area / findings / schematic
 - Import history: past `import_batch` rows with counts + diff summary (keep last 50 on apply)
+- Official Hub List CSV (optional): hub coords on map; AKA / Hub IP / subnet / region / shed; ATMS unknown hubs → finding
 - Dashboard: inventory counts, wireless/provisional, finding-type cards, ping triage
 - Findings focus: click finding → filter + scroll + highlight row
 - Findings: entityKind chip + Open on map; status/type filters; Show all / CSV; bulk select → status / Copy IPs / Ping / Start monitor

@@ -2,7 +2,7 @@
  * Atlas import inbox helpers (desktop via DatabaseService inbox methods).
  */
 import { getPlatformBundle } from '../../platform/create-platform.js';
-import { detectInboxPair } from './detect-inbox-files.js';
+import { detectInboxSources } from './detect-inbox-files.js';
 
 function atlasDb() {
     return getPlatformBundle().services?.atlasDb || null;
@@ -45,23 +45,24 @@ export async function listAtlasImportInbox() {
 }
 
 /**
- * Scan inbox and return detected workbook + ATMS pair.
+ * Scan inbox and return detected workbook + ATMS + optional Hub List.
  */
 export async function scanAtlasImportInbox() {
     const listed = await listAtlasImportInbox();
-    const pair = detectInboxPair(listed.files || []);
+    const src = detectInboxSources(listed.files || []);
     return {
         inboxPath: listed.path,
         files: listed.files || [],
-        workbook: pair.workbook,
-        atms: pair.atms
+        workbook: src.workbook,
+        atms: src.atms,
+        hubList: src.hubList
     };
 }
 
 /**
  * Read inbox/native path into { name, buffer } or { name, text }.
  * @param {string} path
- * @param {'workbook'|'atms'} kind
+ * @param {'workbook'|'atms'|'hubList'} kind
  */
 export async function readAtlasImportPath(path, kind) {
     const db = atlasDb();

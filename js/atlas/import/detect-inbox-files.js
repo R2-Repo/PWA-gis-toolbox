@@ -1,5 +1,5 @@
 /**
- * Pick newest FiberSwitchLocation workbook and ATMS CSV from an inbox file list.
+ * Pick newest FiberSwitchLocation workbook, ATMS CSV, and Hub List CSV from an inbox file list.
  */
 
 /**
@@ -10,6 +10,18 @@ export function extractDateFromFilename(name) {
     const m = String(name || '').match(/(20\d{2})[-_](\d{2})[-_](\d{2})/);
     if (!m) return null;
     return `${m[1]}-${m[2]}-${m[3]}`;
+}
+
+/**
+ * @param {{ name?: string }} file
+ * @returns {boolean}
+ */
+export function isHubListFilename(file) {
+    const n = String(file?.name || '').toLowerCase();
+    if (!n) return false;
+    const hasHub = n.includes('hub');
+    const hasList = n.includes('list') || n.includes('hubs');
+    return hasHub && hasList;
 }
 
 /**
@@ -37,14 +49,31 @@ export function pickNewestWorkbook(files) {
  */
 export function pickNewestAtmsCsv(files) {
     const candidates = (files || []).filter((f) => {
+        if (isHubListFilename(f)) return false;
         const n = f.name.toLowerCase();
         const ext = (f.ext || '').toLowerCase();
         if (ext !== 'csv' && ext !== 'txt') return false;
         return n.includes('atms') || n.includes('master') || n.includes('device');
     });
     if (!candidates.length) {
-        return sortNewest((files || []).filter((f) => (f.ext || '').toLowerCase() === 'csv'))[0] || null;
+        return sortNewest((files || []).filter((f) => {
+            if (isHubListFilename(f)) return false;
+            return (f.ext || '').toLowerCase() === 'csv';
+        }))[0] || null;
     }
+    return sortNewest(candidates)[0] || null;
+}
+
+/**
+ * Official Hub List CSV (optional).
+ * @param {Array<{ name: string, path: string, ext: string, modifiedMs?: number }>} files
+ */
+export function pickNewestHubList(files) {
+    const candidates = (files || []).filter((f) => {
+        const ext = (f.ext || '').toLowerCase();
+        if (ext !== 'csv' && ext !== 'txt') return false;
+        return isHubListFilename(f);
+    });
     return sortNewest(candidates)[0] || null;
 }
 
@@ -64,10 +93,21 @@ function sortNewest(files) {
 
 /**
  * @param {Array<object>} files
+ * @returns {{ workbook: object|null, atms: object|null, hubList: object|null }}
  */
-export function detectInboxPair(files) {
+export function detectInboxSources(files) {
     return {
         workbook: pickNewestWorkbook(files),
-        atms: pickNewestAtmsCsv(files)
+        atms: pickNewestAtmsCsv(files),
+        hubList: pickNewestHubList(files)
     };
+}
+
+/**
+ * @deprecated Prefer detectInboxSources — kept for callers that only need workbook+ATMS.
+ * @param {Array<object>} files
+ */
+export function detectInboxPair(files) {
+    const src = detectInboxSources(files);
+    return { workbook: src.workbook, atms: src.atms };
 }

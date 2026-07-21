@@ -50,7 +50,11 @@ fn migrate(conn: &Connection) -> Result<(), String> {
             name TEXT,
             lat REAL,
             lon REAL,
-            region_id TEXT
+            region_id TEXT,
+            aka TEXT,
+            hub_ip TEXT,
+            channels_subnet TEXT,
+            is_shed INTEGER
         );
         CREATE TABLE IF NOT EXISTS channel (
             id TEXT PRIMARY KEY,
@@ -142,6 +146,10 @@ fn migrate(conn: &Connection) -> Result<(), String> {
     let _ = conn.execute("ALTER TABLE reconciliation_finding ADD COLUMN entity_kind TEXT", []);
     let _ = conn.execute("ALTER TABLE reconciliation_finding ADD COLUMN ip TEXT", []);
     let _ = conn.execute("ALTER TABLE import_batch ADD COLUMN summary_json TEXT", []);
+    let _ = conn.execute("ALTER TABLE hub ADD COLUMN aka TEXT", []);
+    let _ = conn.execute("ALTER TABLE hub ADD COLUMN hub_ip TEXT", []);
+    let _ = conn.execute("ALTER TABLE hub ADD COLUMN channels_subnet TEXT", []);
+    let _ = conn.execute("ALTER TABLE hub ADD COLUMN is_shed INTEGER", []);
     Ok(())
 }
 
@@ -191,10 +199,13 @@ fn load_snapshot_inner(conn: &Connection) -> Result<Value, String> {
     let mut hubs = Vec::new();
     {
         let mut stmt = conn
-            .prepare("SELECT id, hub_code, name, lat, lon, region_id FROM hub ORDER BY hub_code")
+            .prepare(
+                "SELECT id, hub_code, name, lat, lon, region_id, aka, hub_ip, channels_subnet, is_shed FROM hub ORDER BY hub_code",
+            )
             .map_err(|e| e.to_string())?;
         let rows = stmt
             .query_map([], |r| {
+                let is_shed: Option<i64> = r.get(9)?;
                 Ok(json!({
                     "id": r.get::<_, String>(0)?,
                     "hubCode": r.get::<_, String>(1)?,
@@ -202,6 +213,10 @@ fn load_snapshot_inner(conn: &Connection) -> Result<Value, String> {
                     "lat": r.get::<_, Option<f64>>(3)?,
                     "lon": r.get::<_, Option<f64>>(4)?,
                     "regionId": r.get::<_, Option<String>>(5)?,
+                    "aka": r.get::<_, Option<String>>(6)?,
+                    "hubIp": r.get::<_, Option<String>>(7)?,
+                    "channelsSubnet": r.get::<_, Option<String>>(8)?,
+                    "isShed": is_shed.map(|v| v != 0).unwrap_or(false),
                 }))
             })
             .map_err(|e| e.to_string())?;
@@ -500,8 +515,12 @@ pub fn atlas_import_apply(
 
         if let Some(arr) = payload.get("hubs").and_then(|v| v.as_array()) {
             for h in arr {
+                let is_shed = h
+                    .get("isShed")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false) as i64;
                 tx.execute(
-                    "INSERT OR REPLACE INTO hub (id, hub_code, name, lat, lon, region_id) VALUES (?1,?2,?3,?4,?5,?6)",
+                    "INSERT OR REPLACE INTO hub (id, hub_code, name, lat, lon, region_id, aka, hub_ip, channels_subnet, is_shed) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10)",
                     params![
                         json_str(h.get("id")).unwrap_or_default(),
                         json_str(h.get("hubCode")).unwrap_or_default(),
@@ -509,6 +528,10 @@ pub fn atlas_import_apply(
                         json_f64(h.get("lat")),
                         json_f64(h.get("lon")),
                         json_str(h.get("regionId")),
+                        json_str(h.get("aka")),
+                        json_str(h.get("hubIp")),
+                        json_str(h.get("channelsSubnet")),
+                        is_shed,
                     ],
                 )
                 .map_err(|e| e.to_string())?;

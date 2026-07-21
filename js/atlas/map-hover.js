@@ -27,6 +27,7 @@ export function buildAtlasHoverHtml(props) {
     if (kind === 'hub') {
         const code = props.hubCode ? escapeAtlasHtml(props.hubCode) : '';
         lines.push(code ? `Hub ${code}` : 'Hub');
+        if (props.hubIp) lines.push(`<span class="atlas-mono">${escapeAtlasHtml(props.hubIp)}</span>`);
         lines.push(`Ping: ${ping}`);
     } else {
         const ch = props.channelNumber != null && props.channelNumber !== ''

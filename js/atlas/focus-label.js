@@ -30,7 +30,7 @@ export function describeAtlasFocus(snap) {
             const hub = (snap.hubs || []).find((h) => h.id === sel.id);
             return {
                 kind: 'hub',
-                title: hub?.name || (hub?.hubCode ? `Hub ${hub.hubCode}` : 'Hub'),
+                title: hub?.aka || hub?.name || (hub?.hubCode ? `Hub ${hub.hubCode}` : 'Hub'),
                 detail: hub?.hubCode ? `Hub ${hub.hubCode}` : 'Selected hub',
                 canClear: true
             };

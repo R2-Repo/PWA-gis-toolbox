@@ -51,7 +51,7 @@ export function buildHierarchyTree() {
 
         region.children.push({
             id: hub.id,
-            label: hub.name || `Hub ${hub.hubCode}`,
+            label: hub.aka || hub.name || `Hub ${hub.hubCode}`,
             kind: 'hub',
             meta: hub.hubCode,
             pingStatus: hubPingRollup(hub.id, snap),

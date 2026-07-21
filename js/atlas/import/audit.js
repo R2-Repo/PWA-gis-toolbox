@@ -15,6 +15,9 @@ function uid() {
  * @param {Array} [opts.drops]
  * @param {Array} [opts.sites]
  * @param {Array} [opts.channels]
+ * @param {Array} [opts.hubs]
+ * @param {Set<string>|string[]} [opts.officialHubCodes]
+ * @param {Set<string>|string[]} [opts.inferredHubCodes]
  * @returns {import('../types.js').AtlasFinding[]}
  */
 export function buildImportFindings({
@@ -23,7 +26,10 @@ export function buildImportFindings({
     devices = [],
     drops = [],
     sites = [],
-    channels = []
+    channels = [],
+    hubs = [],
+    officialHubCodes = new Set(),
+    inferredHubCodes = new Set()
 }) {
     /** @type {import('../types.js').AtlasFinding[]} */
     const findings = [];
@@ -162,6 +168,30 @@ export function buildImportFindings({
                 entityKind: drop ? 'drop' : 'device',
                 ip
             });
+        }
+    }
+
+    const official = officialHubCodes instanceof Set
+        ? officialHubCodes
+        : new Set(officialHubCodes || []);
+    const inferred = inferredHubCodes instanceof Set
+        ? inferredHubCodes
+        : new Set(inferredHubCodes || []);
+    if (official.size > 0) {
+        const hubByCode = new Map(hubs.map((h) => [h.hubCode, h]));
+        for (const code of inferred) {
+            if (official.has(code)) continue;
+            const hub = hubByCode.get(code);
+            add(
+                'hub_not_in_official_list',
+                'warning',
+                `ATMS references hub ${code} which is not in the official Hub List`,
+                {
+                    suggestedAction: 'Add hub to Hub List CSV or correct ATMS Pri/Sec Hub',
+                    entityId: hub?.id || null,
+                    entityKind: hub ? 'hub' : null
+                }
+            );
         }
     }
 

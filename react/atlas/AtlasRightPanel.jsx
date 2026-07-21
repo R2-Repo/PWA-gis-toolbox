@@ -725,9 +725,37 @@ export function AtlasRightPanel({
                 )}
                 {hubSummary && (
                     <div className="atlas-detail-block">
-                        <h4>{hubSummary.hub.name || hubSummary.hub.hubCode}</h4>
+                        <h4>{hubSummary.hub.aka || hubSummary.hub.name || hubSummary.hub.hubCode}</h4>
+                        <p className="atlas-muted">
+                            Hub {hubSummary.hub.hubCode}
+                            {hubSummary.hub.regionId != null && hubSummary.hub.regionId !== ''
+                                ? ` · Region ${hubSummary.hub.regionId}`
+                                : ''}
+                        </p>
+                        {hubSummary.hub.hubIp ? (
+                            <p>Hub IP: <CopyIp ip={hubSummary.hub.hubIp} /></p>
+                        ) : null}
+                        {hubSummary.hub.channelsSubnet ? (
+                            <p className="atlas-muted">Channels subnet: {hubSummary.hub.channelsSubnet}</p>
+                        ) : null}
+                        {hubSummary.hub.isShed ? <p className="atlas-tag atlas-tag--warn">Shed</p> : null}
+                        {hubSummary.hub.fromOfficialList === false ? (
+                            <p className="atlas-tag atlas-tag--warn">Inferred (not in Hub List)</p>
+                        ) : null}
+                        {(hubSummary.hub.lat != null && hubSummary.hub.lon != null) ? (
+                            <p className="atlas-muted">
+                                {hubSummary.hub.lat}, {hubSummary.hub.lon}
+                            </p>
+                        ) : (
+                            <p className="atlas-muted">No map coordinates</p>
+                        )}
                         <div className="atlas-toolbar">
-                            <CopyIpsButton ips={collectHubIps(hubSummary.hub.id, 'all', snap)} />
+                            <CopyIpsButton
+                                ips={[
+                                    hubSummary.hub.hubIp,
+                                    ...collectHubIps(hubSummary.hub.id, 'all', snap)
+                                ]}
+                            />
                             {canPing ? (
                                 <>
                                 <button type="button" className="btn btn-secondary btn-sm" onClick={() => onPingHub?.(hubSummary.hub.id, 'all')}>

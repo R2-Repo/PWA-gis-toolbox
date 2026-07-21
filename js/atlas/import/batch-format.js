@@ -36,9 +36,12 @@ export function compactImportBatchSummary(summary, diff = null) {
         importedAt: summary?.importedAt ?? null,
         workbookName: summary?.workbookName ?? null,
         atmsName: summary?.atmsName ?? null,
+        hubListName: summary?.hubListName ?? null,
         counts: counts
             ? {
                 hubs: Number(counts.hubs) || 0,
+                hubsOfficial: Number(counts.hubsOfficial) || 0,
+                hubsInferred: Number(counts.hubsInferred) || 0,
                 channels: Number(counts.channels) || 0,
                 sites: Number(counts.sites) || 0,
                 drops: Number(counts.drops) || 0,

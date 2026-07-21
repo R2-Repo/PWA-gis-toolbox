@@ -16,6 +16,7 @@ import {
     matchAtmsToWorkbook
 } from './match.js';
 import { buildImportFindings } from './audit.js';
+import { mapHubListRows } from './hub-list.js';
 
 function uid() {
     return crypto.randomUUID();
@@ -88,6 +89,7 @@ export async function readWorkbookSheets(buffer) {
  * @param {{
  *   workbookFile?: { name: string, buffer: ArrayBuffer },
  *   atmsFile?: { name: string, text: string },
+ *   hubListFile?: { name: string, text: string },
  *   batchDate?: string
  * }} input
  */
@@ -123,24 +125,65 @@ export async function buildAtlasImportPayload(input) {
         }
     }
 
+    /** @type {Map<string, object>} */
+    const hubsByCode = new Map();
+    /** @type {Set<string>} */
+    const officialHubCodes = new Set();
+    /** @type {Set<string>} */
+    const inferredHubCodes = new Set();
+
+    if (input.hubListFile?.text) {
+        const hubRows = parseCsvText(input.hubListFile.text);
+        for (const row of hubRows) {
+            rawRecords.push({ id: uid(), batchId, source: 'HubList', payload: row });
+        }
+        for (const mapped of mapHubListRows(hubRows)) {
+            officialHubCodes.add(mapped.hubCode);
+            hubsByCode.set(mapped.hubCode, {
+                id: uid(),
+                hubCode: mapped.hubCode,
+                name: mapped.name,
+                aka: mapped.aka,
+                hubIp: mapped.hubIp,
+                channelsSubnet: mapped.channelsSubnet,
+                lat: mapped.lat,
+                lon: mapped.lon,
+                regionId: mapped.regionId,
+                isShed: mapped.isShed,
+                fromOfficialList: true
+            });
+        }
+    }
+
     let atmsMapped = [];
     if (input.atmsFile?.text) {
         const rows = parseCsvText(input.atmsFile.text);
         for (const row of rows) {
             rawRecords.push({ id: uid(), batchId, source: 'ATMS', payload: row });
         }
-        atmsMapped = rows.map((r) => mapAtmsSwitchRow(r));
+        atmsMapped = rows.map((r) => mapAtmsSwitchRow(r, officialHubCodes));
     }
 
     const { joined, unmatchedSwitch } = joinWorkbookTabs(tmdRows, switchRows);
     const atmsMatches = matchAtmsToWorkbook(atmsMapped, switchRows, tmdRows);
 
-    /** @type {Map<string, object>} */
-    const hubsByCode = new Map();
     const ensureHub = (code) => {
         if (!code) return null;
         if (!hubsByCode.has(code)) {
-            hubsByCode.set(code, { id: uid(), hubCode: code, name: `Hub ${code}`, lat: null, lon: null });
+            inferredHubCodes.add(code);
+            hubsByCode.set(code, {
+                id: uid(),
+                hubCode: code,
+                name: `Hub ${code}`,
+                aka: null,
+                hubIp: null,
+                channelsSubnet: null,
+                lat: null,
+                lon: null,
+                regionId: null,
+                isShed: false,
+                fromOfficialList: false
+            });
         }
         return hubsByCode.get(code).id;
     };
@@ -312,7 +355,10 @@ export async function buildAtlasImportPayload(input) {
         devices,
         drops,
         sites,
-        channels
+        channels,
+        hubs,
+        officialHubCodes,
+        inferredHubCodes
     });
 
     const summary = {
@@ -321,11 +367,14 @@ export async function buildAtlasImportPayload(input) {
         importedAt,
         workbookName: input.workbookFile?.name || null,
         atmsName: input.atmsFile?.name || null,
+        hubListName: input.hubListFile?.name || null,
         counts: {
             tmd: tmdRows.length,
             switchFiber: switchRows.length,
             atmsSwitches: atmsMapped.filter((r) => r.isSwitch).length,
             hubs: hubs.length,
+            hubsOfficial: officialHubCodes.size,
+            hubsInferred: inferredHubCodes.size,
             channels: channels.length,
             sites: sites.length,
             drops: drops.length,
@@ -335,7 +384,8 @@ export async function buildAtlasImportPayload(input) {
         },
         fileKind: {
             workbook: input.workbookFile ? detectSourceFileKind(input.workbookFile.name) : null,
-            atms: input.atmsFile ? detectSourceFileKind(input.atmsFile.name) : null
+            atms: input.atmsFile ? detectSourceFileKind(input.atmsFile.name) : null,
+            hubList: input.hubListFile ? detectSourceFileKind(input.hubListFile.name) : null
         }
     };
 
@@ -345,7 +395,8 @@ export async function buildAtlasImportPayload(input) {
             batchDate,
             importedAt,
             workbookName: summary.workbookName,
-            atmsName: summary.atmsName
+            atmsName: summary.atmsName,
+            hubListName: summary.hubListName
         },
         rawRecords,
         hubs,

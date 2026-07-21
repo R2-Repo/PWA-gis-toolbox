@@ -15,10 +15,13 @@ export function AtlasImportDialog({ open, onClose, busy: busyProp, onImported })
     const [inboxPath, setInboxPath] = useState('');
     const [workbookPath, setWorkbookPath] = useState('');
     const [atmsPath, setAtmsPath] = useState('');
+    const [hubListPath, setHubListPath] = useState('');
     const [workbookName, setWorkbookName] = useState('');
     const [atmsName, setAtmsName] = useState('');
+    const [hubListName, setHubListName] = useState('');
     const [filePickerWorkbook, setFilePickerWorkbook] = useState(null);
     const [filePickerAtms, setFilePickerAtms] = useState(null);
+    const [filePickerHubList, setFilePickerHubList] = useState(null);
     const [summary, setSummary] = useState(null);
     const [payload, setPayload] = useState(null);
     const [diff, setDiff] = useState(null);
@@ -54,10 +57,13 @@ export function AtlasImportDialog({ open, onClose, busy: busyProp, onImported })
             setWorkbookName(scan.workbook?.name || '');
             setAtmsPath(scan.atms?.path || '');
             setAtmsName(scan.atms?.name || '');
+            setHubListPath(scan.hubList?.path || '');
+            setHubListName(scan.hubList?.name || '');
             setFilePickerWorkbook(null);
             setFilePickerAtms(null);
-            if (!scan.workbook && !scan.atms) {
-                setError('No FiberSwitchLocation workbook or ATMS CSV found in the import folder.');
+            setFilePickerHubList(null);
+            if (!scan.workbook && !scan.atms && !scan.hubList) {
+                setError('No FiberSwitchLocation workbook, ATMS CSV, or Hub List found in the import folder.');
             }
         } catch (err) {
             setError(err?.message || String(err));
@@ -67,12 +73,17 @@ export function AtlasImportDialog({ open, onClose, busy: busyProp, onImported })
     }, []);
 
     const buildInput = () => {
-        if (filePickerWorkbook || filePickerAtms) {
-            return { workbookFile: filePickerWorkbook, atmsFile: filePickerAtms };
+        if (filePickerWorkbook || filePickerAtms || filePickerHubList) {
+            return {
+                workbookFile: filePickerWorkbook,
+                atmsFile: filePickerAtms,
+                hubListFile: filePickerHubList
+            };
         }
         return {
             workbookPath: workbookPath || undefined,
-            atmsPath: atmsPath || undefined
+            atmsPath: atmsPath || undefined,
+            hubListPath: hubListPath || undefined
         };
     };
 
@@ -100,6 +111,7 @@ export function AtlasImportDialog({ open, onClose, busy: busyProp, onImported })
             onImported?.(applied);
             setFilePickerWorkbook(null);
             setFilePickerAtms(null);
+            setFilePickerHubList(null);
             resetReview();
             onClose?.();
         } catch (err) {
@@ -150,6 +162,9 @@ export function AtlasImportDialog({ open, onClose, busy: busyProp, onImported })
                         <li>
                             <strong>ATMS CSV:</strong> {atmsName || '—'}
                         </li>
+                        <li>
+                            <strong>Hub List:</strong> {hubListName || '— (optional)'}
+                        </li>
                     </ul>
                 </section>
 
@@ -189,6 +204,23 @@ export function AtlasImportDialog({ open, onClose, busy: busyProp, onImported })
                             }}
                         />
                     </label>
+                    <label className="atlas-file-label">
+                        Hub List (.csv, optional)
+                        <input
+                            type="file"
+                            accept=".csv,.txt"
+                            disabled={busy}
+                            onChange={(e) => {
+                                const f = e.target.files?.[0] || null;
+                                setFilePickerHubList(f);
+                                if (f) {
+                                    setHubListName(f.name);
+                                    setHubListPath('');
+                                }
+                                resetReview();
+                            }}
+                        />
+                    </label>
                 </section>
 
                 <section className="atlas-import-section">
@@ -205,13 +237,25 @@ export function AtlasImportDialog({ open, onClose, busy: busyProp, onImported })
                                 <strong>{summary.workbookName || '—'}</strong>
                                 {' + '}
                                 <strong>{summary.atmsName || '—'}</strong>
+                                {summary.hubListName ? (
+                                    <>
+                                        {' + '}
+                                        <strong>{summary.hubListName}</strong>
+                                    </>
+                                ) : null}
                             </p>
                             <p className="atlas-muted">Ping history is kept (matched by IP). Findings are rebuilt.</p>
                             <ul>
                                 <li>TMD sites: {counts.tmd}</li>
                                 <li>SwitchFiber: {counts.switchFiber}</li>
                                 <li>ATMS switches: {counts.atmsSwitches}</li>
-                                <li>Hubs / channels / drops / devices: {counts.hubs} / {counts.channels} / {counts.drops} / {counts.devices}</li>
+                                <li>
+                                    Hubs: {counts.hubs}
+                                    {counts.hubsOfficial != null || counts.hubsInferred != null
+                                        ? ` (${counts.hubsOfficial ?? 0} official · ${counts.hubsInferred ?? 0} inferred)`
+                                        : ''}
+                                    {' / '}channels / drops / devices: {counts.channels} / {counts.drops} / {counts.devices}
+                                </li>
                                 <li>Findings: {counts.findings}</li>
                             </ul>
                             {!!payload?.findings?.length && (

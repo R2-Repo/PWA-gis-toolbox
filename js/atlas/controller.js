@@ -172,10 +172,13 @@ export async function refreshAtlasFromDb() {
  * @param {{
  *   workbookFile?: File,
  *   atmsFile?: File,
+ *   hubListFile?: File,
  *   workbookPath?: string,
  *   atmsPath?: string,
+ *   hubListPath?: string,
  *   workbook?: { name: string, buffer: ArrayBuffer },
- *   atms?: { name: string, text: string }
+ *   atms?: { name: string, text: string },
+ *   hubList?: { name: string, text: string }
  * }} files
  */
 async function resolveImportInputs(files = {}) {
@@ -185,6 +188,8 @@ async function resolveImportInputs(files = {}) {
     let workbookFile = files.workbook;
     /** @type {{ name: string, text: string } | undefined} */
     let atmsFile = files.atms;
+    /** @type {{ name: string, text: string } | undefined} */
+    let hubListFile = files.hubList;
 
     if (!workbookFile && files.workbookFile) {
         workbookFile = {
@@ -198,14 +203,23 @@ async function resolveImportInputs(files = {}) {
             text: await files.atmsFile.text()
         };
     }
+    if (!hubListFile && files.hubListFile) {
+        hubListFile = {
+            name: files.hubListFile.name,
+            text: await files.hubListFile.text()
+        };
+    }
     if (!workbookFile && files.workbookPath) {
         workbookFile = await readAtlasImportPath(files.workbookPath, 'workbook');
     }
     if (!atmsFile && files.atmsPath) {
         atmsFile = await readAtlasImportPath(files.atmsPath, 'atms');
     }
+    if (!hubListFile && files.hubListPath) {
+        hubListFile = await readAtlasImportPath(files.hubListPath, 'hubList');
+    }
 
-    return { workbookFile, atmsFile };
+    return { workbookFile, atmsFile, hubListFile };
 }
 
 /**
@@ -213,11 +227,11 @@ async function resolveImportInputs(files = {}) {
  * @param {Parameters<typeof resolveImportInputs>[0]} files
  */
 export async function previewAtlasImport(files) {
-    const { workbookFile, atmsFile } = await resolveImportInputs(files);
-    if (!workbookFile && !atmsFile) {
-        throw new Error('Select or detect a FiberSwitchLocation workbook and/or ATMS CSV');
+    const { workbookFile, atmsFile, hubListFile } = await resolveImportInputs(files);
+    if (!workbookFile && !atmsFile && !hubListFile) {
+        throw new Error('Select or detect a FiberSwitchLocation workbook, ATMS CSV, and/or Hub List CSV');
     }
-    const payload = await buildAtlasImportPayload({ workbookFile, atmsFile });
+    const payload = await buildAtlasImportPayload({ workbookFile, atmsFile, hubListFile });
     const diff = diffAtlasImport(payload, getAtlasSnapshot());
     return {
         summary: {

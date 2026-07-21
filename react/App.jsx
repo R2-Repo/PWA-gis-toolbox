@@ -680,7 +680,8 @@ export function App() {
             void (async () => {
                 await bootstrapDesktopPlatform();
                 bootstrapAppFromUrl();
-                if (window.innerWidth >= 768) {
+                const isWindowsDesktop = getPlatformBundle().platform?.runtime === 'windows';
+                if (window.innerWidth >= 768 && !isWindowsDesktop) {
                     await showToolInfo();
                 }
                 await restoreSessionIfAvailable();

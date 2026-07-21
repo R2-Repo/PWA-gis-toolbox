@@ -50,7 +50,8 @@ export function syncAtlasMapLayers(snap) {
                 atlasKind: 'hub',
                 id: hub.id,
                 hubCode: hub.hubCode || '',
-                label: hub.name || hub.hubCode,
+                label: hub.aka || hub.name || hub.hubCode,
+                hubIp: hub.hubIp || '',
                 pingStatus: hubPingRollup(hub.id, snap),
                 selected: selectedKind === 'hub' && hub.id === selectedId ? 1 : 0
             }
