@@ -6,18 +6,21 @@ export const PREF_MONITOR_INTERVAL = 'monitor.interval';
 export const PREF_DASHBOARD_SCOPE = 'dashboard.scope';
 export const PREF_TRIAGE_MODE = 'triage.mode';
 export const PREF_SESSIONS_RETENTION_DAYS = 'sessions.retentionDays';
+export const PREF_MAP_PING_FILTER = 'map.pingFilter';
 
 const INTERVAL_VALUES = new Set(['continuous', '1', '2', '5', '30', '60']);
 const SCOPE_VALUES = new Set(['network', 'selection']);
 const TRIAGE_VALUES = new Set(['unreachable', 'stale', 'untested', 'attention']);
 const RETENTION_VALUES = new Set(['0', '7', '30', '90']);
+const MAP_PING_FILTER_VALUES = new Set(['all', 'attention', 'unreachable', 'warning', 'untested']);
 
 /**
  * @returns {{
  *   monitorInterval: number|string,
  *   dashScope: 'network'|'selection',
  *   triageMode: string,
- *   sessionsRetentionDays: number
+ *   sessionsRetentionDays: number,
+ *   mapPingFilter: string
  * }}
  */
 export function defaultAtlasPrefs() {
@@ -25,7 +28,8 @@ export function defaultAtlasPrefs() {
         monitorInterval: 1,
         dashScope: 'network',
         triageMode: 'unreachable',
-        sessionsRetentionDays: 30
+        sessionsRetentionDays: 30,
+        mapPingFilter: 'all'
     };
 }
 
@@ -62,6 +66,11 @@ export function normalizeAtlasPrefs(raw) {
         }
     }
 
+    const mapFilterRaw = raw[PREF_MAP_PING_FILTER] ?? raw.mapPingFilter;
+    if (mapFilterRaw != null && MAP_PING_FILTER_VALUES.has(String(mapFilterRaw))) {
+        prefs.mapPingFilter = String(mapFilterRaw);
+    }
+
     return prefs;
 }
 
@@ -87,6 +96,10 @@ export function serializePrefValue(key, value) {
     if (key === PREF_SESSIONS_RETENTION_DAYS) {
         const s = String(value);
         return RETENTION_VALUES.has(s) ? s : null;
+    }
+    if (key === PREF_MAP_PING_FILTER) {
+        const s = String(value);
+        return MAP_PING_FILTER_VALUES.has(s) ? s : null;
     }
     return null;
 }

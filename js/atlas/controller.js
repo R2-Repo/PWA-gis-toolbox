@@ -151,12 +151,14 @@ export async function setAtlasPref(key, value) {
         'monitor.interval': String(current.monitorInterval),
         'dashboard.scope': current.dashScope,
         'triage.mode': current.triageMode,
-        'sessions.retentionDays': String(current.sessionsRetentionDays)
+        'sessions.retentionDays': String(current.sessionsRetentionDays),
+        'map.pingFilter': current.mapPingFilter || 'all'
     };
     if (serialized == null) delete raw[key];
     else raw[key] = serialized;
     const prefs = normalizeAtlasPrefs(raw);
     patchAtlasSnapshot({ prefs });
+    syncAtlasMapLayers(getAtlasSnapshot());
     bus.emit('atlas:prefs', prefs);
     return prefs;
 }

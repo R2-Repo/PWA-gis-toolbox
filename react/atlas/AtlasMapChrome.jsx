@@ -1,12 +1,17 @@
 import { useEffect, useMemo, useState } from 'react';
 import bus from '../../js/core/event-bus.js';
 import { getAtlasSnapshot } from '../../js/atlas/store.js';
-import { clearAtlasFocus } from '../../js/atlas/controller.js';
+import { clearAtlasFocus, setAtlasPref } from '../../js/atlas/controller.js';
 import {
     ATLAS_MAP_LEGEND_EXTRA,
     ATLAS_PING_LEGEND,
     describeAtlasFocus
 } from '../../js/atlas/focus-label.js';
+import {
+    MAP_PING_FILTER_VALUES,
+    mapPingFilterLabel
+} from '../../js/atlas/map-ping-filter.js';
+import { PREF_MAP_PING_FILTER } from '../../js/atlas/prefs.js';
 
 /**
  * Overlay chrome for Atlas workspace: focus bar + ping legend.
@@ -21,6 +26,7 @@ export function AtlasMapChrome({ onOpenImport }) {
             bus.on('atlas:changed', () => setTick((t) => t + 1)),
             bus.on('atlas:selection', () => setTick((t) => t + 1)),
             bus.on('atlas:ping', () => setTick((t) => t + 1)),
+            bus.on('atlas:prefs', () => setTick((t) => t + 1)),
             bus.on('atlas:opened', () => setTick((t) => t + 1))
         ];
         return () => unsub.forEach((u) => u?.());
@@ -28,6 +34,7 @@ export function AtlasMapChrome({ onOpenImport }) {
 
     const snap = useMemo(() => getAtlasSnapshot(), [tick]);
     const focus = useMemo(() => describeAtlasFocus(snap), [snap, tick]);
+    const mapPingFilter = snap.prefs?.mapPingFilter || 'all';
     const isEmptyDb = snap.loaded
         && !(snap.hubs?.length || snap.channels?.length || snap.drops?.length);
 
@@ -39,6 +46,24 @@ export function AtlasMapChrome({ onOpenImport }) {
                         <strong>{focus.title}</strong>
                         <span className="atlas-muted">{focus.detail}</span>
                     </div>
+                    <label className="atlas-map-ping-filter">
+                        <span className="atlas-muted">Show</span>
+                        <select
+                            className="input-sm"
+                            value={mapPingFilter}
+                            title="Filter map markers by ping status"
+                            disabled={isEmptyDb}
+                            onChange={(e) => {
+                                void setAtlasPref(PREF_MAP_PING_FILTER, e.target.value);
+                            }}
+                        >
+                            {MAP_PING_FILTER_VALUES.map((value) => (
+                                <option key={value} value={value}>
+                                    {mapPingFilterLabel(value)}
+                                </option>
+                            ))}
+                        </select>
+                    </label>
                     <button
                         type="button"
                         className="btn btn-secondary btn-sm"

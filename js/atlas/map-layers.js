@@ -3,6 +3,7 @@
  */
 import mapService from '../map/map-service.js';
 import { buildAtlasHoverHtml } from './map-hover.js';
+import { atlasMapKindFilterExpression } from './map-ping-filter.js';
 import { displayPingStatus } from './ping-format.js';
 import { hubPingRollup } from './triage.js';
 
@@ -81,6 +82,9 @@ export function syncAtlasMapLayers(snap) {
     }
 
     const fc = { type: 'FeatureCollection', features };
+    const mapPingFilter = snap.prefs?.mapPingFilter || 'all';
+    const dropFilter = atlasMapKindFilterExpression('drop', mapPingFilter);
+    const hubFilter = atlasMapKindFilterExpression('hub', mapPingFilter);
 
     if (map.getSource(SOURCE_ID)) {
         map.getSource(SOURCE_ID).setData(fc);
@@ -90,7 +94,7 @@ export function syncAtlasMapLayers(snap) {
             id: LAYER_STATUS,
             type: 'circle',
             source: SOURCE_ID,
-            filter: ['==', ['get', 'atlasKind'], 'drop'],
+            filter: dropFilter,
             paint: {
                 'circle-radius': 9,
                 'circle-opacity': 0.35,
@@ -109,7 +113,7 @@ export function syncAtlasMapLayers(snap) {
             id: LAYER_HUBS,
             type: 'circle',
             source: SOURCE_ID,
-            filter: ['==', ['get', 'atlasKind'], 'hub'],
+            filter: hubFilter,
             paint: {
                 'circle-radius': 8,
                 'circle-color': [
@@ -129,7 +133,7 @@ export function syncAtlasMapLayers(snap) {
             id: LAYER_DROPS,
             type: 'circle',
             source: SOURCE_ID,
-            filter: ['==', ['get', 'atlasKind'], 'drop'],
+            filter: dropFilter,
             paint: {
                 'circle-radius': 5,
                 'circle-color': '#64748b',
@@ -150,6 +154,10 @@ export function syncAtlasMapLayers(snap) {
             }
         });
     }
+
+    if (map.getLayer(LAYER_STATUS)) map.setFilter(LAYER_STATUS, dropFilter);
+    if (map.getLayer(LAYER_DROPS)) map.setFilter(LAYER_DROPS, dropFilter);
+    if (map.getLayer(LAYER_HUBS)) map.setFilter(LAYER_HUBS, hubFilter);
 
     syncChannelPath(snap);
     syncAreaOverlay(snap);

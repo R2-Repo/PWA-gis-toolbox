@@ -482,6 +482,18 @@ button.atlas-dash-card--action:hover {
     letter-spacing: 0.04em;
 }
 
+.atlas-map-ping-filter {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+    font-size: 11px;
+}
+
+.atlas-map-ping-filter select {
+    max-width: 150px;
+}
+
 .atlas-map-legend {
     padding: 8px 10px;
     border-radius: 8px;

@@ -1005,7 +1005,11 @@ fn chrono_like_now() -> String {
 fn is_allowed_pref_key(key: &str) -> bool {
     matches!(
         key,
-        "monitor.interval" | "dashboard.scope" | "triage.mode" | "sessions.retentionDays"
+        "monitor.interval"
+            | "dashboard.scope"
+            | "triage.mode"
+            | "sessions.retentionDays"
+            | "map.pingFilter"
     )
 }
 
@@ -1015,6 +1019,9 @@ fn is_allowed_pref_value(key: &str, value: &str) -> bool {
         "dashboard.scope" => matches!(value, "network" | "selection"),
         "triage.mode" => matches!(value, "unreachable" | "stale" | "untested" | "attention"),
         "sessions.retentionDays" => matches!(value, "0" | "7" | "30" | "90"),
+        "map.pingFilter" => {
+            matches!(value, "all" | "attention" | "unreachable" | "warning" | "untested")
+        }
         _ => false,
     }
 }

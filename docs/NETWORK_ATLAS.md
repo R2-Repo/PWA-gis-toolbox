@@ -61,6 +61,7 @@ Operator UX:
 - Hierarchy / search / map: ping dots; reachable+stale shows as warning (orange)
 - Map hover tooltips (hub/drop label, IP, ping); `/` focuses search, `Esc` clears area then selection
 - Map focus bar (current selection/area + Clear) and collapsible ping legend
+- Map ping filter (all / needs attention / unreachable / warning / untested); pref `map.pingFilter`
 - Monitor history Load more (screen + DB); search Show more when truncated; empty-DB import CTA
 - Operator finish: `?` shortcuts help; left selection Clear chip; select all filtered findings
 - Monitor history: Export full CSV from SQLite (all samples); Export loaded for preview only
@@ -82,7 +83,7 @@ Operator UX:
 - Device detail: gateway/subnet/provisional
 - Monitor from drop/hub/channel/site/device/triage/area; section auto-opens when active
 - Past monitor sessions: list / view / re-export CSV / delete; prune by retention (default 30d on open)
-- Operator prefs (SQLite `atlas_pref`): monitor interval, dashboard scope, triage mode, session retention
+- Operator prefs (SQLite `atlas_pref`): monitor interval, dashboard scope, triage mode, session retention, map ping filter
 - Ping toasts (start + up/down summary)
 - Reconciliation findings follow Network / Selection scope
 - Ping age on drop details / schematic (stale after 24h)
