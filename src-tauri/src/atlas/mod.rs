@@ -3,7 +3,8 @@ mod inbox;
 mod ping;
 
 pub use db::{
-    atlas_db_load_snapshot, atlas_db_open, atlas_finding_update, atlas_import_apply, atlas_ping_save,
+    atlas_db_load_snapshot, atlas_db_open, atlas_finding_update, atlas_import_apply,
+    atlas_ping_finalize_session, atlas_ping_list_sessions, atlas_ping_load_session, atlas_ping_save,
     AtlasDbState,
 };
 pub use inbox::{

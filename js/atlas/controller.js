@@ -354,10 +354,20 @@ export function startAtlasMonitor(opts) {
         return null;
     }
     const sessionId = crypto.randomUUID();
+    const label = opts.label || 'Monitor';
     const log = [];
+    const startedAt = new Date().toISOString();
     patchAtlasSnapshot({
-        activeSession: { id: sessionId, label: opts.label || 'Monitor', targets: opts.targets, interval: opts.interval, log }
+        activeSession: { id: sessionId, label, targets: opts.targets, interval: opts.interval, log, startedAt }
     });
+
+    // Create session row once; ticks append samples only.
+    void db()?.savePingResults?.({
+        sessionId,
+        label,
+        startedAt,
+        results: []
+    }).catch(() => {});
 
     const handle = startPingSession({
         sessionId,
@@ -380,11 +390,18 @@ export function startAtlasMonitor(opts) {
             });
             syncAtlasMapLayers(getAtlasSnapshot());
             patchAtlasSnapshot({
-                activeSession: { id: sessionId, label: opts.label || 'Monitor', targets: opts.targets, interval: opts.interval, log: [...log] }
+                activeSession: {
+                    id: sessionId,
+                    label,
+                    targets: opts.targets,
+                    interval: opts.interval,
+                    log: [...log],
+                    startedAt
+                }
             });
             void db()?.savePingResults?.({
                 sessionId,
-                label: opts.label || 'Monitor',
+                label,
                 results: [{
                     ip: row.ip,
                     status: row.status,
@@ -411,21 +428,47 @@ export function stopAtlasMonitor(sessionId, opts = {}) {
     const active = getAtlasSnapshot().activeSession;
     const id = sessionId || active?.id;
     if (id) stopPingSession(id);
-    if (active?.log?.length) {
-        if (exportCsv) exportPingSessionCsv(active.log);
-        void db()?.savePingResults?.({
+    if (active?.log?.length && exportCsv) {
+        exportPingSessionCsv(active.log, { label: active.label });
+    }
+    if (id) {
+        void db()?.finalizePingSession?.({
             sessionId: id,
-            label: active.label || 'Monitor',
-            results: active.log.map((r) => ({
-                ip: r.ip,
-                status: r.status,
-                rttMs: r.rttMs,
-                error: r.error,
-                at: r.timestamp || r.at
-            }))
-        }).catch(() => {});
+            stoppedAt: new Date().toISOString()
+        }).then(() => {
+            bus.emit('atlas:ping-sessions');
+        }).catch(() => {
+            bus.emit('atlas:ping-sessions');
+        });
     }
     patchAtlasSnapshot({ activeSession: null });
+}
+
+/**
+ * List persisted monitor sessions (excludes one-shot by default).
+ * @param {{ limit?: number, includeOneShot?: boolean }} [opts]
+ */
+export async function listAtlasPingSessions(opts = {}) {
+    if (!atlasCapabilities().available) return [];
+    const service = db();
+    if (!service?.listPingSessions) return [];
+    try {
+        const res = await service.listPingSessions(opts);
+        return res?.sessions || [];
+    } catch {
+        return [];
+    }
+}
+
+/**
+ * Load samples for a past session.
+ * @param {string} sessionId
+ * @param {{ limit?: number }} [opts]
+ */
+export async function loadAtlasPingSession(sessionId, opts = {}) {
+    const service = db();
+    if (!service?.loadPingSession) throw new Error('Ping session history unavailable');
+    return service.loadPingSession({ sessionId, limit: opts.limit ?? 200 });
 }
 
 export function leaveAtlasMap() {

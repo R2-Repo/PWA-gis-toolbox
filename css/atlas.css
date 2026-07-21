@@ -434,6 +434,49 @@ button.atlas-dash-card--action:hover {
     font-size: 11px;
 }
 
+.atlas-monitor-history {
+    margin-top: 12px;
+    padding-top: 10px;
+    border-top: 1px solid var(--border-color, #e2e8f0);
+}
+
+.atlas-session-list {
+    list-style: none;
+    margin: 6px 0 0;
+    padding: 0;
+    max-height: 180px;
+    overflow: auto;
+}
+
+.atlas-session-row {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+    width: 100%;
+    text-align: left;
+    padding: 6px 8px;
+    margin-bottom: 4px;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    background: #f8fafc;
+    cursor: pointer;
+    font-size: 11px;
+}
+
+.atlas-session-row:hover {
+    background: #eef2ff;
+}
+
+.atlas-session-row--selected {
+    border-color: #93c5fd;
+    background: #eff6ff;
+}
+
+.atlas-session-detail {
+    margin-top: 8px;
+}
+
 .atlas-stale-warn {
     color: #b45309 !important;
 }

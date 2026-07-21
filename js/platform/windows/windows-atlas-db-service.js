@@ -20,6 +20,15 @@ export function createWindowsAtlasDbService() {
         async savePingResults(payload) {
             await invokeCommand('atlas_ping_save', { payload });
         },
+        async listPingSessions(payload = {}) {
+            return invokeCommand('atlas_ping_list_sessions', { payload });
+        },
+        async loadPingSession(payload) {
+            return invokeCommand('atlas_ping_load_session', { payload });
+        },
+        async finalizePingSession(payload) {
+            await invokeCommand('atlas_ping_finalize_session', { payload });
+        },
         async updateFinding(findingId, patch) {
             await invokeCommand('atlas_finding_update', { findingId, patch });
         },

@@ -104,6 +104,9 @@
  * @property {() => Promise<object>} loadSnapshot
  * @property {(payload: object) => Promise<object>} applyImport
  * @property {(payload: object) => Promise<void>} [savePingResults]
+ * @property {(payload?: { limit?: number, includeOneShot?: boolean }) => Promise<{ sessions: object[] }>} [listPingSessions]
+ * @property {(payload: { sessionId: string, limit?: number }) => Promise<{ session: object, results: object[] }>} [loadPingSession]
+ * @property {(payload: { sessionId: string, stoppedAt?: string }) => Promise<void>} [finalizePingSession]
  * @property {(findingId: string, patch: object) => Promise<void>} [updateFinding]
  * @property {() => Promise<{ path: string }>} [ensureImportInbox]
  * @property {() => Promise<void>} [openImportInbox]

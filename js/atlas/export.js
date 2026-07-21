@@ -220,7 +220,11 @@ export function exportImportDiffCsv(diff) {
 /**
  * @param {Array<object>} results ping session rows
  */
-export function exportPingSessionCsv(results) {
+/**
+ * @param {Array<object>} results
+ * @param {{ label?: string, sessionId?: string }} [opts]
+ */
+export function exportPingSessionCsv(results, opts = {}) {
     const rows = (results || []).map((r) => ({
         timestamp: r.timestamp || r.at,
         ip: r.ip || r.targetIp,
@@ -229,9 +233,23 @@ export function exportPingSessionCsv(results) {
         error: r.error || '',
         channel: r.channelNumber || '',
         drop: r.dropNumber ?? '',
-        sessionId: r.sessionId || ''
+        sessionId: r.sessionId || opts.sessionId || ''
     }));
-    downloadTextFile(`atlas-ping-session-${Date.now()}.csv`, rowsToCsv(rows));
+    const slug = String(opts.label || 'session')
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-|-$/g, '')
+        .slice(0, 40) || 'session';
+    downloadTextFile(`atlas-ping-${slug}-${Date.now()}.csv`, rowsToCsv(rows));
+}
+
+/**
+ * Keep monitor sessions in history lists (hide one-shot noise).
+ * @param {{ label?: string|null }|null|undefined} session
+ */
+export function isMonitorHistorySession(session) {
+    const label = String(session?.label || '').trim().toLowerCase();
+    return label !== 'one-shot';
 }
 
 /**

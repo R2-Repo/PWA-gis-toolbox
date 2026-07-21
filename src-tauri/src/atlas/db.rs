@@ -628,16 +628,40 @@ pub fn atlas_ping_save(
     state: tauri::State<'_, Arc<AtlasDbState>>,
 ) -> Result<(), String> {
     with_conn(&state, |conn| {
-        let session_id = json_str(payload.get("sessionId")).unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+        let session_id =
+            json_str(payload.get("sessionId")).unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
         let label = json_str(payload.get("label"));
         let now = chrono_like_now();
-        conn.execute(
-            "INSERT OR REPLACE INTO ping_session (id, label, started_at, stopped_at) VALUES (?1,?2,?3,?4)",
-            params![session_id, label, now, now],
-        )
-        .map_err(|e| e.to_string())?;
+        let started_at = json_str(payload.get("startedAt")).unwrap_or_else(|| now.clone());
+
+        let existing: Option<String> = conn
+            .query_row(
+                "SELECT id FROM ping_session WHERE id = ?1",
+                params![session_id],
+                |r| r.get(0),
+            )
+            .optional()
+            .map_err(|e| e.to_string())?;
+
+        if existing.is_none() {
+            // First write creates the session; keep stopped_at NULL until finalize.
+            conn.execute(
+                "INSERT INTO ping_session (id, label, started_at, stopped_at) VALUES (?1,?2,?3,NULL)",
+                params![session_id, label, started_at],
+            )
+            .map_err(|e| e.to_string())?;
+        } else if let Some(lbl) = label {
+            // Optional label refresh only — never rewrite started_at/stopped_at here.
+            conn.execute(
+                "UPDATE ping_session SET label = COALESCE(?2, label) WHERE id = ?1",
+                params![session_id, lbl],
+            )
+            .map_err(|e| e.to_string())?;
+        }
+
         if let Some(arr) = payload.get("results").and_then(|v| v.as_array()) {
-            for r in arr {
+            // Cap batch size to limit DB growth from a compromised renderer.
+            for r in arr.iter().take(500) {
                 let id = uuid::Uuid::new_v4().to_string();
                 conn.execute(
                     "INSERT INTO ping_result (id, session_id, target_ip, status, rtt_ms, error, at) VALUES (?1,?2,?3,?4,?5,?6,?7)",
@@ -654,6 +678,161 @@ pub fn atlas_ping_save(
                 .map_err(|e| e.to_string())?;
             }
         }
+        Ok(())
+    })
+}
+
+/// List monitor sessions (excludes one-shot by default).
+#[tauri::command]
+pub fn atlas_ping_list_sessions(
+    payload: Value,
+    state: tauri::State<'_, Arc<AtlasDbState>>,
+) -> Result<Value, String> {
+    with_conn(&state, |conn| {
+        let limit = payload
+            .get("limit")
+            .and_then(|v| v.as_i64())
+            .unwrap_or(50)
+            .clamp(1, 500);
+        let include_one_shot = payload
+            .get("includeOneShot")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+
+        let sql = if include_one_shot {
+            r#"
+            SELECT s.id, s.label, s.started_at, s.stopped_at,
+                   COUNT(r.id) AS sample_count,
+                   COUNT(DISTINCT r.target_ip) AS target_count
+            FROM ping_session s
+            LEFT JOIN ping_result r ON r.session_id = s.id
+            GROUP BY s.id
+            ORDER BY COALESCE(s.started_at, '') DESC
+            LIMIT ?1
+            "#
+        } else {
+            r#"
+            SELECT s.id, s.label, s.started_at, s.stopped_at,
+                   COUNT(r.id) AS sample_count,
+                   COUNT(DISTINCT r.target_ip) AS target_count
+            FROM ping_session s
+            LEFT JOIN ping_result r ON r.session_id = s.id
+            WHERE COALESCE(s.label, '') != 'one-shot'
+            GROUP BY s.id
+            ORDER BY COALESCE(s.started_at, '') DESC
+            LIMIT ?1
+            "#
+        };
+
+        let mut stmt = conn.prepare(sql).map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map(params![limit], |r| {
+                Ok(json!({
+                    "id": r.get::<_, String>(0)?,
+                    "label": r.get::<_, Option<String>>(1)?,
+                    "startedAt": r.get::<_, Option<String>>(2)?,
+                    "stoppedAt": r.get::<_, Option<String>>(3)?,
+                    "sampleCount": r.get::<_, i64>(4)?,
+                    "targetCount": r.get::<_, i64>(5)?,
+                }))
+            })
+            .map_err(|e| e.to_string())?;
+
+        let mut sessions = Vec::new();
+        for row in rows {
+            sessions.push(row.map_err(|e| e.to_string())?);
+        }
+        Ok(json!({ "sessions": sessions }))
+    })
+}
+
+/// Load one session + recent samples (newest first).
+#[tauri::command]
+pub fn atlas_ping_load_session(
+    payload: Value,
+    state: tauri::State<'_, Arc<AtlasDbState>>,
+) -> Result<Value, String> {
+    with_conn(&state, |conn| {
+        let session_id = json_str(payload.get("sessionId"))
+            .ok_or_else(|| "sessionId is required".to_string())?;
+        let limit = payload
+            .get("limit")
+            .and_then(|v| v.as_i64())
+            .unwrap_or(200)
+            .clamp(1, 5000);
+
+        let session: Option<Value> = conn
+            .query_row(
+                "SELECT id, label, started_at, stopped_at FROM ping_session WHERE id = ?1",
+                params![session_id],
+                |r| {
+                    Ok(json!({
+                        "id": r.get::<_, String>(0)?,
+                        "label": r.get::<_, Option<String>>(1)?,
+                        "startedAt": r.get::<_, Option<String>>(2)?,
+                        "stoppedAt": r.get::<_, Option<String>>(3)?,
+                    }))
+                },
+            )
+            .optional()
+            .map_err(|e| e.to_string())?;
+
+        let Some(session) = session else {
+            return Err(format!("Ping session not found: {session_id}"));
+        };
+
+        let mut stmt = conn
+            .prepare(
+                r#"
+                SELECT target_ip, status, rtt_ms, error, at
+                FROM ping_result
+                WHERE session_id = ?1
+                ORDER BY COALESCE(at, '') DESC
+                LIMIT ?2
+                "#,
+            )
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map(params![session_id, limit], |r| {
+                Ok(json!({
+                    "ip": r.get::<_, Option<String>>(0)?,
+                    "status": r.get::<_, Option<String>>(1)?,
+                    "rttMs": r.get::<_, Option<f64>>(2)?,
+                    "error": r.get::<_, Option<String>>(3)?,
+                    "at": r.get::<_, Option<String>>(4)?,
+                    "timestamp": r.get::<_, Option<String>>(4)?,
+                    "sessionId": session_id.clone(),
+                }))
+            })
+            .map_err(|e| e.to_string())?;
+
+        let mut results = Vec::new();
+        for row in rows {
+            results.push(row.map_err(|e| e.to_string())?);
+        }
+
+        Ok(json!({
+            "session": session,
+            "results": results,
+        }))
+    })
+}
+
+/// Mark a session stopped without rewriting started_at or re-inserting samples.
+#[tauri::command]
+pub fn atlas_ping_finalize_session(
+    payload: Value,
+    state: tauri::State<'_, Arc<AtlasDbState>>,
+) -> Result<(), String> {
+    with_conn(&state, |conn| {
+        let session_id = json_str(payload.get("sessionId"))
+            .ok_or_else(|| "sessionId is required".to_string())?;
+        let stopped_at = json_str(payload.get("stoppedAt")).unwrap_or_else(chrono_like_now);
+        conn.execute(
+            "UPDATE ping_session SET stopped_at = ?2 WHERE id = ?1",
+            params![session_id, stopped_at],
+        )
+        .map_err(|e| e.to_string())?;
         Ok(())
     })
 }

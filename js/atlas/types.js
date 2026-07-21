@@ -97,6 +97,22 @@
  */
 
 /**
+ * @typedef {Object} PingSessionSummary
+ * @property {string} id
+ * @property {string|null} [label]
+ * @property {string|null} [startedAt]
+ * @property {string|null} [stoppedAt]
+ * @property {number} [sampleCount]
+ * @property {number} [targetCount]
+ */
+
+/**
+ * @typedef {Object} PingSessionDetail
+ * @property {PingSessionSummary} session
+ * @property {Array<{ ip?: string, status?: string, rttMs?: number|null, error?: string, at?: string, timestamp?: string }>} results
+ */
+
+/**
  * @typedef {Object} AtlasSelection
  * @property {'hub'|'channel'|'drop'|'device'|'site'|'area'} kind
  * @property {string} id

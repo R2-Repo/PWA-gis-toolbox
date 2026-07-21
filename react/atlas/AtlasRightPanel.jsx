@@ -8,9 +8,11 @@ import {
     buildDashboardStats,
     exportDropsCsv,
     exportFindingsCsv,
+    exportPingSessionCsv,
     exportTriageCsv,
     openPrintableReport
 } from '../../js/atlas/export.js';
+import { listAtlasPingSessions, loadAtlasPingSession } from '../../js/atlas/controller.js';
 import { collectHubIps, findingsInScope, listScopedDropsByPing } from '../../js/atlas/triage.js';
 import { formatPingAge, formatPingWhen, isPingStale } from '../../js/atlas/ping-format.js';
 import { ChannelSchematic } from './ChannelSchematic.jsx';
@@ -47,6 +49,9 @@ export function AtlasRightPanel({
     const [showAllFindings, setShowAllFindings] = useState(false);
     const [showAllArea, setShowAllArea] = useState(false);
     const [focusedFindingId, setFocusedFindingId] = useState(null);
+    const [pastSessions, setPastSessions] = useState([]);
+    const [historyDetail, setHistoryDetail] = useState(null);
+    const [historyBusy, setHistoryBusy] = useState(false);
 
     const focusFindings = (type = 'all', status = 'Open') => {
         setFindingFilter(status);
@@ -77,6 +82,12 @@ export function AtlasRightPanel({
         });
     };
 
+    const refreshPastSessions = () => {
+        void listAtlasPingSessions({ limit: 40 })
+            .then((sessions) => setPastSessions(sessions || []))
+            .catch(() => setPastSessions([]));
+    };
+
     useEffect(() => {
         const unsub = [
             bus.on('atlas:changed', () => setTick((t) => t + 1)),
@@ -85,8 +96,10 @@ export function AtlasRightPanel({
                 else setDashScope('network');
                 setTick((t) => t + 1);
             }),
-            bus.on('atlas:ping', () => setTick((t) => t + 1))
+            bus.on('atlas:ping', () => setTick((t) => t + 1)),
+            bus.on('atlas:ping-sessions', () => refreshPastSessions())
         ];
+        refreshPastSessions();
         return () => unsub.forEach((u) => u?.());
     }, []);
 
@@ -824,6 +837,84 @@ export function AtlasRightPanel({
                         This section opens automatically when a monitor starts.
                     </p>
                 )}
+
+                <div className="atlas-monitor-history">
+                    <div className="atlas-toolbar">
+                        <strong>Past sessions</strong>
+                        <button
+                            type="button"
+                            className="btn btn-ghost btn-sm"
+                            onClick={() => refreshPastSessions()}
+                            disabled={historyBusy}
+                        >
+                            Refresh
+                        </button>
+                    </div>
+                    {!pastSessions.length ? (
+                        <p className="atlas-muted">No saved monitor sessions yet (one-shot pings are hidden).</p>
+                    ) : (
+                        <ul className="atlas-session-list">
+                            {pastSessions.map((s) => {
+                                const selected = historyDetail?.session?.id === s.id;
+                                return (
+                                    <li key={s.id}>
+                                        <button
+                                            type="button"
+                                            className={`atlas-session-row${selected ? ' atlas-session-row--selected' : ''}`}
+                                            disabled={historyBusy}
+                                            onClick={() => {
+                                                setHistoryBusy(true);
+                                                void loadAtlasPingSession(s.id, { limit: 80 })
+                                                    .then((detail) => setHistoryDetail(detail))
+                                                    .catch(() => setHistoryDetail(null))
+                                                    .finally(() => setHistoryBusy(false));
+                                            }}
+                                        >
+                                            <strong>{s.label || 'Monitor'}</strong>
+                                            <span className="atlas-muted">
+                                                {formatPingWhen(s.startedAt)}
+                                                {s.stoppedAt ? ` → ${formatPingWhen(s.stoppedAt)}` : ' · running?'}
+                                            </span>
+                                            <span className="atlas-muted">
+                                                {s.sampleCount || 0} samples · {s.targetCount || 0} IP(s)
+                                            </span>
+                                        </button>
+                                    </li>
+                                );
+                            })}
+                        </ul>
+                    )}
+                    {historyDetail?.results?.length ? (
+                        <div className="atlas-session-detail">
+                            <div className="atlas-toolbar">
+                                <span className="atlas-muted">
+                                    Showing {Math.min(historyDetail.results.length, 40)} of {historyDetail.results.length} loaded
+                                </span>
+                                <button
+                                    type="button"
+                                    className="btn btn-ghost btn-sm"
+                                    onClick={() => exportPingSessionCsv(historyDetail.results, {
+                                        label: historyDetail.session?.label,
+                                        sessionId: historyDetail.session?.id
+                                    })}
+                                >
+                                    Export CSV
+                                </button>
+                            </div>
+                            <ul className="atlas-simple-list atlas-monitor-tail">
+                                {historyDetail.results.slice(0, 40).map((row, i) => (
+                                    <li key={`${row.at}-${row.ip}-${i}`}>
+                                        <span className="atlas-mono">{row.ip}</span>
+                                        {' · '}
+                                        {row.status}
+                                        {row.rttMs != null ? ` · ${row.rttMs} ms` : ''}
+                                        <span className="atlas-muted"> · {formatPingWhen(row.timestamp || row.at)}</span>
+                                    </li>
+                                ))}
+                            </ul>
+                        </div>
+                    ) : null}
+                </div>
             </CollapsibleSection>
 
             <CollapsibleSection title="Reconciliation" bodyId="atlas-findings" defaultOpen={false}>
