@@ -20,6 +20,7 @@ import {
 } from './map-layers.js';
 import { buildAtlasImportPayload } from './import/pipeline.js';
 import { diffAtlasImport } from './import/diff.js';
+import { compactImportBatchSummary } from './import/batch-format.js';
 import { buildDashboardStats, exportPingSessionCsv, sessionsOlderThan } from './export.js';
 import { startPingSession, stopPingSession, stopAllPingSessions } from './monitor.js';
 import { queryAtlasInArea } from './area-query.js';
@@ -239,14 +240,23 @@ export async function runAtlasImport(input) {
     }
 
     let payload = input?.payload;
+    /** @type {object|null} */
+    let diff = null;
     if (!payload) {
         const preview = await previewAtlasImport(input || {});
         payload = preview.payload;
+        diff = preview.diff || null;
+    } else {
+        // Snapshot vs current DB before replace (counts only — no IP lists stored).
+        diff = diffAtlasImport(payload, getAtlasSnapshot());
     }
+
+    const summary = compactImportBatchSummary(payload.summary, diff);
+    payload = { ...payload, summary };
 
     await service.applyImport(payload);
     await refreshAtlasFromDb();
-    return payload.summary;
+    return summary;
 }
 
 /**

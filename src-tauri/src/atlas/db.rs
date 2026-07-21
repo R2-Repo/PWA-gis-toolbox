@@ -35,7 +35,8 @@ fn migrate(conn: &Connection) -> Result<(), String> {
             batch_date TEXT,
             imported_at TEXT NOT NULL,
             workbook_name TEXT,
-            atms_name TEXT
+            atms_name TEXT,
+            summary_json TEXT
         );
         CREATE TABLE IF NOT EXISTS raw_source_record (
             id TEXT PRIMARY KEY,
@@ -140,7 +141,30 @@ fn migrate(conn: &Connection) -> Result<(), String> {
     // Additive columns for DBs created before entity_kind/ip existed
     let _ = conn.execute("ALTER TABLE reconciliation_finding ADD COLUMN entity_kind TEXT", []);
     let _ = conn.execute("ALTER TABLE reconciliation_finding ADD COLUMN ip TEXT", []);
+    let _ = conn.execute("ALTER TABLE import_batch ADD COLUMN summary_json TEXT", []);
     Ok(())
+}
+
+fn parse_summary_json(raw: Option<String>) -> Value {
+    raw.and_then(|s| {
+        let t = s.trim();
+        if t.is_empty() {
+            return None;
+        }
+        serde_json::from_str::<Value>(t).ok()
+    })
+    .unwrap_or(Value::Null)
+}
+
+fn import_batch_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<Value> {
+    Ok(json!({
+        "id": r.get::<_, String>(0)?,
+        "batchDate": r.get::<_, Option<String>>(1)?,
+        "importedAt": r.get::<_, String>(2)?,
+        "workbookName": r.get::<_, Option<String>>(3)?,
+        "atmsName": r.get::<_, Option<String>>(4)?,
+        "summary": parse_summary_json(r.get::<_, Option<String>>(5)?),
+    }))
 }
 
 fn with_conn<T>(
@@ -334,17 +358,9 @@ fn load_snapshot_inner(conn: &Connection) -> Result<Value, String> {
 
     let last_import = conn
         .query_row(
-            "SELECT id, batch_date, imported_at, workbook_name, atms_name FROM import_batch ORDER BY imported_at DESC LIMIT 1",
+            "SELECT id, batch_date, imported_at, workbook_name, atms_name, summary_json FROM import_batch ORDER BY imported_at DESC LIMIT 1",
             [],
-            |r| {
-                Ok(json!({
-                    "id": r.get::<_, String>(0)?,
-                    "batchDate": r.get::<_, Option<String>>(1)?,
-                    "importedAt": r.get::<_, String>(2)?,
-                    "workbookName": r.get::<_, Option<String>>(3)?,
-                    "atmsName": r.get::<_, Option<String>>(4)?,
-                }))
-            },
+            import_batch_row,
         )
         .optional()
         .map_err(|e| e.to_string())?;
@@ -445,14 +461,20 @@ pub fn atlas_import_apply(
         .map_err(|e| e.to_string())?;
 
         let batch = payload.get("batch").ok_or("missing batch")?;
+        let summary_json = payload
+            .get("summary")
+            .map(|v| v.to_string())
+            .or_else(|| batch.get("summary").map(|v| v.to_string()))
+            .unwrap_or_else(|| "null".into());
         tx.execute(
-            "INSERT INTO import_batch (id, batch_date, imported_at, workbook_name, atms_name) VALUES (?1,?2,?3,?4,?5)",
+            "INSERT INTO import_batch (id, batch_date, imported_at, workbook_name, atms_name, summary_json) VALUES (?1,?2,?3,?4,?5,?6)",
             params![
                 json_str(batch.get("id")).unwrap_or_default(),
                 json_str(batch.get("batchDate")),
                 json_str(batch.get("importedAt")).unwrap_or_default(),
                 json_str(batch.get("workbookName")),
                 json_str(batch.get("atmsName")),
+                summary_json,
             ],
         )
         .map_err(|e| e.to_string())?;
@@ -655,7 +677,7 @@ pub fn atlas_import_list_batches(
         let mut stmt = conn
             .prepare(
                 r#"
-                SELECT id, batch_date, imported_at, workbook_name, atms_name
+                SELECT id, batch_date, imported_at, workbook_name, atms_name, summary_json
                 FROM import_batch
                 ORDER BY imported_at DESC
                 LIMIT ?1
@@ -663,15 +685,7 @@ pub fn atlas_import_list_batches(
             )
             .map_err(|e| e.to_string())?;
         let rows = stmt
-            .query_map(params![limit], |r| {
-                Ok(json!({
-                    "id": r.get::<_, String>(0)?,
-                    "batchDate": r.get::<_, Option<String>>(1)?,
-                    "importedAt": r.get::<_, String>(2)?,
-                    "workbookName": r.get::<_, Option<String>>(3)?,
-                    "atmsName": r.get::<_, Option<String>>(4)?,
-                }))
-            })
+            .query_map(params![limit], import_batch_row)
             .map_err(|e| e.to_string())?;
 
         let mut batches = Vec::new();

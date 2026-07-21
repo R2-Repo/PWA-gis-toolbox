@@ -5,7 +5,11 @@ import { searchAtlasDetailed } from '../../js/atlas/search.js';
 import { buildHierarchyTree } from '../../js/atlas/hierarchy.js';
 import { formatPingWhen, isPingStale } from '../../js/atlas/ping-format.js';
 import { clearAtlasFocus, listAtlasImportBatches, reloadAtlasFromDb } from '../../js/atlas/controller.js';
-import { describeImportBatch } from '../../js/atlas/import/batch-format.js';
+import {
+    describeImportBatch,
+    formatImportBatchCounts,
+    formatImportBatchDiff
+} from '../../js/atlas/import/batch-format.js';
 import { describeAtlasFocus } from '../../js/atlas/focus-label.js';
 import { showAtlasShortcutsHelp } from '../../js/atlas/hotkeys.js';
 import { confirm } from '../../js/ui/modals.js';
@@ -201,6 +205,9 @@ export function AtlasLeftPanel({ onSelect, onOpenImport }) {
                         {snap.lastImport.batchDate || formatPingWhen(snap.lastImport.importedAt)}
                         {snap.lastImport.importedAt ? ` · ${formatPingWhen(snap.lastImport.importedAt)}` : ''}
                     </span>
+                    {formatImportBatchCounts(snap.lastImport) ? (
+                        <span className="atlas-muted">{formatImportBatchCounts(snap.lastImport)}</span>
+                    ) : null}
                     {isPingStale(snap.lastImport.importedAt, 168) ? (
                         <span className="atlas-stale-warn">Older than 7 days — consider re-importing.</span>
                     ) : null}
@@ -209,7 +216,7 @@ export function AtlasLeftPanel({ onSelect, onOpenImport }) {
 
             <CollapsibleSection title="Import history" bodyId="atlas-import-history" defaultOpen={false}>
                 <p className="atlas-muted atlas-import-history-note">
-                    Metadata only — past applies are not restorable. Network tables always reflect the latest Apply.
+                    Counts and diff from each Apply (not restorable). Network tables always reflect the latest Apply.
                 </p>
                 {!importBatches.length ? (
                     <p className="atlas-muted">
@@ -220,6 +227,8 @@ export function AtlasLeftPanel({ onSelect, onOpenImport }) {
                         {importBatches.map((batch) => {
                             const { title, files } = describeImportBatch(batch);
                             const isCurrent = batch.id === snap.lastImport?.id;
+                            const countsLine = formatImportBatchCounts(batch);
+                            const diffLine = formatImportBatchDiff(batch);
                             return (
                                 <li key={batch.id} className="atlas-session-item">
                                     <div
@@ -232,6 +241,8 @@ export function AtlasLeftPanel({ onSelect, onOpenImport }) {
                                         {files && files !== title ? (
                                             <span className="atlas-muted">{files}</span>
                                         ) : null}
+                                        {countsLine ? <span>{countsLine}</span> : null}
+                                        {diffLine ? <span className="atlas-muted">{diffLine}</span> : null}
                                         <span className="atlas-muted">
                                             {formatPingWhen(batch.importedAt)}
                                         </span>
