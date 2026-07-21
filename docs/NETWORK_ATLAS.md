@@ -58,25 +58,25 @@ Map: click hubs/drops to select; channel selection draws a path and fits bounds.
 Operator UX:
 - Last-import freshness banner on the left panel
 - Hierarchy/search: selection highlight, auto-expand, ping status dots
-- Dashboard cards drill into Reconciliation + Ping triage (stale / untested / attention)
-- Findings filter by status + type (incl. ATMS unmatched)
-- Ping triage: unreachable / stale / untested / needs attention + bulk re-ping
-- Hub map dots colored by worst-of switch ping rollup
+- Dashboard cards for major finding types + ping triage modes
+- Findings filter by status + type; Show all / triage CSV export
+- Ping triage: unreachable / stale / untested / needs attention + per-row Ping
+- Hub map + schematic hubs colored by worst-of switch ping rollup
 - Hub detail: ping all / primary / secondary + start monitor
 - Area query: rectangle or polygon, map overlay, fit bounds, Selection scope, open findings
 - Area clear + entity selection overrides stale area scope
 - Scoped drops CSV (includes ping columns) / printable report with findings table
 - Channel schematic: finding badges (click → finding), wireless tag, clickable hubs
 - Wireless inferred on import from ATMS device type / model
-- Channel/site detail with ping + monitor
+- Channel/site/device detail with ping + monitor
 - Device detail: gateway/subnet/provisional
-- Monitor from drop, channel, hub, triage, or area; live sample tail
+- Monitor from drop, channel, hub, site, device, triage, or area; live sample tail
 - Ping toasts (start + up/down summary)
 - Reconciliation findings follow Network / Selection scope
 - Ping age on drop details / schematic (stale after 24h)
 - Findings: suggested action, editable notes, link to hub/channel/drop/device/site
 - Monitor samples persisted; stop on leave Atlas (CSV only when Stop clicked)
-- Import Review: full diff lists + changed-IP before/after details + CSV export
+- Import Review: findings-by-type summary + full diff lists + changed-IP details + CSV
 
 Manual file pickers remain as a fallback. Do **not** use the header Import / map drop for these sources.
 

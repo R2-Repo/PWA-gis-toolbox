@@ -57,10 +57,12 @@ export function ChannelSchematic({
                             )}
                             {node.ping?.status && node.ping.status !== 'untested' && (
                                 <span className="atlas-schematic-rtt">
+                                    {node.kind === 'hub' ? 'Hub rollup · ' : ''}
                                     {node.ping.status}
                                     {node.ping.rttMs != null ? ` · ${node.ping.rttMs} ms` : ''}
-                                    {' · '}
-                                    {formatPingAge(node.ping.at)}
+                                    {node.kind !== 'hub' && node.ping?.at
+                                        ? ` · ${formatPingAge(node.ping.at)}`
+                                        : ''}
                                 </span>
                             )}
                         </button>

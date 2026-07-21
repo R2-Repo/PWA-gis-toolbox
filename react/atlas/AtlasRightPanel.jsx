@@ -3,7 +3,14 @@ import bus from '../../js/core/event-bus.js';
 import { getAtlasSnapshot } from '../../js/atlas/store.js';
 import { buildChannelSchematic } from '../../js/atlas/schematic.js';
 import { getHubChannelSummary } from '../../js/atlas/hierarchy.js';
-import { buildDashboardStats, exportDropsCsv, exportFindingsCsv, findingsTableHtml, openPrintableReport } from '../../js/atlas/export.js';
+import {
+    buildDashboardStats,
+    exportDropsCsv,
+    exportFindingsCsv,
+    exportTriageCsv,
+    findingsTableHtml,
+    openPrintableReport
+} from '../../js/atlas/export.js';
 import { collectHubIps, findingsInScope, listScopedDropsByPing } from '../../js/atlas/triage.js';
 import { formatPingAge, formatPingWhen, isPingStale } from '../../js/atlas/ping-format.js';
 import { ChannelSchematic } from './ChannelSchematic.jsx';
@@ -36,6 +43,9 @@ export function AtlasRightPanel({
     const [dashScope, setDashScope] = useState('network');
     const [triageMode, setTriageMode] = useState('unreachable');
     const [noteDrafts, setNoteDrafts] = useState({});
+    const [showAllTriage, setShowAllTriage] = useState(false);
+    const [showAllFindings, setShowAllFindings] = useState(false);
+    const [showAllArea, setShowAllArea] = useState(false);
 
     const focusFindings = (type = 'all', status = 'Open') => {
         setFindingFilter(status);
@@ -211,6 +221,38 @@ export function AtlasRightPanel({
                     <button
                         type="button"
                         className="atlas-dash-card atlas-dash-card--action"
+                        onClick={() => focusFindings('coordinate_disagreement', 'Open')}
+                        title="Filter coordinate disagreements"
+                    >
+                        <span>Coord disagreement</span><strong>{stats.coordinateDisagreement || 0}</strong>
+                    </button>
+                    <button
+                        type="button"
+                        className="atlas-dash-card atlas-dash-card--action"
+                        onClick={() => focusFindings('damaged_hub_value', 'Open')}
+                        title="Filter damaged hub values"
+                    >
+                        <span>Damaged hub</span><strong>{stats.damagedHubValue || 0}</strong>
+                    </button>
+                    <button
+                        type="button"
+                        className="atlas-dash-card atlas-dash-card--action"
+                        onClick={() => focusFindings('workbook_not_in_atms', 'Open')}
+                        title="Filter workbook IPs missing from ATMS"
+                    >
+                        <span>Not in ATMS</span><strong>{stats.workbookNotInAtms || 0}</strong>
+                    </button>
+                    <button
+                        type="button"
+                        className="atlas-dash-card atlas-dash-card--action"
+                        onClick={() => focusFindings('missing_switchfiber', 'Open')}
+                        title="Filter TMD without SwitchFiber"
+                    >
+                        <span>Missing SwitchFiber</span><strong>{stats.missingSwitchfiber || 0}</strong>
+                    </button>
+                    <button
+                        type="button"
+                        className="atlas-dash-card atlas-dash-card--action"
                         onClick={() => focusTriage('unreachable')}
                         title="Open unreachable triage"
                     >
@@ -336,13 +378,32 @@ export function AtlasRightPanel({
                             {formatPingAge(devicePing?.at)}
                         </p>
                         {canPing && deviceDetail.ip && (
-                            <button
-                                type="button"
-                                className="btn btn-secondary btn-sm"
-                                onClick={() => onPingSelectedIps?.([deviceDetail.ip])}
-                            >
-                                Ping device
-                            </button>
+                            <div className="atlas-toolbar">
+                                <button
+                                    type="button"
+                                    className="btn btn-secondary btn-sm"
+                                    onClick={() => onPingSelectedIps?.([deviceDetail.ip])}
+                                >
+                                    Ping device
+                                </button>
+                                <select className="input-sm" value={monitorInterval} onChange={(e) => setMonitorInterval(Number(e.target.value) || e.target.value)}>
+                                    <option value="continuous">Continuous (~5s)</option>
+                                    <option value={1}>Every 1 min</option>
+                                    <option value={5}>Every 5 min</option>
+                                </select>
+                                <button
+                                    type="button"
+                                    className="btn btn-ghost btn-sm"
+                                    disabled={!!snap.activeSession}
+                                    onClick={() => onStartMonitor?.({
+                                        targets: [deviceDetail.ip],
+                                        interval: monitorInterval,
+                                        label: deviceDetail.inventoryName || deviceDetail.ip
+                                    })}
+                                >
+                                    Start monitor
+                                </button>
+                            </div>
                         )}
                     </div>
                 )}
@@ -370,13 +431,27 @@ export function AtlasRightPanel({
                             {!siteDrops.length && <li className="atlas-muted">No linked drops.</li>}
                         </ul>
                         {canPing && siteDrops.some((d) => d.ip) && (
-                            <button
-                                type="button"
-                                className="btn btn-secondary btn-sm"
-                                onClick={() => onPingSelectedIps?.(siteDrops.map((d) => d.ip).filter(Boolean))}
-                            >
-                                Ping site switches
-                            </button>
+                            <div className="atlas-toolbar">
+                                <button
+                                    type="button"
+                                    className="btn btn-secondary btn-sm"
+                                    onClick={() => onPingSelectedIps?.(siteDrops.map((d) => d.ip).filter(Boolean))}
+                                >
+                                    Ping site switches
+                                </button>
+                                <button
+                                    type="button"
+                                    className="btn btn-ghost btn-sm"
+                                    disabled={!!snap.activeSession}
+                                    onClick={() => onStartMonitor?.({
+                                        targets: siteDrops.map((d) => d.ip).filter(Boolean),
+                                        interval: monitorInterval,
+                                        label: siteDetail.inventoryName || siteDetail.siteId || 'Site'
+                                    })}
+                                >
+                                    Start monitor
+                                </button>
+                            </div>
                         )}
                     </div>
                 )}
@@ -521,37 +596,57 @@ export function AtlasRightPanel({
                 <p className="atlas-muted">
                     {triageMode} in {dashScope === 'selection' ? 'current selection/area' : 'full network'} ({triageRows.length}).
                 </p>
-                {canPing && triageRows.length > 0 && (
+                {triageRows.length > 0 && (
                     <div className="atlas-toolbar">
-                        <button
-                            type="button"
-                            className="btn btn-secondary btn-sm"
-                            onClick={() => onPingSelectedIps?.(triageRows.map((r) => r.ip))}
-                        >
-                            Re-ping list ({triageRows.length})
-                        </button>
+                        {canPing && (
+                            <>
+                                <button
+                                    type="button"
+                                    className="btn btn-secondary btn-sm"
+                                    onClick={() => onPingSelectedIps?.(triageRows.map((r) => r.ip))}
+                                >
+                                    Re-ping list ({triageRows.length})
+                                </button>
+                                <button
+                                    type="button"
+                                    className="btn btn-ghost btn-sm"
+                                    disabled={!!snap.activeSession}
+                                    title={snap.activeSession ? 'Stop the active monitor first' : 'Monitor triage IPs'}
+                                    onClick={() => onStartMonitor?.({
+                                        targets: triageRows.map((r) => r.ip),
+                                        interval: monitorInterval,
+                                        label: `Triage ${triageMode}`
+                                    })}
+                                >
+                                    Start monitor
+                                </button>
+                                <select className="input-sm" value={monitorInterval} onChange={(e) => setMonitorInterval(Number(e.target.value) || e.target.value)}>
+                                    <option value="continuous">Continuous (~5s)</option>
+                                    <option value={1}>Every 1 min</option>
+                                    <option value={5}>Every 5 min</option>
+                                </select>
+                            </>
+                        )}
                         <button
                             type="button"
                             className="btn btn-ghost btn-sm"
-                            disabled={!!snap.activeSession}
-                            title={snap.activeSession ? 'Stop the active monitor first' : 'Monitor triage IPs'}
-                            onClick={() => onStartMonitor?.({
-                                targets: triageRows.map((r) => r.ip),
-                                interval: monitorInterval,
-                                label: `Triage ${triageMode}`
-                            })}
+                            onClick={() => exportTriageCsv(snap, { scope: dashScope, mode: triageMode })}
                         >
-                            Start monitor
+                            Export triage CSV
                         </button>
-                        <select className="input-sm" value={monitorInterval} onChange={(e) => setMonitorInterval(Number(e.target.value) || e.target.value)}>
-                            <option value="continuous">Continuous (~5s)</option>
-                            <option value={1}>Every 1 min</option>
-                            <option value={5}>Every 5 min</option>
-                        </select>
+                        {triageRows.length > 60 && (
+                            <button
+                                type="button"
+                                className="btn btn-ghost btn-sm"
+                                onClick={() => setShowAllTriage((v) => !v)}
+                            >
+                                {showAllTriage ? 'Show less' : `Show all (${triageRows.length})`}
+                            </button>
+                        )}
                     </div>
                 )}
                 <ul className="atlas-simple-list">
-                    {triageRows.slice(0, 60).map((row) => (
+                    {(showAllTriage ? triageRows : triageRows.slice(0, 60)).map((row) => (
                         <li key={row.drop.id}>
                             <button
                                 type="button"
@@ -563,6 +658,11 @@ export function AtlasRightPanel({
                             <span className={`atlas-muted${row.stale ? ' atlas-stale-warn' : ''}`}>
                                 {' '}· {row.status} · {row.age}
                             </span>
+                            {canPing && (
+                                <button type="button" className="btn btn-ghost btn-sm" onClick={() => onPingDrop?.(row.drop.id)}>
+                                    Ping
+                                </button>
+                            )}
                         </li>
                     ))}
                     {!triageRows.length && <li className="atlas-muted">No matches in this triage mode.</li>}
@@ -613,9 +713,18 @@ export function AtlasRightPanel({
                                 </button>
                             </div>
                         )}
+                        {(area.warnings?.length > 20 || area.drops.length > 40) && (
+                            <button
+                                type="button"
+                                className="btn btn-ghost btn-sm"
+                                onClick={() => setShowAllArea((v) => !v)}
+                            >
+                                {showAllArea ? 'Show less' : 'Show all area results'}
+                            </button>
+                        )}
                         {!!area.warnings?.length && (
                             <ul className="atlas-simple-list">
-                                {area.warnings.slice(0, 20).map((f) => (
+                                {(showAllArea ? area.warnings : area.warnings.slice(0, 20)).map((f) => (
                                     <li key={f.id}>
                                         <button type="button" className="atlas-linkish" onClick={() => onSelectFinding?.(f)}>
                                             {f.findingType}: {f.description}
@@ -625,7 +734,7 @@ export function AtlasRightPanel({
                             </ul>
                         )}
                         <ul className="atlas-simple-list">
-                            {area.drops.slice(0, 40).map((d) => (
+                            {(showAllArea ? area.drops : area.drops.slice(0, 40)).map((d) => (
                                 <li key={d.id}>
                                     <button type="button" className="atlas-linkish" onClick={() => onSelect?.({ kind: 'drop', id: d.id })}>
                                         {d.inventoryName || d.ip || d.id}
@@ -696,9 +805,18 @@ export function AtlasRightPanel({
                         ))}
                     </select>
                     <button type="button" className="btn btn-ghost btn-sm" onClick={() => exportFindingsCsv(findings)}>Export CSV</button>
+                    {findings.length > 100 && (
+                        <button
+                            type="button"
+                            className="btn btn-ghost btn-sm"
+                            onClick={() => setShowAllFindings((v) => !v)}
+                        >
+                            {showAllFindings ? 'Show less' : `Show all (${findings.length})`}
+                        </button>
+                    )}
                 </div>
                 <ul className="atlas-findings-list">
-                    {findings.slice(0, 100).map((f) => (
+                    {(showAllFindings ? findings : findings.slice(0, 100)).map((f) => (
                         <li key={f.id}>
                             <span className={statusClass(f.severity)}>{f.severity}</span>
                             <div>

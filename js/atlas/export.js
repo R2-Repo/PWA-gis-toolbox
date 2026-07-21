@@ -105,6 +105,50 @@ export function exportFindingsCsv(findings) {
 }
 
 /**
+ * Export current triage list (unreachable / stale / untested / attention).
+ * @param {import('./types.js').AtlasSnapshot} snap
+ * @param {{ scope?: 'network'|'selection', mode?: string }} [opts]
+ */
+export function exportTriageCsv(snap, opts = {}) {
+    const mode = opts.mode || 'unreachable';
+    const scope = opts.scope || 'network';
+    const rows = listScopedDropsByPing(snap, { scope, mode }).map((r) => ({
+        mode,
+        scope,
+        channel: r.drop.channelNumber,
+        drop: r.drop.dropNumber,
+        inventoryName: r.drop.inventoryName,
+        ip: r.ip,
+        status: r.status,
+        rttMs: r.rttMs ?? '',
+        age: r.age,
+        stale: r.stale ? 'yes' : '',
+        at: r.at || ''
+    }));
+    downloadTextFile(`atlas-triage-${mode}-${Date.now()}.csv`, rowsToCsv(rows));
+}
+
+/**
+ * Count findings by type (for import review / dashboard).
+ * @param {import('./types.js').AtlasFinding[]} findings
+ * @param {{ openOnly?: boolean }} [opts]
+ * @returns {Array<{ type: string, count: number }>}
+ */
+export function countFindingsByType(findings, opts = {}) {
+    const openOnly = opts.openOnly !== false;
+    /** @type {Map<string, number>} */
+    const map = new Map();
+    for (const f of findings || []) {
+        if (openOnly && f.status !== 'Open') continue;
+        const t = f.findingType || 'unknown';
+        map.set(t, (map.get(t) || 0) + 1);
+    }
+    return [...map.entries()]
+        .map(([type, count]) => ({ type, count }))
+        .sort((a, b) => b.count - a.count || a.type.localeCompare(b.type));
+}
+
+/**
  * Export import diff lists for tickets.
  * @param {object} diff from diffAtlasImport
  */
@@ -275,6 +319,10 @@ export function buildDashboardStats(snap, opts = {}) {
         missingSiteIds: openFindings.filter((f) => f.findingType === 'missing_site_id').length,
         duplicateIps: openFindings.filter((f) => f.findingType === 'duplicate_ip').length,
         atmsUnmatched: openFindings.filter((f) => f.findingType === 'atms_unmatched').length,
+        coordinateDisagreement: openFindings.filter((f) => f.findingType === 'coordinate_disagreement').length,
+        damagedHubValue: openFindings.filter((f) => f.findingType === 'damaged_hub_value').length,
+        workbookNotInAtms: openFindings.filter((f) => f.findingType === 'workbook_not_in_atms').length,
+        missingSwitchfiber: openFindings.filter((f) => f.findingType === 'missing_switchfiber').length,
         pingReachable: reachable,
         pingUnreachable: unreachable,
         pingStale,

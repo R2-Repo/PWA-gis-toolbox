@@ -2,6 +2,21 @@
  * Channel schematic: Primary Hub → D1 → D2 → … → Secondary Hub
  */
 import { getAtlasSnapshot } from './store.js';
+import { hubPingRollup } from './triage.js';
+
+/**
+ * @param {import('./types.js').AtlasSnapshot} snap
+ * @param {string|null|undefined} hubId
+ * @param {string|null|undefined} hubCode
+ */
+function resolveHubPing(snap, hubId, hubCode) {
+    let id = hubId;
+    if (!id && hubCode) {
+        id = (snap.hubs || []).find((h) => h.hubCode === hubCode)?.id;
+    }
+    if (!id) return { status: 'untested', at: null };
+    return { status: hubPingRollup(id, snap), at: null };
+}
 
 /**
  * @param {string} channelId
@@ -49,7 +64,7 @@ export function buildChannelSchematic(channelId) {
         label: channel.primaryHubCode ? `Hub ${channel.primaryHubCode}` : 'Primary Hub',
         hubCode: channel.primaryHubCode,
         ip: null,
-        ping: null,
+        ping: resolveHubPing(snap, channel.primaryHubId, channel.primaryHubCode),
         warnings: []
     });
 
@@ -79,7 +94,7 @@ export function buildChannelSchematic(channelId) {
         label: channel.secondaryHubCode ? `Hub ${channel.secondaryHubCode}` : 'Secondary Hub',
         hubCode: channel.secondaryHubCode,
         ip: null,
-        ping: null,
+        ping: resolveHubPing(snap, channel.secondaryHubId, channel.secondaryHubCode),
         warnings: []
     });
 

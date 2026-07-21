@@ -5,7 +5,7 @@ import {
     scanAtlasImportInbox
 } from '../../js/atlas/import/inbox.js';
 import { previewAtlasImport, runAtlasImport } from '../../js/atlas/controller.js';
-import { exportImportDiffCsv } from '../../js/atlas/export.js';
+import { countFindingsByType, exportImportDiffCsv } from '../../js/atlas/export.js';
 
 /**
  * Dedicated Atlas import (not GIS map import).
@@ -214,6 +214,16 @@ export function AtlasImportDialog({ open, onClose, busy: busyProp, onImported })
                                 <li>Hubs / channels / drops / devices: {counts.hubs} / {counts.channels} / {counts.drops} / {counts.devices}</li>
                                 <li>Findings: {counts.findings}</li>
                             </ul>
+                            {!!payload?.findings?.length && (
+                                <div className="atlas-import-findings-by-type">
+                                    <strong>Findings by type</strong>
+                                    <ul>
+                                        {countFindingsByType(payload.findings, { openOnly: false }).map((row) => (
+                                            <li key={row.type}>{row.type}: {row.count}</li>
+                                        ))}
+                                    </ul>
+                                </div>
+                            )}
                             {summary.diff && !diff?.emptyCurrent && (
                                 <div className="atlas-import-diff">
                                     <strong>Compared to current DB</strong>

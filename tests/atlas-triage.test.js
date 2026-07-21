@@ -7,7 +7,7 @@ import { getAtlasSnapshot, patchAtlasSnapshot, resetAtlasSnapshot } from '../js/
 import { buildChannelSchematic } from '../js/atlas/schematic.js';
 import { buildHierarchyTree } from '../js/atlas/hierarchy.js';
 import { searchAtlas } from '../js/atlas/search.js';
-import { findingsTableHtml, rowsToCsv } from '../js/atlas/export.js';
+import { countFindingsByType, findingsTableHtml, rowsToCsv } from '../js/atlas/export.js';
 import { inferWireless } from '../js/atlas/import/normalize.js';
 
 describe('atlas wireless infer', () => {
@@ -176,6 +176,44 @@ describe('atlas area + schematic', () => {
         const dropNode = schematic?.nodes.find((n) => n.id === 'd1');
         expect(dropNode?.warnings).toHaveLength(1);
         expect(getAtlasSnapshot().channels).toHaveLength(1);
+    });
+
+    it('sets schematic hub ping from rollup', () => {
+        patchAtlasSnapshot({
+            hubs: [{ id: 'h1', hubCode: 'H1' }],
+            channels: [{
+                id: 'c1',
+                channelNumber: '1',
+                primaryHubId: 'h1',
+                primaryHubCode: 'H1',
+                secondaryHubCode: 'H2'
+            }],
+            drops: [
+                { id: 'd1', channelId: 'c1', dropNumber: 1, ip: '10.0.0.1' },
+                { id: 'd2', channelId: 'c1', dropNumber: 2, ip: '10.0.0.2' }
+            ],
+            pingResults: {
+                '10.0.0.1': { status: 'reachable', at: new Date().toISOString() },
+                '10.0.0.2': { status: 'unreachable', at: new Date().toISOString() }
+            },
+            findings: []
+        });
+        const schematic = buildChannelSchematic('c1');
+        const primary = schematic?.nodes.find((n) => n.role === 'primary');
+        expect(primary?.ping?.status).toBe('unreachable');
+    });
+
+    it('counts findings by type', () => {
+        const rows = countFindingsByType([
+            { findingType: 'duplicate_ip', status: 'Open' },
+            { findingType: 'duplicate_ip', status: 'Open' },
+            { findingType: 'missing_site_id', status: 'Resolved' },
+            { findingType: 'missing_site_id', status: 'Open' }
+        ]);
+        expect(rows).toEqual([
+            { type: 'duplicate_ip', count: 2 },
+            { type: 'missing_site_id', count: 1 }
+        ]);
     });
 
     it('adds pingStatus on hierarchy drops and search hits', () => {
