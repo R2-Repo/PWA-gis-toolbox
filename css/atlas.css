@@ -1,10 +1,10 @@
-/* ITS Network Atlas workspace */
+/* ITS Network Atlas workspace — matches app dark theme (main.css :root) */
 
 .atlas-workspace-tabs {
     display: flex;
     gap: 0;
-    border-bottom: 1px solid var(--border, #e2e8f0);
-    background: var(--panel-bg, #fff);
+    border-bottom: 1px solid var(--border);
+    background: var(--bg-panel);
     flex-shrink: 0;
 }
 
@@ -15,15 +15,20 @@
     padding: 8px 10px;
     font-size: 12px;
     font-weight: 600;
-    color: var(--text-muted, #64748b);
+    color: var(--text-muted);
     cursor: pointer;
     border-bottom: 2px solid transparent;
 }
 
+.atlas-workspace-tab:hover {
+    color: var(--text);
+    background: rgba(255, 255, 255, 0.04);
+}
+
 .atlas-workspace-tab.active {
-    color: var(--primary, #2563eb);
-    border-bottom-color: var(--primary, #2563eb);
-    background: rgba(37, 99, 235, 0.06);
+    color: var(--primary);
+    border-bottom-color: var(--primary);
+    background: rgba(219, 172, 63, 0.1);
 }
 
 .atlas-panel {
@@ -31,6 +36,7 @@
     flex-direction: column;
     gap: 8px;
     min-height: 0;
+    color: var(--text);
 }
 
 .atlas-toolbar {
@@ -42,7 +48,7 @@
 }
 
 .atlas-muted {
-    color: var(--text-muted, #64748b);
+    color: var(--text-muted);
     font-size: 12px;
 }
 
@@ -71,16 +77,18 @@
     padding: 6px 4px;
     cursor: pointer;
     font-size: 12px;
+    color: var(--text);
 }
 
 .atlas-search-results li button:hover {
-    background: rgba(37, 99, 235, 0.08);
+    background: rgba(219, 172, 63, 0.12);
 }
 
 .atlas-search-hit--selected button,
 .atlas-tree-row--selected .atlas-tree-label {
-    background: rgba(37, 99, 235, 0.12);
+    background: rgba(219, 172, 63, 0.18);
     border-radius: 4px;
+    color: var(--text);
 }
 
 .atlas-ping-dot {
@@ -90,14 +98,14 @@
     border-radius: 50%;
     margin-right: 5px;
     vertical-align: middle;
-    background: #94a3b8;
+    background: var(--text-muted);
 }
 
-.atlas-ping-dot--reachable { background: #16a34a; }
-.atlas-ping-dot--unreachable { background: #dc2626; }
-.atlas-ping-dot--pending { background: #ca8a04; }
+.atlas-ping-dot--reachable { background: var(--success); }
+.atlas-ping-dot--unreachable { background: var(--error); }
+.atlas-ping-dot--pending { background: var(--warning); }
 .atlas-ping-dot--warning { background: #ea580c; }
-.atlas-ping-dot--untested { background: #94a3b8; }
+.atlas-ping-dot--untested { background: var(--text-light); }
 
 .atlas-tree-row {
     display: flex;
@@ -112,6 +120,7 @@
     cursor: pointer;
     padding: 0;
     line-height: 1.4;
+    color: var(--text-muted);
 }
 
 .atlas-tree-twist.spacer {
@@ -126,10 +135,11 @@
     font-size: 12px;
     padding: 2px 0;
     flex: 1;
+    color: var(--text);
 }
 
 .atlas-tree-label:hover {
-    color: var(--primary, #2563eb);
+    color: var(--primary);
 }
 
 .atlas-dash-grid {
@@ -140,47 +150,56 @@
 }
 
 .atlas-dash-card {
-    border: 1px solid var(--border, #e2e8f0);
-    border-radius: 6px;
+    border: 1px solid var(--border-dark);
+    border-radius: var(--radius-sm);
     padding: 8px;
     display: flex;
     flex-direction: column;
     gap: 2px;
     font-size: 11px;
-    color: var(--text-muted, #64748b);
+    color: var(--text-muted);
+    background: var(--bg-surface);
 }
 
 .atlas-dash-card strong {
     font-size: 16px;
-    color: var(--text, #0f172a);
+    color: var(--text);
+    font-weight: 700;
 }
 
 button.atlas-dash-card--action {
     cursor: pointer;
-    background: #fff;
+    background: var(--bg-surface);
     text-align: left;
     font: inherit;
+    color: var(--text-muted);
+}
+
+button.atlas-dash-card--action strong {
+    color: var(--text);
 }
 
 button.atlas-dash-card--action:hover {
-    border-color: #93c5fd;
-    background: #eff6ff;
+    border-color: var(--primary);
+    background: rgba(219, 172, 63, 0.12);
 }
 
 .atlas-tag {
     display: inline-block;
     font-size: 11px;
     font-weight: 600;
-    color: #075985;
-    background: #e0f2fe;
+    color: #7dd3fc;
+    background: rgba(100, 210, 255, 0.15);
+    border: 1px solid rgba(100, 210, 255, 0.35);
     border-radius: 4px;
     padding: 2px 6px;
     margin: 2px 0;
 }
 
 .atlas-tag--warn {
-    color: #9a3412;
-    background: #ffedd5;
+    color: #ffd60a;
+    background: rgba(255, 214, 10, 0.12);
+    border-color: rgba(255, 214, 10, 0.35);
 }
 
 .atlas-schematic-header {
@@ -189,6 +208,7 @@ button.atlas-dash-card--action:hover {
     align-items: center;
     gap: 8px;
     margin-bottom: 8px;
+    color: var(--text);
 }
 
 .atlas-schematic-flow {
@@ -205,14 +225,15 @@ button.atlas-dash-card--action:hover {
 }
 
 .atlas-schematic-arrow {
-    color: var(--text-muted, #94a3b8);
+    color: var(--text-muted);
     font-weight: 700;
 }
 
 .atlas-schematic-node {
-    border: 1px solid var(--border, #cbd5e1);
-    border-radius: 6px;
-    background: #fff;
+    border: 1px solid var(--border-dark);
+    border-radius: var(--radius-sm);
+    background: var(--bg-surface);
+    color: var(--text);
     padding: 6px 8px;
     min-width: 88px;
     cursor: pointer;
@@ -223,32 +244,34 @@ button.atlas-dash-card--action:hover {
 }
 
 .atlas-schematic-node--hub {
-    background: #eff6ff;
-    border-color: #93c5fd;
+    background: rgba(219, 172, 63, 0.1);
+    border-color: rgba(219, 172, 63, 0.45);
 }
 
 .atlas-schematic-label {
     font-size: 12px;
     font-weight: 700;
+    color: var(--text);
 }
 
 .atlas-schematic-sub,
 .atlas-schematic-rtt,
 .atlas-schematic-warn {
     font-size: 10px;
-    color: var(--text-muted, #64748b);
+    color: var(--text-muted);
 }
 
 .atlas-schematic-warn {
-    color: #b45309;
+    color: #ffb340;
     font-weight: 600;
 }
 
 .atlas-schematic-badge {
     font-size: 11px;
     font-weight: 600;
-    color: #9a3412;
-    background: #ffedd5;
+    color: #ffb340;
+    background: rgba(255, 179, 64, 0.15);
+    border: 1px solid rgba(255, 179, 64, 0.35);
     border-radius: 4px;
     padding: 2px 6px;
 }
@@ -264,15 +287,15 @@ button.atlas-dash-card--action:hover {
 }
 
 .atlas-ping--reachable {
-    box-shadow: inset 0 0 0 2px #16a34a;
+    box-shadow: inset 0 0 0 2px var(--success);
 }
 
 .atlas-ping--unreachable {
-    box-shadow: inset 0 0 0 2px #dc2626;
+    box-shadow: inset 0 0 0 2px var(--error);
 }
 
 .atlas-ping--pending {
-    box-shadow: inset 0 0 0 2px #ca8a04;
+    box-shadow: inset 0 0 0 2px var(--warning);
 }
 
 .atlas-ping--warning {
@@ -282,11 +305,13 @@ button.atlas-dash-card--action:hover {
 .atlas-detail-block {
     margin-bottom: 10px;
     font-size: 12px;
+    color: var(--text);
 }
 
 .atlas-detail-block h4 {
     margin: 0 0 4px;
     font-size: 13px;
+    color: var(--text);
 }
 
 .atlas-simple-list {
@@ -296,16 +321,21 @@ button.atlas-dash-card--action:hover {
     max-height: 160px;
     overflow: auto;
     font-size: 12px;
+    color: var(--text);
 }
 
 .atlas-linkish {
     border: none;
     background: none;
-    color: var(--primary, #2563eb);
+    color: var(--primary);
     cursor: pointer;
     padding: 0;
     font: inherit;
     text-decoration: underline;
+}
+
+.atlas-linkish:hover {
+    color: var(--gold-light);
 }
 
 .atlas-findings-list {
@@ -320,8 +350,9 @@ button.atlas-dash-card--action:hover {
     display: flex;
     gap: 8px;
     padding: 8px 0;
-    border-bottom: 1px solid var(--border, #e2e8f0);
+    border-bottom: 1px solid var(--border);
     font-size: 12px;
+    color: var(--text);
 }
 
 .atlas-finding-check {
@@ -332,7 +363,7 @@ button.atlas-dash-card--action:hover {
 }
 
 .atlas-finding--selected {
-    background: #eff6ff;
+    background: rgba(219, 172, 63, 0.12);
     border-radius: 6px;
     padding-left: 4px;
     padding-right: 4px;
@@ -348,7 +379,10 @@ button.atlas-dash-card--action:hover {
     font-size: 12px;
     line-height: 1.35;
     border-radius: 6px;
-    box-shadow: 0 4px 14px rgba(15, 23, 42, 0.18);
+    background: var(--bg-surface) !important;
+    color: var(--text) !important;
+    box-shadow: var(--shadow-lg);
+    border: 1px solid var(--border-dark);
 }
 
 .atlas-map-tooltip {
@@ -356,10 +390,12 @@ button.atlas-dash-card--action:hover {
     flex-direction: column;
     gap: 2px;
     min-width: 120px;
+    color: var(--text);
 }
 
 .atlas-map-tooltip strong {
     font-size: 12px;
+    color: var(--text);
 }
 
 .app-layout.atlas-workspace-active #map-container {
@@ -396,11 +432,12 @@ button.atlas-dash-card--action:hover {
     align-items: center;
     gap: 8px;
     padding: 8px 10px;
-    border-radius: 8px;
-    background: rgba(255, 255, 255, 0.94);
-    border: 1px solid #e2e8f0;
-    box-shadow: 0 4px 14px rgba(15, 23, 42, 0.12);
+    border-radius: var(--radius-sm);
+    background: rgba(28, 28, 30, 0.94);
+    border: 1px solid var(--border-dark);
+    box-shadow: var(--shadow);
     font-size: 12px;
+    color: var(--text);
 }
 
 .atlas-map-empty-cta,
@@ -409,11 +446,12 @@ button.atlas-dash-card--action:hover {
     flex-direction: column;
     gap: 6px;
     padding: 10px;
-    border-radius: 8px;
-    background: rgba(255, 251, 235, 0.96);
-    border: 1px solid #fcd34d;
-    box-shadow: 0 4px 14px rgba(15, 23, 42, 0.1);
+    border-radius: var(--radius-sm);
+    background: rgba(219, 172, 63, 0.12);
+    border: 1px solid rgba(219, 172, 63, 0.45);
+    box-shadow: var(--shadow);
     font-size: 12px;
+    color: var(--text);
 }
 
 .atlas-empty-cta {
@@ -426,10 +464,11 @@ button.atlas-dash-card--action:hover {
     gap: 8px;
     padding: 8px;
     margin-bottom: 8px;
-    border-radius: 6px;
-    background: #eff6ff;
-    border: 1px solid #bfdbfe;
+    border-radius: var(--radius-sm);
+    background: rgba(219, 172, 63, 0.12);
+    border: 1px solid rgba(219, 172, 63, 0.4);
     font-size: 12px;
+    color: var(--text);
 }
 
 .atlas-selection-chip .atlas-map-focus-text {
@@ -445,6 +484,7 @@ button.atlas-dash-card--action:hover {
     flex-direction: column;
     gap: 8px;
     font-size: 13px;
+    color: var(--text);
 }
 
 .atlas-shortcuts-list kbd {
@@ -452,11 +492,12 @@ button.atlas-dash-card--action:hover {
     min-width: 1.4em;
     padding: 2px 6px;
     margin-right: 8px;
-    border: 1px solid #cbd5e1;
+    border: 1px solid var(--border-dark);
     border-bottom-width: 2px;
     border-radius: 4px;
-    background: #f8fafc;
-    font-family: ui-monospace, Consolas, monospace;
+    background: var(--bg-surface);
+    color: var(--text);
+    font-family: var(--mono);
     font-size: 12px;
     text-align: center;
 }
@@ -467,6 +508,7 @@ button.atlas-dash-card--action:hover {
     gap: 2px;
     min-width: 0;
     flex: 1;
+    color: var(--text);
 }
 
 .atlas-map-focus-text strong {
@@ -474,12 +516,14 @@ button.atlas-dash-card--action:hover {
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    color: var(--text);
 }
 
 .atlas-map-focus-hint {
     font-size: 10px;
     text-transform: uppercase;
     letter-spacing: 0.04em;
+    color: var(--text-muted);
 }
 
 .atlas-map-ping-filter {
@@ -488,6 +532,7 @@ button.atlas-dash-card--action:hover {
     gap: 6px;
     flex-shrink: 0;
     font-size: 11px;
+    color: var(--text-muted);
 }
 
 .atlas-map-ping-filter select {
@@ -496,12 +541,13 @@ button.atlas-dash-card--action:hover {
 
 .atlas-map-legend {
     padding: 8px 10px;
-    border-radius: 8px;
-    background: rgba(255, 255, 255, 0.94);
-    border: 1px solid #e2e8f0;
-    box-shadow: 0 4px 14px rgba(15, 23, 42, 0.12);
+    border-radius: var(--radius-sm);
+    background: rgba(28, 28, 30, 0.94);
+    border: 1px solid var(--border-dark);
+    box-shadow: var(--shadow);
     font-size: 11px;
     min-width: 140px;
+    color: var(--text);
 }
 
 .atlas-map-legend-toggle {
@@ -511,7 +557,11 @@ button.atlas-dash-card--action:hover {
     font: inherit;
     font-weight: 600;
     cursor: pointer;
-    color: #0f172a;
+    color: var(--text);
+}
+
+.atlas-map-legend-toggle:hover {
+    color: var(--primary);
 }
 
 .atlas-map-legend-list {
@@ -521,6 +571,7 @@ button.atlas-dash-card--action:hover {
     display: flex;
     flex-direction: column;
     gap: 4px;
+    color: var(--text);
 }
 
 .atlas-map-legend-list li {
@@ -556,17 +607,29 @@ button.atlas-dash-card--action:hover {
     padding: 2px 6px;
     border-radius: 4px;
     height: fit-content;
-    background: #e2e8f0;
+    background: rgba(255, 255, 255, 0.1);
+    color: var(--text);
 }
 
-.atlas-finding-sev--error { background: #fee2e2; color: #991b1b; }
-.atlas-finding-sev--warning { background: #ffedd5; color: #9a3412; }
-.atlas-finding-sev--info { background: #e0f2fe; color: #075985; }
+.atlas-finding-sev--error {
+    background: rgba(255, 69, 58, 0.2);
+    color: #ff8a80;
+}
+
+.atlas-finding-sev--warning {
+    background: rgba(255, 214, 10, 0.15);
+    color: #ffd60a;
+}
+
+.atlas-finding-sev--info {
+    background: rgba(100, 210, 255, 0.15);
+    color: #64d2ff;
+}
 
 .atlas-modal-backdrop {
     position: fixed;
     inset: 0;
-    background: rgba(15, 23, 42, 0.45);
+    background: var(--bg-modal);
     z-index: 12000;
     display: flex;
     align-items: center;
@@ -575,11 +638,13 @@ button.atlas-dash-card--action:hover {
 }
 
 .atlas-modal {
-    background: #fff;
-    border-radius: 10px;
+    background: var(--bg-panel);
+    color: var(--text);
+    border: 1px solid var(--border-dark);
+    border-radius: var(--radius);
     padding: 20px;
     width: min(420px, 100%);
-    box-shadow: 0 16px 40px rgba(0, 0, 0, 0.2);
+    box-shadow: var(--shadow-lg);
 }
 
 .atlas-modal--wide {
@@ -591,12 +656,13 @@ button.atlas-dash-card--action:hover {
 .atlas-import-section {
     margin: 14px 0;
     padding-top: 10px;
-    border-top: 1px solid var(--border, #e2e8f0);
+    border-top: 1px solid var(--border);
 }
 
 .atlas-import-section h3 {
     margin: 0 0 6px;
     font-size: 13px;
+    color: var(--text);
 }
 
 .atlas-import-detected {
@@ -604,14 +670,17 @@ button.atlas-dash-card--action:hover {
     margin: 8px 0 0;
     padding: 0;
     font-size: 12px;
+    color: var(--text);
 }
 
 .atlas-import-summary {
     margin-top: 8px;
     padding: 10px;
-    background: #f8fafc;
-    border-radius: 6px;
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
     font-size: 12px;
+    color: var(--text);
 }
 
 .atlas-import-summary ul {
@@ -622,7 +691,7 @@ button.atlas-dash-card--action:hover {
 .atlas-import-diff {
     margin-top: 10px;
     padding-top: 8px;
-    border-top: 1px dashed var(--border, #cbd5e1);
+    border-top: 1px dashed var(--border-dark);
 }
 
 .atlas-diff-lists {
@@ -631,6 +700,7 @@ button.atlas-dash-card--action:hover {
     overflow: auto;
     font-size: 11px;
     word-break: break-all;
+    color: var(--text);
 }
 
 .atlas-freshness-banner {
@@ -639,14 +709,16 @@ button.atlas-dash-card--action:hover {
     gap: 2px;
     padding: 8px;
     margin-bottom: 8px;
-    border-radius: 6px;
-    background: #f1f5f9;
+    border-radius: var(--radius-sm);
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
     font-size: 11px;
+    color: var(--text);
 }
 
 .atlas-freshness-banner--stale {
-    background: #fff7ed;
-    border: 1px solid #fdba74;
+    background: rgba(255, 179, 64, 0.12);
+    border: 1px solid rgba(255, 179, 64, 0.45);
 }
 
 .atlas-import-history-note {
@@ -666,7 +738,7 @@ button.atlas-dash-card--action:hover {
 .atlas-monitor-history {
     margin-top: 12px;
     padding-top: 10px;
-    border-top: 1px solid var(--border-color, #e2e8f0);
+    border-top: 1px solid var(--border);
 }
 
 .atlas-session-list {
@@ -704,27 +776,30 @@ button.atlas-dash-card--action:hover {
     padding: 6px 8px;
     margin-bottom: 4px;
     border: 1px solid transparent;
-    border-radius: 6px;
-    background: #f8fafc;
+    border-radius: var(--radius-sm);
+    background: var(--bg-surface);
+    color: var(--text);
     cursor: pointer;
     font-size: 11px;
 }
 
 .atlas-session-row:hover {
-    background: #eef2ff;
+    background: rgba(219, 172, 63, 0.12);
+    border-color: rgba(219, 172, 63, 0.35);
 }
 
 .atlas-session-row--selected {
-    border-color: #93c5fd;
-    background: #eff6ff;
+    border-color: var(--primary);
+    background: rgba(219, 172, 63, 0.18);
 }
 
 .atlas-session-detail {
     margin-top: 8px;
+    color: var(--text);
 }
 
 .atlas-stale-warn {
-    color: #b45309 !important;
+    color: #ffb340 !important;
 }
 
 .atlas-ping--stale {
@@ -737,9 +812,9 @@ button.atlas-dash-card--action:hover {
 }
 
 .atlas-finding--focused {
-    outline: 2px solid #f59e0b;
+    outline: 2px solid var(--primary);
     outline-offset: 2px;
-    background: #fffbeb;
+    background: rgba(219, 172, 63, 0.12);
     border-radius: 6px;
 }
 
@@ -749,6 +824,7 @@ button.atlas-dash-card--action:hover {
     gap: 4px;
     margin: 6px 0;
     font-size: 12px;
+    color: var(--text);
 }
 
 .atlas-finding-notes-input {
@@ -758,9 +834,10 @@ button.atlas-dash-card--action:hover {
 }
 
 .atlas-mono {
-    font-family: ui-monospace, Consolas, monospace;
+    font-family: var(--mono);
     font-size: 11px;
     word-break: break-all;
+    color: var(--text);
 }
 
 .atlas-copy-ip {
@@ -768,10 +845,10 @@ button.atlas-dash-card--action:hover {
     background: none;
     padding: 0;
     margin: 0;
-    color: var(--primary, #2563eb);
+    color: var(--primary);
     cursor: pointer;
     font: inherit;
-    font-family: ui-monospace, Consolas, monospace;
+    font-family: var(--mono);
     font-size: 11px;
     word-break: break-all;
     text-decoration: underline;
@@ -779,17 +856,18 @@ button.atlas-dash-card--action:hover {
 }
 
 .atlas-copy-ip:hover {
-    color: var(--primary-hover, #1d4ed8);
+    color: var(--gold-light);
 }
 
 .atlas-copy-ip:focus-visible {
-    outline: 2px solid var(--primary, #2563eb);
+    outline: 2px solid var(--primary);
     outline-offset: 2px;
 }
 
 .atlas-modal h2 {
     margin: 0 0 8px;
     font-size: 18px;
+    color: var(--text);
 }
 
 .atlas-file-label {
@@ -798,6 +876,7 @@ button.atlas-dash-card--action:hover {
     gap: 4px;
     font-size: 12px;
     margin: 10px 0;
+    color: var(--text);
 }
 
 .atlas-modal-actions {
@@ -808,11 +887,12 @@ button.atlas-dash-card--action:hover {
 }
 
 .atlas-error {
-    color: #b91c1c;
+    color: #ff8a80;
     font-size: 12px;
 }
 
 #btn-network-atlas.active {
-    background: rgba(37, 99, 235, 0.12);
-    border-color: #93c5fd;
+    background: rgba(219, 172, 63, 0.18);
+    border-color: var(--primary);
+    color: var(--text);
 }

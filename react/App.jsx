@@ -460,11 +460,13 @@ function AppShell() {
                             {leftPanel.collapsed ? '▶' : '◀'}
                         </button>
                     </div>
-                    <WorkspaceTabs
-                        mode={workspaceMode}
-                        atlasAvailable={atlasAvailable}
-                        onChange={onWorkspaceTab}
-                    />
+                    {workspaceMode === 'atlas' ? (
+                        <WorkspaceTabs
+                            mode={workspaceMode}
+                            atlasAvailable={atlasAvailable}
+                            onChange={onWorkspaceTab}
+                        />
+                    ) : null}
                     <div className="panel-body">
                         {workspaceMode === 'atlas' ? (
                             <AtlasLeftPanel
@@ -539,11 +541,13 @@ function AppShell() {
                         </button>
                         <span>{workspaceMode === 'atlas' ? 'Atlas Details' : 'Output & Export'}</span>
                     </div>
-                    <WorkspaceTabs
-                        mode={workspaceMode}
-                        atlasAvailable={atlasAvailable}
-                        onChange={onWorkspaceTab}
-                    />
+                    {workspaceMode === 'atlas' ? (
+                        <WorkspaceTabs
+                            mode={workspaceMode}
+                            atlasAvailable={atlasAvailable}
+                            onChange={onWorkspaceTab}
+                        />
+                    ) : null}
                     <div className="panel-right-body">
                         <div className="panel-body" id="output-panel-content">
                             {workspaceMode === 'atlas' ? (

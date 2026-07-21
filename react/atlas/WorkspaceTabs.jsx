@@ -1,8 +1,9 @@
 /**
  * Atlas | GIS Toolbox tabs for left/right panels.
+ * Only mount these while Atlas workspace is active (see App.jsx).
  */
 export function WorkspaceTabs({ mode, atlasAvailable, onChange }) {
-    if (!atlasAvailable) return null;
+    if (!atlasAvailable || mode !== 'atlas') return null;
     return (
         <div className="atlas-workspace-tabs" role="tablist" aria-label="Workspace">
             <button
