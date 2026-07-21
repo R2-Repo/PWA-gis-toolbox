@@ -69,6 +69,44 @@ export function AtlasRightPanel({
     const [pastSessions, setPastSessions] = useState([]);
     const [historyDetail, setHistoryDetail] = useState(null);
     const [historyBusy, setHistoryBusy] = useState(false);
+    const [historyVisible, setHistoryVisible] = useState(40);
+    const [historyLoadLimit, setHistoryLoadLimit] = useState(80);
+
+    const openHistorySession = (sessionId, limit = 80) => {
+        setHistoryBusy(true);
+        setHistoryVisible(40);
+        setHistoryLoadLimit(limit);
+        void loadAtlasPingSession(sessionId, { limit })
+            .then((detail) => setHistoryDetail(detail))
+            .catch(() => setHistoryDetail(null))
+            .finally(() => setHistoryBusy(false));
+    };
+
+    const loadMoreHistory = () => {
+        if (!historyDetail?.session?.id) return;
+        const loaded = historyDetail.results?.length || 0;
+        const total = Number(
+            pastSessions.find((s) => s.id === historyDetail.session.id)?.sampleCount
+            ?? loaded
+        );
+        if (historyVisible < loaded) {
+            setHistoryVisible((n) => Math.min(n + 40, loaded));
+            return;
+        }
+        if (loaded >= total) return;
+        const nextLimit = Math.min(Math.max(historyLoadLimit + 80, loaded + 80), 2000);
+        if (nextLimit <= loaded) return;
+        setHistoryBusy(true);
+        void loadAtlasPingSession(historyDetail.session.id, { limit: nextLimit })
+            .then((detail) => {
+                setHistoryDetail(detail);
+                setHistoryLoadLimit(nextLimit);
+                const nextLen = detail.results?.length || 0;
+                setHistoryVisible((n) => Math.min(n + 40, nextLen));
+            })
+            .catch(() => {})
+            .finally(() => setHistoryBusy(false));
+    };
     /** @type {[Set<string>, function]} */
     const [selectedFindingIds, setSelectedFindingIds] = useState(() => new Set());
     const [bulkBusy, setBulkBusy] = useState(false);
@@ -1000,13 +1038,7 @@ export function AtlasRightPanel({
                                             type="button"
                                             className={`atlas-session-row${selected ? ' atlas-session-row--selected' : ''}`}
                                             disabled={historyBusy}
-                                            onClick={() => {
-                                                setHistoryBusy(true);
-                                                void loadAtlasPingSession(s.id, { limit: 80 })
-                                                    .then((detail) => setHistoryDetail(detail))
-                                                    .catch(() => setHistoryDetail(null))
-                                                    .finally(() => setHistoryBusy(false));
-                                            }}
+                                            onClick={() => openHistorySession(s.id, 80)}
                                         >
                                             <strong>{s.label || 'Monitor'}</strong>
                                             <span className="atlas-muted">
@@ -1054,17 +1086,30 @@ export function AtlasRightPanel({
                         <div className="atlas-session-detail">
                             <div className="atlas-toolbar">
                                 <span className="atlas-muted">
-                                    Showing {Math.min(historyDetail.results.length, 40)} of {historyDetail.results.length} loaded
+                                    Showing {Math.min(historyVisible, historyDetail.results.length)} of {historyDetail.results.length} loaded
+                                    {(() => {
+                                        const total = pastSessions.find((s) => s.id === historyDetail.session?.id)?.sampleCount;
+                                        return total != null && total > historyDetail.results.length
+                                            ? ` (${total} in session)`
+                                            : '';
+                                    })()}
                                 </span>
                                 <button
                                     type="button"
                                     className="btn btn-ghost btn-sm"
+                                    disabled={historyBusy}
+                                    title={
+                                        (pastSessions.find((s) => s.id === historyDetail.session?.id)?.sampleCount || 0)
+                                        > historyDetail.results.length
+                                            ? 'Exports currently loaded samples only — Load more first for a fuller CSV'
+                                            : 'Export loaded samples'
+                                    }
                                     onClick={() => exportPingSessionCsv(historyDetail.results, {
                                         label: historyDetail.session?.label,
                                         sessionId: historyDetail.session?.id
                                     })}
                                 >
-                                    Export CSV
+                                    Export CSV ({historyDetail.results.length})
                                 </button>
                                 <button
                                     type="button"
@@ -1092,7 +1137,7 @@ export function AtlasRightPanel({
                                 </button>
                             </div>
                             <ul className="atlas-simple-list atlas-monitor-tail">
-                                {historyDetail.results.slice(0, 40).map((row, i) => (
+                                {historyDetail.results.slice(0, historyVisible).map((row, i) => (
                                     <li key={`${row.at}-${row.ip}-${i}`}>
                                         <span className="atlas-mono">{row.ip}</span>
                                         {' · '}
@@ -1102,6 +1147,27 @@ export function AtlasRightPanel({
                                     </li>
                                 ))}
                             </ul>
+                            {(() => {
+                                const loaded = historyDetail.results.length;
+                                const total = Number(
+                                    pastSessions.find((s) => s.id === historyDetail.session?.id)?.sampleCount
+                                    ?? loaded
+                                );
+                                const canShowMore = historyVisible < loaded || loaded < total;
+                                if (!canShowMore) return null;
+                                return (
+                                    <button
+                                        type="button"
+                                        className="btn btn-ghost btn-sm"
+                                        disabled={historyBusy}
+                                        onClick={() => loadMoreHistory()}
+                                    >
+                                        {historyVisible < loaded
+                                            ? `Show more (${Math.min(40, loaded - historyVisible)} more on screen)`
+                                            : `Load more from DB (${loaded} / ${total})`}
+                                    </button>
+                                );
+                            })()}
                         </div>
                     ) : null}
                 </div>

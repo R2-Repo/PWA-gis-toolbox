@@ -511,7 +511,9 @@ function AppShell() {
                                 setTimeout(() => mapService.resize(), 100);
                             }}
                         />
-                        {workspaceMode === 'atlas' ? <AtlasMapChrome /> : null}
+                        {workspaceMode === 'atlas' ? (
+                            <AtlasMapChrome onOpenImport={() => setAtlasImportOpen(true)} />
+                        ) : null}
                         <div className="map-overlay" id="map-drop-overlay">
                             <div>
                                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" style={{ width: 48, height: 48 }}>

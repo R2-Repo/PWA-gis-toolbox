@@ -10,8 +10,9 @@ import {
 
 /**
  * Overlay chrome for Atlas workspace: focus bar + ping legend.
+ * @param {{ onOpenImport?: () => void }} [props]
  */
-export function AtlasMapChrome() {
+export function AtlasMapChrome({ onOpenImport }) {
     const [tick, setTick] = useState(0);
     const [legendOpen, setLegendOpen] = useState(true);
 
@@ -27,24 +28,41 @@ export function AtlasMapChrome() {
 
     const snap = useMemo(() => getAtlasSnapshot(), [tick]);
     const focus = useMemo(() => describeAtlasFocus(snap), [snap, tick]);
+    const isEmptyDb = snap.loaded
+        && !(snap.hubs?.length || snap.channels?.length || snap.drops?.length);
 
     return (
         <div className="atlas-map-chrome" aria-label="Atlas map focus">
-            <div className="atlas-map-focus-bar">
-                <div className="atlas-map-focus-text">
-                    <strong>{focus.title}</strong>
-                    <span className="atlas-muted">{focus.detail}</span>
+            <div className="atlas-map-focus-stack">
+                <div className="atlas-map-focus-bar">
+                    <div className="atlas-map-focus-text">
+                        <strong>{focus.title}</strong>
+                        <span className="atlas-muted">{focus.detail}</span>
+                    </div>
+                    <button
+                        type="button"
+                        className="btn btn-secondary btn-sm"
+                        disabled={!focus.canClear}
+                        title={focus.canClear ? 'Clear selection or area (Esc)' : 'Nothing to clear'}
+                        onClick={() => clearAtlasFocus()}
+                    >
+                        Clear
+                    </button>
+                    <span className="atlas-map-focus-hint atlas-muted">Esc</span>
                 </div>
-                <button
-                    type="button"
-                    className="btn btn-secondary btn-sm"
-                    disabled={!focus.canClear}
-                    title={focus.canClear ? 'Clear selection or area (Esc)' : 'Nothing to clear'}
-                    onClick={() => clearAtlasFocus()}
-                >
-                    Clear
-                </button>
-                <span className="atlas-map-focus-hint atlas-muted">Esc</span>
+                {isEmptyDb ? (
+                    <div className="atlas-map-empty-cta">
+                        <strong>No Atlas network loaded</strong>
+                        <span className="atlas-muted">
+                            Import FiberSwitchLocation + ATMS to place hubs and drops on the map.
+                        </span>
+                        {onOpenImport ? (
+                            <button type="button" className="btn btn-secondary btn-sm" onClick={onOpenImport}>
+                                Import data
+                            </button>
+                        ) : null}
+                    </div>
+                ) : null}
             </div>
 
             <div className={`atlas-map-legend${legendOpen ? '' : ' atlas-map-legend--collapsed'}`}>

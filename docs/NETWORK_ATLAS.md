@@ -60,6 +60,7 @@ Operator UX:
 - Hierarchy / search / map: ping dots; reachable+stale shows as warning (orange)
 - Map hover tooltips (hub/drop label, IP, ping); `/` focuses search, `Esc` clears area then selection
 - Map focus bar (current selection/area + Clear) and collapsible ping legend
+- Monitor history Load more (screen + DB); search Show more when truncated; empty-DB import CTA
 - Dashboard: inventory counts, wireless/provisional, finding-type cards, ping triage
 - Findings focus: click finding → filter + scroll + highlight row
 - Findings: entityKind chip + Open on map; status/type filters; Show all / CSV; bulk select → status

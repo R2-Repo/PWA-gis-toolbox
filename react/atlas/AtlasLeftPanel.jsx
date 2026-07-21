@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import bus from '../../js/core/event-bus.js';
 import { getAtlasSnapshot } from '../../js/atlas/store.js';
-import { searchAtlas } from '../../js/atlas/search.js';
+import { searchAtlasDetailed } from '../../js/atlas/search.js';
 import { buildHierarchyTree } from '../../js/atlas/hierarchy.js';
 import { formatPingWhen, isPingStale } from '../../js/atlas/ping-format.js';
 import { reloadAtlasFromDb } from '../../js/atlas/controller.js';
@@ -77,6 +77,7 @@ export function AtlasLeftPanel({ onSelect, onOpenImport }) {
     const [tick, setTick] = useState(0);
     const [query, setQuery] = useState('');
     const [reloadBusy, setReloadBusy] = useState(false);
+    const [searchLimit, setSearchLimit] = useState(50);
 
     useEffect(() => {
         const unsub = [
@@ -96,15 +97,21 @@ export function AtlasLeftPanel({ onSelect, onOpenImport }) {
     }, []);
 
     const snap = useMemo(() => getAtlasSnapshot(), [tick]);
-    const hits = useMemo(() => searchAtlas(query), [query, tick]);
+    const searchResult = useMemo(
+        () => searchAtlasDetailed(query, searchLimit),
+        [query, tick, searchLimit]
+    );
+    const hits = searchResult.hits;
     const tree = useMemo(() => buildHierarchyTree(), [tick]);
     const selection = snap.selection;
+    const isEmptyDb = snap.loaded
+        && !(snap.hubs?.length || snap.channels?.length || snap.drops?.length);
 
     return (
         <div className="atlas-panel atlas-panel-left">
             <div className="atlas-toolbar">
                 <button type="button" className="btn btn-secondary btn-sm" onClick={onOpenImport}>
-                    Import data
+                    {isEmptyDb ? 'Import data to begin' : 'Import data'}
                 </button>
                 <button
                     type="button"
@@ -165,7 +172,10 @@ export function AtlasLeftPanel({ onSelect, onOpenImport }) {
                     className="input-sm atlas-search-input"
                     placeholder="Channel, hub, site, IP, drop… (press /)"
                     value={query}
-                    onChange={(e) => setQuery(e.target.value)}
+                    onChange={(e) => {
+                        setQuery(e.target.value);
+                        setSearchLimit(50);
+                    }}
                 />
                 <ul className="atlas-search-results">
                     {hits.map((h) => {
@@ -182,20 +192,43 @@ export function AtlasLeftPanel({ onSelect, onOpenImport }) {
                     })}
                     {query && !hits.length && <li className="atlas-muted">No matches</li>}
                 </ul>
+                {searchResult.truncated ? (
+                    <div className="atlas-toolbar">
+                        <span className="atlas-muted">
+                            Showing first {searchResult.limit} matches
+                        </span>
+                        <button
+                            type="button"
+                            className="btn btn-ghost btn-sm"
+                            onClick={() => setSearchLimit((n) => n + 50)}
+                        >
+                            Show more
+                        </button>
+                    </div>
+                ) : null}
             </CollapsibleSection>
 
             <CollapsibleSection title="Hierarchy" bodyId="atlas-hierarchy">
-                {tree.map((node) => (
-                    <HierarchyNode
-                        key={node.id}
-                        node={node}
-                        depth={0}
-                        onSelect={onSelect}
-                        selection={selection}
-                    />
-                ))}
-                {!snap.hubs.length && !snap.channels.length && (
-                    <p className="atlas-muted">Import FiberSwitchLocation + ATMS to populate the tree.</p>
+                {isEmptyDb ? (
+                    <div className="atlas-empty-cta">
+                        <p><strong>No network data yet</strong></p>
+                        <p className="atlas-muted">
+                            Copy FiberSwitchLocation + ATMS into the Atlas import folder, then Import data.
+                        </p>
+                        <button type="button" className="btn btn-secondary btn-sm" onClick={onOpenImport}>
+                            Import data
+                        </button>
+                    </div>
+                ) : (
+                    tree.map((node) => (
+                        <HierarchyNode
+                            key={node.id}
+                            node={node}
+                            depth={0}
+                            onSelect={onSelect}
+                            selection={selection}
+                        />
+                    ))
                 )}
             </CollapsibleSection>
         </div>
