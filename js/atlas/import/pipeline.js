@@ -5,6 +5,7 @@ import { loadXLSX } from '../../core/libs.js';
 import {
     detectWorkbookSheetRole,
     detectSourceFileKind,
+    inferWireless,
     pickField
 } from './normalize.js';
 import {
@@ -227,6 +228,11 @@ export async function buildAtlasImportPayload(input) {
             };
             devices.push(device);
             drop.deviceId = device.id;
+            drop.wireless = inferWireless({
+                model: device.model,
+                manufacturer: device.manufacturer,
+                inventoryName: device.inventoryName
+            });
         }
     }
 
@@ -286,6 +292,15 @@ export async function buildAtlasImportPayload(input) {
                 existing.priHub = m.atms.priHub || existing.priHub;
                 existing.secHub = m.atms.secHub || existing.secHub;
             }
+        }
+    }
+
+    // Propagate wireless from ATMS device type / model onto matched drops
+    for (const drop of drops) {
+        const device = devices.find((d) => d.id === drop.deviceId || (drop.ip && d.ip === drop.ip));
+        const atms = atmsMatches.find((m) => m.atms.ip && m.atms.ip === drop.ip)?.atms;
+        if (inferWireless(atms) || inferWireless(device)) {
+            drop.wireless = true;
         }
     }
 

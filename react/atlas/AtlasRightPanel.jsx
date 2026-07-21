@@ -40,9 +40,15 @@ export function AtlasRightPanel({
     const focusFindings = (type = 'all', status = 'Open') => {
         setFindingFilter(status);
         setFindingTypeFilter(type);
-        // scroll reconciliation into view if present
         requestAnimationFrame(() => {
             document.getElementById('atlas-findings')?.scrollIntoView?.({ behavior: 'smooth', block: 'nearest' });
+        });
+    };
+
+    const focusTriage = (mode) => {
+        setTriageMode(mode);
+        requestAnimationFrame(() => {
+            document.getElementById('atlas-triage')?.scrollIntoView?.({ behavior: 'smooth', block: 'nearest' });
         });
     };
 
@@ -194,7 +200,46 @@ export function AtlasRightPanel({
                     >
                         <span>Duplicate IPs</span><strong>{stats.duplicateIps}</strong>
                     </button>
-                    <div className="atlas-dash-card"><span>Ping up/down</span><strong>{stats.pingReachable}/{stats.pingUnreachable}</strong></div>
+                    <button
+                        type="button"
+                        className="atlas-dash-card atlas-dash-card--action"
+                        onClick={() => focusFindings('atms_unmatched', 'Open')}
+                        title="Filter unmatched ATMS switches"
+                    >
+                        <span>ATMS unmatched</span><strong>{stats.atmsUnmatched || 0}</strong>
+                    </button>
+                    <button
+                        type="button"
+                        className="atlas-dash-card atlas-dash-card--action"
+                        onClick={() => focusTriage('unreachable')}
+                        title="Open unreachable triage"
+                    >
+                        <span>Ping up/down</span><strong>{stats.pingReachable}/{stats.pingUnreachable}</strong>
+                    </button>
+                    <button
+                        type="button"
+                        className="atlas-dash-card atlas-dash-card--action"
+                        onClick={() => focusTriage('stale')}
+                        title="Open stale triage"
+                    >
+                        <span>Stale pings</span><strong>{stats.pingStale || 0}</strong>
+                    </button>
+                    <button
+                        type="button"
+                        className="atlas-dash-card atlas-dash-card--action"
+                        onClick={() => focusTriage('untested')}
+                        title="Open untested triage"
+                    >
+                        <span>Untested</span><strong>{stats.pingUntested || 0}</strong>
+                    </button>
+                    <button
+                        type="button"
+                        className="atlas-dash-card atlas-dash-card--action"
+                        onClick={() => focusTriage('attention')}
+                        title="Open needs-attention triage"
+                    >
+                        <span>Needs attention</span><strong>{stats.pingAttention || 0}</strong>
+                    </button>
                 </div>
                 <div className="atlas-toolbar">
                     <button
@@ -443,6 +488,12 @@ export function AtlasRightPanel({
                         const hub = (snap.hubs || []).find((h) => h.id === id)
                             || (snap.hubs || []).find((h) => h.hubCode === hubCode);
                         if (hub) onSelect?.({ kind: 'hub', id: hub.id });
+                    }}
+                    onSelectFinding={(f) => {
+                        onSelectFinding?.(f);
+                        requestAnimationFrame(() => {
+                            document.getElementById('atlas-findings')?.scrollIntoView?.({ behavior: 'smooth', block: 'nearest' });
+                        });
                     }}
                     onPingChannel={onPingChannel}
                     onPingDrop={onPingDrop}

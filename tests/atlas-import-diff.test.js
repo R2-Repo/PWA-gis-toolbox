@@ -24,6 +24,25 @@ describe('atlas import diff', () => {
         expect(diff.missingIps).toContain('10.0.0.1');
         expect(diff.counts.newChannels).toBe(1);
     });
+
+    it('records before/after fields for changed IPs', () => {
+        const current = {
+            loaded: true,
+            devices: [{ ip: '10.0.0.1', inventoryName: 'Old', model: 'A' }],
+            channels: [],
+            drops: [{ ip: '10.0.0.1', channelNumber: '1', dropNumber: 1 }]
+        };
+        const payload = {
+            devices: [{ ip: '10.0.0.1', inventoryName: 'New', model: 'A' }],
+            channels: [],
+            drops: [{ ip: '10.0.0.1', channelNumber: '2', dropNumber: 1 }]
+        };
+        const diff = diffAtlasImport(payload, current);
+        expect(diff.changedIps).toContain('10.0.0.1');
+        const detail = diff.changedIpDetails.find((r) => r.ip === '10.0.0.1');
+        expect(detail?.changes.some((c) => c.field === 'inventoryName' && c.from === 'Old' && c.to === 'New')).toBe(true);
+        expect(detail?.changes.some((c) => c.field === 'channel' && c.from === '1' && c.to === '2')).toBe(true);
+    });
 });
 
 describe('atlas dashboard scope', () => {

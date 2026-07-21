@@ -93,6 +93,22 @@ export function detectWorkbookSheetRole(sheetName, fields) {
  * @param {string} filename
  * @returns {'fiberswitch'|'atms'|'unknown'}
  */
+/**
+ * Infer wireless switch/radio from ATMS/device text fields.
+ * @param {{ deviceType?: string|null, model?: string|null, manufacturer?: string|null, inventoryName?: string|null }} [fields]
+ */
+export function inferWireless(fields = {}) {
+    const hay = [
+        fields.deviceType,
+        fields.model,
+        fields.manufacturer,
+        fields.inventoryName
+    ].filter(Boolean).join(' ').toLowerCase();
+    if (!hay) return false;
+    return /\b(wireless|wi-?fi|radio|wap|mesh|ptp|ptmp)\b/.test(hay)
+        || /\bap\b/.test(hay);
+}
+
 export function detectSourceFileKind(filename) {
     const n = String(filename || '').toLowerCase();
     if (n.includes('fiberswitch') || n.endsWith('.xlsx') || n.endsWith('.xls')) {

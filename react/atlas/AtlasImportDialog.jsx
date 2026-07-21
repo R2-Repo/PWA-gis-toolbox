@@ -248,7 +248,26 @@ export function AtlasImportDialog({ open, onClose, busy: busyProp, onImported })
                                             {!!diff.missingIps?.length && (
                                                 <p><strong>Missing IPs:</strong> {diff.missingIps.join(', ')}</p>
                                             )}
-                                            {!!diff.changedIps?.length && (
+                                            {!!diff.changedIpDetails?.length && (
+                                                <div>
+                                                    <p><strong>Changed IPs:</strong></p>
+                                                    <ul className="atlas-simple-list">
+                                                        {diff.changedIpDetails.map((row) => (
+                                                            <li key={row.ip}>
+                                                                <span className="atlas-mono">{row.ip}</span>
+                                                                <ul className="atlas-simple-list">
+                                                                    {row.changes.map((c) => (
+                                                                        <li key={`${row.ip}-${c.field}`} className="atlas-muted">
+                                                                            {c.field}: {c.from || '—'} → {c.to || '—'}
+                                                                        </li>
+                                                                    ))}
+                                                                </ul>
+                                                            </li>
+                                                        ))}
+                                                    </ul>
+                                                </div>
+                                            )}
+                                            {!diff.changedIpDetails?.length && !!diff.changedIps?.length && (
                                                 <p><strong>Changed IPs:</strong> {diff.changedIps.join(', ')}</p>
                                             )}
                                             {!!diff.newChannels?.length && (

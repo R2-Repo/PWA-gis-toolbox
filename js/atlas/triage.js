@@ -153,3 +153,36 @@ export function collectHubIps(hubId, role = 'all', snap) {
             .map((d) => d.ip)
     )];
 }
+
+/**
+ * Worst-of rollup for hub map coloring.
+ * @param {string} hubId
+ * @param {import('./types.js').AtlasSnapshot} snap
+ * @returns {'unreachable'|'pending'|'warning'|'reachable'|'untested'}
+ */
+export function hubPingRollup(hubId, snap) {
+    const ips = collectHubIps(hubId, 'all', snap);
+    if (!ips.length) return 'untested';
+    let hasUnreachable = false;
+    let hasPending = false;
+    let hasReachable = false;
+    let hasStale = false;
+    let hasUntested = false;
+    for (const ip of ips) {
+        const ping = snap.pingResults?.[ip];
+        const status = ping?.status || 'untested';
+        if (status === 'unreachable') hasUnreachable = true;
+        else if (status === 'pending') hasPending = true;
+        else if (status === 'reachable') {
+            hasReachable = true;
+            if (isPingStale(ping?.at)) hasStale = true;
+        } else {
+            hasUntested = true;
+        }
+    }
+    if (hasUnreachable) return 'unreachable';
+    if (hasPending) return 'pending';
+    if (hasStale || (hasReachable && hasUntested)) return 'warning';
+    if (hasReachable) return 'reachable';
+    return 'untested';
+}

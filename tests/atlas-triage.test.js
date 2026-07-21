@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { collectHubIps, dropsInScope, findingsInScope, listScopedDropsByPing } from '../js/atlas/triage.js';
+import { collectHubIps, dropsInScope, findingsInScope, hubPingRollup, listScopedDropsByPing } from '../js/atlas/triage.js';
 import { formatPingAge, isPingStale, parsePingAt } from '../js/atlas/ping-format.js';
 import { buildImportFindings } from '../js/atlas/import/audit.js';
 import { queryAtlasInArea, pointInGeometry } from '../js/atlas/area-query.js';
@@ -8,6 +8,15 @@ import { buildChannelSchematic } from '../js/atlas/schematic.js';
 import { buildHierarchyTree } from '../js/atlas/hierarchy.js';
 import { searchAtlas } from '../js/atlas/search.js';
 import { findingsTableHtml, rowsToCsv } from '../js/atlas/export.js';
+import { inferWireless } from '../js/atlas/import/normalize.js';
+
+describe('atlas wireless infer', () => {
+    it('detects wireless keywords', () => {
+        expect(inferWireless({ deviceType: 'Wireless AP' })).toBe(true);
+        expect(inferWireless({ model: 'Cisco Catalyst' })).toBe(false);
+        expect(inferWireless({ deviceType: 'SWTN-48' })).toBe(false);
+    });
+});
 
 describe('atlas ping format', () => {
     it('parses unix seconds and ISO', () => {
@@ -75,6 +84,22 @@ describe('atlas unreachable triage', () => {
         expect(collectHubIps('h1', 'primary', snap)).toEqual(['10.0.0.1']);
         expect(collectHubIps('h1', 'secondary', snap)).toEqual(['10.0.0.2']);
         expect(collectHubIps('h1', 'all', snap).sort()).toEqual(['10.0.0.1', '10.0.0.2']);
+    });
+
+    it('rolls up hub ping to worst status', () => {
+        const snap = {
+            hubs: [{ id: 'h1', hubCode: 'H1' }],
+            channels: [{ id: 'c1', primaryHubId: 'h1', primaryHubCode: 'H1' }],
+            drops: [
+                { id: 'd1', channelId: 'c1', ip: '10.0.0.1' },
+                { id: 'd2', channelId: 'c1', ip: '10.0.0.2' }
+            ],
+            pingResults: {
+                '10.0.0.1': { status: 'reachable', at: new Date().toISOString() },
+                '10.0.0.2': { status: 'unreachable', at: new Date().toISOString() }
+            }
+        };
+        expect(hubPingRollup('h1', snap)).toBe('unreachable');
     });
 
     it('entity selection overrides stale areaResults', () => {

@@ -1,7 +1,7 @@
 /**
  * Atlas CSV / printable report helpers.
  */
-import { dropsInScope } from './triage.js';
+import { dropsInScope, listScopedDropsByPing } from './triage.js';
 
 /**
  * @param {string} filename
@@ -111,13 +111,29 @@ export function exportFindingsCsv(findings) {
 export function exportImportDiffCsv(diff) {
     if (!diff) return;
     const rows = [];
-    for (const ip of diff.newIps || []) rows.push({ change: 'new_ip', value: ip });
-    for (const ip of diff.missingIps || []) rows.push({ change: 'missing_ip', value: ip });
-    for (const ip of diff.changedIps || []) rows.push({ change: 'changed_ip', value: ip });
-    for (const c of diff.newChannels || []) rows.push({ change: 'new_channel', value: c });
-    for (const c of diff.missingChannels || []) rows.push({ change: 'missing_channel', value: c });
-    for (const d of diff.newDrops || []) rows.push({ change: 'new_drop', value: d });
-    for (const d of diff.missingDrops || []) rows.push({ change: 'missing_drop', value: d });
+    for (const ip of diff.newIps || []) rows.push({ change: 'new_ip', value: ip, field: '', from: '', to: '' });
+    for (const ip of diff.missingIps || []) rows.push({ change: 'missing_ip', value: ip, field: '', from: '', to: '' });
+    if (diff.changedIpDetails?.length) {
+        for (const row of diff.changedIpDetails) {
+            for (const c of row.changes || []) {
+                rows.push({
+                    change: 'changed_ip',
+                    value: row.ip,
+                    field: c.field,
+                    from: c.from,
+                    to: c.to
+                });
+            }
+        }
+    } else {
+        for (const ip of diff.changedIps || []) {
+            rows.push({ change: 'changed_ip', value: ip, field: '', from: '', to: '' });
+        }
+    }
+    for (const c of diff.newChannels || []) rows.push({ change: 'new_channel', value: c, field: '', from: '', to: '' });
+    for (const c of diff.missingChannels || []) rows.push({ change: 'missing_channel', value: c, field: '', from: '', to: '' });
+    for (const d of diff.newDrops || []) rows.push({ change: 'new_drop', value: d, field: '', from: '', to: '' });
+    for (const d of diff.missingDrops || []) rows.push({ change: 'missing_drop', value: d, field: '', from: '', to: '' });
     downloadTextFile(`atlas-import-diff-${Date.now()}.csv`, rowsToCsv(rows));
 }
 
@@ -245,6 +261,9 @@ export function buildDashboardStats(snap, opts = {}) {
         .map(([, p]) => p);
     const reachable = pingEntries.filter((p) => p.status === 'reachable').length;
     const unreachable = pingEntries.filter((p) => p.status === 'unreachable').length;
+    const pingStale = listScopedDropsByPing(snap, { scope, mode: 'stale' }).length;
+    const pingUntested = listScopedDropsByPing(snap, { scope, mode: 'untested' }).length;
+    const pingAttention = listScopedDropsByPing(snap, { scope, mode: 'attention' }).length;
     return {
         scopeLabel,
         hubs: hubs.length,
@@ -255,8 +274,12 @@ export function buildDashboardStats(snap, opts = {}) {
         openFindings: openFindings.length,
         missingSiteIds: openFindings.filter((f) => f.findingType === 'missing_site_id').length,
         duplicateIps: openFindings.filter((f) => f.findingType === 'duplicate_ip').length,
+        atmsUnmatched: openFindings.filter((f) => f.findingType === 'atms_unmatched').length,
         pingReachable: reachable,
         pingUnreachable: unreachable,
+        pingStale,
+        pingUntested,
+        pingAttention,
         pingTested: reachable + unreachable
     };
 }

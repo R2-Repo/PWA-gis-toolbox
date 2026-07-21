@@ -2,6 +2,7 @@
  * Atlas-owned MapLibre layers (do not mutate GIS user layers).
  */
 import mapService from '../map/map-service.js';
+import { hubPingRollup } from './triage.js';
 
 const SOURCE_ID = 'atlas-network';
 const CHANNEL_SOURCE_ID = 'atlas-channel-path';
@@ -44,7 +45,7 @@ export function syncAtlasMapLayers(snap) {
                 atlasKind: 'hub',
                 id: hub.id,
                 label: hub.name || hub.hubCode,
-                pingStatus: 'untested',
+                pingStatus: hubPingRollup(hub.id, snap),
                 selected: selectedKind === 'hub' && hub.id === selectedId ? 1 : 0
             }
         });
@@ -104,7 +105,15 @@ export function syncAtlasMapLayers(snap) {
             filter: ['==', ['get', 'atlasKind'], 'hub'],
             paint: {
                 'circle-radius': 8,
-                'circle-color': '#1d4ed8',
+                'circle-color': [
+                    'match',
+                    ['get', 'pingStatus'],
+                    'reachable', '#16a34a',
+                    'unreachable', '#dc2626',
+                    'warning', '#ea580c',
+                    'pending', '#ca8a04',
+                    '#1d4ed8'
+                ],
                 'circle-stroke-width': 2,
                 'circle-stroke-color': '#ffffff'
             }

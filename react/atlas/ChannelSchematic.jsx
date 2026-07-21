@@ -4,6 +4,7 @@ export function ChannelSchematic({
     schematic,
     onSelectDrop,
     onSelectHub,
+    onSelectFinding,
     onPingChannel,
     onPingDrop,
     canPing
@@ -63,6 +64,16 @@ export function ChannelSchematic({
                                 </span>
                             )}
                         </button>
+                        {!!node.warnings?.length && (
+                            <button
+                                type="button"
+                                className="btn btn-ghost btn-sm"
+                                title={node.warnings[0].description || node.warnings[0].findingType}
+                                onClick={() => onSelectFinding?.(node.warnings[0])}
+                            >
+                                Finding
+                            </button>
+                        )}
                         {canPing && node.kind === 'drop' && node.ip && (
                             <button
                                 type="button"
