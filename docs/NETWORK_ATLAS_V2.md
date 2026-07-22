@@ -36,7 +36,9 @@ Ideas may be reordered, merged, dropped, or never built.
 8. [Subnet / drop IP range scan (known vs rogue)](#8-subnet--drop-ip-range-scan-known-vs-rogue)
 9. [Unified buildings import (Hub + Connected Buildings)](#9-unified-buildings-import-hub--connected-buildings)
 10. [Pop-out channel monitor windows (workers)](#10-pop-out-channel-monitor-windows-workers)
-11. [Other candidates (lighter touch)](#11-other-candidates-lighter-touch)
+11. [Atlas map layers — referrals import + reorder](#11-atlas-map-layers--referrals-import--reorder)
+12. [In-Atlas database edit (map + pop-ups)](#12-in-atlas-database-edit-map--pop-ups)
+13. [Other candidates (lighter touch)](#13-other-candidates-lighter-touch)
 
 ---
 
@@ -318,7 +320,80 @@ Right panel Details / Schematic
 
 ---
 
-## 11. Other candidates (lighter touch)
+## 11. Atlas map layers — referrals import + reorder
+
+**Idea:** Fix and support bringing **additional referral / reference layers** onto the Atlas map on the **desktop** app, then provide a **compact, mostly collapsed** way to **reorder** those added layers **and** Atlas’s own separate database overlays (hubs, drops, connected buildings, channel path, area, etc.). Operators need context GIS under/over Atlas inventory without leaving the Atlas workspace — and without a bulky layer manager taking the panel.
+
+**Operator story:** While troubleshooting in Atlas you still want a as-built, ROW, dig ticket, aerial, or other referral on the map. Today it feels broken or unavailable in Atlas mode (“I can’t add additional layers onto my map”). Once layers are on the map, stack order matters — both for newly imported referrals and for Atlas DB layers — so you can put the useful drawing above/below hubs and drops. UI should stay out of the way: collapsed by default, expand only when reordering or toggling.
+
+**Sketch:**
+
+```text
+Investigate / fix: Atlas desktop path for GIS map import / referrals
+        │
+        ▼
+Atlas map shows referral layers + Atlas DB overlays
+        │
+        ▼
+Collapsible “Map layers” (small) — drag/reorder + visibility
+   ├─ Referral / GIS layers (user-added)
+   └─ Atlas DB overlays (hubs, drops, buildings, channel, area, …)
+```
+
+| Piece | Role |
+|-------|------|
+| Import / fix | Diagnose why adding referrals/layers fails (or is blocked) while Atlas workspace is active on desktop; restore a supported path to add layers without forcing a full leave-Atlas GIS workflow if avoidable |
+| Referral layers | Extra map files / GIS layers used as context (user term: referrals) — not Atlas SQLite inventory |
+| Atlas DB overlays | Hub / drop / connected-building / channel / area (and similar) drawn by Atlas — reorderable relative to each other and to referrals |
+| Layer order | Persist draw order (and ideally visibility) while in Atlas; dual-screen sync implications TBD |
+| UI | **Minimal + collapsible** — thin strip or section (e.g. left panel or map chrome); collapsed by default; expand for reorder / show-hide; no large permanent layer panel |
+
+**V1 today:** Atlas inventory overlays are **not** GIS `getLayers()` entries (`docs/NETWORK_ATLAS.md`); they sync via Atlas-specific dual-screen commands. Atlas has a dedicated **network data** import path separate from GIS map import. GIS Toolbox layer list / import may not be fully usable (or may conflict) while Atlas workspace is active — suspected broken or blocked for “add more layers on my map.”  
+**Not yet:** Proven working referral import into Atlas on desktop; unified reorder UI for referral layers + Atlas DB overlays; compact collapsible Atlas layer stack control.  
+**Depends on:** Clarifying desktop Atlas vs GIS layer-pipeline interaction (`js/atlas/map-layers.js` vs GIS import/layer list); whether referrals stay in GIS layer store with Atlas overlays painted in a controlled z-order, or Atlas owns a small overlay stack.  
+**Fits with:** Cut extent / outage workflows (context drawings under ping status); dual-screen (`atlasSync` must respect or re-apply order).  
+**Constraint:** Keep UI small — collapse-first; do not clone a full GIS Layers panel into Atlas.
+
+---
+
+## 12. In-Atlas database edit (map + pop-ups)
+
+**Idea:** Keep the **dedicated Atlas import** path (and strengthen/simplify it over time), but also let operators **edit the live Atlas SQLite database from the map and feature pop-ups** — without round-tripping every small fix through a spreadsheet re-import. Especially important once Idea 9’s **unified buildings** dataset exists: hubs and connected buildings share one model, so changing type / IPs / location should be a first-class edit, not a file surgery exercise.
+
+**Operator story:** A connected building should be a hub (or the reverse) — change **building type** on the feature and persist. An IP is missing or wrong — fix it in the pop-up. A pin is off the building — enter an **edit mode**, drag the feature, and **lat/lon update** on drop. Normal browsing/ping must not accidentally move points.
+
+**Import stays:** Inbox / Scan / Review / Apply remains the bulk path for official ATMS / FiberSwitch / buildings refreshes. This idea is **surgical edits** on top of that DB, plus optionally a clearer dedicated import UX later — not replacing import.
+
+**Sketch:**
+
+```text
+Import (bulk, same idea as today — strengthen UX later)
+        │
+        ▼
+Atlas SQLite (working DB)
+        │
+        ├── Map click → pop-up / detail → edit type, IPs, name, hub link…
+        └── Edit mode ON → drag feature → write new lat/lon → Edit mode OFF
+```
+
+| Piece | Role |
+|-------|------|
+| Edit surfaces | Map feature pop-up + right-panel detail (same fields) |
+| Type change | e.g. Connected building ↔ Hub (unified buildings type column); may move row between hub vs building semantics / tables |
+| Field edits | IPs (hub IP, switch/desktop/decoder group), name/AKA, hub association, address, etc. — validation + findings impact TBD |
+| Move geometry | **Explicit edit mode** (toggle) before drag; no accidental pan/select drag; update lat/lon on commit |
+| Safety | Confirm destructive/type changes; undo or “revert field” nice-to-have; edits survive Reload DB; next full import may overwrite unless merge rules exist |
+| Import UX | Separate track: keep current dedicated import; later make Scan/Review/Apply easier — not blocked by map edit |
+
+**V1 today:** Atlas DB is largely **import-replace** driven; map/detail are read + ping/monitor. Connected buildings overlay is not in-map editable; no edit-mode drag-to-relocate.  
+**Not yet:** Pop-up/detail field editors writing SQLite; type promotion hub ↔ building; guarded drag-move updating coordinates; clear conflict story vs next Apply import.  
+**Depends on:** Idea 9 unified type model helps type flips; desktop SQLite write APIs; decide whether edits are “local overrides” or mutate canonical rows that import may clobber.  
+**Fits with:** Idea 3 (golden-record — map edit as human accept of a fix); Idea 9 hub detail / building IPs; Idea 11 (editing Atlas features ≠ reordering referral layers).  
+**Constraint:** Edit mode must be **opt-in and obvious** (banner/cursor) so day-to-day map use cannot nudge geometry by accident.
+
+---
+
+## 13. Other candidates (lighter touch)
 
 Captured in early brainstorm; lower detail, still potential:
 
@@ -359,6 +434,15 @@ Cut extent (points) ────────► Phone-call outage workflow (near
 Impact blast (lines) ───────► After fiber GIS exists (later)
 
 Outage notification wizard ─► Uses area / fence geometry + templates
+
+Atlas map layers / referrals ─► Fix desktop add-layer in Atlas + collapsible reorder
+         │
+         └──► Stack referral GIS layers with Atlas DB overlays (hubs/drops/…)
+
+In-Atlas DB edit ───────────► Map/pop-up field edits + edit-mode drag lat/lon
+         │
+         ├──► Type flip hub ↔ connected building (Idea 9 unified model)
+         └──► Bulk import path remains; strengthen import UX separately
 ```
 
 No ordering is mandatory. Cut extent and notification wizard can proceed without fiber lines or 24/7.
