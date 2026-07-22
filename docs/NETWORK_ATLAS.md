@@ -104,6 +104,10 @@ Manual file pickers remain as a fallback. Do **not** use the header Import / map
 
 SNMP/SSH/CDP, 24/7 monitoring, email alerts, full API, fiber panel tracing, DuckDB, PWA full parity.
 
+## V2 ideas (not committed)
+
+Pre-planned **potential** ideas only — not an active roadmap: [`docs/NETWORK_ATLAS_V2.md`](NETWORK_ATLAS_V2.md).
+
 ## Agents
 
 Read this doc before Atlas work. Follow `docs/PWA_DESKTOP_COMPAT.md` and `.cursor/skills/fix-desktop/SKILL.md` for desktop changes.
