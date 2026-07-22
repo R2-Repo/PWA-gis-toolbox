@@ -230,12 +230,25 @@ Primary fiber hub building
 
 Atlas should treat those IPs as **belonging to that connected building**, and the building as **associated to its hub** — so later ping, search, detail, and outage scope can roll up “everything at this building” and “buildings under this hub.”
 
+**Hub detail UI (when you click a hub building):** Today hub detail already shows **primary and secondary channels**. V2 should also list **connected buildings attached to that hub**, with their IPs visible and **pingable** (at least switch IPs; desktops/decoders as available) — same operator habit as pinging channel drops from hub context.
+
+```text
+Hub 1-01 detail (today)          Hub 1-01 detail (V2 idea)
+├─ Primary channels              ├─ Primary channels
+├─ Secondary channels            ├─ Secondary channels
+└─ …                             └─ Connected buildings (access sites)
+                                      ├─ Building A  — Switch 1 IP  [Ping]
+                                      │                 Switch 2 / desktops / decoders…
+                                      └─ Building B  — …
+```
+
 **Sketch:**
 
 ```text
 Today:  Hub List CSV  +  Connected Buildings CSV  →  two detectors / mappers
 V2:     One buildings document  →  type column  →  hub rows vs building rows
         Connected-building rows carry the building’s IP group + hub association
+        Hub click → channels + attached buildings + ping those IPs
 ```
 
 | Piece | Role |
@@ -246,7 +259,8 @@ V2:     One buildings document  →  type column  →  hub rows vs building rows
 | Hub-leaning extras | Hub number/code, Hub IP, channels subnet, is-shed (or type=`Shed`), official-list semantics for ATMS unknown-hub findings |
 | Building IP group | Switch 1 / Switch 2, desktop IPs, video decoder IPs — the building’s access-switch LAN; blank on pure hub rows unless hubs later adopt the same slots |
 | Import | One inbox filename pattern; mapper splits rows by type into existing `hub` vs `connected_building` (or a future unified table); store IP group + parent hub on the building |
-| Map / UI | Hubs keep network-tree + ping behavior; connected buildings show as hub-attached access sites with their IP group in detail (Copy IP / later ping) |
+| Map / UI | Hubs keep network-tree + ping behavior; connected buildings show as hub-attached access sites with their IP group in detail (Copy IP / ping) |
+| Hub detail | Beside primary/secondary channels: **Attached connected buildings** for that hub, each with IPs + Ping (and Copy IP); open building detail from the row |
 
 **Column model (conceptual — not a locked header list):**
 
@@ -255,10 +269,10 @@ V2:     One buildings document  →  type column  →  hub rows vs building rows
 - **When type = other connected building:** parent / From–To hub link(s), provider, status, **building IP group** (switch 1–2, desktops, video decoders)  
 - Overlap is intentional: hubs and buildings may share location/region/address-style fields; unused cells stay empty per type
 
-**V1 today:** Two optional inbox files — Hub List (`js/atlas/import/hub-list.js`) and Connected Buildings (`js/atlas/import/connected-buildings.js`); Connected Buildings already has `Building Type`, From/To Hub, and switch/desktop/decoder IP columns, but hubs are a separate file/path and buildings are overlay-only (no ping/monitor on that IP group yet).  
-**Not yet:** Single combined document, type-driven split in one mapper, shared header contract, first-class “building owns this IP group + parent hub” product model (access switch under fiber hub), ping/roll-up on building IPs.  
-**Depends on:** Agreeing the combined column set + allowed type values with data owners; inbox detect + Review counts for one file; clear hub-association rules (one parent vs From/To).  
-**Fits with:** Idea 3 (cleaner source files); Idea 8 (known vs rogue IPs once building LAN ranges are trusted); later ping/monitor on building switches.  
+**V1 today:** Two optional inbox files — Hub List (`js/atlas/import/hub-list.js`) and Connected Buildings (`js/atlas/import/connected-buildings.js`); Connected Buildings already has `Building Type`, From/To Hub, and switch/desktop/decoder IP columns, but hubs are a separate file/path and buildings are overlay-only. Hub detail shows primary/secondary channels — **not** an attached-buildings list with ping.  
+**Not yet:** Single combined document, type-driven split in one mapper, shared header contract, first-class “building owns this IP group + parent hub” model, **hub detail → attached buildings + pingable IPs**.  
+**Depends on:** Agreeing the combined column set + allowed type values with data owners; inbox detect + Review counts for one file; clear hub-association rules (one parent vs From/To) so hub detail membership is reliable.  
+**Fits with:** Idea 3 (cleaner source files); Idea 8 (known vs rogue IPs once building LAN ranges are trusted); Idea 10 (optional pop-out monitor later for a building or hub’s attached sites).  
 **Compatibility:** Prefer accepting the unified file while still reading the two legacy CSVs during a transition.
 
 ---
