@@ -16,12 +16,15 @@ export function AtlasImportDialog({ open, onClose, busy: busyProp, onImported })
     const [workbookPath, setWorkbookPath] = useState('');
     const [atmsPath, setAtmsPath] = useState('');
     const [hubListPath, setHubListPath] = useState('');
+    const [connectedBuildingsPath, setConnectedBuildingsPath] = useState('');
     const [workbookName, setWorkbookName] = useState('');
     const [atmsName, setAtmsName] = useState('');
     const [hubListName, setHubListName] = useState('');
+    const [connectedBuildingsName, setConnectedBuildingsName] = useState('');
     const [filePickerWorkbook, setFilePickerWorkbook] = useState(null);
     const [filePickerAtms, setFilePickerAtms] = useState(null);
     const [filePickerHubList, setFilePickerHubList] = useState(null);
+    const [filePickerConnectedBuildings, setFilePickerConnectedBuildings] = useState(null);
     const [summary, setSummary] = useState(null);
     const [payload, setPayload] = useState(null);
     const [diff, setDiff] = useState(null);
@@ -59,11 +62,14 @@ export function AtlasImportDialog({ open, onClose, busy: busyProp, onImported })
             setAtmsName(scan.atms?.name || '');
             setHubListPath(scan.hubList?.path || '');
             setHubListName(scan.hubList?.name || '');
+            setConnectedBuildingsPath(scan.connectedBuildings?.path || '');
+            setConnectedBuildingsName(scan.connectedBuildings?.name || '');
             setFilePickerWorkbook(null);
             setFilePickerAtms(null);
             setFilePickerHubList(null);
-            if (!scan.workbook && !scan.atms && !scan.hubList) {
-                setError('No FiberSwitchLocation workbook, ATMS CSV, or Hub List found in the import folder.');
+            setFilePickerConnectedBuildings(null);
+            if (!scan.workbook && !scan.atms && !scan.hubList && !scan.connectedBuildings) {
+                setError('No FiberSwitchLocation workbook, ATMS CSV, Hub List, or Connected Buildings found in the import folder.');
             }
         } catch (err) {
             setError(err?.message || String(err));
@@ -73,17 +79,19 @@ export function AtlasImportDialog({ open, onClose, busy: busyProp, onImported })
     }, []);
 
     const buildInput = () => {
-        if (filePickerWorkbook || filePickerAtms || filePickerHubList) {
+        if (filePickerWorkbook || filePickerAtms || filePickerHubList || filePickerConnectedBuildings) {
             return {
                 workbookFile: filePickerWorkbook,
                 atmsFile: filePickerAtms,
-                hubListFile: filePickerHubList
+                hubListFile: filePickerHubList,
+                connectedBuildingsFile: filePickerConnectedBuildings
             };
         }
         return {
             workbookPath: workbookPath || undefined,
             atmsPath: atmsPath || undefined,
-            hubListPath: hubListPath || undefined
+            hubListPath: hubListPath || undefined,
+            connectedBuildingsPath: connectedBuildingsPath || undefined
         };
     };
 
@@ -112,6 +120,7 @@ export function AtlasImportDialog({ open, onClose, busy: busyProp, onImported })
             setFilePickerWorkbook(null);
             setFilePickerAtms(null);
             setFilePickerHubList(null);
+            setFilePickerConnectedBuildings(null);
             resetReview();
             onClose?.();
         } catch (err) {
@@ -164,6 +173,9 @@ export function AtlasImportDialog({ open, onClose, busy: busyProp, onImported })
                         </li>
                         <li>
                             <strong>Hub List:</strong> {hubListName || '— (optional)'}
+                        </li>
+                        <li>
+                            <strong>Connected Buildings:</strong> {connectedBuildingsName || '— (optional)'}
                         </li>
                     </ul>
                 </section>
@@ -221,6 +233,23 @@ export function AtlasImportDialog({ open, onClose, busy: busyProp, onImported })
                             }}
                         />
                     </label>
+                    <label className="atlas-file-label">
+                        Connected Buildings (.csv, optional)
+                        <input
+                            type="file"
+                            accept=".csv,.txt"
+                            disabled={busy}
+                            onChange={(e) => {
+                                const f = e.target.files?.[0] || null;
+                                setFilePickerConnectedBuildings(f);
+                                if (f) {
+                                    setConnectedBuildingsName(f.name);
+                                    setConnectedBuildingsPath('');
+                                }
+                                resetReview();
+                            }}
+                        />
+                    </label>
                 </section>
 
                 <section className="atlas-import-section">
@@ -243,6 +272,12 @@ export function AtlasImportDialog({ open, onClose, busy: busyProp, onImported })
                                         <strong>{summary.hubListName}</strong>
                                     </>
                                 ) : null}
+                                {summary.connectedBuildingsName ? (
+                                    <>
+                                        {' + '}
+                                        <strong>{summary.connectedBuildingsName}</strong>
+                                    </>
+                                ) : null}
                             </p>
                             <p className="atlas-muted">Ping history is kept (matched by IP). Findings are rebuilt.</p>
                             <ul>
@@ -256,6 +291,7 @@ export function AtlasImportDialog({ open, onClose, busy: busyProp, onImported })
                                         : ''}
                                     {' / '}channels / drops / devices: {counts.channels} / {counts.drops} / {counts.devices}
                                 </li>
+                                <li>Connected buildings: {counts.connectedBuildings ?? 0}</li>
                                 <li>Findings: {counts.findings}</li>
                             </ul>
                             {!!payload?.findings?.length && (

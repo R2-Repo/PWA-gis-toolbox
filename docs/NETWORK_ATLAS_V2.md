@@ -34,7 +34,9 @@ Ideas may be reordered, merged, dropped, or never built.
 6. [Project fences](#6-project-fences)
 7. [Outage notification wizard](#7-outage-notification-wizard)
 8. [Subnet / drop IP range scan (known vs rogue)](#8-subnet--drop-ip-range-scan-known-vs-rogue)
-9. [Other candidates (lighter touch)](#9-other-candidates-lighter-touch)
+9. [Unified buildings import (Hub + Connected Buildings)](#9-unified-buildings-import-hub--connected-buildings)
+10. [Pop-out channel monitor windows (workers)](#10-pop-out-channel-monitor-windows-workers)
+11. [Other candidates (lighter touch)](#11-other-candidates-lighter-touch)
 
 ---
 
@@ -93,7 +95,7 @@ Later:  One clean dataset → import becomes simple
 
 **V1 today:** Join TMD↔SwitchFiber by inventory name; ATMS↔workbook by exact IP then channel+drop (provisional); some field fill when IP already matched; unmatched → provisional / findings (`js/atlas/import/`).  
 **Not yet:** Fuzzy/geo merge UI, systematic blank-fill across near-matches, exportable golden spreadsheet as product goal.  
-**Depends on:** Same two (three with Hub List) imports; operator review for low-confidence links.
+**Depends on:** Same two imports (plus Hub List / Connected Buildings, or Idea 9’s unified buildings file); operator review for low-confidence links.
 
 ---
 
@@ -202,7 +204,107 @@ Hub → Channel → Fiber drop (switch IP)
 
 ---
 
-## 9. Other candidates (lighter touch)
+## 9. Unified buildings import (Hub + Connected Buildings)
+
+**Idea:** Collapse today’s separate **Hub List** and **Connected Buildings** CSVs into **one import document** (one workbook sheet or one CSV). A single **building-type** column tells Atlas whether the row is a **hub** or another kind of **connected building**; the rest of the headers stay in one shared schema — mostly the same columns, with a few type-specific extras filled only when they apply.
+
+**Operator story:** Maintain one master “buildings / sites on the fiber plant” file instead of keeping Hub List and Connected Buildings in sync by hand. Add or edit a row, set type, fill the columns that matter for that type, drop the file in the Atlas inbox.
+
+**Network model (why the extra IPs matter):** Connected buildings are not just map pins — they are **access-switch sites** hanging off the **primary fiber hubs**. Each connected building is **tied back to a hub building** (parent fiber hub). That building owns a **group of IPs** for gear on its LAN:
+
+| IP role | Meaning |
+|---------|---------|
+| Building switch (1) | Primary network switch at the building (access switch toward the fiber hub) |
+| Building switch (2) | Optional second switch at the same building |
+| Desktop(s) | Workstations / PCs on that building’s switch |
+| Video decoder(s) | Decoders fed from that building’s switch |
+
+```text
+Primary fiber hub building
+        │
+        └── Connected building (access switch site)
+                 ├── Switch 1 IP  (+ optional Switch 2 IP)
+                 ├── Desktop IPs
+                 └── Video decoder IPs
+```
+
+Atlas should treat those IPs as **belonging to that connected building**, and the building as **associated to its hub** — so later ping, search, detail, and outage scope can roll up “everything at this building” and “buildings under this hub.”
+
+**Sketch:**
+
+```text
+Today:  Hub List CSV  +  Connected Buildings CSV  →  two detectors / mappers
+V2:     One buildings document  →  type column  →  hub rows vs building rows
+        Connected-building rows carry the building’s IP group + hub association
+```
+
+| Piece | Role |
+|-------|------|
+| Type column | Discriminator — e.g. `Building Type` / `Site Type`: `Hub`, TOC, cabinet, building, shed, etc. |
+| Shared columns | Name / AKA, lat/lon, region, address (optional), status/provider as relevant |
+| Hub association | Every non-hub connected building links back to its primary fiber hub (From/To Hub or a single parent-hub field — exact columns TBD) |
+| Hub-leaning extras | Hub number/code, Hub IP, channels subnet, is-shed (or type=`Shed`), official-list semantics for ATMS unknown-hub findings |
+| Building IP group | Switch 1 / Switch 2, desktop IPs, video decoder IPs — the building’s access-switch LAN; blank on pure hub rows unless hubs later adopt the same slots |
+| Import | One inbox filename pattern; mapper splits rows by type into existing `hub` vs `connected_building` (or a future unified table); store IP group + parent hub on the building |
+| Map / UI | Hubs keep network-tree + ping behavior; connected buildings show as hub-attached access sites with their IP group in detail (Copy IP / later ping) |
+
+**Column model (conceptual — not a locked header list):**
+
+- **Common:** type, display name, lat, lon, region, address, notes  
+- **When type = Hub (and close cousins):** hub code, hub IP, channels subnet, shed flag / shed-as-type  
+- **When type = other connected building:** parent / From–To hub link(s), provider, status, **building IP group** (switch 1–2, desktops, video decoders)  
+- Overlap is intentional: hubs and buildings may share location/region/address-style fields; unused cells stay empty per type
+
+**V1 today:** Two optional inbox files — Hub List (`js/atlas/import/hub-list.js`) and Connected Buildings (`js/atlas/import/connected-buildings.js`); Connected Buildings already has `Building Type`, From/To Hub, and switch/desktop/decoder IP columns, but hubs are a separate file/path and buildings are overlay-only (no ping/monitor on that IP group yet).  
+**Not yet:** Single combined document, type-driven split in one mapper, shared header contract, first-class “building owns this IP group + parent hub” product model (access switch under fiber hub), ping/roll-up on building IPs.  
+**Depends on:** Agreeing the combined column set + allowed type values with data owners; inbox detect + Review counts for one file; clear hub-association rules (one parent vs From/To).  
+**Fits with:** Idea 3 (cleaner source files); Idea 8 (known vs rogue IPs once building LAN ranges are trusted); later ping/monitor on building switches.  
+**Compatibility:** Prefer accepting the unified file while still reading the two legacy CSVs during a transition.
+
+---
+
+## 10. Pop-out channel monitor windows (workers)
+
+**Idea:** Grow the right-panel **Details / Channel schematic** experience so a channel (or similar scope) can **pop out** into its own small window — picture-in-picture over Atlas, or a detached panel — with **more than one open at once**, tabbed or stacked the way Windows 11 Terminal / Command Prompt hosts extra sessions. Working name (TBD): **Network Atlas monitor workers** (or “agents” — prefer a plain operator term; exact label undecided).
+
+**Operator story:** During a call or a cut, keep the main Atlas map/tree free while one or more channel “consoles” stay visible. Each pop-out is dedicated to a channel: show the schematic/detail context, **ping the whole channel** if needed, and scroll a **live ping log** (timestamped history of each round / each target) that feels like a command-prompt transcript — not only a last-status badge.
+
+**Still forming:** Exact chrome (PiP float vs true OS window vs in-app tab strip), how many concurrent workers, whether logs are per-window only or also persisted like monitor sessions, and whether “worker/agent” language ships in the UI.
+
+**Sketch:**
+
+```text
+Right panel Details / Schematic
+        │  “Pop out” / “Open monitor”
+        ▼
+┌─ Channel 2-03 worker ─┐  ┌─ Channel 1-01 worker ─┐
+│ Schematic / summary     │  │ …                     │
+│ Ping channel (loop)     │  │ Tabbed or side-by-side │
+│ ─────────────────────   │  └───────────────────────┘
+│ 14:02:01  D12  up  12ms │
+│ 14:02:01  D13  down     │
+│ 14:02:05  D12  up  11ms │   ← console-style history
+└─────────────────────────┘
+```
+
+| Piece | Role |
+|-------|------|
+| Launch point | Right-panel Details / Channel schematic (and maybe hub/channel context menus) |
+| Window model | Pop-out / PiP; multiple concurrent; tabs or separate mini-windows (Terminal-like) |
+| Scope | Primarily **one channel per worker**; ping entire channel on demand or on an interval |
+| Console log | Append-only (or scrollback) history of each ping attempt — time, target, result, RTT — prompt-like readability |
+| Lifecycle | Open / focus / close without losing main Atlas; unclear yet if closing Atlas kills workers (ties to Idea 5) |
+| Naming | “Monitor worker” vs “session” vs “agent” — product copy TBD; avoid overselling autonomy |
+
+**V1 today:** Channel schematic + detail live in the **docked** right panel; temporary monitor sessions + history/CSV exist (`js/atlas/monitor.js`, past sessions in SQLite) but are not multi-window channel consoles or pop-outs from the schematic.  
+**Not yet:** Pop-out / PiP / multi-tab channel workers; console-style live ping transcript UI; several channel monitors visible at once beside the map.  
+**Depends on:** Desktop windowing choices (WebView2 child windows vs in-app floaters); reuse of existing ping + monitor session storage.  
+**Fits with:** Idea 5 (background watches — workers might be UI-facing while 24/7 is headless); Idea 6 (fence-scoped workers later); call-mode / cut-extent workflows.  
+**Shape options:** In-app floating panels first (simpler); true secondary Tauri windows later if OS-level always-on-top / multi-monitor placement is required.
+
+---
+
+## 11. Other candidates (lighter touch)
 
 Captured in early brainstorm; lower detail, still potential:
 
@@ -220,6 +322,12 @@ These can attach to cut extent, fences, or notifications later.
 ## Suggested dependency sketch (informal)
 
 ```text
+Unified buildings import ───► One Hub + Connected Buildings source file
+         │
+         ├──► Connected buildings = access switches under fiber hubs
+         ├──► Building IP groups (switch / desktop / decoder) for ping later
+         └──► Easier inbox / Review (optional path into golden-record cleanup)
+
 Golden-record merge ──┬──► Wireless drop + parent fiber
                       └──► Cleaner inventory for range scan / cut extent
 
@@ -228,6 +336,10 @@ IP allocation rules ────────► Drop/channel range scan (rogues)
 Background monitor runner ──► Project fences (always-on profiles)
          │
          └──► Optional: fence-scoped scans / digests
+
+Pop-out channel workers ────► Multi channel consoles from right-panel schematic
+         │
+         └──► May share ping/log plumbing with monitor sessions / Idea 5
 
 Cut extent (points) ────────► Phone-call outage workflow (near-term friendly)
 Impact blast (lines) ───────► After fiber GIS exists (later)

@@ -45,7 +45,7 @@ export async function listAtlasImportInbox() {
 }
 
 /**
- * Scan inbox and return detected workbook + ATMS + optional Hub List.
+ * Scan inbox and return detected workbook + ATMS + optional Hub List / Connected Buildings.
  */
 export async function scanAtlasImportInbox() {
     const listed = await listAtlasImportInbox();
@@ -55,14 +55,15 @@ export async function scanAtlasImportInbox() {
         files: listed.files || [],
         workbook: src.workbook,
         atms: src.atms,
-        hubList: src.hubList
+        hubList: src.hubList,
+        connectedBuildings: src.connectedBuildings
     };
 }
 
 /**
  * Read inbox/native path into { name, buffer } or { name, text }.
  * @param {string} path
- * @param {'workbook'|'atms'|'hubList'} kind
+ * @param {'workbook'|'atms'|'hubList'|'connectedBuildings'} kind
  */
 export async function readAtlasImportPath(path, kind) {
     const db = atlasDb();

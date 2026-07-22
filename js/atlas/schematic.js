@@ -4,6 +4,7 @@
 import { getAtlasSnapshot } from './store.js';
 import { getPingEntry } from './ping-format.js';
 import { hubPingRollup } from './triage.js';
+import { formatDropPrimary, formatHubTreeLabel } from './display-label.js';
 
 /**
  * @param {import('./types.js').AtlasSnapshot} snap
@@ -78,7 +79,7 @@ export function buildChannelSchematic(channelId) {
         kind: 'hub',
         role: 'primary',
         id: channel.primaryHubId || `pri-${channel.id}`,
-        label: channel.primaryHubCode ? `Hub ${channel.primaryHubCode}` : 'Primary Hub',
+        label: channel.primaryHubCode ? formatHubTreeLabel(channel.primaryHubCode) : 'Primary Hub',
         hubCode: channel.primaryHubCode,
         ip: null,
         ping: resolveHubPing(snap, channel.primaryHubId, channel.primaryHubCode),
@@ -92,10 +93,12 @@ export function buildChannelSchematic(channelId) {
             kind: 'drop',
             role: 'drop',
             id: drop.id,
-            label: `D${drop.dropNumber ?? '?'}`,
+            label: formatDropPrimary(drop.dropNumber),
             dropNumber: drop.dropNumber,
             inventoryName: drop.inventoryName,
             ip: drop.ip,
+            lat: drop.lat ?? null,
+            lon: drop.lon ?? null,
             model: drop.model,
             manufacturer: drop.manufacturer,
             wireless: drop.wireless,
@@ -108,7 +111,7 @@ export function buildChannelSchematic(channelId) {
         kind: 'hub',
         role: 'secondary',
         id: channel.secondaryHubId || `sec-${channel.id}`,
-        label: channel.secondaryHubCode ? `Hub ${channel.secondaryHubCode}` : 'Secondary Hub',
+        label: channel.secondaryHubCode ? formatHubTreeLabel(channel.secondaryHubCode) : 'Secondary Hub',
         hubCode: channel.secondaryHubCode,
         ip: null,
         ping: resolveHubPing(snap, channel.secondaryHubId, channel.secondaryHubCode),

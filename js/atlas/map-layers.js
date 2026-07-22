@@ -56,12 +56,16 @@ const AREA_SOURCE_ID = 'atlas-area';
 const LAYER_HUBS = 'atlas-hubs-square';
 const LAYER_HUBS_LEGACY = 'atlas-hubs-circle';
 const LAYER_HUBS_ISSUE = 'atlas-hubs-issue';
+const LAYER_BUILDINGS = 'atlas-buildings-circle';
 const LAYER_DROPS = 'atlas-drops-circle';
 const LAYER_STATUS = 'atlas-status-circle';
 const LAYER_SELECTED = 'atlas-selected-circle';
 const LAYER_CHANNEL_LINE = 'atlas-channel-line';
 const LAYER_AREA_FILL = 'atlas-area-fill';
 const LAYER_AREA_LINE = 'atlas-area-line';
+
+/** Distinct from hub squares and drop cores. */
+const BUILDING_FILL_COLOR = '#0f766e';
 
 const HUB_ICON_PREFIX = 'atlas-hub-sq-';
 const HUB_ISSUE_ICON = 'atlas-hub-issue-sq';
@@ -79,7 +83,14 @@ const HUB_FILL_KEYS = [
 ];
 
 // Prefer hubs when hit-testing overlapping markers.
-const CLICK_LAYERS = [LAYER_HUBS_ISSUE, LAYER_HUBS, LAYER_DROPS, LAYER_STATUS, LAYER_SELECTED];
+const CLICK_LAYERS = [
+    LAYER_HUBS_ISSUE,
+    LAYER_HUBS,
+    LAYER_BUILDINGS,
+    LAYER_DROPS,
+    LAYER_STATUS,
+    LAYER_SELECTED
+];
 
 /** @returns {any[]} */
 function hubIconImageMatch() {
@@ -237,7 +248,14 @@ const STATUS_RADIUS_MATCH = [
  */
 function ensureAtlasLayerStack(map) {
     if (!map?.getLayer) return;
-    const order = [LAYER_STATUS, LAYER_DROPS, LAYER_HUBS, LAYER_HUBS_ISSUE, LAYER_SELECTED];
+    const order = [
+        LAYER_STATUS,
+        LAYER_DROPS,
+        LAYER_BUILDINGS,
+        LAYER_HUBS,
+        LAYER_HUBS_ISSUE,
+        LAYER_SELECTED
+    ];
     for (const id of order) {
         if (map.getLayer(id)) {
             try {
@@ -266,6 +284,13 @@ function applyAtlasLayerPaint(map) {
         map.setPaintProperty(LAYER_DROPS, 'circle-stroke-width', 1);
         map.setPaintProperty(LAYER_DROPS, 'circle-stroke-color', '#ffffff');
         map.setPaintProperty(LAYER_DROPS, 'circle-radius', DROP_CORE_RADIUS_MATCH);
+    }
+    if (map.getLayer(LAYER_BUILDINGS)) {
+        map.setPaintProperty(LAYER_BUILDINGS, 'circle-color', BUILDING_FILL_COLOR);
+        map.setPaintProperty(LAYER_BUILDINGS, 'circle-radius', 7);
+        map.setPaintProperty(LAYER_BUILDINGS, 'circle-opacity', 0.95);
+        map.setPaintProperty(LAYER_BUILDINGS, 'circle-stroke-width', 1.5);
+        map.setPaintProperty(LAYER_BUILDINGS, 'circle-stroke-color', '#ffffff');
     }
     if (map.getLayer(LAYER_HUBS)?.type === 'symbol') {
         map.setLayoutProperty(LAYER_HUBS, 'icon-image', hubIconImageMatch());
@@ -361,6 +386,28 @@ export function buildAtlasMapPayload(snap) {
         });
     }
 
+    for (const building of snap.connectedBuildings || []) {
+        if (building.lat == null || building.lon == null) continue;
+        features.push({
+            type: 'Feature',
+            geometry: { type: 'Point', coordinates: [building.lon, building.lat] },
+            properties: {
+                atlasKind: 'building',
+                id: building.id,
+                label: building.buildingName || 'Building',
+                address: building.address || '',
+                fromHub: building.fromHub || '',
+                toHub: building.toHub || '',
+                status: building.status || '',
+                hasIp: 0,
+                pingStatus: '',
+                hubFillStatus: '',
+                hubIssue: 0,
+                selected: selectedKind === 'building' && building.id === selectedId ? 1 : 0
+            }
+        });
+    }
+
     let channelCoords = [];
     if (snap.selection?.kind === 'channel') {
         const drops = (snap.drops || [])
@@ -373,6 +420,7 @@ export function buildAtlasMapPayload(snap) {
     const mapPingFilter = snap.prefs?.mapPingFilter || 'all';
     const dropFilter = atlasMapKindFilterExpression('drop', mapPingFilter);
     const hubFilter = atlasMapKindFilterExpression('hub', mapPingFilter);
+    const buildingFilter = ['==', ['get', 'atlasKind'], 'building'];
     const hubIssueFilter = [
         'all',
         hubFilter,
@@ -399,6 +447,7 @@ export function buildAtlasMapPayload(snap) {
         },
         dropFilter,
         hubFilter,
+        buildingFilter,
         hubIssueFilter
     };
 }
@@ -473,6 +522,7 @@ export function applyAtlasMapToMap(map, payload) {
     const fc = payload.network || { type: 'FeatureCollection', features: [] };
     const dropFilter = payload.dropFilter || ['==', ['get', 'atlasKind'], 'drop'];
     const hubFilter = payload.hubFilter || ['==', ['get', 'atlasKind'], 'hub'];
+    const buildingFilter = payload.buildingFilter || ['==', ['get', 'atlasKind'], 'building'];
     const hubIssueFilter = payload.hubIssueFilter || [
         'all',
         hubFilter,
@@ -486,7 +536,7 @@ export function applyAtlasMapToMap(map, payload) {
         map.getSource(SOURCE_ID).setData(fc);
     } else {
         map.addSource(SOURCE_ID, { type: 'geojson', data: fc });
-        // Paint order (bottom → top): status halo → drops → hub squares → hub issue → selection
+        // Paint order (bottom → top): status halo → drops → buildings → hub squares → hub issue → selection
         map.addLayer({
             id: LAYER_STATUS,
             type: 'circle',
@@ -508,6 +558,19 @@ export function applyAtlasMapToMap(map, payload) {
                 'circle-color': DROP_CORE_COLOR_MATCH,
                 'circle-opacity': DROP_CORE_OPACITY_MATCH,
                 'circle-stroke-width': 1,
+                'circle-stroke-color': '#ffffff'
+            }
+        });
+        map.addLayer({
+            id: LAYER_BUILDINGS,
+            type: 'circle',
+            source: SOURCE_ID,
+            filter: buildingFilter,
+            paint: {
+                'circle-radius': 7,
+                'circle-color': BUILDING_FILL_COLOR,
+                'circle-opacity': 0.95,
+                'circle-stroke-width': 1.5,
                 'circle-stroke-color': '#ffffff'
             }
         });
@@ -551,6 +614,23 @@ export function applyAtlasMapToMap(map, payload) {
         });
     }
 
+    // Add buildings layer when migrating from older sessions
+    if (map.getSource(SOURCE_ID) && !map.getLayer(LAYER_BUILDINGS)) {
+        map.addLayer({
+            id: LAYER_BUILDINGS,
+            type: 'circle',
+            source: SOURCE_ID,
+            filter: buildingFilter,
+            paint: {
+                'circle-radius': 7,
+                'circle-color': BUILDING_FILL_COLOR,
+                'circle-opacity': 0.95,
+                'circle-stroke-width': 1.5,
+                'circle-stroke-color': '#ffffff'
+            }
+        }, map.getLayer(LAYER_HUBS) ? LAYER_HUBS : (map.getLayer(LAYER_SELECTED) ? LAYER_SELECTED : undefined));
+    }
+
     // Add square hub layers when migrating from older circle sessions
     if (map.getSource(SOURCE_ID) && !map.getLayer(LAYER_HUBS)) {
         map.addLayer({
@@ -583,6 +663,7 @@ export function applyAtlasMapToMap(map, payload) {
 
     if (map.getLayer(LAYER_STATUS)) map.setFilter(LAYER_STATUS, dropFilter);
     if (map.getLayer(LAYER_DROPS)) map.setFilter(LAYER_DROPS, dropFilter);
+    if (map.getLayer(LAYER_BUILDINGS)) map.setFilter(LAYER_BUILDINGS, buildingFilter);
     if (map.getLayer(LAYER_HUBS)) map.setFilter(LAYER_HUBS, hubFilter);
     if (map.getLayer(LAYER_HUBS_ISSUE)) map.setFilter(LAYER_HUBS_ISSUE, hubIssueFilter);
     applyAtlasLayerPaint(map);
@@ -600,7 +681,7 @@ export function clearAtlasMapFromMap(map) {
     if (!map) return;
     for (const id of [
         LAYER_AREA_LINE, LAYER_AREA_FILL, LAYER_CHANNEL_LINE,
-        LAYER_SELECTED, LAYER_HUBS_ISSUE, LAYER_HUBS_LEGACY, LAYER_STATUS, LAYER_DROPS, LAYER_HUBS
+        LAYER_SELECTED, LAYER_HUBS_ISSUE, LAYER_HUBS_LEGACY, LAYER_STATUS, LAYER_DROPS, LAYER_BUILDINGS, LAYER_HUBS
     ]) {
         if (map.getLayer(id)) map.removeLayer(id);
     }
@@ -705,7 +786,7 @@ function showAtlasHoverPopup(map, feature) {
 }
 
 /**
- * @param {(sel: { kind: 'hub'|'drop', id: string }) => void} onSelect
+ * @param {(sel: { kind: 'hub'|'drop'|'building', id: string }) => void} onSelect
  * @param {import('maplibre-gl').Map} [mapOverride] secondary window passes its map
  * @param {() => void} [onEmptyClick] click on map with no Atlas feature (clear selection)
  */
@@ -726,7 +807,8 @@ export function enableAtlasMapInteraction(onSelect, mapOverride, onEmptyClick) {
             : [];
         const hit = feats?.[0];
         if (hit?.properties?.id && hit.properties.atlasKind) {
-            const kind = hit.properties.atlasKind === 'hub' ? 'hub' : 'drop';
+            const raw = String(hit.properties.atlasKind);
+            const kind = raw === 'hub' || raw === 'building' ? raw : 'drop';
             hideAtlasHoverPopup();
             onSelect?.({ kind, id: String(hit.properties.id) });
             return;

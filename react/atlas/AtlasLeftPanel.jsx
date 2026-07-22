@@ -4,13 +4,12 @@ import { getAtlasSnapshot } from '../../js/atlas/store.js';
 import { searchAtlasDetailed } from '../../js/atlas/search.js';
 import { buildHierarchyTree } from '../../js/atlas/hierarchy.js';
 import { formatPingWhen } from '../../js/atlas/ping-format.js';
-import { clearAtlasFocus, listAtlasImportBatches, reloadAtlasFromDb } from '../../js/atlas/controller.js';
+import { listAtlasImportBatches, reloadAtlasFromDb } from '../../js/atlas/controller.js';
 import {
     describeImportBatch,
     formatImportBatchCounts,
     formatImportBatchDiff
 } from '../../js/atlas/import/batch-format.js';
-import { describeAtlasFocus } from '../../js/atlas/focus-label.js';
 import { showAtlasShortcutsHelp } from '../../js/atlas/hotkeys.js';
 import { confirm } from '../../js/ui/modals.js';
 import { CollapsibleSection } from '../ui/CollapsibleSection.jsx';
@@ -38,7 +37,12 @@ function HierarchyNode({ node, depth, onSelect, selection }) {
         && node.kind === selection.kind
         && node.id === selection.id;
     const inPath = containsSelection(node, selection);
-    const [open, setOpen] = useState(depth < 2 || inPath);
+    // Collapsed by default; only auto-open ancestors of the current selection.
+    const [open, setOpen] = useState(inPath);
+    const secondary = node.secondary || node.meta || null;
+    const title = node.title
+        || [node.label, secondary].filter(Boolean).join(' · ')
+        || node.label;
 
     useEffect(() => {
         if (inPath) setOpen(true);
@@ -46,7 +50,7 @@ function HierarchyNode({ node, depth, onSelect, selection }) {
 
     const hasKids = node.children?.length > 0;
     return (
-        <div className="atlas-tree-node" style={{ marginLeft: depth * 10 }}>
+        <div className="atlas-tree-node" style={{ '--atlas-tree-depth': depth }}>
             <div className={`atlas-tree-row${isSelected ? ' atlas-tree-row--selected' : ''}`}>
                 {hasKids ? (
                     <button type="button" className="atlas-tree-twist" onClick={() => setOpen((v) => !v)}>
@@ -58,13 +62,23 @@ function HierarchyNode({ node, depth, onSelect, selection }) {
                 <button
                     type="button"
                     className="atlas-tree-label"
+                    title={title}
                     onClick={() => {
-                        if (node.kind !== 'region') onSelect?.({ kind: node.kind, id: node.id });
+                        // Regions are grouping-only (not selectable); toggle like the caret.
+                        if (node.kind === 'region') {
+                            if (hasKids) setOpen((v) => !v);
+                            return;
+                        }
+                        onSelect?.({ kind: node.kind, id: node.id });
                     }}
                 >
                     <PingDot status={node.pingStatus} />
-                    {node.label}
-                    {node.meta ? <span className="atlas-muted"> · {node.meta}</span> : null}
+                    <span className="atlas-tree-text">
+                        <strong className="atlas-tree-primary">{node.label}</strong>
+                        {secondary ? (
+                            <span className="atlas-tree-secondary">{secondary}</span>
+                        ) : null}
+                    </span>
                 </button>
             </div>
             {open && hasKids && node.children.map((child) => (
@@ -127,7 +141,6 @@ export function AtlasLeftPanel({ onSelect, onOpenImport }) {
     const selection = snap.selection;
     const isEmptyDb = snap.loaded
         && !(snap.hubs?.length || snap.channels?.length || snap.drops?.length);
-    const focus = useMemo(() => describeAtlasFocus(snap), [snap, tick]);
 
     return (
         <div className="atlas-panel atlas-panel-left">
@@ -174,22 +187,6 @@ export function AtlasLeftPanel({ onSelect, onOpenImport }) {
                         : 'Not loaded'}
                 </span>
             </div>
-            {focus.canClear ? (
-                <div className="atlas-selection-chip">
-                    <div className="atlas-map-focus-text">
-                        <strong>{focus.title}</strong>
-                        <span className="atlas-muted">{focus.detail}</span>
-                    </div>
-                    <button
-                        type="button"
-                        className="btn btn-ghost btn-sm"
-                        title="Clear selection or area (Esc)"
-                        onClick={() => clearAtlasFocus()}
-                    >
-                        Clear
-                    </button>
-                </div>
-            ) : null}
             <CollapsibleSection title="Search" bodyId="atlas-search" defaultOpen>
                 <input
                     id="atlas-search-input"
@@ -205,12 +202,16 @@ export function AtlasLeftPanel({ onSelect, onOpenImport }) {
                 <ul className="atlas-search-results">
                     {hits.map((h) => {
                         const selected = selection?.kind === h.kind && selection?.id === h.id;
+                        const secondary = h.secondary || h.meta || null;
+                        const title = h.title || [h.label, secondary].filter(Boolean).join(' · ');
                         return (
                             <li key={`${h.kind}-${h.id}`} className={selected ? 'atlas-search-hit--selected' : ''}>
-                                <button type="button" onClick={() => onSelect?.(h)}>
+                                <button type="button" title={title} onClick={() => onSelect?.(h)}>
                                     <PingDot status={h.pingStatus} />
-                                    <strong>{h.label}</strong>
-                                    {h.meta ? <span className="atlas-muted"> — {h.meta}</span> : null}
+                                    <span className="atlas-search-hit-text">
+                                        <strong>{h.label}</strong>
+                                        {secondary ? <span className="atlas-muted">{secondary}</span> : null}
+                                    </span>
                                 </button>
                             </li>
                         );
@@ -233,7 +234,7 @@ export function AtlasLeftPanel({ onSelect, onOpenImport }) {
                 ) : null}
             </CollapsibleSection>
 
-            <CollapsibleSection title="Hierarchy" bodyId="atlas-hierarchy">
+            <CollapsibleSection title="Network" bodyId="atlas-hierarchy">
                 {isEmptyDb ? (
                     <div className="atlas-empty-cta">
                         <p><strong>No network data yet</strong></p>

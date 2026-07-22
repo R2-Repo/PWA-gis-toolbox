@@ -14,6 +14,7 @@ const snapshot = {
     drops: [],
     devices: [],
     sites: [],
+    connectedBuildings: [],
     findings: [],
     pingResults: {},
     selection: null,
@@ -85,6 +86,7 @@ export function resetAtlasSnapshot() {
     snapshot.drops = [];
     snapshot.devices = [];
     snapshot.sites = [];
+    snapshot.connectedBuildings = [];
     snapshot.findings = [];
     snapshot.pingResults = {};
     snapshot.selection = null;

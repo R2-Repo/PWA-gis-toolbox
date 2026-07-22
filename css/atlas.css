@@ -1,5 +1,40 @@
 /* ITS Network Atlas workspace — matches app dark theme (main.css :root) */
 
+/* Single-screen: wider Atlas panels + tighter chrome (GIS stays at --panel-left-w) */
+.app-layout.atlas-workspace-active {
+    --atlas-panel-w: 390px;
+    --atlas-tree-indent: 6px;
+}
+
+.app-layout.atlas-workspace-active .panel-left,
+.app-layout.atlas-workspace-active .panel-right {
+    width: var(--atlas-panel-w);
+}
+
+/* Dual-screen still flex-expands (atlas.css loads after main.css) */
+.app-layout.atlas-workspace-active.dual-screen-active .panel-left,
+.app-layout.atlas-workspace-active.dual-screen-active .panel-right {
+    flex: 1;
+    max-width: none;
+    width: auto;
+}
+
+.app-layout.atlas-workspace-active .panel-body {
+    padding: 6px;
+}
+
+.app-layout.atlas-workspace-active .panel-section {
+    margin-bottom: 6px;
+}
+
+.app-layout.atlas-workspace-active .panel-section-header {
+    padding: 6px 8px;
+}
+
+.app-layout.atlas-workspace-active .panel-section-body {
+    padding: 6px;
+}
+
 .atlas-workspace-tabs {
     display: flex;
     gap: 0;
@@ -78,6 +113,27 @@
     cursor: pointer;
     font-size: 12px;
     color: var(--text);
+    display: flex;
+    align-items: flex-start;
+    gap: 4px;
+    min-width: 0;
+}
+
+.atlas-search-hit-text {
+    min-width: 0;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+}
+
+.atlas-search-hit-text strong {
+    white-space: nowrap;
+}
+
+.atlas-search-hit-text .atlas-muted {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .atlas-search-results li button:hover {
@@ -101,8 +157,8 @@
     background: var(--text-muted);
 }
 
-.atlas-ping-dot--reachable { background: #39ff14; }
-.atlas-ping-dot--unreachable { background: #ff2d2d; }
+.atlas-ping-dot--reachable { background: #00ff33; }
+.atlas-ping-dot--unreachable { background: #ff0000; }
 .atlas-ping-dot--stale_reachable { background: #4d7c4d; }
 .atlas-ping-dot--stale_unreachable { background: #7a3a3a; }
 .atlas-ping-dot--intermittent { background: #facc15; }
@@ -112,16 +168,23 @@
 .atlas-ping-dot--warning { background: #4d7c4d; }
 .atlas-ping-dot--untested { background: var(--text-light); }
 
+.atlas-tree-node {
+    --atlas-tree-depth: 0;
+    margin-left: calc(var(--atlas-tree-depth) * var(--atlas-tree-indent, 6px));
+}
+
 .atlas-tree-row {
     display: flex;
     align-items: flex-start;
     gap: 2px;
+    min-width: 0;
 }
 
 .atlas-tree-twist {
     border: none;
     background: transparent;
-    width: 18px;
+    width: 14px;
+    flex-shrink: 0;
     cursor: pointer;
     padding: 0;
     line-height: 1.4;
@@ -138,13 +201,51 @@
     text-align: left;
     cursor: pointer;
     font-size: 12px;
-    padding: 2px 0;
+    padding: 2px 4px 2px 0;
     flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: flex-start;
+    gap: 4px;
     color: var(--text);
 }
 
-.atlas-tree-label:hover {
+.atlas-tree-text {
+    min-width: 0;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+}
+
+.atlas-tree-primary {
+    font-weight: 600;
+    color: var(--text);
+    white-space: nowrap;
+}
+
+.atlas-tree-secondary {
+    display: block;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: var(--text-muted);
+    font-size: 11px;
+    font-weight: 400;
+}
+
+.atlas-tree-sub {
+    font-weight: 400;
+}
+
+.atlas-tree-label:hover,
+.atlas-tree-label:hover .atlas-tree-primary {
     color: var(--primary);
+}
+
+.atlas-tree-label .atlas-ping-dot {
+    margin-top: 4px;
+    flex-shrink: 0;
 }
 
 .atlas-dash-grid {
@@ -209,6 +310,7 @@ button.atlas-dash-card--action:hover {
 
 .atlas-schematic-header {
     display: flex;
+    flex-wrap: wrap;
     justify-content: space-between;
     align-items: center;
     gap: 8px;
@@ -216,22 +318,35 @@ button.atlas-dash-card--action:hover {
     color: var(--text);
 }
 
-.atlas-schematic-flow {
+.atlas-schematic-title {
     display: flex;
     flex-wrap: wrap;
+    align-items: baseline;
+    gap: 6px 10px;
+    min-width: 0;
+}
+
+.atlas-schematic-flow {
+    display: flex;
+    flex-direction: column;
     align-items: stretch;
-    gap: 4px;
+    gap: 2px;
+    max-width: 220px;
 }
 
 .atlas-schematic-node-wrap {
     display: flex;
-    align-items: center;
-    gap: 4px;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 2px;
 }
 
 .atlas-schematic-arrow {
     color: var(--text-muted);
     font-weight: 700;
+    line-height: 1;
+    text-align: center;
+    padding: 1px 0;
 }
 
 .atlas-schematic-node {
@@ -240,12 +355,15 @@ button.atlas-dash-card--action:hover {
     background: var(--bg-surface);
     color: var(--text);
     padding: 6px 8px;
-    min-width: 88px;
+    width: 100%;
+    min-width: 0;
+    max-width: none;
     cursor: pointer;
     display: flex;
     flex-direction: column;
     gap: 2px;
     text-align: left;
+    overflow: hidden;
 }
 
 .atlas-schematic-node--hub {
@@ -257,6 +375,7 @@ button.atlas-dash-card--action:hover {
     font-size: 12px;
     font-weight: 700;
     color: var(--text);
+    white-space: nowrap;
 }
 
 .atlas-schematic-sub,
@@ -264,6 +383,35 @@ button.atlas-dash-card--action:hover {
 .atlas-schematic-warn {
     font-size: 10px;
     color: var(--text-muted);
+}
+
+.atlas-schematic-sub {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.atlas-schematic-ip {
+    color: var(--gold-light);
+    font-family: var(--mono);
+}
+
+.atlas-schematic-ctx .atlas-schematic-ctx-item {
+    width: 100%;
+    border: 0;
+    background: transparent;
+    font: inherit;
+    text-align: left;
+}
+
+.atlas-schematic-ctx .atlas-schematic-ctx-item.is-disabled,
+.atlas-schematic-ctx .atlas-schematic-ctx-item:disabled {
+    opacity: 0.45;
+    cursor: default;
+}
+
+.atlas-schematic-model {
+    display: none;
 }
 
 .atlas-schematic-warn {
@@ -292,11 +440,11 @@ button.atlas-dash-card--action:hover {
 }
 
 .atlas-ping--reachable {
-    box-shadow: inset 0 0 0 2px #39ff14;
+    box-shadow: inset 0 0 0 2px #00ff33;
 }
 
 .atlas-ping--unreachable {
-    box-shadow: inset 0 0 0 2px #ff2d2d;
+    box-shadow: inset 0 0 0 2px #ff0000;
 }
 
 .atlas-ping--stale_reachable {
@@ -331,12 +479,23 @@ button.atlas-dash-card--action:hover {
     margin-bottom: 10px;
     font-size: 12px;
     color: var(--text);
+    min-width: 0;
 }
 
 .atlas-detail-block h4 {
-    margin: 0 0 4px;
+    margin: 0 0 2px;
     font-size: 13px;
     color: var(--text);
+    white-space: nowrap;
+}
+
+.atlas-detail-secondary {
+    margin: 0 0 6px;
+    font-size: 12px;
+    color: var(--text-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .atlas-simple-list {
@@ -347,6 +506,23 @@ button.atlas-dash-card--action:hover {
     overflow: auto;
     font-size: 12px;
     color: var(--text);
+}
+
+.atlas-simple-list li {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 4px;
+    min-width: 0;
+}
+
+.atlas-simple-list .atlas-row-label {
+    min-width: 0;
+    flex: 1 1 120px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    text-align: left;
 }
 
 .atlas-linkish {
@@ -834,6 +1010,19 @@ button.atlas-dash-card--action:hover {
 .atlas-finding-title {
     display: inline;
     text-align: left;
+}
+
+.atlas-findings-list > li > div {
+    min-width: 0;
+    flex: 1;
+}
+
+.atlas-findings-list > li > div > p {
+    margin: 4px 0;
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
 }
 
 .atlas-finding--focused {

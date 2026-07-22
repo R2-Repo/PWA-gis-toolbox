@@ -307,8 +307,15 @@ describe('atlas area + schematic', () => {
 
     it('adds pingStatus on hierarchy hubs/channels/drops and sites branch', () => {
         patchAtlasSnapshot({
-            hubs: [{ id: 'h1', hubCode: 'H1', name: 'Hub H1', hubIp: '10.9.9.1' }],
-            channels: [{ id: 'c1', channelNumber: '1', primaryHubId: 'h1', primaryHubCode: 'H1', secondaryHubCode: 'H2' }],
+            hubs: [{
+                id: 'h1',
+                hubCode: '1-01',
+                name: 'US89-I84',
+                aka: 'US89-I84',
+                regionId: '2',
+                hubIp: '10.9.9.1'
+            }],
+            channels: [{ id: 'c1', channelNumber: '1', primaryHubId: 'h1', primaryHubCode: '1-01', secondaryHubCode: '1-02' }],
             drops: [{
                 id: 'd1',
                 channelId: 'c1',
@@ -325,11 +332,18 @@ describe('atlas area + schematic', () => {
             }
         });
         const tree = buildHierarchyTree();
-        const hub = tree[0]?.children?.find((n) => n.id === 'h1');
+        const region = tree.find((n) => n.id === 'region-2');
+        expect(region?.label).toBe('Region 2');
+        const hub = region?.children?.find((n) => n.id === 'h1');
+        expect(hub?.label).toBe('hub1-01');
+        expect(hub?.secondary).toBe('US89-I84');
+        expect(hub?.children?.[0]?.label).toBe('Ch 1');
+        expect(hub?.children?.[0]?.children?.[0]?.label).toBe('D1');
+        expect(hub?.children?.[0]?.children?.[0]?.secondary).toBe('Site A');
         expect(hub?.pingStatus).toBe('reachable');
         expect(hub?.children?.[0]?.pingStatus).toBe('unreachable');
         expect(channelPingRollup('c1', getAtlasSnapshot())).toBe('unreachable');
-        const sitesRoot = tree[0]?.children?.find((n) => n.id === 'sites-root');
+        const sitesRoot = tree.find((n) => n.id === 'sites-root');
         expect(sitesRoot?.children?.[0]?.kind).toBe('site');
         const hits = searchAtlas('10.0.0.1');
         expect(hits[0]?.pingStatus).toBe('unreachable');

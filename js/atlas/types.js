@@ -37,6 +37,35 @@
  */
 
 /**
+ * @typedef {Object} AtlasConnectedBuilding
+ * @property {string} id
+ * @property {string} buildingName
+ * @property {string|null} [buildingType]
+ * @property {string|null} [provider]
+ * @property {string|null} [status]
+ * @property {string|null} [fromHub]
+ * @property {string|null} [toHub]
+ * @property {string|null} [address]
+ * @property {number|null} [lat]
+ * @property {number|null} [lon]
+ * @property {string|null} [regionId]
+ * @property {string|null} [switch1Ip]
+ * @property {string|null} [switch2Ip]
+ * @property {string|null} [desktop1Ip]
+ * @property {string|null} [desktop2Ip]
+ * @property {string|null} [decoder1Ip]
+ * @property {string|null} [decoder2Ip]
+ * @property {string|null} [decoder3Ip]
+ * @property {string|null} [decoder4Ip]
+ * @property {string|null} [decoder5Ip]
+ * @property {string|null} [decoder6Ip]
+ * @property {string|null} [decoder7Ip]
+ * @property {string|null} [decoder8Ip]
+ * @property {string|null} [decoder9Ip]
+ * @property {string|null} [decoder10Ip]
+ */
+
+/**
  * @typedef {Object} AtlasDrop
  * @property {string} id
  * @property {string} channelId
@@ -122,7 +151,7 @@
 
 /**
  * @typedef {Object} AtlasSelection
- * @property {'hub'|'channel'|'drop'|'device'|'site'|'area'} kind
+ * @property {'hub'|'channel'|'drop'|'device'|'site'|'building'|'area'} kind
  * @property {string} id
  */
 
@@ -134,6 +163,7 @@
  * @property {AtlasDrop[]} drops
  * @property {AtlasDevice[]} devices
  * @property {AtlasSite[]} sites
+ * @property {AtlasConnectedBuilding[]} [connectedBuildings]
  * @property {AtlasFinding[]} findings
  * @property {Record<string, PingStatusEntry>} pingResults
  * @property {AtlasSelection|null} selection

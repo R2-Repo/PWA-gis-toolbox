@@ -1,21 +1,124 @@
 /**
  * Region → Hub → Channel → Drop → Device (+ Sites) tree builders.
+ * Labels: short primary + optional secondary (inventory/AKA) for narrow panels.
  */
 import { getAtlasSnapshot } from './store.js';
 import { displayPingStatus, getPingEntry } from './ping-format.js';
 import { channelPingRollup, hubPingRollup, ipsPingRollup } from './triage.js';
+import {
+    formatChannelPrimary,
+    formatDropPrimary,
+    formatHubTreeLabel
+} from './display-label.js';
+
+export { formatHubTreeLabel } from './display-label.js';
+
+/**
+ * @param {string|null|undefined} regionId
+ * @returns {string}
+ */
+function regionKey(regionId) {
+    if (regionId == null || String(regionId).trim() === '') return '_none';
+    return String(regionId).trim();
+}
+
+/**
+ * @param {string} a
+ * @param {string} b
+ */
+function compareRegionKeys(a, b) {
+    if (a === '_none') return 1;
+    if (b === '_none') return -1;
+    const na = Number(a);
+    const nb = Number(b);
+    if (Number.isFinite(na) && Number.isFinite(nb) && String(na) === a && String(nb) === b) {
+        return na - nb;
+    }
+    return a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
+}
+
+/**
+ * @param {{ hubCode?: string, name?: string, aka?: string }} a
+ * @param {{ hubCode?: string, name?: string, aka?: string }} b
+ */
+function compareHubs(a, b) {
+    return String(a.hubCode || a.name || '').localeCompare(
+        String(b.hubCode || b.name || ''),
+        undefined,
+        { numeric: true, sensitivity: 'base' }
+    );
+}
+
+/**
+ * @param {object} hub
+ * @param {Map<string, object[]>} channelsByHub
+ * @param {ReturnType<typeof getAtlasSnapshot>} snap
+ */
+function buildHubNode(hub, channelsByHub, snap) {
+    const hubChannels = channelsByHub.get(hub.hubCode) || [];
+    const seen = new Set();
+    const uniqueChannels = hubChannels.filter((c) => {
+        if (seen.has(c.id)) return false;
+        seen.add(c.id);
+        return true;
+    });
+
+    return {
+        id: hub.id,
+        label: formatHubTreeLabel(hub.hubCode),
+        kind: 'hub',
+        secondary: hub.aka || null,
+        pingStatus: hubPingRollup(hub.id, snap),
+        children: uniqueChannels.map((ch) => {
+            const drops = snap.drops
+                .filter((d) => d.channelId === ch.id)
+                .sort((a, b) => (a.dropNumber ?? 9999) - (b.dropNumber ?? 9999));
+            return {
+                id: ch.id,
+                label: formatChannelPrimary(ch.channelNumber),
+                kind: 'channel',
+                secondary: `${drops.length} drops`,
+                pingStatus: channelPingRollup(ch.id, snap),
+                children: drops.map((d) => {
+                    const device = snap.devices.find((dev) => dev.id === d.deviceId || (d.ip && dev.ip === d.ip));
+                    const pingStatus = d.ip
+                        ? displayPingStatus(getPingEntry(snap.pingResults, d.ip), { hasIp: true })
+                        : null;
+                    return {
+                        id: d.id,
+                        label: formatDropPrimary(d.dropNumber),
+                        kind: 'drop',
+                        secondary: d.inventoryName || d.ip || null,
+                        title: [formatDropPrimary(d.dropNumber), d.inventoryName, d.ip]
+                            .filter(Boolean)
+                            .join(' · '),
+                        pingStatus,
+                        children: device
+                            ? [{
+                                id: device.id,
+                                label: device.ip || device.model || 'device',
+                                kind: 'device',
+                                secondary: device.model || device.deviceType || null,
+                                pingStatus: device.ip
+                                    ? displayPingStatus(getPingEntry(snap.pingResults, device.ip), { hasIp: true })
+                                    : null,
+                                children: []
+                            }]
+                            : []
+                    };
+                })
+            };
+        })
+    };
+}
 
 /**
  * @returns {Array<{ id: string, label: string, kind: string, children: object[] }>}
  */
 export function buildHierarchyTree() {
     const snap = getAtlasSnapshot();
-    const region = {
-        id: 'region-default',
-        label: 'ITS Network',
-        kind: 'region',
-        children: []
-    };
+    /** @type {Array<{ id: string, label: string, kind: string, meta?: string|null, children: object[] }>} */
+    const roots = [];
 
     const channelsByHub = new Map();
     for (const ch of snap.channels) {
@@ -33,77 +136,55 @@ export function buildHierarchyTree() {
     }
 
     const hubs = snap.hubs.length
-        ? snap.hubs
+        ? [...snap.hubs]
         : [...channelsByHub.keys()].filter((k) => k !== '_unassigned').map((code) => ({
             id: `hub-${code}`,
             hubCode: code,
-            name: `Hub ${code}`
+            name: `Hub ${code}`,
+            aka: null,
+            regionId: null
         }));
 
-    for (const hub of hubs) {
-        const hubChannels = channelsByHub.get(hub.hubCode) || [];
-        const seen = new Set();
-        const uniqueChannels = hubChannels.filter((c) => {
-            if (seen.has(c.id)) return false;
-            seen.add(c.id);
-            return true;
-        });
+    hubs.sort(compareHubs);
 
-        region.children.push({
-            id: hub.id,
-            label: hub.aka || hub.name || `Hub ${hub.hubCode}`,
-            kind: 'hub',
-            meta: hub.hubCode,
-            pingStatus: hubPingRollup(hub.id, snap),
-            children: uniqueChannels.map((ch) => {
-                const drops = snap.drops
-                    .filter((d) => d.channelId === ch.id)
-                    .sort((a, b) => (a.dropNumber ?? 9999) - (b.dropNumber ?? 9999));
-                return {
-                    id: ch.id,
-                    label: `Channel ${ch.channelNumber}`,
-                    kind: 'channel',
-                    meta: `${drops.length} drops`,
-                    pingStatus: channelPingRollup(ch.id, snap),
-                    children: drops.map((d) => {
-                        const device = snap.devices.find((dev) => dev.id === d.deviceId || (d.ip && dev.ip === d.ip));
-                        const pingStatus = d.ip
-                            ? displayPingStatus(getPingEntry(snap.pingResults, d.ip), { hasIp: true })
-                            : null;
-                        return {
-                            id: d.id,
-                            label: `D${d.dropNumber ?? '?'} · ${d.inventoryName || d.ip || 'drop'}`,
-                            kind: 'drop',
-                            meta: d.ip || '',
-                            pingStatus,
-                            children: device
-                                ? [{
-                                    id: device.id,
-                                    label: device.ip || device.model || 'device',
-                                    kind: 'device',
-                                    meta: device.model || device.deviceType || '',
-                                    pingStatus: device.ip
-                                        ? displayPingStatus(getPingEntry(snap.pingResults, device.ip), { hasIp: true })
-                                        : null,
-                                    children: []
-                                }]
-                                : []
-                        };
-                    })
-                };
-            })
+    /** @type {Map<string, typeof hubs>} */
+    const hubsByRegion = new Map();
+    for (const hub of hubs) {
+        const key = regionKey(hub.regionId);
+        if (!hubsByRegion.has(key)) hubsByRegion.set(key, []);
+        hubsByRegion.get(key).push(hub);
+    }
+
+    const regionKeys = [...hubsByRegion.keys()].sort(compareRegionKeys);
+    for (const key of regionKeys) {
+        const regionHubs = hubsByRegion.get(key) || [];
+        roots.push({
+            id: key === '_none' ? 'region-none' : `region-${key}`,
+            label: key === '_none' ? 'Unassigned region' : `Region ${key}`,
+            kind: 'region',
+            children: regionHubs.map((hub) => buildHubNode(hub, channelsByHub, snap))
         });
     }
 
     const orphan = channelsByHub.get('_unassigned') || [];
     if (orphan.length) {
-        region.children.push({
+        let target = roots.find((r) => r.id === 'region-none');
+        if (!target) {
+            target = {
+                id: 'region-none',
+                label: 'Unassigned region',
+                kind: 'region',
+                children: []
+            };
+            roots.push(target);
+        }
+        target.children.push({
             id: 'hub-unassigned',
             label: 'Unassigned channels',
             kind: 'hub',
             children: orphan.map((ch) => ({
                 id: ch.id,
-                label: `Channel ${ch.channelNumber}`,
+                label: formatChannelPrimary(ch.channelNumber),
                 kind: 'channel',
                 pingStatus: channelPingRollup(ch.id, snap),
                 children: []
@@ -115,25 +196,33 @@ export function buildHierarchyTree() {
         String(a.inventoryName || a.siteId || a.id)
             .localeCompare(String(b.inventoryName || b.siteId || b.id)));
     if (sites.length) {
-        region.children.push({
+        roots.push({
             id: 'sites-root',
             label: `Sites (${sites.length})`,
             kind: 'region',
-            meta: 'by inventory',
+            secondary: 'by inventory',
             children: sites.map((site) => {
                 const siteDrops = (snap.drops || []).filter((d) => d.siteId === site.id);
                 const ips = siteDrops.map((d) => d.ip).filter(Boolean);
+                const primary = site.siteId || site.id;
                 return {
                     id: site.id,
-                    label: site.inventoryName || site.siteId || site.id,
+                    label: primary,
                     kind: 'site',
-                    meta: site.siteId || `${siteDrops.length} drops`,
+                    secondary: site.inventoryName || `${siteDrops.length} drops`,
+                    title: [site.inventoryName, site.siteId].filter(Boolean).join(' · ') || String(primary),
                     pingStatus: ips.length ? ipsPingRollup(ips, snap) : null,
                     children: siteDrops.map((d) => ({
                         id: d.id,
-                        label: `D${d.dropNumber ?? '?'} · ${d.ip || 'drop'}`,
+                        label: formatDropPrimary(d.dropNumber),
                         kind: 'drop',
-                        meta: d.channelNumber ? `Ch ${d.channelNumber}` : '',
+                        secondary: d.inventoryName || d.ip || null,
+                        title: [
+                            formatDropPrimary(d.dropNumber),
+                            d.channelNumber != null ? formatChannelPrimary(d.channelNumber) : null,
+                            d.inventoryName,
+                            d.ip
+                        ].filter(Boolean).join(' · '),
                         pingStatus: d.ip
                             ? displayPingStatus(getPingEntry(snap.pingResults, d.ip), { hasIp: true })
                             : null,
@@ -144,7 +233,7 @@ export function buildHierarchyTree() {
         });
     }
 
-    return [region];
+    return roots;
 }
 
 /**

@@ -142,8 +142,8 @@ export function displayPingStatus(entry, opts = {}) {
 
 /** Map halo / hub fill colors (hex). */
 export const ATLAS_PING_COLORS = Object.freeze({
-    reachable: '#39ff14',
-    unreachable: '#ff2d2d',
+    reachable: '#00ff33',
+    unreachable: '#ff0000',
     stale_reachable: '#4d7c4d',
     stale_unreachable: '#7a3a3a',
     pending: '#ca8a04',
@@ -156,8 +156,8 @@ export const ATLAS_PING_COLORS = Object.freeze({
 
 /** Halo opacity by status. */
 export const ATLAS_PING_OPACITY = Object.freeze({
-    reachable: 0.75,
-    unreachable: 0.75,
+    reachable: 0.95,
+    unreachable: 0.95,
     stale_reachable: 0.35,
     stale_unreachable: 0.35,
     pending: 0.5,

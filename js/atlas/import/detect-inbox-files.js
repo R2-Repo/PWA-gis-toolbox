@@ -1,5 +1,5 @@
 /**
- * Pick newest FiberSwitchLocation workbook, ATMS CSV, and Hub List CSV from an inbox file list.
+ * Pick newest FiberSwitchLocation workbook, ATMS CSV, Hub List, and Connected Buildings CSV from an inbox file list.
  */
 
 /**
@@ -19,9 +19,23 @@ export function extractDateFromFilename(name) {
 export function isHubListFilename(file) {
     const n = String(file?.name || '').toLowerCase();
     if (!n) return false;
+    if (isConnectedBuildingsFilename(file)) return false;
     const hasHub = n.includes('hub');
     const hasList = n.includes('list') || n.includes('hubs');
     return hasHub && hasList;
+}
+
+/**
+ * Optional Connected Buildings CSV.
+ * @param {{ name?: string }} file
+ * @returns {boolean}
+ */
+export function isConnectedBuildingsFilename(file) {
+    const n = String(file?.name || '').toLowerCase();
+    if (!n) return false;
+    const hasConnected = n.includes('connected');
+    const hasBuilding = n.includes('building') || n.includes('buildings');
+    return hasConnected && hasBuilding;
 }
 
 /**
@@ -49,7 +63,7 @@ export function pickNewestWorkbook(files) {
  */
 export function pickNewestAtmsCsv(files) {
     const candidates = (files || []).filter((f) => {
-        if (isHubListFilename(f)) return false;
+        if (isHubListFilename(f) || isConnectedBuildingsFilename(f)) return false;
         const n = f.name.toLowerCase();
         const ext = (f.ext || '').toLowerCase();
         if (ext !== 'csv' && ext !== 'txt') return false;
@@ -57,7 +71,7 @@ export function pickNewestAtmsCsv(files) {
     });
     if (!candidates.length) {
         return sortNewest((files || []).filter((f) => {
-            if (isHubListFilename(f)) return false;
+            if (isHubListFilename(f) || isConnectedBuildingsFilename(f)) return false;
             return (f.ext || '').toLowerCase() === 'csv';
         }))[0] || null;
     }
@@ -78,6 +92,19 @@ export function pickNewestHubList(files) {
 }
 
 /**
+ * Optional Connected Buildings CSV.
+ * @param {Array<{ name: string, path: string, ext: string, modifiedMs?: number }>} files
+ */
+export function pickNewestConnectedBuildings(files) {
+    const candidates = (files || []).filter((f) => {
+        const ext = (f.ext || '').toLowerCase();
+        if (ext !== 'csv' && ext !== 'txt') return false;
+        return isConnectedBuildingsFilename(f);
+    });
+    return sortNewest(candidates)[0] || null;
+}
+
+/**
  * @param {Array<{ name: string, modifiedMs?: number }>} files
  */
 function sortNewest(files) {
@@ -93,13 +120,14 @@ function sortNewest(files) {
 
 /**
  * @param {Array<object>} files
- * @returns {{ workbook: object|null, atms: object|null, hubList: object|null }}
+ * @returns {{ workbook: object|null, atms: object|null, hubList: object|null, connectedBuildings: object|null }}
  */
 export function detectInboxSources(files) {
     return {
         workbook: pickNewestWorkbook(files),
         atms: pickNewestAtmsCsv(files),
-        hubList: pickNewestHubList(files)
+        hubList: pickNewestHubList(files),
+        connectedBuildings: pickNewestConnectedBuildings(files)
     };
 }
 

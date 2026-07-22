@@ -23,7 +23,7 @@ export function showAtlasShortcutsHelp() {
             <li><kbd>Esc</kbd> Clear area, then selection (or blur / clear search)</li>
             <li><kbd>?</kbd> Show this help</li>
         </ul>
-        <p class="atlas-muted" style="margin:8px 0 0;font-size:12px">Map focus bar and left panel also have Clear.</p>`,
+        <p class="atlas-muted" style="margin:8px 0 0;font-size:12px">Map focus bar also has Clear.</p>`,
         {
             footer: '<button type="button" class="btn btn-primary confirm-btn">Close</button>',
             onMount: (overlay, close) => {

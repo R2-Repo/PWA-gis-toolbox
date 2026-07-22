@@ -29,7 +29,8 @@ Place your source exports here, then use Network Atlas → Import data → Scan 
 Expected files:\r\n\
   - FiberSwitchLocation YYYY-MM-DD.xlsx\r\n\
   - ATMS Master Device List (.csv)\r\n\
-  - Hub List (.csv) — optional; official hub lat/lon, AKA, Hub IP, region\r\n\r\n\
+  - Hub List (.csv) — optional; official hub lat/lon, AKA, Hub IP, region\r\n\
+  - Connected Buildings (.csv) — optional; building points, hubs, and device IPs\r\n\r\n\
 Importing replaces the current Atlas network database with the new files.\r\n\
 This folder is separate from GIS Toolbox map/layer import.\r\n",
         );

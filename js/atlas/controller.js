@@ -148,6 +148,7 @@ export async function openAtlasWorkspace() {
         drops: data.drops || [],
         devices: data.devices || [],
         sites: data.sites || [],
+        connectedBuildings: data.connectedBuildings || [],
         findings: data.findings || [],
         pingResults,
         lastImport: data.lastImport || null,
@@ -246,12 +247,15 @@ export async function refreshAtlasFromDb() {
  *   workbookFile?: File,
  *   atmsFile?: File,
  *   hubListFile?: File,
+ *   connectedBuildingsFile?: File,
  *   workbookPath?: string,
  *   atmsPath?: string,
  *   hubListPath?: string,
+ *   connectedBuildingsPath?: string,
  *   workbook?: { name: string, buffer: ArrayBuffer },
  *   atms?: { name: string, text: string },
- *   hubList?: { name: string, text: string }
+ *   hubList?: { name: string, text: string },
+ *   connectedBuildings?: { name: string, text: string }
  * }} files
  */
 async function resolveImportInputs(files = {}) {
@@ -263,6 +267,8 @@ async function resolveImportInputs(files = {}) {
     let atmsFile = files.atms;
     /** @type {{ name: string, text: string } | undefined} */
     let hubListFile = files.hubList;
+    /** @type {{ name: string, text: string } | undefined} */
+    let connectedBuildingsFile = files.connectedBuildings;
 
     if (!workbookFile && files.workbookFile) {
         workbookFile = {
@@ -282,6 +288,12 @@ async function resolveImportInputs(files = {}) {
             text: await files.hubListFile.text()
         };
     }
+    if (!connectedBuildingsFile && files.connectedBuildingsFile) {
+        connectedBuildingsFile = {
+            name: files.connectedBuildingsFile.name,
+            text: await files.connectedBuildingsFile.text()
+        };
+    }
     if (!workbookFile && files.workbookPath) {
         workbookFile = await readAtlasImportPath(files.workbookPath, 'workbook');
     }
@@ -291,8 +303,11 @@ async function resolveImportInputs(files = {}) {
     if (!hubListFile && files.hubListPath) {
         hubListFile = await readAtlasImportPath(files.hubListPath, 'hubList');
     }
+    if (!connectedBuildingsFile && files.connectedBuildingsPath) {
+        connectedBuildingsFile = await readAtlasImportPath(files.connectedBuildingsPath, 'connectedBuildings');
+    }
 
-    return { workbookFile, atmsFile, hubListFile };
+    return { workbookFile, atmsFile, hubListFile, connectedBuildingsFile };
 }
 
 /**
@@ -300,11 +315,16 @@ async function resolveImportInputs(files = {}) {
  * @param {Parameters<typeof resolveImportInputs>[0]} files
  */
 export async function previewAtlasImport(files) {
-    const { workbookFile, atmsFile, hubListFile } = await resolveImportInputs(files);
-    if (!workbookFile && !atmsFile && !hubListFile) {
-        throw new Error('Select or detect a FiberSwitchLocation workbook, ATMS CSV, and/or Hub List CSV');
+    const { workbookFile, atmsFile, hubListFile, connectedBuildingsFile } = await resolveImportInputs(files);
+    if (!workbookFile && !atmsFile && !hubListFile && !connectedBuildingsFile) {
+        throw new Error('Select or detect a FiberSwitchLocation workbook, ATMS CSV, Hub List, and/or Connected Buildings CSV');
     }
-    const payload = await buildAtlasImportPayload({ workbookFile, atmsFile, hubListFile });
+    const payload = await buildAtlasImportPayload({
+        workbookFile,
+        atmsFile,
+        hubListFile,
+        connectedBuildingsFile
+    });
     const diff = diffAtlasImport(payload, getAtlasSnapshot());
     return {
         summary: {
@@ -407,6 +427,11 @@ export function selectAtlasEntity(selection) {
         const drop = snap.drops.find((d) => d.siteId === selection.id);
         if (drop?.lat != null) flyToAtlasPoint({ lat: drop.lat, lon: drop.lon });
         else if (site?.lat != null) flyToAtlasPoint({ lat: site.lat, lon: site.lon });
+    } else if (selection.kind === 'building') {
+        const building = (snap.connectedBuildings || []).find((b) => b.id === selection.id);
+        if (building?.lat != null && building?.lon != null) {
+            flyToAtlasPoint({ lat: building.lat, lon: building.lon });
+        }
     }
     const next = getAtlasSnapshot();
     patchAtlasSnapshot({ stats: buildDashboardStats(next, { scope: 'selection' }) });

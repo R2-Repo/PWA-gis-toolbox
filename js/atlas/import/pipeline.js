@@ -17,6 +17,7 @@ import {
 } from './match.js';
 import { buildImportFindings } from './audit.js';
 import { mapHubListRows } from './hub-list.js';
+import { mapConnectedBuildingRows } from './connected-buildings.js';
 
 function uid() {
     return crypto.randomUUID();
@@ -90,6 +91,7 @@ export async function readWorkbookSheets(buffer) {
  *   workbookFile?: { name: string, buffer: ArrayBuffer },
  *   atmsFile?: { name: string, text: string },
  *   hubListFile?: { name: string, text: string },
+ *   connectedBuildingsFile?: { name: string, text: string },
  *   batchDate?: string
  * }} input
  */
@@ -151,6 +153,21 @@ export async function buildAtlasImportPayload(input) {
                 regionId: mapped.regionId,
                 isShed: mapped.isShed,
                 fromOfficialList: true
+            });
+        }
+    }
+
+    /** @type {object[]} */
+    const connectedBuildings = [];
+    if (input.connectedBuildingsFile?.text) {
+        const buildingRows = parseCsvText(input.connectedBuildingsFile.text);
+        for (const row of buildingRows) {
+            rawRecords.push({ id: uid(), batchId, source: 'ConnectedBuildings', payload: row });
+        }
+        for (const mapped of mapConnectedBuildingRows(buildingRows)) {
+            connectedBuildings.push({
+                id: uid(),
+                ...mapped
             });
         }
     }
@@ -368,6 +385,7 @@ export async function buildAtlasImportPayload(input) {
         workbookName: input.workbookFile?.name || null,
         atmsName: input.atmsFile?.name || null,
         hubListName: input.hubListFile?.name || null,
+        connectedBuildingsName: input.connectedBuildingsFile?.name || null,
         counts: {
             tmd: tmdRows.length,
             switchFiber: switchRows.length,
@@ -379,13 +397,17 @@ export async function buildAtlasImportPayload(input) {
             sites: sites.length,
             drops: drops.length,
             devices: devices.length,
+            connectedBuildings: connectedBuildings.length,
             findings: findings.length,
             rawRecords: rawRecords.length
         },
         fileKind: {
             workbook: input.workbookFile ? detectSourceFileKind(input.workbookFile.name) : null,
             atms: input.atmsFile ? detectSourceFileKind(input.atmsFile.name) : null,
-            hubList: input.hubListFile ? detectSourceFileKind(input.hubListFile.name) : null
+            hubList: input.hubListFile ? detectSourceFileKind(input.hubListFile.name) : null,
+            connectedBuildings: input.connectedBuildingsFile
+                ? detectSourceFileKind(input.connectedBuildingsFile.name)
+                : null
         }
     };
 
@@ -396,7 +418,8 @@ export async function buildAtlasImportPayload(input) {
             importedAt,
             workbookName: summary.workbookName,
             atmsName: summary.atmsName,
-            hubListName: summary.hubListName
+            hubListName: summary.hubListName,
+            connectedBuildingsName: summary.connectedBuildingsName
         },
         rawRecords,
         hubs,
@@ -404,6 +427,7 @@ export async function buildAtlasImportPayload(input) {
         sites,
         drops,
         devices,
+        connectedBuildings,
         findings,
         summary
     };

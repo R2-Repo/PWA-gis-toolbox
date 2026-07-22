@@ -20,7 +20,9 @@ export function escapeAtlasHtml(value) {
 export function buildAtlasHoverHtml(props) {
     if (!props) return '';
     const kind = String(props.atlasKind || '');
-    const label = escapeAtlasHtml(props.label || (kind === 'hub' ? 'Hub' : 'Drop'));
+    const label = escapeAtlasHtml(
+        props.label || (kind === 'hub' ? 'Hub' : kind === 'building' ? 'Building' : 'Drop')
+    );
     const ping = escapeAtlasHtml(props.pingStatus || 'untested');
     const lines = [`<strong>${label}</strong>`];
 
@@ -29,6 +31,12 @@ export function buildAtlasHoverHtml(props) {
         lines.push(code ? `Hub ${code}` : 'Hub');
         if (props.hubIp) lines.push(`<span class="atlas-mono">${escapeAtlasHtml(props.hubIp)}</span>`);
         lines.push(`Ping: ${ping}`);
+    } else if (kind === 'building') {
+        lines.push('Connected building');
+        if (props.address) lines.push(escapeAtlasHtml(props.address));
+        const hubs = [props.fromHub, props.toHub].filter(Boolean).map(escapeAtlasHtml).join(' → ');
+        if (hubs) lines.push(hubs);
+        if (props.status) lines.push(escapeAtlasHtml(props.status));
     } else {
         const ch = props.channelNumber != null && props.channelNumber !== ''
             ? `Ch ${escapeAtlasHtml(props.channelNumber)}`

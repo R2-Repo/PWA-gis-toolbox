@@ -71,6 +71,33 @@ fn migrate(conn: &Connection) -> Result<(), String> {
             lat REAL,
             lon REAL
         );
+        CREATE TABLE IF NOT EXISTS connected_building (
+            id TEXT PRIMARY KEY,
+            building_name TEXT NOT NULL,
+            building_type TEXT,
+            provider TEXT,
+            status TEXT,
+            from_hub TEXT,
+            to_hub TEXT,
+            address TEXT,
+            lat REAL,
+            lon REAL,
+            region_id TEXT,
+            switch_1_ip TEXT,
+            switch_2_ip TEXT,
+            desktop_1_ip TEXT,
+            desktop_2_ip TEXT,
+            decoder_1_ip TEXT,
+            decoder_2_ip TEXT,
+            decoder_3_ip TEXT,
+            decoder_4_ip TEXT,
+            decoder_5_ip TEXT,
+            decoder_6_ip TEXT,
+            decoder_7_ip TEXT,
+            decoder_8_ip TEXT,
+            decoder_9_ip TEXT,
+            decoder_10_ip TEXT
+        );
         CREATE TABLE IF NOT EXISTS drop_node (
             id TEXT PRIMARY KEY,
             channel_id TEXT,
@@ -336,6 +363,53 @@ fn load_snapshot_inner(conn: &Connection) -> Result<Value, String> {
         }
     }
 
+    let mut connected_buildings = Vec::new();
+    {
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, building_name, building_type, provider, status, from_hub, to_hub, address, lat, lon, region_id, \
+                 switch_1_ip, switch_2_ip, desktop_1_ip, desktop_2_ip, \
+                 decoder_1_ip, decoder_2_ip, decoder_3_ip, decoder_4_ip, decoder_5_ip, \
+                 decoder_6_ip, decoder_7_ip, decoder_8_ip, decoder_9_ip, decoder_10_ip \
+                 FROM connected_building ORDER BY building_name",
+            )
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map([], |r| {
+                Ok(json!({
+                    "id": r.get::<_, String>(0)?,
+                    "buildingName": r.get::<_, String>(1)?,
+                    "buildingType": r.get::<_, Option<String>>(2)?,
+                    "provider": r.get::<_, Option<String>>(3)?,
+                    "status": r.get::<_, Option<String>>(4)?,
+                    "fromHub": r.get::<_, Option<String>>(5)?,
+                    "toHub": r.get::<_, Option<String>>(6)?,
+                    "address": r.get::<_, Option<String>>(7)?,
+                    "lat": r.get::<_, Option<f64>>(8)?,
+                    "lon": r.get::<_, Option<f64>>(9)?,
+                    "regionId": r.get::<_, Option<String>>(10)?,
+                    "switch1Ip": r.get::<_, Option<String>>(11)?,
+                    "switch2Ip": r.get::<_, Option<String>>(12)?,
+                    "desktop1Ip": r.get::<_, Option<String>>(13)?,
+                    "desktop2Ip": r.get::<_, Option<String>>(14)?,
+                    "decoder1Ip": r.get::<_, Option<String>>(15)?,
+                    "decoder2Ip": r.get::<_, Option<String>>(16)?,
+                    "decoder3Ip": r.get::<_, Option<String>>(17)?,
+                    "decoder4Ip": r.get::<_, Option<String>>(18)?,
+                    "decoder5Ip": r.get::<_, Option<String>>(19)?,
+                    "decoder6Ip": r.get::<_, Option<String>>(20)?,
+                    "decoder7Ip": r.get::<_, Option<String>>(21)?,
+                    "decoder8Ip": r.get::<_, Option<String>>(22)?,
+                    "decoder9Ip": r.get::<_, Option<String>>(23)?,
+                    "decoder10Ip": r.get::<_, Option<String>>(24)?,
+                }))
+            })
+            .map_err(|e| e.to_string())?;
+        for row in rows {
+            connected_buildings.push(row.map_err(|e| e.to_string())?);
+        }
+    }
+
     let mut findings = Vec::new();
     {
         let mut stmt = conn
@@ -422,6 +496,7 @@ fn load_snapshot_inner(conn: &Connection) -> Result<Value, String> {
         "sites": sites,
         "drops": drops,
         "devices": devices,
+        "connectedBuildings": connected_buildings,
         "findings": findings,
         "pingResults": ping_results,
         "lastImport": last_import,
@@ -468,6 +543,7 @@ pub fn atlas_import_apply(
             DELETE FROM device;
             DELETE FROM drop_node;
             DELETE FROM site;
+            DELETE FROM connected_building;
             DELETE FROM channel;
             DELETE FROM hub;
             DELETE FROM raw_source_record;
@@ -625,6 +701,47 @@ pub fn atlas_import_apply(
                         json_f64(d.get("lat")),
                         json_f64(d.get("lon")),
                         provisional,
+                    ],
+                )
+                .map_err(|e| e.to_string())?;
+            }
+        }
+
+        if let Some(arr) = payload.get("connectedBuildings").and_then(|v| v.as_array()) {
+            for b in arr {
+                tx.execute(
+                    "INSERT OR REPLACE INTO connected_building (
+                        id, building_name, building_type, provider, status, from_hub, to_hub, address, lat, lon, region_id,
+                        switch_1_ip, switch_2_ip, desktop_1_ip, desktop_2_ip,
+                        decoder_1_ip, decoder_2_ip, decoder_3_ip, decoder_4_ip, decoder_5_ip,
+                        decoder_6_ip, decoder_7_ip, decoder_8_ip, decoder_9_ip, decoder_10_ip
+                    ) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,?21,?22,?23,?24,?25)",
+                    params![
+                        json_str(b.get("id")).unwrap_or_default(),
+                        json_str(b.get("buildingName")).unwrap_or_default(),
+                        json_str(b.get("buildingType")),
+                        json_str(b.get("provider")),
+                        json_str(b.get("status")),
+                        json_str(b.get("fromHub")),
+                        json_str(b.get("toHub")),
+                        json_str(b.get("address")),
+                        json_f64(b.get("lat")),
+                        json_f64(b.get("lon")),
+                        json_str(b.get("regionId")),
+                        json_str(b.get("switch1Ip")),
+                        json_str(b.get("switch2Ip")),
+                        json_str(b.get("desktop1Ip")),
+                        json_str(b.get("desktop2Ip")),
+                        json_str(b.get("decoder1Ip")),
+                        json_str(b.get("decoder2Ip")),
+                        json_str(b.get("decoder3Ip")),
+                        json_str(b.get("decoder4Ip")),
+                        json_str(b.get("decoder5Ip")),
+                        json_str(b.get("decoder6Ip")),
+                        json_str(b.get("decoder7Ip")),
+                        json_str(b.get("decoder8Ip")),
+                        json_str(b.get("decoder9Ip")),
+                        json_str(b.get("decoder10Ip")),
                     ],
                 )
                 .map_err(|e| e.to_string())?;

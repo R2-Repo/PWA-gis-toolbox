@@ -34,10 +34,31 @@ import { formatSessionEndLabel } from '../../js/atlas/export.js';
 import { uniqueIps } from '../../js/atlas/clipboard.js';
 import { collectHubIps, findingsInScope, listScopedDropsByPing } from '../../js/atlas/triage.js';
 import { formatPingAge, formatPingWhen, getPingEntry, isPingStale } from '../../js/atlas/ping-format.js';
+import {
+    formatAtlasEntityLines,
+    formatChannelPrimary,
+    formatDropPrimary,
+    formatHubTreeLabel
+} from '../../js/atlas/display-label.js';
+import { connectedBuildingIps } from '../../js/atlas/import/connected-buildings.js';
 import { confirm } from '../../js/ui/modals.js';
 import { ChannelSchematic } from './ChannelSchematic.jsx';
 import { CopyIp, CopyIpsButton } from './CopyIp.jsx';
 import { CollapsibleSection } from '../ui/CollapsibleSection.jsx';
+
+function DetailHeader({ kind, entity, fallbackPrimary }) {
+    const lines = formatAtlasEntityLines(kind, entity);
+    const primary = lines.primary || fallbackPrimary || kind;
+    const secondary = lines.secondary;
+    return (
+        <>
+            <h4 title={lines.title || primary}>{primary}</h4>
+            {secondary ? (
+                <p className="atlas-detail-secondary" title={secondary}>{secondary}</p>
+            ) : null}
+        </>
+    );
+}
 
 function statusClass(status) {
     return `atlas-finding-sev atlas-finding-sev--${status || 'info'}`;
@@ -243,22 +264,20 @@ export function AtlasRightPanel({
         return snap.sites.find((s) => s.id === selection.id) || null;
     }, [selection, snap, tick]);
 
+    const buildingDetail = useMemo(() => {
+        if (selection?.kind !== 'building') return null;
+        return (snap.connectedBuildings || []).find((b) => b.id === selection.id) || null;
+    }, [selection, snap, tick]);
+
+    const buildingIps = useMemo(
+        () => (buildingDetail ? connectedBuildingIps(buildingDetail) : []),
+        [buildingDetail]
+    );
+
     const siteDrops = useMemo(() => {
         if (!siteDetail) return [];
         return (snap.drops || []).filter((d) => d.siteId === siteDetail.id);
     }, [siteDetail, snap, tick]);
-
-    const channelDetail = useMemo(() => {
-        if (selection?.kind !== 'channel') return null;
-        const channel = snap.channels.find((c) => c.id === selection.id);
-        if (!channel) return null;
-        const drops = (snap.drops || []).filter((d) => d.channelId === channel.id);
-        return {
-            channel,
-            dropCount: drops.length,
-            ipCount: drops.filter((d) => d.ip).length
-        };
-    }, [selection, snap, tick]);
 
     const scopedFindings = useMemo(
         () => findingsInScope(snap, dashScope),
@@ -532,8 +551,8 @@ export function AtlasRightPanel({
                 {!isEmptyDb && !selection && <p className="atlas-muted">Select a hub, channel, drop, device, or site.</p>}
                 {dropDetail && (
                     <div className="atlas-detail-block">
-                        <h4>{dropDetail.inventoryName || `Drop ${dropDetail.dropNumber}`}</h4>
-                        <p>Channel {dropDetail.channelNumber} · Drop {dropDetail.dropNumber ?? '—'}</p>
+                        <DetailHeader kind="drop" entity={dropDetail} fallbackPrimary={formatDropPrimary(dropDetail.dropNumber)} />
+                        <p>{formatChannelPrimary(dropDetail.channelNumber)} · {formatDropPrimary(dropDetail.dropNumber)}</p>
                         <p>IP: <CopyIp ip={dropDetail.ip} /></p>
                         <p>{[dropDetail.manufacturer, dropDetail.model].filter(Boolean).join(' · ') || '—'}</p>
                         {dropDetail.wireless ? <p className="atlas-tag">Wireless</p> : null}
@@ -586,7 +605,7 @@ export function AtlasRightPanel({
                 )}
                 {deviceDetail && (
                     <div className="atlas-detail-block">
-                        <h4>{deviceDetail.inventoryName || deviceDetail.ip || 'Device'}</h4>
+                        <DetailHeader kind="device" entity={deviceDetail} fallbackPrimary={deviceDetail.ip || 'Device'} />
                         <p>{[deviceDetail.deviceType, deviceDetail.manufacturer, deviceDetail.model].filter(Boolean).join(' · ') || '—'}</p>
                         <p>IP: <CopyIp ip={deviceDetail.ip} /></p>
                         {deviceDetail.provisional ? <p className="atlas-tag atlas-tag--warn">Provisional</p> : null}
@@ -642,7 +661,7 @@ export function AtlasRightPanel({
                 )}
                 {siteDetail && (
                     <div className="atlas-detail-block">
-                        <h4>{siteDetail.inventoryName || siteDetail.siteId || 'Site'}</h4>
+                        <DetailHeader kind="site" entity={siteDetail} fallbackPrimary={siteDetail.siteId || 'Site'} />
                         <p>Site ID: {siteDetail.siteId || '—'}</p>
                         <p className="atlas-muted">
                             {[siteDetail.lat, siteDetail.lon].every((n) => n != null)
@@ -695,57 +714,71 @@ export function AtlasRightPanel({
                         )}
                     </div>
                 )}
-                {channelDetail && (
+                {buildingDetail && (
                     <div className="atlas-detail-block">
-                        <h4>Channel {channelDetail.channel.channelNumber}</h4>
-                        <p>
-                            Primary hub: {channelDetail.channel.primaryHubCode || '—'}
-                            {' · '}
-                            Secondary hub: {channelDetail.channel.secondaryHubCode || '—'}
+                        <DetailHeader
+                            kind="building"
+                            entity={buildingDetail}
+                            fallbackPrimary={buildingDetail.buildingName || 'Building'}
+                        />
+                        <p className="atlas-muted">Connected building</p>
+                        {buildingDetail.buildingType ? <p>Type: {buildingDetail.buildingType}</p> : null}
+                        {buildingDetail.provider ? <p>Provider: {buildingDetail.provider}</p> : null}
+                        {buildingDetail.status ? <p>Status: {buildingDetail.status}</p> : null}
+                        {(buildingDetail.fromHub || buildingDetail.toHub) ? (
+                            <p>
+                                Hubs:{' '}
+                                {[buildingDetail.fromHub, buildingDetail.toHub].filter(Boolean).join(' → ') || '—'}
+                            </p>
+                        ) : null}
+                        {buildingDetail.address ? <p>{buildingDetail.address}</p> : null}
+                        {buildingDetail.regionId != null && buildingDetail.regionId !== '' ? (
+                            <p className="atlas-muted">Region {buildingDetail.regionId}</p>
+                        ) : null}
+                        <p className="atlas-muted">
+                            {[buildingDetail.lat, buildingDetail.lon].every((n) => n != null)
+                                ? `${buildingDetail.lat}, ${buildingDetail.lon}`
+                                : 'No coordinates'}
                         </p>
-                        <p>{channelDetail.dropCount} drops · {channelDetail.ipCount} with IP</p>
-                        {channelDetail.ipCount > 0 && (
+                        <p><strong>IPs</strong></p>
+                        <ul className="atlas-simple-list">
+                            {[
+                                ['Switch 1', buildingDetail.switch1Ip],
+                                ['Switch 2', buildingDetail.switch2Ip],
+                                ['Desktop 1', buildingDetail.desktop1Ip],
+                                ['Desktop 2', buildingDetail.desktop2Ip],
+                                ['Decoder 1', buildingDetail.decoder1Ip],
+                                ['Decoder 2', buildingDetail.decoder2Ip],
+                                ['Decoder 3', buildingDetail.decoder3Ip],
+                                ['Decoder 4', buildingDetail.decoder4Ip],
+                                ['Decoder 5', buildingDetail.decoder5Ip],
+                                ['Decoder 6', buildingDetail.decoder6Ip],
+                                ['Decoder 7', buildingDetail.decoder7Ip],
+                                ['Decoder 8', buildingDetail.decoder8Ip],
+                                ['Decoder 9', buildingDetail.decoder9Ip],
+                                ['Decoder 10', buildingDetail.decoder10Ip]
+                            ].filter(([, ip]) => ip).map(([label, ip]) => (
+                                <li key={`${label}-${ip}`}>
+                                    <span className="atlas-muted">{label}: </span>
+                                    <CopyIp ip={ip} />
+                                </li>
+                            ))}
+                            {!buildingIps.length && <li className="atlas-muted">No IPs listed.</li>}
+                        </ul>
+                        {buildingIps.length ? (
                             <div className="atlas-toolbar">
-                                <CopyIpsButton
-                                    ips={(snap.drops || [])
-                                        .filter((d) => d.channelId === channelDetail.channel.id)
-                                        .map((d) => d.ip)}
-                                />
-                                {canPing ? (
-                                    <>
-                                        <button
-                                            type="button"
-                                            className="btn btn-secondary btn-sm"
-                                            onClick={() => onPingChannel?.(channelDetail.channel.id)}
-                                        >
-                                            Ping channel
-                                        </button>
-                                        <button
-                                            type="button"
-                                            className="btn btn-ghost btn-sm"
-                                            disabled={!!snap.activeSession}
-                                            onClick={() => {
-                                                const ips = (snap.drops || [])
-                                                    .filter((d) => d.channelId === channelDetail.channel.id && d.ip)
-                                                    .map((d) => d.ip);
-                                                onStartMonitor?.({
-                                                    targets: ips,
-                                                    interval: monitorInterval,
-                                                    label: `Channel ${channelDetail.channel.channelNumber}`
-                                                });
-                                            }}
-                                        >
-                                            Start monitor
-                                        </button>
-                                    </>
-                                ) : null}
+                                <CopyIpsButton ips={buildingIps} />
                             </div>
-                        )}
+                        ) : null}
                     </div>
                 )}
                 {hubSummary && (
                     <div className="atlas-detail-block">
-                        <h4>{hubSummary.hub.aka || hubSummary.hub.name || hubSummary.hub.hubCode}</h4>
+                        <DetailHeader
+                            kind="hub"
+                            entity={hubSummary.hub}
+                            fallbackPrimary={formatHubTreeLabel(hubSummary.hub.hubCode)}
+                        />
                         <p className="atlas-muted">
                             Hub {hubSummary.hub.hubCode}
                             {hubSummary.hub.regionId != null && hubSummary.hub.regionId !== ''
@@ -865,6 +898,8 @@ export function AtlasRightPanel({
                 <ChannelSchematic
                     schematic={schematic}
                     canPing={canPing}
+                    monitorInterval={monitorInterval}
+                    monitorActive={!!snap.activeSession}
                     onSelectDrop={(id) => onSelect?.({ kind: 'drop', id })}
                     onSelectHub={(id, hubCode) => {
                         const hub = (snap.hubs || []).find((h) => h.id === id)
@@ -874,6 +909,7 @@ export function AtlasRightPanel({
                     onSelectFinding={focusFinding}
                     onPingChannel={onPingChannel}
                     onPingDrop={onPingDrop}
+                    onStartMonitor={onStartMonitor}
                 />
             </CollapsibleSection>
 
@@ -970,27 +1006,32 @@ export function AtlasRightPanel({
                     </div>
                 )}
                 <ul className="atlas-simple-list">
-                    {(showAllTriage ? triageRows : triageRows.slice(0, 60)).map((row) => (
-                        <li key={row.drop.id}>
-                            <button
-                                type="button"
-                                className="atlas-linkish"
-                                onClick={() => onSelect?.({ kind: 'drop', id: row.drop.id })}
-                            >
-                                Ch {row.drop.channelNumber || '?'} · D{row.drop.dropNumber ?? '?'}
-                            </button>
-                            {' · '}
-                            <CopyIp ip={row.ip} />
-                            <span className={`atlas-muted${row.stale ? ' atlas-stale-warn' : ''}`}>
-                                {' '}· {row.status} · {row.age}
-                            </span>
-                            {canPing && (
-                                <button type="button" className="btn btn-ghost btn-sm" onClick={() => onPingDrop?.(row.drop.id)}>
-                                    Ping
+                    {(showAllTriage ? triageRows : triageRows.slice(0, 60)).map((row) => {
+                        const name = row.drop.inventoryName || null;
+                        const primary = `${formatChannelPrimary(row.drop.channelNumber)} · ${formatDropPrimary(row.drop.dropNumber)}`;
+                        return (
+                            <li key={row.drop.id}>
+                                <button
+                                    type="button"
+                                    className="atlas-linkish atlas-row-label"
+                                    title={[primary, name, row.ip].filter(Boolean).join(' · ')}
+                                    onClick={() => onSelect?.({ kind: 'drop', id: row.drop.id })}
+                                >
+                                    {primary}
+                                    {name ? ` · ${name}` : ''}
                                 </button>
-                            )}
-                        </li>
-                    ))}
+                                <CopyIp ip={row.ip} />
+                                <span className={`atlas-muted${row.stale ? ' atlas-stale-warn' : ''}`}>
+                                    {row.status} · {row.age}
+                                </span>
+                                {canPing && (
+                                    <button type="button" className="btn btn-ghost btn-sm" onClick={() => onPingDrop?.(row.drop.id)}>
+                                        Ping
+                                    </button>
+                                )}
+                            </li>
+                        );
+                    })}
                     {!triageRows.length && <li className="atlas-muted">No matches in this triage mode.</li>}
                 </ul>
             </CollapsibleSection>
@@ -1075,13 +1116,22 @@ export function AtlasRightPanel({
                             </ul>
                         )}
                         <ul className="atlas-simple-list">
-                            {(showAllArea ? area.drops : area.drops.slice(0, 40)).map((d) => (
-                                <li key={d.id}>
-                                    <button type="button" className="atlas-linkish" onClick={() => onSelect?.({ kind: 'drop', id: d.id })}>
-                                        {d.inventoryName || d.ip || d.id}
-                                    </button>
-                                </li>
-                            ))}
+                            {(showAllArea ? area.drops : area.drops.slice(0, 40)).map((d) => {
+                                const lines = formatAtlasEntityLines('drop', d);
+                                return (
+                                    <li key={d.id}>
+                                        <button
+                                            type="button"
+                                            className="atlas-linkish atlas-row-label"
+                                            title={lines.title}
+                                            onClick={() => onSelect?.({ kind: 'drop', id: d.id })}
+                                        >
+                                            <strong>{lines.primary}</strong>
+                                            {lines.secondary ? ` · ${lines.secondary}` : ''}
+                                        </button>
+                                    </li>
+                                );
+                            })}
                         </ul>
                     </div>
                 )}

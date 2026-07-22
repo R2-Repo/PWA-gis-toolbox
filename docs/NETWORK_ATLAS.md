@@ -21,11 +21,35 @@ Desktop-first operational workspace for ITS network lookup, troubleshooting, imp
 - Web: capabilities unavailable; stub services throw/disable UI.
 - Contracts: `DatabaseService`, `PingService` in `js/platform/contracts.js`.
 
-## Hierarchy
+## Network tree (left panel)
 
 ```text
 Region → Hub → Channel → Drop → Device
 ```
+
+- Section title: **Network** (not “Hierarchy”)
+- Grouped by Hub List `Region #`; collapsed at load (expand region → hubs → channels)
+- Hub row: `hub{code}` primary, Hub AKA as muted subtext
+
+## Single-screen panel layout
+
+- Atlas workspace widens left/right panels to **390px** (`.atlas-workspace-active`); GIS Toolbox stays at 320px
+- Section chrome padding is tighter in Atlas only so content uses more of the panel
+- Dual-screen still flex-expands both panels
+
+## Label convention (tree / search / schematic / details)
+
+Narrow panels use a **split label** so long inventory names do not wrap multiple lines:
+
+| Kind | Primary (line 1) | Secondary (line 2, ellipsis + tooltip) |
+|------|------------------|----------------------------------------|
+| Hub | `hub{code}` | AKA |
+| Channel | `Ch {n}` | drop count / hub path |
+| Drop | `D{n}` | `inventoryName` (fallback IP) |
+| Site | `siteId` | `inventoryName` |
+| Device | IP | inventory name or model |
+
+Full text is available via native `title` tooltips. Shared helpers live in `js/atlas/display-label.js`.
 
 ## Phase checklist
 
@@ -47,21 +71,22 @@ Atlas source files use a **dedicated path**:
    - `FiberSwitchLocation YYYY-MM-DD.xlsx`
    - ATMS Master Device List `.csv`
    - Hub List `.csv` (optional — official hub lat/lon, AKA, Hub IP, region; required for hub map pins)
+   - Connected Buildings `.csv` (optional — building points, From/To Hub, address, switch/desktop/decoder IPs; filename must include `connected` and `building`)
 3. **Scan folder** detects the newest matching sources.
-4. **Review** shows counts (sites, switches, findings) without writing.
-5. **Apply (replace DB)** rebuilds Atlas network tables (hubs/channels/drops/devices/findings). **Ping history is kept** (matched by IP). Each apply appends an `import_batch` row (kept to the newest 50) with a compact `summary_json` (entity counts + diff counts).
+4. **Review** shows counts (sites, switches, buildings, findings) without writing.
+5. **Apply (replace DB)** rebuilds Atlas network tables (hubs/channels/drops/devices/connected buildings/findings). **Ping history is kept** (matched by IP). Each apply appends an `import_batch` row (kept to the newest 50) with a compact `summary_json` (entity counts + diff counts).
 6. Review shows a **diff** vs the current DB (new / missing / changed IPs and channels).
 7. Left panel **Import history** lists past batches (files, counts, diff). Batches are **not restorable** — only the latest apply’s network tables remain.
 
 Opening Atlas later loads SQLite only — spreadsheets are not re-read until the next Apply.
 
-Map: click hubs/drops to select; channel selection draws a path and fits bounds. Dashboard can scope to Network or Selection.
+Map: click hubs/drops/connected buildings to select; channel selection draws a path and fits bounds. Dashboard can scope to Network or Selection.
 
-**Dual screen:** Atlas hubs/drops/channel/area overlays are **not** GIS `getLayers()` entries. When dual-screen is active they sync to the secondary map via BroadcastChannel `MAP_CMD` (`atlasSync` / `atlasClear`), not the GIS `SNAPSHOT` path. Second-screen clicks relay as `ATLAS_PICK` → primary selection.
+**Dual screen:** Atlas hubs/drops/buildings/channel/area overlays are **not** GIS `getLayers()` entries. When dual-screen is active they sync to the secondary map via BroadcastChannel `MAP_CMD` (`atlasSync` / `atlasClear`), not the GIS `SNAPSHOT` path. Second-screen clicks relay as `ATLAS_PICK` → primary selection.
 
 Operator UX:
 - Last-import freshness banner (warns after 7 days)
-- Hierarchy / search / map: ping dots (blue drop cores; status halos: green/red/stale/intermittent/no-IP)
+- Network tree / search / map: ping dots (blue drop cores; status halos: green/red/stale/intermittent/no-IP)
 - Stale after 24h applies to last-known reachable **and** unreachable (`stale_reachable` / `stale_unreachable`)
 - Multi-packet ICMP (pref `ping.count`, default 4): intermittent when success rate &gt;0% and &lt;75%
 - Hubs: square fill from hub IP ping (same statuses as drops); small red center when any child switch is down/intermittent/stale-down
@@ -74,6 +99,7 @@ Operator UX:
 - Copy IP: click any IP; Copy IPs on triage / hub / channel / site / area / findings / schematic
 - Import history: past `import_batch` rows with counts + diff summary (keep last 50 on apply)
 - Official Hub List CSV (optional): hub coords on map; AKA / Hub IP / subnet / region / shed; ATMS unknown hubs → finding
+- Connected Buildings CSV (optional): teal map pins; click for type/provider/status/hubs/address/IPs (Copy IP); searchable; not in Network tree; no ping/monitor in this pass
 - Dashboard: inventory counts, wireless/provisional, finding-type cards, ping triage
 - Findings focus: click finding → filter + scroll + highlight row
 - Findings: entityKind chip + Open on map; status/type filters; Show all / CSV; bulk select → status / Copy IPs / Ping / Start monitor

@@ -79,6 +79,20 @@ export function describeAtlasFocus(snap) {
                 canClear: true
             };
         }
+        if (sel.kind === 'building') {
+            const building = (snap.connectedBuildings || []).find((b) => b.id === sel.id);
+            const hubPath = [building?.fromHub, building?.toHub].filter(Boolean).join(' → ');
+            return {
+                kind: 'building',
+                title: building?.buildingName || 'Building',
+                detail: [
+                    building?.buildingType || null,
+                    hubPath || null,
+                    building?.address || null
+                ].filter(Boolean).join(' · ') || 'Connected building',
+                canClear: true
+            };
+        }
     }
 
     if (area) {
@@ -103,8 +117,8 @@ export function describeAtlasFocus(snap) {
 
 /** Ping legend entries matching map-layers colors. */
 export const ATLAS_PING_LEGEND = [
-    { key: 'reachable', label: 'Reachable', color: '#39ff14' },
-    { key: 'unreachable', label: 'Unreachable', color: '#ff2d2d' },
+    { key: 'reachable', label: 'Reachable', color: '#00ff33' },
+    { key: 'unreachable', label: 'Unreachable', color: '#ff0000' },
     { key: 'stale_reachable', label: 'Stale up', color: '#4d7c4d' },
     { key: 'stale_unreachable', label: 'Stale down', color: '#7a3a3a' },
     { key: 'intermittent', label: 'Intermittent', color: '#facc15' },
@@ -118,6 +132,7 @@ export const ATLAS_MAP_LEGEND_EXTRA = [
     { key: 'drop_core', label: 'Drop (has channel)', color: '#2563eb' },
     { key: 'drop_no_ip', label: 'Drop (no IP, blue)', color: '#2563eb' },
     { key: 'drop_no_channel', label: 'Drop (no channel, gray)', color: '#cbd5e1' },
+    { key: 'building', label: 'Connected building', color: '#0f766e' },
     { key: 'selected', label: 'Selected', color: '#ff2bd6', ring: true },
     { key: 'hub', label: 'Hub (square)', color: '#94a3b8' },
     { key: 'hub_issue', label: 'Hub issue', color: '#ff2d2d' },
