@@ -2,6 +2,8 @@
  * Human-readable Atlas map focus (selection or area).
  */
 
+import { formatChannelPrimary } from './display-label.js';
+
 /**
  * @param {import('./types.js').AtlasSnapshot|null|undefined} snap
  * @returns {{
@@ -40,7 +42,7 @@ export function describeAtlasFocus(snap) {
             const drops = (snap.drops || []).filter((d) => d.channelId === sel.id);
             return {
                 kind: 'channel',
-                title: ch ? `Channel ${ch.channelNumber}` : 'Channel',
+                title: ch ? formatChannelPrimary(ch.channelNumber) : 'Channel',
                 detail: `${drops.length} drop${drops.length === 1 ? '' : 's'}`,
                 canClear: true
             };
@@ -51,7 +53,7 @@ export function describeAtlasFocus(snap) {
                 kind: 'drop',
                 title: drop?.inventoryName || (drop ? `Drop ${drop.dropNumber ?? '?'}` : 'Drop'),
                 detail: [
-                    drop?.channelNumber != null ? `Ch ${drop.channelNumber}` : null,
+                    drop?.channelNumber != null ? formatChannelPrimary(drop.channelNumber) : null,
                     drop?.dropNumber != null ? `D${drop.dropNumber}` : null,
                     drop?.ip || null
                 ].filter(Boolean).join(' · ') || 'Selected drop',

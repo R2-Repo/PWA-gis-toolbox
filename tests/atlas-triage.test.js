@@ -337,7 +337,7 @@ describe('atlas area + schematic', () => {
         const hub = region?.children?.find((n) => n.id === 'h1');
         expect(hub?.label).toBe('hub1-01');
         expect(hub?.secondary).toBe('US89-I84');
-        expect(hub?.children?.[0]?.label).toBe('Ch 1');
+        expect(hub?.children?.[0]?.label).toBe('1');
         expect(hub?.children?.[0]?.children?.[0]?.label).toBe('D1');
         expect(hub?.children?.[0]?.children?.[0]?.secondary).toBe('Site A');
         expect(hub?.pingStatus).toBe('reachable');

@@ -673,7 +673,7 @@ export function AtlasRightPanel({
                             {siteDrops.map((d) => (
                                 <li key={d.id}>
                                     <button type="button" className="atlas-linkish" onClick={() => onSelect?.({ kind: 'drop', id: d.id })}>
-                                        Ch {d.channelNumber || '?'} · D{d.dropNumber ?? '?'}
+                                        {formatChannelPrimary(d.channelNumber)} · D{d.dropNumber ?? '?'}
                                     </button>
                                     {' · '}
                                     <CopyIp ip={d.ip} />
@@ -870,7 +870,7 @@ export function AtlasRightPanel({
                             {hubSummary.primary.map((row) => (
                                 <li key={row.channel.id}>
                                     <button type="button" className="atlas-linkish" onClick={() => onSelect?.({ kind: 'channel', id: row.channel.id })}>
-                                        Ch {row.channel.channelNumber}
+                                        {formatChannelPrimary(row.channel.channelNumber)}
                                     </button>
                                     {' '}· {row.dropCount} drops
                                     {canPing && row.firstDrop?.ip && (
@@ -884,7 +884,7 @@ export function AtlasRightPanel({
                             {hubSummary.secondary.map((row) => (
                                 <li key={row.channel.id}>
                                     <button type="button" className="atlas-linkish" onClick={() => onSelect?.({ kind: 'channel', id: row.channel.id })}>
-                                        Ch {row.channel.channelNumber}
+                                        {formatChannelPrimary(row.channel.channelNumber)}
                                     </button>
                                     {' '}· {row.dropCount} drops
                                     {canPing && row.lastDrop?.ip && (

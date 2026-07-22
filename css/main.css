@@ -28,7 +28,7 @@
     --radius-lg: 16px;
     --font: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
     --mono: 'SF Mono', 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
-    --header-h: 52px;
+    --header-h: 44px;
     --panel-left-w: 320px;
     --header-import-tools-gap: 72px;
     --transition: 0.2s cubic-bezier(0.25, 0.1, 0.25, 1);
@@ -118,7 +118,7 @@ html, body {
 }
 .header-title {
     font-weight: 600;
-    font-size: 16px;
+    font-size: 15px;
     letter-spacing: -0.3px;
     white-space: nowrap;
     margin: 0;
@@ -147,7 +147,7 @@ html, body {
 /* Auto-save indicator */
 .save-indicator {
     position: fixed;
-    top: 52px;
+    top: var(--header-h);
     right: 16px;
     padding: 4px 12px;
     font-size: 11px;
@@ -451,16 +451,19 @@ html, body {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 10px 14px;
+    padding: 3px 10px;
     border-bottom: 1px solid rgba(255,255,255,0.1);
     font-weight: 600;
-    font-size: 13px;
+    font-size: 11px;
     background: rgba(20, 20, 22, 0.8);
     backdrop-filter: blur(8px);
     -webkit-backdrop-filter: blur(8px);
     color: var(--text);
     flex-shrink: 0;
     letter-spacing: -0.1px;
+}
+.panel-header .btn-icon {
+    padding: 2px;
 }
 .panel-content, .panel-body {
     flex: 1;

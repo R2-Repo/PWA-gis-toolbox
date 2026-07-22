@@ -60,7 +60,7 @@ describe('atlas focus label', () => {
             areaResults: null
         });
         expect(drop.title).toBe('Cam 1');
-        expect(drop.detail).toContain('Ch 12');
+        expect(drop.detail).toContain('12');
         expect(drop.detail).toContain('10.0.0.1');
     });
 });

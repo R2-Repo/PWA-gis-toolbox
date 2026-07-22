@@ -44,7 +44,7 @@ Narrow panels use a **split label** so long inventory names do not wrap multiple
 | Kind | Primary (line 1) | Secondary (line 2, ellipsis + tooltip) |
 |------|------------------|----------------------------------------|
 | Hub | `hub{code}` | AKA |
-| Channel | `Ch {n}` | drop count / hub path |
+| Channel | `{channelNumber}` (e.g. `C2005`) | drop count / hub path |
 | Drop | `D{n}` | `inventoryName` (fallback IP) |
 | Site | `siteId` | `inventoryName` |
 | Device | IP | inventory name or model |

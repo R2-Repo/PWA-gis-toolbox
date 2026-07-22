@@ -2,6 +2,8 @@
  * Atlas map hover tooltip helpers (pure — no MapLibre import).
  */
 
+import { formatChannelPrimary } from './display-label.js';
+
 /**
  * @param {unknown} value
  */
@@ -39,7 +41,7 @@ export function buildAtlasHoverHtml(props) {
         if (props.status) lines.push(escapeAtlasHtml(props.status));
     } else {
         const ch = props.channelNumber != null && props.channelNumber !== ''
-            ? `Ch ${escapeAtlasHtml(props.channelNumber)}`
+            ? escapeAtlasHtml(formatChannelPrimary(props.channelNumber))
             : '';
         const drop = props.dropNumber != null && props.dropNumber !== ''
             ? `D${escapeAtlasHtml(props.dropNumber)}`

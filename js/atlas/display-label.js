@@ -30,8 +30,8 @@ export function formatDropPrimary(dropNumber) {
  */
 export function formatChannelPrimary(channelNumber) {
     return channelNumber != null && String(channelNumber).trim() !== ''
-        ? `Ch ${channelNumber}`
-        : 'Ch ?';
+        ? String(channelNumber).trim()
+        : '?';
 }
 
 /**

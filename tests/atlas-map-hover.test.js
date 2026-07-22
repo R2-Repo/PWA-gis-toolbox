@@ -14,7 +14,7 @@ describe('atlas map hover', () => {
         });
         expect(html).toContain('&lt;b&gt;Site&lt;/b&gt;');
         expect(html).not.toContain('<b>Site</b>');
-        expect(html).toContain('Ch 12');
+        expect(html).toContain('12');
         expect(html).toContain('D3');
         expect(html).toContain('10.0.0.1');
         expect(html).toContain('Ping: reachable');
