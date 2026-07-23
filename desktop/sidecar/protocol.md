@@ -50,6 +50,7 @@ Failure:
 - `file_checksum` — `{ "path": "<file>" }` — SHA-256
 - `convert_to_geoparquet` — `{ "path": "<file>", "outputPath"?: "<dest.parquet>" }` — requires duckdb or pyogrio
 - `summarize_vector` — `{ "path": "<file>" }` — DuckDB/pyogrio when available
+- `generate_pmtiles` — `{ "path": "<file>", "outputPath"?: "<dest.pmtiles>", "minZoom"?: 0, "maxZoom"?: 12 }` — tippecanoe or Python MVT writer
 
 ## Optional engines
 

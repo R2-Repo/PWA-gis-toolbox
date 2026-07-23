@@ -1,6 +1,10 @@
 //! Local GIS Library catalog — sibling to Atlas / UDOT Fiber (metadata + managed folders).
 //! Does not store Network Atlas inventory or ping data.
 
+mod file_range;
+
+pub use file_range::gis_library_read_range;
+
 use parking_lot::Mutex;
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::Deserialize;
@@ -89,13 +93,16 @@ fn migrate(conn: &Connection) -> Result<(), String> {
             updated_at TEXT NOT NULL,
             last_used_at TEXT,
             description TEXT,
-            manifest_json TEXT
+            manifest_json TEXT,
+            tile_path TEXT
         );
         CREATE INDEX IF NOT EXISTS idx_catalog_item_updated ON catalog_item(updated_at DESC);
         CREATE INDEX IF NOT EXISTS idx_catalog_item_name ON catalog_item(display_name);
         "#,
     )
     .map_err(|e| format!("gis_catalog migrate: {e}"))?;
+    // Additive column for Phase 4 tile packages (ignore if already present).
+    let _ = conn.execute_batch("ALTER TABLE catalog_item ADD COLUMN tile_path TEXT;");
     Ok(())
 }
 
@@ -120,6 +127,7 @@ fn with_conn<T>(
 }
 
 fn row_to_item(row: &rusqlite::Row<'_>) -> Result<Value, rusqlite::Error> {
+    let tile_path: Option<String> = row.get(23).unwrap_or(None);
     Ok(json!({
         "id": row.get::<_, String>(0)?,
         "displayName": row.get::<_, String>(1)?,
@@ -144,6 +152,7 @@ fn row_to_item(row: &rusqlite::Row<'_>) -> Result<Value, rusqlite::Error> {
         "lastUsedAt": row.get::<_, Option<String>>(20)?,
         "description": row.get::<_, Option<String>>(21)?,
         "manifest": parse_json_field(row.get::<_, Option<String>>(22)?),
+        "tilePath": tile_path,
     }))
 }
 
@@ -159,7 +168,7 @@ const SELECT_ITEM: &str = r#"
            managed_original_path, preview_path, working_path, feature_count,
            sampled_feature_count, geometry_types_json, property_keys_json, bbox_json,
            crs_hint, byte_size, status, preview_only, created_at, updated_at,
-           last_used_at, description, manifest_json
+           last_used_at, description, manifest_json, tile_path
     FROM catalog_item
 "#;
 
@@ -512,6 +521,7 @@ pub fn gis_catalog_remove_item(
             .unwrap_or(library_root_path(&app)?);
         let _ = remove_dir_all_best_effort(&root.join("originals").join(&id));
         let _ = remove_dir_all_best_effort(&root.join("datasets").join(&id));
+        let _ = remove_dir_all_best_effort(&root.join("tiles").join(&id));
     }
 
     Ok(json!({ "ok": true, "removed": item }))
@@ -590,6 +600,89 @@ pub fn gis_catalog_set_working_path(
                 params![payload.working_path, ts, manifest_json, payload.id],
             )
             .map_err(|e| format!("set working path: {e}"))?;
+        if changed == 0 {
+            return Err("Catalog item not found".into());
+        }
+        Ok(())
+    })?;
+    let item = get_item_by_id(&state, &payload.id)?
+        .ok_or_else(|| "Catalog item not found".to_string())?;
+    Ok(json!({ "item": item }))
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GisCatalogSetTilePathRequest {
+    pub id: String,
+    pub tile_path: String,
+    pub min_zoom: Option<i64>,
+    pub max_zoom: Option<i64>,
+    pub source_layer: Option<String>,
+}
+
+#[tauri::command]
+pub fn gis_catalog_set_tile_path(
+    app: AppHandle,
+    state: tauri::State<'_, Arc<GisCatalogState>>,
+    payload: GisCatalogSetTilePathRequest,
+) -> Result<Value, String> {
+    if payload.id.trim().is_empty()
+        || payload.id.contains("..")
+        || payload.id.contains('/')
+        || payload.id.contains('\\')
+    {
+        return Err("Invalid catalog item id".into());
+    }
+    let tile = PathBuf::from(&payload.tile_path);
+    if !tile.is_absolute() {
+        return Err("tilePath must be absolute".into());
+    }
+    if payload.tile_path.contains("..") {
+        return Err("tilePath must not contain ..".into());
+    }
+    if !tile.is_file() {
+        return Err(format!("Tile file not found: {}", tile.display()));
+    }
+    let root = file_range::library_root(&app, &state)?;
+    let _ = file_range::canonicalize_under_library(&root, &tile)?;
+    let ts = now_iso();
+    with_conn(&state, |conn| {
+        let existing: Option<String> = conn
+            .query_row(
+                "SELECT manifest_json FROM catalog_item WHERE id = ?1",
+                params![payload.id],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(|e| format!("read manifest: {e}"))?;
+        let mut manifest_val = existing
+            .as_deref()
+            .and_then(|s| serde_json::from_str::<Value>(s).ok())
+            .unwrap_or_else(|| json!({}));
+        if let Some(obj) = manifest_val.as_object_mut() {
+            obj.insert("tilePath".into(), json!(payload.tile_path));
+            if let Some(z) = payload.min_zoom {
+                obj.insert("tileMinZoom".into(), json!(z));
+            }
+            if let Some(z) = payload.max_zoom {
+                obj.insert("tileMaxZoom".into(), json!(z));
+            }
+            if let Some(layer) = &payload.source_layer {
+                obj.insert("tileSourceLayer".into(), json!(layer));
+            }
+            obj.insert("tiledAt".into(), json!(ts));
+        }
+        let manifest_json = serde_json::to_string(&manifest_val).ok();
+        let changed = conn
+            .execute(
+                r#"
+                UPDATE catalog_item
+                SET tile_path = ?1, updated_at = ?2, manifest_json = COALESCE(?3, manifest_json)
+                WHERE id = ?4
+                "#,
+                params![payload.tile_path, ts, manifest_json, payload.id],
+            )
+            .map_err(|e| format!("set tile path: {e}"))?;
         if changed == 0 {
             return Err("Catalog item not found".into());
         }

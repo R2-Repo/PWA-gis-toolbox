@@ -8,7 +8,8 @@ Narrow, allow-listed operations for the private Windows desktop shell.
 - Operations are typed and versioned (see `protocol.md`)
 - Large datasets pass as **file paths**, not giant JSON over IPC
 - Stdlib GeoJSON path works without extras
-- Optional engines (Phase 3): DuckDB Spatial, pyogrio (GDAL bindings), shapely
+- Optional engines (Phases 3–4): DuckDB Spatial, pyogrio, shapely, PMTiles writer
+- Prefer **tippecanoe** on PATH for large `generate_pmtiles` jobs
 
 ## Install GIS engines (desktop)
 
@@ -17,7 +18,7 @@ cd desktop/sidecar/python
 pip install -r requirements.txt
 ```
 
-`health` reports `engines.duckdb` / `engines.pyogrio`. The Tauri handshake maps these to `duckdb` and `localGdal` capabilities.
+`health` reports `engines.duckdb` / `engines.pyogrio` / `engines.tippecanoe` / `engines.pmtilesWriter`. The Tauri handshake maps DuckDB/pyogrio to `duckdb` and `localGdal` capabilities.
 
 ## Dev usage
 
@@ -30,6 +31,12 @@ Convert to GeoParquet:
 
 ```bash
 printf '%s\n' '{"id":"2","op":"convert_to_geoparquet","input":{"path":"C:/data/layer.geojson","outputPath":"C:/data/layer.parquet"}}' | python -m gis_sidecar
+```
+
+Generate PMTiles:
+
+```bash
+printf '%s\n' '{"id":"3","op":"generate_pmtiles","input":{"path":"C:/data/layer.geojson","outputPath":"C:/data/layer.pmtiles","maxZoom":12}}' | python -m gis_sidecar
 ```
 
 ## Packaging (Windows)

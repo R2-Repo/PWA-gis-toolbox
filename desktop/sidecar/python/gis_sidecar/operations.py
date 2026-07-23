@@ -11,6 +11,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 from . import __version__
 from .engines import duckdb_available, probe_engines, pyogrio_available
 from .protocol import PROTOCOL_VERSION, emit_log, emit_progress
+from .tiling import generate_pmtiles, pmtiles_writer_available, tippecanoe_available
 
 
 Handler = Callable[[str, Dict[str, Any]], Any]
@@ -33,6 +34,11 @@ _PYOGRIO_SUFFIXES = {
 
 def op_health(_request_id: str, _input: Dict[str, Any]) -> Dict[str, Any]:
     engines = probe_engines()
+    engines = {
+        **engines,
+        "tippecanoe": {"available": tippecanoe_available()},
+        "pmtilesWriter": {"available": pmtiles_writer_available()},
+    }
     return {
         "ok": True,
         "version": __version__,
@@ -540,6 +546,38 @@ def op_summarize_vector(request_id: str, input_data: Dict[str, Any]) -> Dict[str
     )
 
 
+def op_generate_pmtiles(request_id: str, input_data: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Build a PMTiles archive from a vector file on disk.
+    Input: {
+      "path": "<source>",
+      "outputPath"?: "<dest.pmtiles>",
+      "minZoom"?: 0,
+      "maxZoom"?: 12,
+      "maxFeatures"?: 40000
+    }
+    Prefers tippecanoe when on PATH; otherwise Python MVT writer (feature-capped).
+    """
+    path = _require_path(input_data, "generate_pmtiles")
+    default_out = path.with_suffix(".pmtiles")
+    if default_out.resolve() == path.resolve():
+        default_out = path.parent / f"{path.stem}.pmtiles"
+    output = _require_output_path(input_data, "generate_pmtiles", default_out)
+
+    min_zoom = input_data.get("minZoom")
+    max_zoom = input_data.get("maxZoom")
+    max_features = input_data.get("maxFeatures")
+
+    return generate_pmtiles(
+        path,
+        output,
+        request_id,
+        min_zoom=int(min_zoom) if min_zoom is not None else None,
+        max_zoom=int(max_zoom) if max_zoom is not None else None,
+        max_features=int(max_features) if max_features is not None else None,
+    )
+
+
 OPERATION_HANDLERS: Dict[str, Handler] = {
     "health": op_health,
     "echo": op_echo,
@@ -549,6 +587,7 @@ OPERATION_HANDLERS: Dict[str, Handler] = {
     "file_checksum": op_file_checksum,
     "convert_to_geoparquet": op_convert_to_geoparquet,
     "summarize_vector": op_summarize_vector,
+    "generate_pmtiles": op_generate_pmtiles,
 }
 
 

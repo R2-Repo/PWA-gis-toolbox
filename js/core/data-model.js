@@ -92,7 +92,7 @@ export function isWorkspaceLayer(layer) {
 
 /** @param {object} layer */
 export function isSpatialLayer(layer) {
-    return layer?.type === 'spatial' || isWorkspaceLayer(layer);
+    return layer?.type === 'spatial' || isWorkspaceLayer(layer) || isPmTilesLayer(layer);
 }
 
 /**
@@ -146,6 +146,61 @@ export function isServiceLayer(layer) {
     return layer?.type === 'service';
 }
 
+/**
+ * Local PMTiles vector layer (desktop GIS Library). Empty geojson; map uses vector tiles.
+ * @param {object} options
+ * @param {string} options.name
+ * @param {string} options.tilePath - absolute path under gis-library
+ * @param {string} [options.libraryItemId]
+ * @param {number[]|null} [options.bbox]
+ * @param {string} [options.sourceLayer]
+ * @param {number} [options.minZoom]
+ * @param {number} [options.maxZoom]
+ * @param {number} [options.featureCount]
+ */
+export function createPmTilesLayer({
+    name,
+    tilePath,
+    libraryItemId = null,
+    bbox = null,
+    sourceLayer = 'default',
+    minZoom = 0,
+    maxZoom = 22,
+    featureCount = null
+}) {
+    return {
+        id: generateId(),
+        name,
+        type: 'pmtiles',
+        visible: true,
+        active: true,
+        created: new Date().toISOString(),
+        geojson: { type: 'FeatureCollection', features: [] },
+        pmtiles: {
+            path: String(tilePath || '').trim(),
+            sourceLayer: sourceLayer || 'default',
+            minZoom,
+            maxZoom,
+            bbox: Array.isArray(bbox) ? bbox : null,
+            libraryItemId,
+            featureCount
+        },
+        source: {
+            format: 'pmtiles',
+            file: name,
+            libraryItemId,
+            adapter: 'pmtiles',
+            importRoute: 'gis-library'
+        },
+        ...DEFAULT_SCALE_RANGE
+    };
+}
+
+/** @param {object} layer */
+export function isPmTilesLayer(layer) {
+    return layer?.type === 'pmtiles' || layer?.source?.format === 'pmtiles';
+}
+
 const LIVE_VECTOR_KINDS = new Set([
     'arcgis-featureserver',
     'arcgis-mapserver-vector',
@@ -168,6 +223,9 @@ export function getLayerFeatureCount(layer) {
     if (!layer) return 0;
     if (isWorkspaceLayer(layer)) {
         return layer.schema?.featureCount ?? 0;
+    }
+    if (isPmTilesLayer(layer)) {
+        return layer.pmtiles?.featureCount ?? layer.schema?.featureCount ?? 0;
     }
     if (isLiveVectorLayer(layer)) {
         return layer.geojson?.features?.length ?? layer.schema?.featureCount ?? 0;

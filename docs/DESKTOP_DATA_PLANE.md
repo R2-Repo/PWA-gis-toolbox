@@ -1,6 +1,6 @@
 # Desktop GIS data plane
 
-> **Status:** Phases 0–3 landed — path preview, Local GIS Library, optional DuckDB/pyogrio GeoParquet optimize. Tiles (Phase 4) still later.  
+> **Status:** Phases 0–4 landed — path preview, Local GIS Library, DuckDB/pyogrio GeoParquet, file PMTiles map display (Martin deferred).  
 > **Safety:** Must not break the public PWA or Network Atlas.
 
 ## Goal
@@ -25,8 +25,9 @@ Desktop is a **local GIS workstation**: path-based data, native jobs (Python sid
 | UDOT Fiber cache | `udot-fiber-network.sqlite` — domain-specific |
 | Large vector working | GeoParquet (`datasets/<id>/data.parquet` when engines installed) |
 | Small editable vector | GeoPackage |
-| Large raster | COG (Phase 3) |
+| Large raster | COG (later) |
 | Map preview (Phase 1) | Sample FeatureCollection from sidecar |
+| Large map display (Phase 4) | PMTiles under `tiles/<id>/` + MapLibre `pmtiles://` protocol |
 
 ## Atlas firewall
 
@@ -62,6 +63,7 @@ Desktop App
 | `gisLibrary` | no | yes (Local GIS Library) |
 | `localGdal` | no | yes when pyogrio installed in sidecar env |
 | `duckdb` | no | yes when duckdb installed in sidecar env |
+| `localMartin` | no | deferred — file PMTiles instead |
 | `localPdal` | no | stub until packaged |
 
 ## Phase map
@@ -72,7 +74,7 @@ Desktop App
 | 1 | Path inspect/sample; large GeoJSON preview on desktop; PWA unchanged |
 | 2 | Local GIS Library MVP (managed folders + catalog SQLite) — **done** |
 | 3 | DuckDB Spatial + pyogrio in sidecar; GeoParquet optimize — **done** (COG later) |
-| 4 | PMTiles/MBTiles; optional Martin on `127.0.0.1` |
+| 4 | File PMTiles + MapLibre protocol — **done** (Martin optional, deferred) |
 | 5 | Dual-path analysis widgets + lineage |
 | 6+ | Portal polish, MapServer, PostGIS, GeoServer |
 

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import bus from '../../js/core/event-bus.js';
 import {
     formatBytes,
+    generateGisLibraryPmTiles,
     isGisLibraryAvailable,
     listGisLibraryItems,
     openGisLibrary,
@@ -15,7 +16,7 @@ import { getPlatformBundle } from '../../js/platform/create-platform.js';
 /**
  * Desktop-only Local GIS Library list (GIS workspace — not Atlas).
  */
-export function LocalGisLibraryPanel({ onAddPreviewToMap, showToast }) {
+export function LocalGisLibraryPanel({ onAddPreviewToMap, onAddItemToMap, showToast }) {
     const [available, setAvailable] = useState(() => isGisLibraryAvailable());
     const [items, setItems] = useState([]);
     const [loading, setLoading] = useState(false);
@@ -62,19 +63,27 @@ export function LocalGisLibraryPanel({ onAddPreviewToMap, showToast }) {
     }, [showToast]);
 
     const onAddToMap = useCallback(async (item) => {
-        if (!item?.id || !onAddPreviewToMap) return;
+        if (!item?.id) return;
         setBusyId(item.id);
         try {
-            const result = await readGisLibraryPreview(item.id);
-            if (!result?.geojson) throw new Error('No preview available');
-            await onAddPreviewToMap(result.item, result.geojson);
-            showToast?.(`Added preview: ${item.displayName}`, 'success');
+            if (item.tilePath && onAddItemToMap) {
+                await onAddItemToMap(item);
+                showToast?.(`Added tiled layer: ${item.displayName}`, 'success');
+            } else if (onAddPreviewToMap) {
+                const result = await readGisLibraryPreview(item.id);
+                if (!result?.geojson) throw new Error('No preview available');
+                await onAddPreviewToMap(result.item, result.geojson);
+                showToast?.(`Added preview: ${item.displayName}`, 'success');
+            } else if (onAddItemToMap) {
+                await onAddItemToMap(item);
+                showToast?.(`Added: ${item.displayName}`, 'success');
+            }
         } catch (err) {
-            showToast?.(err?.message || 'Failed to add preview', 'error');
+            showToast?.(err?.message || 'Failed to add to map', 'error');
         } finally {
             setBusyId(null);
         }
-    }, [onAddPreviewToMap, showToast]);
+    }, [onAddItemToMap, onAddPreviewToMap, showToast]);
 
     const onRemove = useCallback(async (item) => {
         if (!item?.id) return;
@@ -106,6 +115,20 @@ export function LocalGisLibraryPanel({ onAddPreviewToMap, showToast }) {
             await refresh();
         } catch (err) {
             showToast?.(err?.message || 'Optimize failed', 'error');
+        } finally {
+            setBusyId(null);
+        }
+    }, [refresh, showToast]);
+
+    const onCreateTiles = useCallback(async (item) => {
+        if (!item?.id) return;
+        setBusyId(item.id);
+        try {
+            await generateGisLibraryPmTiles(item);
+            showToast?.(`Created PMTiles for ${item.displayName}`, 'success');
+            await refresh();
+        } catch (err) {
+            showToast?.(err?.message || 'Create tiles failed', 'error');
         } finally {
             setBusyId(null);
         }
@@ -153,17 +176,28 @@ export function LocalGisLibraryPanel({ onAddPreviewToMap, showToast }) {
                                         : `${count} features`}
                                     {item.byteSize != null ? ` · ${formatBytes(item.byteSize)}` : ''}
                                     {item.workingPath ? ' · GeoParquet' : ''}
+                                    {item.tilePath ? ' · PMTiles' : ''}
                                 </div>
                             </div>
                             <div className="gis-library-card-actions">
                                 <button
                                     type="button"
                                     className="btn btn-sm btn-primary"
-                                    disabled={busy || !item.previewPath}
+                                    disabled={busy || (!item.previewPath && !item.tilePath)}
                                     onClick={() => void onAddToMap(item)}
                                 >
-                                    Add to map
+                                    {item.tilePath ? 'Add tiles' : 'Add to map'}
                                 </button>
+                                {!item.tilePath ? (
+                                    <button
+                                        type="button"
+                                        className="btn btn-sm"
+                                        disabled={busy}
+                                        onClick={() => void onCreateTiles(item)}
+                                    >
+                                        Create tiles
+                                    </button>
+                                ) : null}
                                 {canOptimize && !item.workingPath ? (
                                     <button
                                         type="button"

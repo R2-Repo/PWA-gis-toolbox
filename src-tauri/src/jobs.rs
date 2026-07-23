@@ -13,6 +13,7 @@ const ALLOWED_OPS: &[&str] = &[
     "file_checksum",
     "convert_to_geoparquet",
     "summarize_vector",
+    "generate_pmtiles",
 ];
 
 #[derive(Debug, Deserialize)]
@@ -62,6 +63,7 @@ fn validate_operation(operation: &str, input: &Value) -> Result<(), String> {
             | "file_checksum"
             | "convert_to_geoparquet"
             | "summarize_vector"
+            | "generate_pmtiles"
     ) {
         let path = input
             .get("path")

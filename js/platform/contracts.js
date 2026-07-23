@@ -185,6 +185,8 @@
  * @property {(id: string, opts?: { deleteFiles?: boolean }) => Promise<object>} removeItem
  * @property {(id: string) => Promise<{ item: object, geojson: object }>} readPreview
  * @property {(payload: { id: string, workingPath: string, checksum?: string }) => Promise<{ item: object }>} [setWorkingPath]
+ * @property {(payload: { id: string, tilePath: string, minZoom?: number, maxZoom?: number, sourceLayer?: string }) => Promise<{ item: object }>} [setTilePath]
+ * @property {(path: string, offset: number, length: number) => Promise<{ base64: string, bytesRead: number, offset?: number }>} [readFileRange]
  */
 
 /**
@@ -216,6 +218,7 @@ export const CAPABILITY_KEYS = Object.freeze([
     'duckdb',
     'largeDatasetProcessing',
     'gisLibrary',
+    'localMartin',
     'localSqlite',
     'icmpPing'
 ]);

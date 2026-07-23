@@ -40,6 +40,12 @@ export function createWindowsGisCatalogService() {
         },
         async setWorkingPath(payload) {
             return invokeCommand('gis_catalog_set_working_path', { payload });
+        },
+        async setTilePath(payload) {
+            return invokeCommand('gis_catalog_set_tile_path', { payload });
+        },
+        async readFileRange(path, offset, length) {
+            return invokeCommand('gis_library_read_range', { path, offset, length });
         }
     };
 }

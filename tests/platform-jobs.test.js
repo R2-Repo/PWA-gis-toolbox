@@ -77,6 +77,7 @@ describe('platform jobs', () => {
         expect(isKnownNativeOperation(NATIVE_OPERATIONS.CONVERT_TO_GEOPARQUET)).toBe(true);
         expect(isKnownNativeOperation(NATIVE_OPERATIONS.FILE_CHECKSUM)).toBe(true);
         expect(isKnownNativeOperation(NATIVE_OPERATIONS.SUMMARIZE_VECTOR)).toBe(true);
+        expect(isKnownNativeOperation(NATIVE_OPERATIONS.GENERATE_PMTILES)).toBe(true);
 
         const jobs = {
             async start({ operation, input }) {

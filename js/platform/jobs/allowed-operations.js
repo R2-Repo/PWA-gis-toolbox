@@ -9,7 +9,8 @@ export const NATIVE_OPERATIONS = Object.freeze({
     SAMPLE_VECTOR: 'sample_vector',
     FILE_CHECKSUM: 'file_checksum',
     CONVERT_TO_GEOPARQUET: 'convert_to_geoparquet',
-    SUMMARIZE_VECTOR: 'summarize_vector'
+    SUMMARIZE_VECTOR: 'summarize_vector',
+    GENERATE_PMTILES: 'generate_pmtiles'
 });
 
 export const NATIVE_OPERATION_LIST = Object.freeze(Object.values(NATIVE_OPERATIONS));

@@ -60,6 +60,7 @@ describe('python sidecar', () => {
         expect(finalMsg.output.operations).toContain('convert_to_geoparquet');
         expect(finalMsg.output.operations).toContain('file_checksum');
         expect(finalMsg.output.operations).toContain('summarize_vector');
+        expect(finalMsg.output.operations).toContain('generate_pmtiles');
         expect(finalMsg.output.engines).toBeTruthy();
         expect(finalMsg.output.version).toMatch(/^0\./);
     }, 30_000);

@@ -160,3 +160,60 @@ export async function optimizeGisLibraryItemToGeoParquet(item, opts = {}) {
     bus.emit('gis-library:changed', { action: 'optimize', item: updated });
     return updated || null;
 }
+
+/**
+ * Generate PMTiles for a library item and store tile_path on the catalog row.
+ *
+ * @param {object} item
+ * @param {{ compute?: import('../platform/contracts.js').ComputeService, onProgress?: Function, signal?: AbortSignal, minZoom?: number, maxZoom?: number }} [opts]
+ * @returns {Promise<object|null>} updated item
+ */
+export async function generateGisLibraryPmTiles(item, opts = {}) {
+    const catalog = getGisCatalogService();
+    const { services } = getPlatformBundle();
+    const compute = opts.compute || services.compute;
+    if (!catalog || !item?.id || !compute?.run) return null;
+
+    const sourcePath = item.workingPath || item.managedOriginalPath || item.originalPath;
+    if (!sourcePath) throw new Error('Library item has no source path to tile');
+
+    await catalog.open();
+    const { NATIVE_OPERATIONS } = await import('../platform/jobs/allowed-operations.js');
+
+    let outputPath = null;
+    const rootResult = await catalog.libraryRoot?.();
+    const root = rootResult?.path;
+    if (root) {
+        const normalized = String(root).replace(/\\/g, '/').replace(/\/+$/, '');
+        outputPath = `${normalized}/tiles/${item.id}/layer.pmtiles`;
+    } else if (item.previewPath) {
+        const normalized = String(item.previewPath).replace(/\\/g, '/');
+        const datasetsDir = normalized.includes('/')
+            ? normalized.slice(0, normalized.lastIndexOf('/'))
+            : null;
+        // datasets/<id>/preview.geojson → tiles sibling under library root is preferred;
+        // fall back beside dataset folder
+        if (datasetsDir) outputPath = `${datasetsDir}/layer.pmtiles`;
+    }
+
+    const generated = await compute.run(
+        NATIVE_OPERATIONS.GENERATE_PMTILES,
+        {
+            path: sourcePath,
+            ...(outputPath ? { outputPath } : {}),
+            ...(opts.minZoom != null ? { minZoom: opts.minZoom } : {}),
+            ...(opts.maxZoom != null ? { maxZoom: opts.maxZoom } : {})
+        },
+        { onProgress: opts.onProgress, signal: opts.signal }
+    );
+
+    const { item: updated } = await catalog.setTilePath({
+        id: item.id,
+        tilePath: generated.outputPath,
+        minZoom: generated.minZoom,
+        maxZoom: generated.maxZoom,
+        sourceLayer: generated.sourceLayer || 'default'
+    });
+    bus.emit('gis-library:changed', { action: 'tiles', item: updated });
+    return updated || null;
+}

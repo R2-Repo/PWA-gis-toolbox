@@ -943,6 +943,8 @@ async function _addImportedDatasets(datasets, importOpts = {}) {
 
         if (isWorkspaceLayer(ds)) {
             await mapService.addWorkspaceLayer(ds, layerIdx, { fit: false });
+        } else if (ds.type === 'pmtiles') {
+            await mapService.addLayer(ds, layerIdx, { fit: true });
         } else if (ds.type === 'spatial') {
             const featureCount = ds.geojson?.features?.length || 0;
             if (featureCount > INCREMENTAL_THRESHOLD) {
@@ -1415,19 +1417,22 @@ export async function openImportForFiles(files, fenceBbox = null) {
  * @returns {Promise<string[]>}
  */
 export async function addLibraryPreviewToMap(item, geojson) {
-    const { createSpatialDataset } = await import('../core/data-model.js');
-    const displayName = item?.displayName || item?.originalFilename || 'Library layer';
-    const name = item?.previewOnly
-        ? `${displayName} (library preview)`
-        : displayName;
-    const dataset = createSpatialDataset(name, geojson, {
-        file: item?.originalFilename || displayName,
-        format: item?.format || 'geojson',
-        libraryItemId: item?.id,
-        previewOnly: Boolean(item?.previewOnly),
-        fullFeatureCount: item?.featureCount,
-        importRoute: 'gis-library'
-    });
+    const { geojsonPreviewDatasetFromItem } = await import('../map/layer-source/adapters.js');
+    const dataset = geojsonPreviewDatasetFromItem(item, geojson);
+    const { ids } = await _addImportedDatasets([dataset], { useWorkspace: false });
+    if (ids.length) {
+        await mapService.scheduleFitToLayers(ids);
+    }
+    return ids;
+}
+
+/**
+ * Add a library item using PMTiles when available, else preview GeoJSON.
+ * @param {object} item
+ */
+export async function addLibraryItemToMap(item) {
+    const { materializeLibraryMapDataset } = await import('../map/layer-source/adapters.js');
+    const dataset = await materializeLibraryMapDataset(item);
     const { ids } = await _addImportedDatasets([dataset], { useWorkspace: false });
     if (ids.length) {
         await mapService.scheduleFitToLayers(ids);

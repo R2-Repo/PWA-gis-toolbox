@@ -56,7 +56,8 @@ import {
     openPresentationLinkBuilderWidget,
     bootstrapAppFromUrl,
     bootstrapDesktopPlatform,
-    addLibraryPreviewToMap
+    addLibraryPreviewToMap,
+    addLibraryItemToMap
 } from '../js/tools/tool-handlers.js';
 import { showToast } from '../js/ui/toast.js';
 import { LocalGisLibraryPanel } from './library/LocalGisLibraryPanel.jsx';
@@ -494,6 +495,7 @@ function AppShell() {
                                         <LocalGisLibraryPanel
                                             showToast={showToast}
                                             onAddPreviewToMap={addLibraryPreviewToMap}
+                                            onAddItemToMap={addLibraryItemToMap}
                                         />
                                     </CollapsibleSection>
                                 ) : null}

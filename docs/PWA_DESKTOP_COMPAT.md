@@ -32,6 +32,8 @@ Same `js/` + `react/` source. Different shell, file APIs, and (on desktop) Pytho
 | `js/platform/contracts.js` | **Both** (API shape) | Change carefully; update web + windows providers + tests |
 | `js/platform/web/` | **PWA only** | Browser file/job/compute providers |
 | `js/platform/windows/`, `src-tauri/`, `desktop/sidecar/` | **Desktop only** | Native shell, dialogs, Python — must not break `build:web` |
+| `js/library/`, `react/library/` | **Desktop-first** | Local GIS Library UI + catalog jobs — hidden on web via `gisLibrary` capability |
+| `js/map/pmtiles-protocol.js`, library tile adapters | **Both** (desktop reads) | MapLibre `pmtiles://` protocol is shared; ranged file reads require `readFileRange` (Windows only) |
 | PWA plugin / service worker / `MobileGate` / install UX | **PWA only** | Must not be required by desktop build |
 | `vite.config.js` build modes | **Both** | Desktop mode must stay **without** SW registration |
 
@@ -79,6 +81,8 @@ Same `js/` + `react/` source. Different shell, file APIs, and (on desktop) Pytho
 | Dual screen works in browser, not desktop | Adapter (`window.open` vs Tauri webview) | Platform window API; keep PWA on `window.open` |
 | Native file dialog / Python job | Desktop only | `js/platform/windows/` + `src-tauri/` / sidecar allow-list |
 | Widget logic wrong everywhere | Shared | Engine/controller/React; no OS imports |
+| Local GIS Library / file PMTiles on map | Desktop-first (shared map code) | Gate on `gisLibrary` + catalog `readFileRange`; `localMartin` stays false (file tiles, not Martin server) |
+| PMTiles works desktop, blank on PWA | Expected | Web has no library disk paths — do not raise PWA import caps to match |
 
 ---
 
@@ -99,6 +103,7 @@ Same `js/` + `react/` source. Different shell, file APIs, and (on desktop) Pytho
 | Desktop-only paths | Desktop: reproduce fix. Web build still green. |
 | PWA-only paths | Browser: reproduce fix. Desktop build still green. |
 | Shared map / tools / dual-screen / widgets | Browser + desktop: the affected flow only |
+| Local GIS Library / PMTiles (Phase 4) | Desktop: ingest → Create tiles → Add tiles. PWA: confirm no **Local GIS Library** panel; import caps unchanged |
 
 You do **not** need to retest the entire product after every change — only the blast radius above.
 
@@ -107,6 +112,7 @@ You do **not** need to retest the entire product after every change — only the
 ## Related
 
 - Plan / architecture: [`PWA_DESKTOP_WORKFLOW_PLAN.md`](./PWA_DESKTOP_WORKFLOW_PLAN.md)
+- Desktop data plane (library, GeoParquet, PMTiles): [`DESKTOP_DATA_PLANE.md`](./DESKTOP_DATA_PLANE.md)
 - UDOT Fiber symbology (shared style pack + desktop SQLite): [`UDOT_FIBER_SYMBOLOGY.md`](./UDOT_FIBER_SYMBOLOGY.md)
 - Contracts: `js/platform/contracts.js`
 - Skills: `.cursor/skills/fix-pwa/`, `fix-desktop/`, `feature-both/`, `pwa-desktop-compat/`

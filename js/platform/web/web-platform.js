@@ -53,6 +53,10 @@ export function createWebPlatform(opts = {}) {
                     available: false,
                     reason: 'Local GIS Library requires the Windows desktop application'
                 },
+                localMartin: {
+                    available: false,
+                    reason: 'Martin tile server is desktop-only and currently deferred (file PMTiles)'
+                },
                 localSqlite: {
                     available: false,
                     reason: 'Network Atlas SQLite requires the Windows desktop application'

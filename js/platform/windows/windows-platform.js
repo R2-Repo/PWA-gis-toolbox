@@ -48,6 +48,10 @@ function capabilitiesFromHandshake(handshake) {
             available: isTauriAvailable(),
             reason: isTauriAvailable() ? undefined : 'Tauri runtime not detected'
         },
+        localMartin: fromShell.localMartin || {
+            available: false,
+            reason: 'Martin deferred — use file-based PMTiles'
+        },
         localSqlite: fromShell.localSqlite || {
             available: isTauriAvailable(),
             reason: isTauriAvailable() ? undefined : 'Tauri runtime not detected'

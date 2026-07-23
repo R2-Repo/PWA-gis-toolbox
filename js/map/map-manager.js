@@ -5,7 +5,13 @@
 import logger from '../core/logger.js';
 import bus from '../core/event-bus.js';
 import { getActiveLayer, setActiveLayer, isLayerLocked, getMapLayerOrderIds, getLayers } from '../core/state.js';
-import { flattenFeatureGeometryCollections, isWorkspaceLayer, isServiceLayer } from '../core/data-model.js';
+import {
+    flattenFeatureGeometryCollections,
+    isWorkspaceLayer,
+    isServiceLayer,
+    isPmTilesLayer
+} from '../core/data-model.js';
+import { ensurePmtilesProtocol, pmtilesMapUrl, registerLibraryPmTiles } from './pmtiles-protocol.js';
 import { getCoverageRasters, isCoverageRasterLayer } from '../core/coverage-raster-layer.js';
 import { MAP_CHUNK_BATCH_SIZE, RENDER_LIMITS } from './render-limits.js';
 import { buildViewportGeoJSON } from '../workspace/viewport-loader.js';
@@ -315,6 +321,8 @@ class MapManager {
             logger.error('Map', 'MapLibre GL JS not loaded');
             return;
         }
+
+        ensurePmtilesProtocol();
 
         const mapInit = isPresentationMode()
             ? resolvePresentationMapInit(getPresentationModeState().scene)
@@ -676,6 +684,120 @@ class MapManager {
         this._layerStyles.set(layerId, style);
     }
 
+    /**
+     * Add a desktop Local GIS Library PMTiles vector layer (no full GeoJSON load).
+     * @param {object} dataset
+     * @param {number} [colorIndex]
+     * @param {{ fit?: boolean }} [options]
+     */
+    async addPmTilesLayer(dataset, colorIndex = 0, { fit = false } = {}) {
+        if (!this.map || !dataset?.pmtiles?.path) return;
+        this.removeLayer(dataset.id);
+
+        const diskPath = dataset.pmtiles.path;
+        await registerLibraryPmTiles(diskPath);
+
+        const defaultColor = LAYER_COLORS[colorIndex % LAYER_COLORS.length];
+        const stored = this._layerStyles.get(dataset.id);
+        let layerStyle = normalizeStyle(stored, defaultColor);
+        if (!stored) this._layerStyles.set(dataset.id, { ...layerStyle });
+
+        const styPoly = compilePaint(layerStyle, 'polygon');
+        const styLine = compilePaint(layerStyle, 'line');
+        const styPoint = compilePaint(layerStyle, 'point');
+
+        const sourceId = `src-${dataset.id}`;
+        const sourceLayer = dataset.pmtiles.sourceLayer || 'default';
+        const urlPath = String(diskPath).replace(/\\/g, '/');
+        this.map.addSource(sourceId, {
+            type: 'vector',
+            url: pmtilesMapUrl(urlPath),
+            minzoom: dataset.pmtiles.minZoom ?? 0,
+            maxzoom: dataset.pmtiles.maxZoom ?? 22
+        });
+
+        const layerIds = [];
+        const fillId = `${dataset.id}-fill`;
+        this.map.addLayer({
+            id: fillId,
+            type: 'fill',
+            source: sourceId,
+            'source-layer': sourceLayer,
+            filter: ['in', ['geometry-type'], ['literal', ['Polygon', 'MultiPolygon']]],
+            paint: { 'fill-color': styPoly.fillColor, 'fill-opacity': styPoly.fillOpacity }
+        });
+        layerIds.push(fillId);
+
+        const outlineId = `${dataset.id}-outline`;
+        this.map.addLayer({
+            id: outlineId,
+            type: 'line',
+            source: sourceId,
+            'source-layer': sourceLayer,
+            filter: ['in', ['geometry-type'], ['literal', ['Polygon', 'MultiPolygon', 'LineString', 'MultiLineString']]],
+            paint: {
+                'line-color': styLine.strokeColor || styPoly.strokeColor,
+                'line-width': styLine.strokeWidth ?? 1.5,
+                'line-opacity': styLine.strokeOpacity ?? 0.9
+            }
+        });
+        layerIds.push(outlineId);
+
+        const pointId = `${dataset.id}-circle`;
+        this.map.addLayer({
+            id: pointId,
+            type: 'circle',
+            source: sourceId,
+            'source-layer': sourceLayer,
+            filter: ['in', ['geometry-type'], ['literal', ['Point', 'MultiPoint']]],
+            paint: {
+                'circle-color': styPoint.fillColor || defaultColor,
+                'circle-radius': styPoint.radius ?? 4,
+                'circle-opacity': styPoint.fillOpacity ?? 0.9,
+                'circle-stroke-color': styPoint.strokeColor || '#ffffff',
+                'circle-stroke-width': styPoint.strokeWidth ?? 1
+            }
+        });
+        layerIds.push(pointId);
+
+        this.dataLayers.set(dataset.id, {
+            sourceId,
+            layerIds,
+            chunkSources: [{ sourceId, layerIds }],
+            colorIndex,
+            geojson: { type: 'FeatureCollection', features: [] },
+            scaleRange: normalizeScaleRange(dataset),
+            pmtiles: true,
+            bounds: Array.isArray(dataset.pmtiles.bbox) && dataset.pmtiles.bbox.length === 4
+                ? dataset.pmtiles.bbox
+                : null
+        });
+        this._layerNames.set(dataset.id, dataset.name);
+        this._applyDatasetVisibility(dataset);
+        this._applyDatasetLock(dataset);
+
+        if (fit) {
+            const bb = this.dataLayers.get(dataset.id)?.bounds;
+            if (bb) {
+                try {
+                    this.map.fitBounds(
+                        [[bb[0], bb[1]], [bb[2], bb[3]]],
+                        { padding: 30, maxZoom: 16, duration: 0 }
+                    );
+                } catch {
+                    /* ignore bad bbox */
+                }
+            }
+        }
+
+        bus.emit('map:layerAdded', { id: dataset.id, name: dataset.name });
+        logger.info('Map', 'PMTiles layer added', {
+            layer: dataset.name,
+            path: urlPath,
+            featureCount: dataset.pmtiles.featureCount
+        });
+    }
+
     async addServiceLayer(dataset, colorIndex = 0, { fit = false } = {}) {
         const result = await engineAddServiceLayer(this, dataset, colorIndex, { fit });
         this._applyDatasetLock(dataset);
@@ -698,6 +820,9 @@ class MapManager {
         if (!this.map) return;
         if (isServiceLayer(dataset)) {
             return this.addServiceLayer(dataset, colorIndex, { fit });
+        }
+        if (isPmTilesLayer(dataset)) {
+            return this.addPmTilesLayer(dataset, colorIndex, { fit });
         }
         if (isWorkspaceLayer(dataset)) {
             return this.addWorkspaceLayer(dataset, colorIndex, { fit });
@@ -2297,6 +2422,17 @@ class MapManager {
                     if (wb[1] < south) south = wb[1];
                     if (wb[2] > east) east = wb[2];
                     if (wb[3] > north) north = wb[3];
+                }
+                continue;
+            }
+            if (Array.isArray(info?.bounds) && info.bounds.length === 4) {
+                const bb = info.bounds;
+                if (isFinite(bb[0])) {
+                    found = true;
+                    if (bb[0] < west) west = bb[0];
+                    if (bb[1] < south) south = bb[1];
+                    if (bb[2] > east) east = bb[2];
+                    if (bb[3] > north) north = bb[3];
                 }
                 continue;
             }
