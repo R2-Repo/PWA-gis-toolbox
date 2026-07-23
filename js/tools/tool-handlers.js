@@ -993,9 +993,11 @@ export async function handleFileImport(files, fenceBbox = null, options = {}) {
 
     try {
         if (!options.preflightConfirmed) {
+            const platform = options.platform ?? getPlatformBundle({ showToast }).platform;
             const guard = await guardFilesBeforeImport(dataFiles, {
                 source: 'handleFileImport',
-                getLayers
+                getLayers,
+                platform
             });
             if (guard.cancelled) return;
         }
@@ -1330,6 +1332,7 @@ function _openImportFlowModal(flowProps = {}) {
 
 /**
  * Shared entry for drag-drop, toolbar, and routed imports — guard + route before parse.
+ * Desktop: large files with a filesystem path use sidecar inspect/sample preview (not full JS ingest).
  * @param {File[]} files
  * @param {Array|null} [fenceBbox]
  */
@@ -1344,10 +1347,13 @@ export async function openImportForFiles(files, fenceBbox = null) {
     }
     if (!dataFiles.length) return;
 
+    const { platform, services } = getPlatformBundle({ showToast });
+
     try {
         await guardFilesBeforeImport(dataFiles, {
             source: 'openImportForFiles',
-            getLayers
+            getLayers,
+            platform
         });
     } catch (e) {
         const classified = handleError(e, 'Import', 'openImportForFiles guard');
@@ -1356,29 +1362,118 @@ export async function openImportForFiles(files, fenceBbox = null) {
     }
 
     try {
+    const { classifyImportFiles } = await import('../import/import-policy.js');
+    const { memoryFiles, pathFiles, blockedLargeNoPath } = classifyImportFiles(dataFiles, platform);
+
+    if (blockedLargeNoPath.length) {
+        const names = blockedLargeNoPath.map((f) => f.name).join(', ');
+        showToast(
+            `${names}: too large for in-memory import. Drag from Explorer or use a native Open dialog.`,
+            'error'
+        );
+    }
+
+    if (pathFiles.length) {
+        await _importDesktopPathPreviews(pathFiles, services);
+    }
+
+    if (!memoryFiles.length) return;
+
     const { scanFilesForImport } = await import('../import/import-scan.js');
     const { preflightFile, PREFLIGHT_LEVEL } = await import('../import/import-preflight.js');
     const { detectFormat } = await import('../import/importer.js');
 
-    const shouldPreScan = dataFiles.some((f) => {
+    const shouldPreScan = memoryFiles.some((f) => {
         const pf = preflightFile(f);
         const fmt = detectFormat(f);
         return pf.level === PREFLIGHT_LEVEL.SOFT || fmt === 'zip' || fmt === 'kmz';
     });
 
-    let scans = shouldPreScan ? await scanFilesForImport(dataFiles) : [];
-    const assessment = await assessImportRoute(dataFiles, { scans });
+    let scans = shouldPreScan ? await scanFilesForImport(memoryFiles) : [];
+    const assessment = await assessImportRoute(memoryFiles, { scans });
 
     if (assessment.route === 'optimizer') {
-        _openImportOptimizerModal(dataFiles);
+        _openImportOptimizerModal(memoryFiles);
         return;
     }
 
     // Standard route: import as-is (in-memory). Field picking stays in the Import Files dialog.
-    await handleFileImport(dataFiles, fenceBbox ?? _fenceBbox, { preflightConfirmed: true });
+    await handleFileImport(memoryFiles, fenceBbox ?? _fenceBbox, {
+        preflightConfirmed: true,
+        platform
+    });
     } catch (e) {
         const classified = handleError(e, 'Import', 'openImportForFiles');
         showErrorToast(classified);
+    }
+}
+
+/**
+ * @param {Array<{ file: File, path: string }>} pathFiles
+ * @param {import('../platform/contracts.js').PlatformServices} services
+ */
+async function _importDesktopPathPreviews(pathFiles, services) {
+    const { importVectorPreviewByPath } = await import('../import/desktop-path-import.js');
+    const progress = showProgressModal('Desktop path import');
+    const layerIds = [];
+    const abort = new AbortController();
+    let cancelled = false;
+
+    progress.onCancel(() => {
+        cancelled = true;
+        abort.abort();
+        progress.close();
+        showToast('Import cancelled', 'warning');
+    });
+
+    try {
+        for (let i = 0; i < pathFiles.length; i++) {
+            if (cancelled || abort.signal.aborted) break;
+            const { path, file } = pathFiles[i];
+            progress.update(
+                Math.round((i / pathFiles.length) * 100),
+                `Sampling ${file.name} from disk…`,
+                { fileName: file.name, fileIndex: i + 1, fileCount: pathFiles.length }
+            );
+
+            const { dataset, inspect } = await importVectorPreviewByPath(services.compute, path, {
+                signal: abort.signal,
+                onProgress: (p) => {
+                    if (cancelled) return;
+                    const base = (i / pathFiles.length) * 100;
+                    const slice = (1 / pathFiles.length) * (p?.percent ?? 0);
+                    progress.update(Math.min(99, Math.round(base + slice)), p?.message || 'Sampling…', {
+                        fileName: file.name,
+                        fileIndex: i + 1,
+                        fileCount: pathFiles.length
+                    });
+                }
+            });
+
+            if (cancelled || abort.signal.aborted) break;
+
+            const { ids } = await _addImportedDatasets([dataset], { useWorkspace: false });
+            layerIds.push(...ids);
+
+            const total = inspect?.featureCount ?? dataset.source?.fullFeatureCount;
+            if (dataset.source?.previewOnly && total != null) {
+                showToast(
+                    `Loaded preview of ${file.name} (${dataset.geojson.features.length.toLocaleString()} of ${Number(total).toLocaleString()} features). Full library ingest comes in a later desktop phase.`,
+                    'info'
+                );
+            }
+        }
+
+        if (!cancelled && !abort.signal.aborted && layerIds.length) {
+            await mapService.scheduleFitToLayers(layerIds);
+        }
+    } catch (err) {
+        if (cancelled || abort.signal.aborted) return;
+        const { isJobCanceledError } = await import('../platform/jobs/job-errors.js');
+        if (isJobCanceledError(err)) return;
+        throw err;
+    } finally {
+        if (!cancelled) progress.close();
     }
 }
 

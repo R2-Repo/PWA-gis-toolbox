@@ -5,7 +5,12 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter, State};
 
-const ALLOWED_OPS: &[&str] = &["echo", "summarize_geojson"];
+const ALLOWED_OPS: &[&str] = &[
+    "echo",
+    "summarize_geojson",
+    "inspect_vector",
+    "sample_vector",
+];
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -46,13 +51,16 @@ fn validate_operation(operation: &str, input: &Value) -> Result<(), String> {
     if !ALLOWED_OPS.contains(&operation) {
         return Err(format!("Operation \"{operation}\" is not allow-listed"));
     }
-    if operation == "summarize_geojson" {
+    if matches!(
+        operation,
+        "summarize_geojson" | "inspect_vector" | "sample_vector"
+    ) {
         let path = input
             .get("path")
             .and_then(|v| v.as_str())
-            .ok_or_else(|| "summarize_geojson requires input.path".to_string())?;
+            .ok_or_else(|| format!("{operation} requires input.path"))?;
         if path.trim().is_empty() {
-            return Err("summarize_geojson input.path must be non-empty".into());
+            return Err(format!("{operation} input.path must be non-empty"));
         }
     }
     Ok(())

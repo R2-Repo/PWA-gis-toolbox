@@ -5,9 +5,9 @@ Narrow, allow-listed operations for the private Windows desktop shell.
 ## Design rules
 
 - No arbitrary `runPythonScript` / shell execution from the frontend
-- Operations are typed and versioned (`health`, `echo`, `summarize_geojson`)
+- Operations are typed and versioned (`health`, `echo`, `summarize_geojson`, `inspect_vector`, `sample_vector`)
 - Large datasets pass as **file paths**, not giant JSON over IPC
-- Stdlib only for v0.1 (no GDAL/PDAL yet)
+- Stdlib only for v0.1 (no GDAL/PDAL/DuckDB yet) — GeoJSON path inspect/sample for desktop large-file preview
 
 ## Dev usage
 

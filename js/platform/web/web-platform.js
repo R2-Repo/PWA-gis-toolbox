@@ -44,6 +44,10 @@ export function createWebPlatform(opts = {}) {
                     available: false,
                     reason: 'Large-dataset processing requires the Windows desktop application'
                 },
+                gisLibrary: {
+                    available: false,
+                    reason: 'Local GIS Library requires the Windows desktop application'
+                },
                 localSqlite: {
                     available: false,
                     reason: 'Network Atlas SQLite requires the Windows desktop application'

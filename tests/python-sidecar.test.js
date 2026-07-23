@@ -54,6 +54,8 @@ describe('python sidecar', () => {
         expect(finalMsg.ok).toBe(true);
         expect(finalMsg.output.version).toBeTruthy();
         expect(finalMsg.output.operations).toContain('summarize_geojson');
+        expect(finalMsg.output.operations).toContain('inspect_vector');
+        expect(finalMsg.output.operations).toContain('sample_vector');
     });
 
     it('summarizes a GeoJSON file by path', () => {
@@ -90,6 +92,47 @@ describe('python sidecar', () => {
             expect(finalMsg.output.geometryTypes.LineString).toBe(1);
             expect(finalMsg.output.propertyKeys).toEqual(['kind', 'name']);
             expect(messages.some((m) => m.type === 'progress')).toBe(true);
+        } finally {
+            rmSync(dir, { recursive: true, force: true });
+        }
+    });
+
+    it('inspects and samples a GeoJSON file by path', () => {
+        const dir = mkdtempSync(join(tmpdir(), 'gis-sidecar-'));
+        const filePath = join(dir, 'sample.geojson');
+        const features = [];
+        for (let i = 0; i < 10; i += 1) {
+            features.push({
+                type: 'Feature',
+                properties: { id: i },
+                geometry: { type: 'Point', coordinates: [i, i] }
+            });
+        }
+        writeFileSync(filePath, JSON.stringify({ type: 'FeatureCollection', features }));
+
+        try {
+            const inspectResult = runSidecar({
+                id: 'i1',
+                op: 'inspect_vector',
+                input: { path: filePath }
+            });
+            expect(inspectResult.status).toBe(0);
+            const inspectMsg = parseMessages(inspectResult.stdout).at(-1);
+            expect(inspectMsg.ok).toBe(true);
+            expect(inspectMsg.output.featureCount).toBe(10);
+            expect(inspectMsg.output.bbox).toEqual([0, 0, 9, 9]);
+
+            const sampleResult = runSidecar({
+                id: 'p1',
+                op: 'sample_vector',
+                input: { path: filePath, maxFeatures: 3 }
+            });
+            expect(sampleResult.status).toBe(0);
+            const sampleMsg = parseMessages(sampleResult.stdout).at(-1);
+            expect(sampleMsg.ok).toBe(true);
+            expect(sampleMsg.output.sampledFeatureCount).toBe(3);
+            expect(sampleMsg.output.previewOnly).toBe(true);
+            expect(sampleMsg.output.geojson.features).toHaveLength(3);
         } finally {
             rmSync(dir, { recursive: true, force: true });
         }

@@ -21,6 +21,7 @@
  * @property {CapabilityStatus} [localGdal]
  * @property {CapabilityStatus} [localPdal]
  * @property {CapabilityStatus} [largeDatasetProcessing]
+ * @property {CapabilityStatus} [gisLibrary]
  * @property {CapabilityStatus} [localSqlite]
  * @property {CapabilityStatus} [icmpPing]
  */
@@ -153,6 +154,18 @@
  */
 
 /**
+ * Local GIS Library catalog (desktop Phase 2+). Metadata only — not Atlas DB.
+ * Geometry lives on disk; catalog stores paths and item metadata.
+ *
+ * @typedef {Object} GisCatalogService
+ * @property {() => Promise<void>} [open]
+ * @property {() => Promise<{ items: object[] }>} [listItems]
+ * @property {(id: string) => Promise<object|null>} [getItem]
+ * @property {(item: object) => Promise<object>} [upsertItem]
+ * @property {(id: string) => Promise<void>} [removeItem]
+ */
+
+/**
  * @typedef {Object} PlatformServices
  * @property {FileService} files
  * @property {ComputeService} compute
@@ -162,6 +175,7 @@
  * @property {DatabaseService} [atlasDb]
  * @property {UdotFiberDbService} [udotFiberDb]
  * @property {PingService} [ping]
+ * @property {GisCatalogService} [gisCatalog]
  */
 
 /**
@@ -178,6 +192,7 @@ export const CAPABILITY_KEYS = Object.freeze([
     'localGdal',
     'localPdal',
     'largeDatasetProcessing',
+    'gisLibrary',
     'localSqlite',
     'icmpPing'
 ]);

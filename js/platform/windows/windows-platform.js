@@ -39,6 +39,10 @@ function capabilitiesFromHandshake(handshake) {
             available: false,
             reason: 'Large-dataset processing not packaged yet'
         },
+        gisLibrary: fromShell.gisLibrary || {
+            available: false,
+            reason: 'Local GIS Library catalog not packaged yet'
+        },
         localSqlite: fromShell.localSqlite || {
             available: isTauriAvailable(),
             reason: isTauriAvailable() ? undefined : 'Tauri runtime not detected'

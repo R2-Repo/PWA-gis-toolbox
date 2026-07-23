@@ -69,6 +69,10 @@ fn platform_handshake(state: tauri::State<'_, SidecarState>) -> Value {
                 "reason": "PDAL not packaged yet"
             },
             "largeDatasetProcessing": large,
+            "gisLibrary": {
+                "available": false,
+                "reason": "Local GIS Library catalog not packaged yet"
+            },
             "localSqlite": {
                 "available": true
             },

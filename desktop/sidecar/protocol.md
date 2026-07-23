@@ -45,3 +45,5 @@ Failure:
 - `health`
 - `echo`
 - `summarize_geojson` — `{ "path": "<file>" }`
+- `inspect_vector` — `{ "path": "<file>" }` — metadata only (GeoJSON/JSON in v0.1)
+- `sample_vector` — `{ "path": "<file>", "maxFeatures"?: number }` — preview FeatureCollection (capped)

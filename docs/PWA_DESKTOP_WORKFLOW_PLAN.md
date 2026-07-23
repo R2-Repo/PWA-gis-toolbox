@@ -6,15 +6,15 @@
 
 ## Current state (what you already have)
 
-GIS Toolbox is already well-positioned for this:
+GIS Toolbox is **one app, two runtimes** (public PWA + private Windows Tauri shell):
 
-- **One Vite/React app** with PWA via `vite-plugin-pwa` (`vite.config.js`)
-- **Clean separation inside widgets**: pure `engine.js` → `controller.js` → React dialog → `registry.js`
-- **WidgetContext already exists** — controllers receive deps via `createWidgetContext()` in `js/tools/tool-handlers.js`
-- **No desktop shell yet** — no Electron/Tauri
-- **Cursor rules already guide widget work** (`.cursor/rules/widget-authoring.mdc`, `docs/WIDGET_AGENT_PLAYBOOK.md`)
+- Shared Vite/React/MapLibre UI; desktop build skips PWA service worker
+- Platform contracts in `js/platform/` (web vs windows providers); WidgetContext injects services
+- Tauri 2 shell (`src-tauri/`), job runner, thin Python sidecar (`summarize_geojson`, path inspect/sample)
+- Network Atlas + UDOT Fiber use Rust SQLite; Atlas is a separate desktop module
+- **GIS data plane:** see [`DESKTOP_DATA_PLANE.md`](./DESKTOP_DATA_PLANE.md) — Local GIS Library, DuckDB/GDAL, and tiles are phased; map import still uses browser-safe caps on the PWA
 
-The goal is not two apps — it is **one app, two runtimes**.
+The goal remains: one shared source tree, two production builds — not two apps.
 
 ---
 
