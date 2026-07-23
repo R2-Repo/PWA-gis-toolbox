@@ -68,6 +68,9 @@ const LAYER_AREA_LINE = 'atlas-area-line';
 const BUILDING_FILL_COLOR = '#0f766e';
 
 const HUB_ICON_PREFIX = 'atlas-hub-sq-';
+/** MapLibre icon-size for hub squares (28px image × size ≈ screen px). */
+const HUB_ICON_SIZE = 0.55;
+const HUB_ISSUE_ICON_SIZE = 0.42;
 const HUB_ISSUE_ICON = 'atlas-hub-issue-sq';
 const HUB_FILL_KEYS = [
     'reachable',
@@ -294,13 +297,13 @@ function applyAtlasLayerPaint(map) {
     }
     if (map.getLayer(LAYER_HUBS)?.type === 'symbol') {
         map.setLayoutProperty(LAYER_HUBS, 'icon-image', hubIconImageMatch());
-        map.setLayoutProperty(LAYER_HUBS, 'icon-size', 0.72);
+        map.setLayoutProperty(LAYER_HUBS, 'icon-size', HUB_ICON_SIZE);
         map.setLayoutProperty(LAYER_HUBS, 'icon-allow-overlap', true);
         map.setLayoutProperty(LAYER_HUBS, 'icon-ignore-placement', true);
     }
     if (map.getLayer(LAYER_HUBS_ISSUE)?.type === 'symbol') {
         map.setLayoutProperty(LAYER_HUBS_ISSUE, 'icon-image', HUB_ISSUE_ICON);
-        map.setLayoutProperty(LAYER_HUBS_ISSUE, 'icon-size', 0.55);
+        map.setLayoutProperty(LAYER_HUBS_ISSUE, 'icon-size', HUB_ISSUE_ICON_SIZE);
         map.setLayoutProperty(LAYER_HUBS_ISSUE, 'icon-allow-overlap', true);
         map.setLayoutProperty(LAYER_HUBS_ISSUE, 'icon-ignore-placement', true);
     }
@@ -588,7 +591,7 @@ export function applyAtlasMapToMap(map, payload) {
             filter: hubFilter,
             layout: {
                 'icon-image': hubIconImageMatch(),
-                'icon-size': 0.72,
+                'icon-size': HUB_ICON_SIZE,
                 'icon-allow-overlap': true,
                 'icon-ignore-placement': true
             }
@@ -600,7 +603,7 @@ export function applyAtlasMapToMap(map, payload) {
             filter: hubIssueFilter,
             layout: {
                 'icon-image': HUB_ISSUE_ICON,
-                'icon-size': 0.55,
+                'icon-size': HUB_ISSUE_ICON_SIZE,
                 'icon-allow-overlap': true,
                 'icon-ignore-placement': true
             }
@@ -647,7 +650,7 @@ export function applyAtlasMapToMap(map, payload) {
             filter: hubFilter,
             layout: {
                 'icon-image': hubIconImageMatch(),
-                'icon-size': 0.72,
+                'icon-size': HUB_ICON_SIZE,
                 'icon-allow-overlap': true,
                 'icon-ignore-placement': true
             }
@@ -661,7 +664,7 @@ export function applyAtlasMapToMap(map, payload) {
             filter: hubIssueFilter,
             layout: {
                 'icon-image': HUB_ISSUE_ICON,
-                'icon-size': 0.55,
+                'icon-size': HUB_ISSUE_ICON_SIZE,
                 'icon-allow-overlap': true,
                 'icon-ignore-placement': true
             }
