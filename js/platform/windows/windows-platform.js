@@ -30,11 +30,15 @@ function capabilitiesFromHandshake(handshake) {
         },
         localGdal: fromShell.localGdal || {
             available: false,
-            reason: 'GDAL not packaged yet'
+            reason: 'Install sidecar GIS deps (pyogrio)'
         },
         localPdal: fromShell.localPdal || {
             available: false,
             reason: 'PDAL not packaged yet'
+        },
+        duckdb: fromShell.duckdb || {
+            available: false,
+            reason: 'Install sidecar DuckDB deps'
         },
         largeDatasetProcessing: fromShell.largeDatasetProcessing || {
             available: false,

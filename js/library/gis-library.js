@@ -94,3 +94,69 @@ export function formatBytes(n) {
     if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
+
+/**
+ * Convert managed original (or source path) to GeoParquet and store working_path on the catalog item.
+ * Requires sidecar duckdb and/or pyogrio.
+ *
+ * @param {object} item - catalog item with id + managedOriginalPath or originalPath
+ * @param {{ compute?: import('../platform/contracts.js').ComputeService, onProgress?: Function, signal?: AbortSignal }} [opts]
+ * @returns {Promise<object|null>} updated item
+ */
+export async function optimizeGisLibraryItemToGeoParquet(item, opts = {}) {
+    const catalog = getGisCatalogService();
+    const { platform, services } = getPlatformBundle();
+    const compute = opts.compute || services.compute;
+    if (!catalog || !item?.id || !compute?.run) return null;
+
+    if (!hasCapability(platform, 'duckdb')) {
+        throw new Error(
+            'GeoParquet optimize requires DuckDB in the Python sidecar (pip install -r desktop/sidecar/python/requirements.txt)'
+        );
+    }
+
+    const sourcePath = item.managedOriginalPath || item.originalPath;
+    if (!sourcePath) throw new Error('Library item has no source path to optimize');
+
+    await catalog.open();
+    const { NATIVE_OPERATIONS } = await import('../platform/jobs/allowed-operations.js');
+
+    // Write beside datasets/<id>/data.parquet when possible
+    let outputPath = null;
+    if (item.previewPath) {
+        const normalized = String(item.previewPath).replace(/\\/g, '/');
+        const dir = normalized.includes('/')
+            ? normalized.slice(0, normalized.lastIndexOf('/'))
+            : null;
+        if (dir) outputPath = `${dir}/data.parquet`;
+    }
+
+    const converted = await compute.run(
+        NATIVE_OPERATIONS.CONVERT_TO_GEOPARQUET,
+        {
+            path: sourcePath,
+            ...(outputPath ? { outputPath } : {})
+        },
+        { onProgress: opts.onProgress, signal: opts.signal }
+    );
+
+    let checksum = null;
+    try {
+        const hash = await compute.run(
+            NATIVE_OPERATIONS.FILE_CHECKSUM,
+            { path: converted.outputPath || sourcePath },
+            { signal: opts.signal }
+        );
+        checksum = hash?.checksum || null;
+    } catch {
+        /* non-fatal */
+    }
+
+    const { item: updated } = await catalog.setWorkingPath({
+        id: item.id,
+        workingPath: converted.outputPath,
+        checksum
+    });
+    bus.emit('gis-library:changed', { action: 'optimize', item: updated });
+    return updated || null;
+}

@@ -5,9 +5,11 @@ import {
     isGisLibraryAvailable,
     listGisLibraryItems,
     openGisLibrary,
+    optimizeGisLibraryItemToGeoParquet,
     readGisLibraryPreview,
     removeGisLibraryItem
 } from '../../js/library/gis-library.js';
+import { hasCapability } from '../../js/platform/contracts.js';
 import { getPlatformBundle } from '../../js/platform/create-platform.js';
 
 /**
@@ -90,6 +92,25 @@ export function LocalGisLibraryPanel({ onAddPreviewToMap, showToast }) {
         }
     }, [showToast]);
 
+    const canOptimize = (() => {
+        const { platform } = getPlatformBundle();
+        return hasCapability(platform, 'duckdb');
+    })();
+
+    const onOptimize = useCallback(async (item) => {
+        if (!item?.id) return;
+        setBusyId(item.id);
+        try {
+            await optimizeGisLibraryItemToGeoParquet(item);
+            showToast?.(`Optimized ${item.displayName} → GeoParquet`, 'success');
+            await refresh();
+        } catch (err) {
+            showToast?.(err?.message || 'Optimize failed', 'error');
+        } finally {
+            setBusyId(null);
+        }
+    }, [refresh, showToast]);
+
     if (!available) return null;
 
     return (
@@ -131,6 +152,7 @@ export function LocalGisLibraryPanel({ onAddPreviewToMap, showToast }) {
                                         ? `preview ${sampled} of ${count}`
                                         : `${count} features`}
                                     {item.byteSize != null ? ` · ${formatBytes(item.byteSize)}` : ''}
+                                    {item.workingPath ? ' · GeoParquet' : ''}
                                 </div>
                             </div>
                             <div className="gis-library-card-actions">
@@ -142,6 +164,16 @@ export function LocalGisLibraryPanel({ onAddPreviewToMap, showToast }) {
                                 >
                                     Add to map
                                 </button>
+                                {canOptimize && !item.workingPath ? (
+                                    <button
+                                        type="button"
+                                        className="btn btn-sm"
+                                        disabled={busy}
+                                        onClick={() => void onOptimize(item)}
+                                    >
+                                        Optimize
+                                    </button>
+                                ) : null}
                                 <button
                                     type="button"
                                     className="btn btn-sm"

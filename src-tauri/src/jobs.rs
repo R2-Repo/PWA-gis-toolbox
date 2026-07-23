@@ -10,6 +10,9 @@ const ALLOWED_OPS: &[&str] = &[
     "summarize_geojson",
     "inspect_vector",
     "sample_vector",
+    "file_checksum",
+    "convert_to_geoparquet",
+    "summarize_vector",
 ];
 
 #[derive(Debug, Deserialize)]
@@ -53,7 +56,12 @@ fn validate_operation(operation: &str, input: &Value) -> Result<(), String> {
     }
     if matches!(
         operation,
-        "summarize_geojson" | "inspect_vector" | "sample_vector"
+        "summarize_geojson"
+            | "inspect_vector"
+            | "sample_vector"
+            | "file_checksum"
+            | "convert_to_geoparquet"
+            | "summarize_vector"
     ) {
         let path = input
             .get("path")

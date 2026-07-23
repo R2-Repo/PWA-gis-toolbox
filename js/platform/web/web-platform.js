@@ -41,6 +41,10 @@ export function createWebPlatform(opts = {}) {
                     available: false,
                     reason: 'Local PDAL requires the Windows desktop application'
                 },
+                duckdb: {
+                    available: false,
+                    reason: 'DuckDB requires the Windows desktop application'
+                },
                 largeDatasetProcessing: {
                     available: false,
                     reason: 'Large-dataset processing requires the Windows desktop application'

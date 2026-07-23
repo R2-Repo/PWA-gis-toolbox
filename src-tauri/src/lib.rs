@@ -18,7 +18,7 @@ use atlas::{
 use gis_catalog::{
     gis_catalog_get_item, gis_catalog_ingest_path, gis_catalog_library_root, gis_catalog_list_items,
     gis_catalog_open, gis_catalog_open_library_folder, gis_catalog_read_preview,
-    gis_catalog_remove_item, gis_catalog_touch_item, GisCatalogState,
+    gis_catalog_remove_item, gis_catalog_set_working_path, gis_catalog_touch_item, GisCatalogState,
 };
 use udot_fiber::{
     udot_fiber_db_open, udot_fiber_get_sync_meta, udot_fiber_load_all_layers, udot_fiber_load_layer,
@@ -66,13 +66,25 @@ fn platform_handshake(state: tauri::State<'_, SidecarState>) -> Value {
                 "available": false,
                 "reason": "GPU backend not configured yet"
             },
-            "localGdal": {
-                "available": false,
-                "reason": "GDAL not packaged yet"
+            "localGdal": if health.local_gdal {
+                json!({ "available": true, "version": health.version })
+            } else {
+                json!({
+                    "available": false,
+                    "reason": "Install sidecar GIS deps (pyogrio): pip install -r desktop/sidecar/python/requirements.txt"
+                })
             },
             "localPdal": {
                 "available": false,
                 "reason": "PDAL not packaged yet"
+            },
+            "duckdb": if health.duckdb {
+                json!({ "available": true, "version": health.version })
+            } else {
+                json!({
+                    "available": false,
+                    "reason": "Install sidecar DuckDB: pip install -r desktop/sidecar/python/requirements.txt"
+                })
             },
             "largeDatasetProcessing": large,
             "gisLibrary": {
@@ -174,7 +186,8 @@ pub fn run() {
             gis_catalog_ingest_path,
             gis_catalog_touch_item,
             gis_catalog_remove_item,
-            gis_catalog_read_preview
+            gis_catalog_read_preview,
+            gis_catalog_set_working_path
         ])
         .run(tauri::generate_context!())
         .expect("error while running GIS Toolbox desktop shell");

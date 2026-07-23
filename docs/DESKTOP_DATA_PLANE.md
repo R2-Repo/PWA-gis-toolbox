@@ -1,6 +1,6 @@
 # Desktop GIS data plane
 
-> **Status:** Phases 0–2 landed — path preview + Local GIS Library catalog (`gis-library/` + `gis-catalog.sqlite`). DuckDB/GDAL/tiles still later.  
+> **Status:** Phases 0–3 landed — path preview, Local GIS Library, optional DuckDB/pyogrio GeoParquet optimize. Tiles (Phase 4) still later.  
 > **Safety:** Must not break the public PWA or Network Atlas.
 
 ## Goal
@@ -23,7 +23,7 @@ Desktop is a **local GIS workstation**: path-based data, native jobs (Python sid
 | GIS item catalog | `{appData}/gis-library/catalog/gis-catalog.sqlite` (metadata only) |
 | Network Atlas | `network-atlas.sqlite` — **do not merge** |
 | UDOT Fiber cache | `udot-fiber-network.sqlite` — domain-specific |
-| Large vector working | GeoParquet (Phase 3) |
+| Large vector working | GeoParquet (`datasets/<id>/data.parquet` when engines installed) |
 | Small editable vector | GeoPackage |
 | Large raster | COG (Phase 3) |
 | Map preview (Phase 1) | Sample FeatureCollection from sidecar |
@@ -60,7 +60,9 @@ Desktop App
 | `localSqlite` | no | yes (Atlas + future GIS catalog) |
 | `icmpPing` | no | yes (Atlas) |
 | `gisLibrary` | no | yes (Local GIS Library) |
-| `localGdal` / `localPdal` | no | stub until packaged |
+| `localGdal` | no | yes when pyogrio installed in sidecar env |
+| `duckdb` | no | yes when duckdb installed in sidecar env |
+| `localPdal` | no | stub until packaged |
 
 ## Phase map
 
@@ -69,7 +71,7 @@ Desktop App
 | 0 | This doc + contract stubs |
 | 1 | Path inspect/sample; large GeoJSON preview on desktop; PWA unchanged |
 | 2 | Local GIS Library MVP (managed folders + catalog SQLite) — **done** |
-| 3 | DuckDB Spatial + GDAL in sidecar; GeoParquet/COG |
+| 3 | DuckDB Spatial + pyogrio in sidecar; GeoParquet optimize — **done** (COG later) |
 | 4 | PMTiles/MBTiles; optional Martin on `127.0.0.1` |
 | 5 | Dual-path analysis widgets + lineage |
 | 6+ | Portal polish, MapServer, PostGIS, GeoServer |

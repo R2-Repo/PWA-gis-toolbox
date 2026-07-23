@@ -13,6 +13,8 @@ pub struct SidecarHealth {
     pub version: Option<String>,
     pub reason: Option<String>,
     pub operations: Vec<String>,
+    pub duckdb: bool,
+    pub local_gdal: bool,
 }
 
 impl Default for SidecarHealth {
@@ -22,6 +24,8 @@ impl Default for SidecarHealth {
             version: None,
             reason: Some("Python sidecar not checked yet".into()),
             operations: vec![],
+            duckdb: false,
+            local_gdal: false,
         }
     }
 }
@@ -178,28 +182,55 @@ pub fn check_sidecar_health(state: &SidecarState) -> SidecarHealth {
                 }
             });
             match output {
-                Some(Value::Object(map)) => SidecarHealth {
-                    available: true,
-                    version: map
-                        .get("version")
-                        .and_then(|v| v.as_str())
-                        .map(|s| s.to_string()),
-                    reason: None,
-                    operations: map
-                        .get("operations")
-                        .and_then(|v| v.as_array())
-                        .map(|arr| {
-                            arr.iter()
-                                .filter_map(|item| item.as_str().map(|s| s.to_string()))
-                                .collect()
+                Some(Value::Object(map)) => {
+                    let engines = map.get("engines").and_then(|v| v.as_object());
+                    let duckdb = map
+                        .get("duckdb")
+                        .and_then(|v| v.as_bool())
+                        .or_else(|| {
+                            engines
+                                .and_then(|e| e.get("duckdb"))
+                                .and_then(|d| d.get("available"))
+                                .and_then(|v| v.as_bool())
                         })
-                        .unwrap_or_default(),
-                },
+                        .unwrap_or(false);
+                    let local_gdal = map
+                        .get("localGdal")
+                        .and_then(|v| v.as_bool())
+                        .or_else(|| {
+                            engines
+                                .and_then(|e| e.get("pyogrio"))
+                                .and_then(|d| d.get("available"))
+                                .and_then(|v| v.as_bool())
+                        })
+                        .unwrap_or(false);
+                    SidecarHealth {
+                        available: true,
+                        version: map
+                            .get("version")
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string()),
+                        reason: None,
+                        operations: map
+                            .get("operations")
+                            .and_then(|v| v.as_array())
+                            .map(|arr| {
+                                arr.iter()
+                                    .filter_map(|item| item.as_str().map(|s| s.to_string()))
+                                    .collect()
+                            })
+                            .unwrap_or_default(),
+                        duckdb,
+                        local_gdal,
+                    }
+                }
                 _ => SidecarHealth {
                     available: false,
                     version: None,
                     reason: Some("Sidecar health response missing output".into()),
                     operations: vec![],
+                    duckdb: false,
+                    local_gdal: false,
                 },
             }
         }
@@ -208,6 +239,8 @@ pub fn check_sidecar_health(state: &SidecarState) -> SidecarHealth {
             version: None,
             reason: Some(err),
             operations: vec![],
+            duckdb: false,
+            local_gdal: false,
         },
     };
 

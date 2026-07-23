@@ -21,6 +21,7 @@ export function createWebGisCatalogService() {
         ingestPath: unavailable,
         touchItem: unavailable,
         removeItem: unavailable,
-        readPreview: unavailable
+        readPreview: unavailable,
+        setWorkingPath: unavailable
     };
 }

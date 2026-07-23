@@ -5,23 +5,31 @@ Narrow, allow-listed operations for the private Windows desktop shell.
 ## Design rules
 
 - No arbitrary `runPythonScript` / shell execution from the frontend
-- Operations are typed and versioned (`health`, `echo`, `summarize_geojson`, `inspect_vector`, `sample_vector`)
+- Operations are typed and versioned (see `protocol.md`)
 - Large datasets pass as **file paths**, not giant JSON over IPC
-- Stdlib only for v0.1 (no GDAL/PDAL/DuckDB yet) — GeoJSON path inspect/sample for desktop large-file preview
+- Stdlib GeoJSON path works without extras
+- Optional engines (Phase 3): DuckDB Spatial, pyogrio (GDAL bindings), shapely
+
+## Install GIS engines (desktop)
+
+```bash
+cd desktop/sidecar/python
+pip install -r requirements.txt
+```
+
+`health` reports `engines.duckdb` / `engines.pyogrio`. The Tauri handshake maps these to `duckdb` and `localGdal` capabilities.
 
 ## Dev usage
-
-From the repo root (or with `PYTHONPATH` set):
 
 ```bash
 cd desktop/sidecar/python
 printf '%s\n' '{"id":"1","op":"health","input":{}}' | python -m gis_sidecar
 ```
 
-Summarize a GeoJSON file:
+Convert to GeoParquet:
 
 ```bash
-printf '%s\n' '{"id":"2","op":"summarize_geojson","input":{"path":"/path/to/file.geojson"}}' | python -m gis_sidecar
+printf '%s\n' '{"id":"2","op":"convert_to_geoparquet","input":{"path":"C:/data/layer.geojson","outputPath":"C:/data/layer.parquet"}}' | python -m gis_sidecar
 ```
 
 ## Packaging (Windows)
@@ -34,4 +42,4 @@ Tauri `externalBin`. Until then, the Rust host falls back to:
 
 ## Protocol
 
-Newline-delimited JSON on stdin/stdout. See `gis_sidecar/protocol.py`.
+Newline-delimited JSON on stdin/stdout. See [`../protocol.md`](../protocol.md).

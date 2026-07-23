@@ -2,29 +2,45 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from collections import Counter
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from . import __version__
+from .engines import duckdb_available, probe_engines, pyogrio_available
 from .protocol import PROTOCOL_VERSION, emit_log, emit_progress
 
 
 Handler = Callable[[str, Dict[str, Any]], Any]
 
-# Cap preview GeoJSON payload returned over IPC (characters of serialized JSON).
 _SAMPLE_MAX_JSON_CHARS = 2_000_000
 _SAMPLE_DEFAULT_MAX_FEATURES = 500
-_SUPPORTED_VECTOR_SUFFIXES = {".geojson", ".json"}
+_GEOJSON_SUFFIXES = {".geojson", ".json"}
+_PYOGRIO_SUFFIXES = {
+    ".geojson",
+    ".json",
+    ".gpkg",
+    ".shp",
+    ".parquet",
+    ".geoparquet",
+    ".kml",
+    ".gml",
+    ".fgb",
+}
 
 
 def op_health(_request_id: str, _input: Dict[str, Any]) -> Dict[str, Any]:
+    engines = probe_engines()
     return {
         "ok": True,
         "version": __version__,
         "protocolVersion": PROTOCOL_VERSION,
         "operations": sorted(OPERATION_HANDLERS.keys()),
+        "engines": engines,
+        "localGdal": bool(engines.get("pyogrio", {}).get("available")),
+        "duckdb": bool(engines.get("duckdb", {}).get("available")),
     }
 
 
@@ -35,14 +51,28 @@ def op_echo(request_id: str, input_data: Dict[str, Any]) -> Dict[str, Any]:
     return {"echo": input_data}
 
 
-def _require_path(input_data: Dict[str, Any], op_name: str) -> Path:
-    path_value = input_data.get("path")
+def _require_path(input_data: Dict[str, Any], op_name: str, key: str = "path") -> Path:
+    path_value = input_data.get(key)
     if not path_value or not isinstance(path_value, str):
-        raise ValueError(f"{op_name} requires input.path (file path string)")
+        raise ValueError(f"{op_name} requires input.{key} (file path string)")
     path = Path(path_value)
     if not path.is_file():
         raise FileNotFoundError(f"File not found: {path}")
     return path
+
+
+def _require_output_path(input_data: Dict[str, Any], op_name: str, default: Path) -> Path:
+    raw = input_data.get("outputPath")
+    if raw is None or raw == "":
+        return default
+    if not isinstance(raw, str):
+        raise ValueError(f"{op_name} outputPath must be a string")
+    out = Path(raw)
+    if ".." in out.as_posix():
+        raise ValueError(f"{op_name} outputPath must not contain ..")
+    if out.parent and not out.parent.exists():
+        out.parent.mkdir(parents=True, exist_ok=True)
+    return out
 
 
 def _load_geojson_features(path: Path) -> Tuple[Any, List[dict]]:
@@ -99,33 +129,142 @@ def _analyze_features(features: List[Any]) -> Tuple[Dict[str, int], List[str], O
     bbox = None
     if min_x is not None and min_y is not None and max_x is not None and max_y is not None:
         bbox = [min_x, min_y, max_x, max_y]
-
     return dict(sorted(geom_counts.items())), sorted(property_keys), bbox
 
 
-def _ensure_geojson_suffix(path: Path, op_name: str) -> None:
-    if path.suffix.lower() not in _SUPPORTED_VECTOR_SUFFIXES:
-        raise ValueError(
-            f'{op_name} currently supports GeoJSON/JSON only '
-            f'(got "{path.suffix or "no extension"}"). GDAL formats come in a later phase.'
+def _format_from_path(path: Path) -> str:
+    ext = path.suffix.lower().lstrip(".")
+    if ext in {"geojson", "json"}:
+        return "geojson"
+    if ext == "geoparquet":
+        return "parquet"
+    return ext or "unknown"
+
+
+def _is_geojson_path(path: Path) -> bool:
+    return path.suffix.lower() in _GEOJSON_SUFFIXES
+
+
+def _can_use_pyogrio(path: Path) -> bool:
+    # Prefer stdlib for GeoJSON; use pyogrio for other GDAL formats (no geopandas required for info/raw).
+    if _is_geojson_path(path):
+        return False
+    return pyogrio_available() and path.suffix.lower() in _PYOGRIO_SUFFIXES
+
+
+def _inspect_with_pyogrio(path: Path) -> Dict[str, Any]:
+    import pyogrio  # type: ignore
+
+    info = pyogrio.read_info(path)
+    fields = info.get("fields") or []
+    dtypes = info.get("dtypes") or []
+    property_keys = [str(f) for f in fields]
+    geom_type = info.get("geometry_type") or info.get("geom_type")
+    geometry_types = {str(geom_type): int(info.get("features") or 0)} if geom_type else {}
+    crs = info.get("crs")
+    crs_hint = str(crs) if crs else None
+    bbox = info.get("total_bounds") or info.get("bbox")
+    if bbox is not None:
+        try:
+            bbox = [float(bbox[0]), float(bbox[1]), float(bbox[2]), float(bbox[3])]
+        except Exception:  # noqa: BLE001
+            bbox = None
+    return {
+        "path": str(path.resolve()),
+        "format": _format_from_path(path),
+        "rootType": "FeatureCollection",
+        "featureCount": int(info.get("features") or 0),
+        "geometryTypes": geometry_types,
+        "propertyKeys": property_keys,
+        "fieldDtypes": [str(d) for d in dtypes],
+        "bbox": bbox,
+        "byteSize": path.stat().st_size,
+        "crsHint": crs_hint,
+        "engine": "pyogrio",
+    }
+
+
+def _sample_with_pyogrio(path: Path, max_features: int) -> Tuple[List[dict], int]:
+    """Sample without geopandas — use pyogrio.raw + shapely WKB when available."""
+    import pyogrio  # type: ignore
+
+    info = pyogrio.read_info(path)
+    total = int(info.get("features") or 0)
+    field_names = [str(f) for f in (info.get("fields") or [])]
+
+    # raw.read returns meta, geometry (WKB), field arrays
+    try:
+        meta, geometry, field_data = pyogrio.raw.read(
+            str(path),
+            max_features=max_features,
         )
+    except TypeError:
+        meta, geometry, field_data = pyogrio.raw.read(str(path))
+        if geometry is not None and len(geometry) > max_features:
+            geometry = geometry[:max_features]
+            if field_data is not None:
+                field_data = [col[:max_features] for col in field_data]
+
+    features: List[dict] = []
+    try:
+        from shapely import from_wkb  # type: ignore
+        from shapely.geometry import mapping  # type: ignore
+    except Exception as exc:  # noqa: BLE001
+        raise ValueError(
+            "Sampling non-GeoJSON formats requires shapely "
+            f"(pip install -r requirements.txt): {exc}"
+        ) from exc
+
+    count = len(geometry) if geometry is not None else 0
+    for i in range(count):
+        geom = None
+        try:
+            if geometry[i] is not None:
+                geom = mapping(from_wkb(geometry[i]))
+        except Exception:  # noqa: BLE001
+            geom = None
+        props: Dict[str, Any] = {}
+        if field_data is not None and field_names:
+            for fi, name in enumerate(field_names):
+                if fi < len(field_data):
+                    try:
+                        val = field_data[fi][i]
+                        # numpy scalars → python
+                        if hasattr(val, "item"):
+                            val = val.item()
+                        props[name] = val
+                    except Exception:  # noqa: BLE001
+                        props[name] = None
+        features.append({"type": "Feature", "geometry": geom, "properties": props})
+
+    _ = meta
+    return features, total
+
+
+def _cap_sample_features(sampled: List[dict], request_id: str) -> List[dict]:
+    while sampled:
+        payload = {"type": "FeatureCollection", "features": sampled}
+        encoded = json.dumps(payload, separators=(",", ":"))
+        if len(encoded) <= _SAMPLE_MAX_JSON_CHARS:
+            break
+        keep = max(1, int(len(sampled) * 0.75))
+        if keep >= len(sampled):
+            keep = len(sampled) - 1
+        if keep < 1:
+            raise ValueError("sample_vector preview exceeds IPC size budget even for one feature")
+        sampled = sampled[:keep]
+        emit_log(request_id, f"Reduced sample to {keep} features for IPC budget")
+    return sampled
 
 
 def op_summarize_geojson(request_id: str, input_data: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Narrow GIS operation: summarize a GeoJSON file on disk.
-    Input: { "path": "<absolute-or-relative-file-path>" }
-    Does not accept inline giant JSON payloads.
-    """
     path = _require_path(input_data, "summarize_geojson")
     emit_progress(request_id, percent=5, stage="validate", message="Validating path")
     emit_log(request_id, f"Reading {path.name}")
     emit_progress(request_id, percent=25, stage="read", message="Reading GeoJSON")
     root_type, features = _load_geojson_features(path)
-
     emit_progress(request_id, percent=60, stage="analyze", message="Analyzing features")
     geom_counts, property_keys, _bbox = _analyze_features(features)
-
     emit_progress(request_id, percent=100, stage="done", message="Summary complete")
     return {
         "path": str(path.resolve()),
@@ -138,12 +277,23 @@ def op_summarize_geojson(request_id: str, input_data: Dict[str, Any]) -> Dict[st
 
 
 def op_inspect_vector(request_id: str, input_data: Dict[str, Any]) -> Dict[str, Any]:
-    """Metadata-only inspect for path-based desktop import. GeoJSON/JSON in v0.1."""
     path = _require_path(input_data, "inspect_vector")
-    _ensure_geojson_suffix(path, "inspect_vector")
     emit_progress(request_id, percent=10, stage="validate", message="Validating path")
     emit_log(request_id, f"Inspecting {path.name}")
-    emit_progress(request_id, percent=35, stage="read", message="Reading vector file")
+
+    if _can_use_pyogrio(path):
+        emit_progress(request_id, percent=40, stage="read", message="Reading via pyogrio")
+        result = _inspect_with_pyogrio(path)
+        emit_progress(request_id, percent=100, stage="done", message="Inspect complete")
+        return result
+
+    if path.suffix.lower() not in _GEOJSON_SUFFIXES:
+        raise ValueError(
+            f'inspect_vector: format "{path.suffix or "unknown"}" requires pyogrio/GDAL '
+            "(pip install -r desktop/sidecar/python/requirements.txt)."
+        )
+
+    emit_progress(request_id, percent=35, stage="read", message="Reading GeoJSON")
     root_type, features = _load_geojson_features(path)
     emit_progress(request_id, percent=75, stage="analyze", message="Analyzing metadata")
     geom_counts, property_keys, bbox = _analyze_features(features)
@@ -158,16 +308,12 @@ def op_inspect_vector(request_id: str, input_data: Dict[str, Any]) -> Dict[str, 
         "bbox": bbox,
         "byteSize": path.stat().st_size,
         "crsHint": "EPSG:4326",
+        "engine": "stdlib",
     }
 
 
 def op_sample_vector(request_id: str, input_data: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Return a capped FeatureCollection preview for MapLibre.
-    Input: { "path": "<file>", "maxFeatures"?: number }
-    """
     path = _require_path(input_data, "sample_vector")
-    _ensure_geojson_suffix(path, "sample_vector")
     max_features = input_data.get("maxFeatures", _SAMPLE_DEFAULT_MAX_FEATURES)
     try:
         max_features = int(max_features)
@@ -177,33 +323,45 @@ def op_sample_vector(request_id: str, input_data: Dict[str, Any]) -> Dict[str, A
 
     emit_progress(request_id, percent=10, stage="validate", message="Validating path")
     emit_log(request_id, f"Sampling {path.name} (max {max_features})")
-    emit_progress(request_id, percent=30, stage="read", message="Reading vector file")
+
+    if _can_use_pyogrio(path):
+        emit_progress(request_id, percent=35, stage="read", message="Sampling via pyogrio")
+        sampled, total = _sample_with_pyogrio(path, max_features)
+        sampled = [f for f in sampled if isinstance(f, dict)]
+        sampled = _cap_sample_features(sampled, request_id)
+        geom_counts, property_keys, bbox = _analyze_features(sampled)
+        emit_progress(request_id, percent=100, stage="done", message="Sample complete")
+        return {
+            "path": str(path.resolve()),
+            "format": _format_from_path(path),
+            "featureCount": total,
+            "sampledFeatureCount": len(sampled),
+            "geometryTypes": geom_counts,
+            "propertyKeys": property_keys,
+            "bbox": bbox,
+            "previewOnly": len(sampled) < total,
+            "byteSize": path.stat().st_size,
+            "engine": "pyogrio",
+            "geojson": {"type": "FeatureCollection", "features": sampled},
+        }
+
+    if path.suffix.lower() not in _GEOJSON_SUFFIXES:
+        raise ValueError(
+            f'sample_vector: format "{path.suffix or "unknown"}" requires pyogrio/GDAL '
+            "(pip install -r desktop/sidecar/python/requirements.txt)."
+        )
+
+    emit_progress(request_id, percent=30, stage="read", message="Reading GeoJSON")
     _root_type, features = _load_geojson_features(path)
     emit_progress(request_id, percent=60, stage="sample", message="Building preview")
-
-    sampled: List[dict] = []
+    sampled = []
     for feature in features:
         if not isinstance(feature, dict):
             continue
         sampled.append(feature)
         if len(sampled) >= max_features:
             break
-
-    # Shrink sample if serialized payload would overwhelm IPC.
-    while sampled:
-        payload = {"type": "FeatureCollection", "features": sampled}
-        encoded = json.dumps(payload, separators=(",", ":"))
-        if len(encoded) <= _SAMPLE_MAX_JSON_CHARS:
-            break
-        # Drop ~25% and retry
-        keep = max(1, int(len(sampled) * 0.75))
-        if keep >= len(sampled):
-            keep = len(sampled) - 1
-        if keep < 1:
-            raise ValueError("sample_vector preview exceeds IPC size budget even for one feature")
-        sampled = sampled[:keep]
-        emit_log(request_id, f"Reduced sample to {keep} features for IPC budget")
-
+    sampled = _cap_sample_features(sampled, request_id)
     geom_counts, property_keys, bbox = _analyze_features(sampled)
     emit_progress(request_id, percent=100, stage="done", message="Sample complete")
     return {
@@ -216,8 +374,170 @@ def op_sample_vector(request_id: str, input_data: Dict[str, Any]) -> Dict[str, A
         "bbox": bbox,
         "previewOnly": len(sampled) < len(features),
         "byteSize": path.stat().st_size,
+        "engine": "stdlib",
         "geojson": {"type": "FeatureCollection", "features": sampled},
     }
+
+
+def op_file_checksum(request_id: str, input_data: Dict[str, Any]) -> Dict[str, Any]:
+    path = _require_path(input_data, "file_checksum")
+    emit_progress(request_id, percent=10, stage="hash", message="Computing SHA-256")
+    digest = hashlib.sha256()
+    size = 0
+    with path.open("rb") as handle:
+        while True:
+            chunk = handle.read(1024 * 1024)
+            if not chunk:
+                break
+            digest.update(chunk)
+            size += len(chunk)
+            if size and size % (16 * 1024 * 1024) == 0:
+                emit_progress(
+                    request_id,
+                    percent=min(90, 10 + int((size / max(path.stat().st_size, 1)) * 80)),
+                    stage="hash",
+                    message=f"Hashed {size // (1024 * 1024)} MB",
+                )
+    emit_progress(request_id, percent=100, stage="done", message="Checksum complete")
+    return {
+        "path": str(path.resolve()),
+        "algorithm": "sha256",
+        "checksum": digest.hexdigest(),
+        "byteSize": size,
+    }
+
+
+def _sql_quote_path(path: Path) -> str:
+    """Single-quote a filesystem path for DuckDB SQL (escape embedded quotes)."""
+    return "'" + str(path.resolve()).replace("'", "''") + "'"
+
+
+def _convert_with_duckdb(path: Path, output: Path, request_id: str) -> str:
+    import duckdb  # type: ignore
+
+    emit_log(request_id, "Converting via DuckDB spatial")
+    con = duckdb.connect()
+    try:
+        con.execute("INSTALL spatial;")
+        con.execute("LOAD spatial;")
+        emit_progress(request_id, percent=40, stage="read", message="ST_Read source")
+        # DuckDB COPY ... TO ? parameter binding is unreliable with ST_Read(?);
+        # use quoted literals after path validation.
+        src = _sql_quote_path(path)
+        dest = _sql_quote_path(output)
+        con.execute(f"CREATE OR REPLACE TABLE _gis_convert AS SELECT * FROM ST_Read({src})")
+        emit_progress(request_id, percent=70, stage="write", message="Writing Parquet")
+        con.execute(f"COPY _gis_convert TO {dest} (FORMAT PARQUET)")
+    finally:
+        con.close()
+    return "duckdb"
+
+
+def op_convert_to_geoparquet(request_id: str, input_data: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Convert a vector file on disk to GeoParquet (DuckDB spatial).
+    Input: { "path": "<source>", "outputPath"?: "<dest.parquet>" }
+    """
+    path = _require_path(input_data, "convert_to_geoparquet")
+    default_out = path.with_suffix(".parquet")
+    if default_out.resolve() == path.resolve():
+        default_out = path.parent / f"{path.stem}.geoparquet.parquet"
+    output = _require_output_path(input_data, "convert_to_geoparquet", default_out)
+
+    emit_progress(request_id, percent=5, stage="validate", message="Validating paths")
+    if not duckdb_available():
+        raise ValueError(
+            "convert_to_geoparquet requires duckdb "
+            "(pip install -r desktop/sidecar/python/requirements.txt)"
+        )
+
+    emit_progress(request_id, percent=20, stage="convert", message="Converting to GeoParquet")
+    engine = _convert_with_duckdb(path, output, request_id)
+
+    if not output.is_file():
+        raise RuntimeError(f"GeoParquet output was not created: {output}")
+
+    emit_progress(request_id, percent=100, stage="done", message="GeoParquet ready")
+    return {
+        "path": str(path.resolve()),
+        "outputPath": str(output.resolve()),
+        "byteSize": output.stat().st_size,
+        "engine": engine,
+        "format": "parquet",
+    }
+
+
+def op_summarize_vector(request_id: str, input_data: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Attribute/geometry summary. Prefers DuckDB spatial; falls back to GeoJSON summarize.
+    Input: { "path": "<file>" }
+    """
+    path = _require_path(input_data, "summarize_vector")
+    emit_progress(request_id, percent=10, stage="validate", message="Validating path")
+
+    if duckdb_available() and path.suffix.lower() in _PYOGRIO_SUFFIXES | {".csv", ".parquet"}:
+        import duckdb  # type: ignore
+
+        emit_log(request_id, f"Summarizing {path.name} via DuckDB")
+        con = duckdb.connect()
+        try:
+            con.execute("INSTALL spatial;")
+            con.execute("LOAD spatial;")
+            emit_progress(request_id, percent=40, stage="query", message="Running summary SQL")
+            # Row count via ST_Read when spatial can open the file
+            try:
+                row = con.execute(
+                    "SELECT COUNT(*)::BIGINT AS n FROM ST_Read(?)",
+                    [str(path.resolve())],
+                ).fetchone()
+                feature_count = int(row[0]) if row else 0
+                engine = "duckdb-spatial"
+            except Exception:  # noqa: BLE001
+                # Tabular fallback
+                row = con.execute(
+                    "SELECT COUNT(*)::BIGINT AS n FROM read_parquet(?) ",
+                    [str(path.resolve())],
+                ).fetchone() if path.suffix.lower() in {".parquet", ".geoparquet"} else None
+                if row is None and path.suffix.lower() == ".csv":
+                    row = con.execute(
+                        "SELECT COUNT(*)::BIGINT AS n FROM read_csv_auto(?)",
+                        [str(path.resolve())],
+                    ).fetchone()
+                if row is None:
+                    raise
+                feature_count = int(row[0])
+                engine = "duckdb"
+        finally:
+            con.close()
+        emit_progress(request_id, percent=100, stage="done", message="Summary complete")
+        return {
+            "path": str(path.resolve()),
+            "featureCount": feature_count,
+            "byteSize": path.stat().st_size,
+            "engine": engine,
+            "format": _format_from_path(path),
+        }
+
+    if path.suffix.lower() in _GEOJSON_SUFFIXES:
+        return op_summarize_geojson(request_id, input_data)
+
+    if _can_use_pyogrio(path):
+        emit_progress(request_id, percent=50, stage="read", message="Summarizing via pyogrio info")
+        info = _inspect_with_pyogrio(path)
+        emit_progress(request_id, percent=100, stage="done", message="Summary complete")
+        return {
+            "path": info["path"],
+            "featureCount": info["featureCount"],
+            "geometryTypes": info.get("geometryTypes"),
+            "propertyKeys": info.get("propertyKeys"),
+            "byteSize": info["byteSize"],
+            "engine": "pyogrio",
+            "format": info.get("format"),
+        }
+
+    raise ValueError(
+        "summarize_vector could not open this file — install duckdb/pyogrio or use GeoJSON"
+    )
 
 
 OPERATION_HANDLERS: Dict[str, Handler] = {
@@ -226,6 +546,9 @@ OPERATION_HANDLERS: Dict[str, Handler] = {
     "summarize_geojson": op_summarize_geojson,
     "inspect_vector": op_inspect_vector,
     "sample_vector": op_sample_vector,
+    "file_checksum": op_file_checksum,
+    "convert_to_geoparquet": op_convert_to_geoparquet,
+    "summarize_vector": op_summarize_vector,
 }
 
 

@@ -20,6 +20,7 @@
  * @property {CapabilityStatus} [gpuCompute]
  * @property {CapabilityStatus} [localGdal]
  * @property {CapabilityStatus} [localPdal]
+ * @property {CapabilityStatus} [duckdb]
  * @property {CapabilityStatus} [largeDatasetProcessing]
  * @property {CapabilityStatus} [gisLibrary]
  * @property {CapabilityStatus} [localSqlite]
@@ -183,6 +184,7 @@
  * @property {(id: string) => Promise<void>} [touchItem]
  * @property {(id: string, opts?: { deleteFiles?: boolean }) => Promise<object>} removeItem
  * @property {(id: string) => Promise<{ item: object, geojson: object }>} readPreview
+ * @property {(payload: { id: string, workingPath: string, checksum?: string }) => Promise<{ item: object }>} [setWorkingPath]
  */
 
 /**
@@ -211,6 +213,7 @@ export const CAPABILITY_KEYS = Object.freeze([
     'gpuCompute',
     'localGdal',
     'localPdal',
+    'duckdb',
     'largeDatasetProcessing',
     'gisLibrary',
     'localSqlite',

@@ -42,8 +42,19 @@ Failure:
 
 ## Allow-listed operations
 
-- `health`
+- `health` — includes `engines` (`duckdb`, `pyogrio`, `shapely`), `localGdal`, `duckdb` flags
 - `echo`
 - `summarize_geojson` — `{ "path": "<file>" }`
-- `inspect_vector` — `{ "path": "<file>" }` — metadata only (GeoJSON/JSON in v0.1)
-- `sample_vector` — `{ "path": "<file>", "maxFeatures"?: number }` — preview FeatureCollection (capped)
+- `inspect_vector` — `{ "path": "<file>" }` — GeoJSON stdlib; GPKG/SHP/Parquet via pyogrio when installed
+- `sample_vector` — `{ "path": "<file>", "maxFeatures"?: number }` — capped FeatureCollection preview
+- `file_checksum` — `{ "path": "<file>" }` — SHA-256
+- `convert_to_geoparquet` — `{ "path": "<file>", "outputPath"?: "<dest.parquet>" }` — requires duckdb or pyogrio
+- `summarize_vector` — `{ "path": "<file>" }` — DuckDB/pyogrio when available
+
+## Optional engines
+
+Install from `desktop/sidecar/python/requirements.txt`:
+
+```bash
+pip install -r desktop/sidecar/python/requirements.txt
+```

@@ -524,6 +524,82 @@ fn remove_dir_all_best_effort(path: &Path) -> io::Result<()> {
     Ok(())
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GisCatalogSetWorkingPathRequest {
+    pub id: String,
+    pub working_path: String,
+    pub checksum: Option<String>,
+}
+
+#[tauri::command]
+pub fn gis_catalog_set_working_path(
+    state: tauri::State<'_, Arc<GisCatalogState>>,
+    payload: GisCatalogSetWorkingPathRequest,
+) -> Result<Value, String> {
+    if payload.id.trim().is_empty()
+        || payload.id.contains("..")
+        || payload.id.contains('/')
+        || payload.id.contains('\\')
+    {
+        return Err("Invalid catalog item id".into());
+    }
+    let working = PathBuf::from(&payload.working_path);
+    if !working.is_absolute() {
+        return Err("workingPath must be absolute".into());
+    }
+    if payload.working_path.contains("..") {
+        return Err("workingPath must not contain ..".into());
+    }
+    if !working.is_file() {
+        return Err(format!("Working file not found: {}", working.display()));
+    }
+    let ts = now_iso();
+    with_conn(&state, |conn| {
+        // Store checksum in description-adjacent manifest merge via manifest_json update when present
+        let existing: Option<String> = conn
+            .query_row(
+                "SELECT manifest_json FROM catalog_item WHERE id = ?1",
+                params![payload.id],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(|e| format!("read manifest: {e}"))?;
+        let mut manifest_val = existing
+            .as_deref()
+            .and_then(|s| serde_json::from_str::<Value>(s).ok())
+            .unwrap_or_else(|| json!({}));
+        if let Some(obj) = manifest_val.as_object_mut() {
+            obj.insert(
+                "workingPath".into(),
+                json!(payload.working_path),
+            );
+            if let Some(sum) = &payload.checksum {
+                obj.insert("checksum".into(), json!(sum));
+            }
+            obj.insert("optimizedAt".into(), json!(ts));
+        }
+        let manifest_json = serde_json::to_string(&manifest_val).ok();
+        let changed = conn
+            .execute(
+                r#"
+                UPDATE catalog_item
+                SET working_path = ?1, updated_at = ?2, manifest_json = COALESCE(?3, manifest_json)
+                WHERE id = ?4
+                "#,
+                params![payload.working_path, ts, manifest_json, payload.id],
+            )
+            .map_err(|e| format!("set working path: {e}"))?;
+        if changed == 0 {
+            return Err("Catalog item not found".into());
+        }
+        Ok(())
+    })?;
+    let item = get_item_by_id(&state, &payload.id)?
+        .ok_or_else(|| "Catalog item not found".to_string())?;
+    Ok(json!({ "item": item }))
+}
+
 /// Read preview.geojson for an item (capped).
 #[tauri::command]
 pub fn gis_catalog_read_preview(

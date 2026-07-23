@@ -45,6 +45,7 @@ function parseMessages(stdout) {
 }
 
 describe('python sidecar', () => {
+    // Cold import of duckdb/pyogrio can exceed Vitest's default 5s on Windows.
     it('responds to health checks', () => {
         const result = runSidecar({ id: 'h1', op: 'health', input: {} });
         expect(result.status).toBe(0);
@@ -56,7 +57,12 @@ describe('python sidecar', () => {
         expect(finalMsg.output.operations).toContain('summarize_geojson');
         expect(finalMsg.output.operations).toContain('inspect_vector');
         expect(finalMsg.output.operations).toContain('sample_vector');
-    });
+        expect(finalMsg.output.operations).toContain('convert_to_geoparquet');
+        expect(finalMsg.output.operations).toContain('file_checksum');
+        expect(finalMsg.output.operations).toContain('summarize_vector');
+        expect(finalMsg.output.engines).toBeTruthy();
+        expect(finalMsg.output.version).toMatch(/^0\./);
+    }, 30_000);
 
     it('summarizes a GeoJSON file by path', () => {
         const dir = mkdtempSync(join(tmpdir(), 'gis-sidecar-'));
@@ -137,6 +143,83 @@ describe('python sidecar', () => {
             rmSync(dir, { recursive: true, force: true });
         }
     });
+
+    it('computes file checksum', () => {
+        const dir = mkdtempSync(join(tmpdir(), 'gis-sidecar-'));
+        const filePath = join(dir, 'sample.geojson');
+        writeFileSync(filePath, '{"type":"FeatureCollection","features":[]}');
+        try {
+            const result = runSidecar({
+                id: 'c1',
+                op: 'file_checksum',
+                input: { path: filePath }
+            });
+            expect(result.status).toBe(0);
+            const finalMsg = parseMessages(result.stdout).at(-1);
+            expect(finalMsg.ok).toBe(true);
+            expect(finalMsg.output.algorithm).toBe('sha256');
+            expect(String(finalMsg.output.checksum)).toMatch(/^[a-f0-9]{64}$/);
+        } finally {
+            rmSync(dir, { recursive: true, force: true });
+        }
+    });
+
+    it('converts GeoJSON to GeoParquet when engines are installed', () => {
+        const health = runSidecar({ id: 'h2', op: 'health', input: {} });
+        const healthOut = parseMessages(health.stdout).at(-1)?.output;
+        const canConvert = Boolean(healthOut?.duckdb);
+        if (!canConvert) {
+            const dir = mkdtempSync(join(tmpdir(), 'gis-sidecar-'));
+            const filePath = join(dir, 'sample.geojson');
+            writeFileSync(filePath, JSON.stringify({
+                type: 'FeatureCollection',
+                features: [{
+                    type: 'Feature',
+                    properties: {},
+                    geometry: { type: 'Point', coordinates: [0, 0] }
+                }]
+            }));
+            try {
+                const result = runSidecar({
+                    id: 'g1',
+                    op: 'convert_to_geoparquet',
+                    input: { path: filePath, outputPath: join(dir, 'out.parquet') }
+                });
+                const finalMsg = parseMessages(result.stdout).at(-1);
+                expect(finalMsg.ok).toBe(false);
+                expect(String(finalMsg.message)).toMatch(/duckdb|requirements/i);
+            } finally {
+                rmSync(dir, { recursive: true, force: true });
+            }
+            return;
+        }
+
+        const dir = mkdtempSync(join(tmpdir(), 'gis-sidecar-'));
+        const filePath = join(dir, 'sample.geojson');
+        const outPath = join(dir, 'out.parquet');
+        writeFileSync(filePath, JSON.stringify({
+            type: 'FeatureCollection',
+            features: [{
+                type: 'Feature',
+                properties: { name: 'A' },
+                geometry: { type: 'Point', coordinates: [1, 2] }
+            }]
+        }));
+        try {
+            const result = runSidecar({
+                id: 'g2',
+                op: 'convert_to_geoparquet',
+                input: { path: filePath, outputPath: outPath }
+            });
+            expect(result.status).toBe(0);
+            const finalMsg = parseMessages(result.stdout).at(-1);
+            expect(finalMsg.ok).toBe(true);
+            expect(finalMsg.output.outputPath).toBeTruthy();
+            expect(finalMsg.output.format).toBe('parquet');
+        } finally {
+            rmSync(dir, { recursive: true, force: true });
+        }
+    }, 60_000);
 
     it('rejects unknown operations', () => {
         const result = runSidecar({ id: 'x1', op: 'rm_rf', input: {} });

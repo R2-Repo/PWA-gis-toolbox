@@ -1511,6 +1511,28 @@ async function _importDesktopPathPreviews(pathFiles, services) {
                             libraryItemId: libraryItem.id,
                             libraryMode: mode
                         };
+                        try {
+                            const { optimizeGisLibraryItemToGeoParquet } = await import('../library/gis-library.js');
+                            const { hasCapability } = await import('../platform/contracts.js');
+                            const { platform } = getPlatformBundle({ showToast });
+                            if (hasCapability(platform, 'duckdb')) {
+                                progress.update(
+                                    Math.min(99, Math.round(((i + 0.92) / pathFiles.length) * 100)),
+                                    `Optimizing ${file.name} → GeoParquet…`,
+                                    { fileName: file.name, fileIndex: i + 1, fileCount: pathFiles.length }
+                                );
+                                const optimized = await optimizeGisLibraryItemToGeoParquet(libraryItem, {
+                                    compute: services.compute,
+                                    signal: abort.signal
+                                });
+                                if (optimized?.workingPath) {
+                                    dataset.source.workingPath = optimized.workingPath;
+                                    libraryItem = optimized;
+                                }
+                            }
+                        } catch (optErr) {
+                            console.warn('GeoParquet optimize skipped:', optErr);
+                        }
                     }
                 }
             } catch (libErr) {

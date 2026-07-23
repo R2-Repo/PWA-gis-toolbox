@@ -37,6 +37,9 @@ export function createWindowsGisCatalogService() {
         },
         async readPreview(id) {
             return invokeCommand('gis_catalog_read_preview', { id });
+        },
+        async setWorkingPath(payload) {
+            return invokeCommand('gis_catalog_set_working_path', { payload });
         }
     };
 }

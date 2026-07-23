@@ -2,10 +2,37 @@
  * Desktop path-based import — inspect/sample via sidecar; add preview layer (not full JS ingest).
  */
 import { createSpatialDataset } from '../core/data-model.js';
+import { hasCapability } from '../platform/contracts.js';
+import { getPlatformBundle } from '../platform/create-platform.js';
 import { NATIVE_OPERATIONS } from '../platform/jobs/allowed-operations.js';
 import { getNativeFilePath } from './import-policy.js';
 
-const PATH_IMPORT_FORMATS = new Set(['geojson', 'json']);
+/** Always allowed via stdlib sidecar path. */
+const PATH_IMPORT_FORMATS_BASE = new Set(['geojson', 'json']);
+/** Extra formats when pyogrio/GDAL is available in the sidecar. */
+const PATH_IMPORT_FORMATS_GDAL = new Set([
+    'geojson',
+    'json',
+    'gpkg',
+    'shp',
+    'parquet',
+    'geoparquet',
+    'kml',
+    'gml',
+    'fgb'
+]);
+
+/**
+ * @param {import('../platform/contracts.js').PlatformInfo|null|undefined} [platform]
+ * @returns {Set<string>}
+ */
+export function getPathImportFormats(platform) {
+    const p = platform || getPlatformBundle().platform;
+    return hasCapability(p, 'localGdal') ? PATH_IMPORT_FORMATS_GDAL : PATH_IMPORT_FORMATS_BASE;
+}
+
+/** @deprecated use getPathImportFormats() */
+const PATH_IMPORT_FORMATS = PATH_IMPORT_FORMATS_BASE;
 
 /**
  * @param {string} fileName
@@ -13,8 +40,9 @@ const PATH_IMPORT_FORMATS = new Set(['geojson', 'json']);
  */
 function detectPathFormat(fileName) {
     const ext = String(fileName || '').toLowerCase().split('.').pop();
-    if (ext === 'geojson' || ext === 'json') return ext === 'json' ? 'json' : 'geojson';
-    return null;
+    if (!ext) return null;
+    if (ext === 'geoparquet') return 'parquet';
+    return ext;
 }
 
 /**
@@ -46,11 +74,12 @@ export async function importVectorPreviewByPath(compute, path, opts = {}) {
 
     const fileName = baseName(path);
     const format = detectPathFormat(fileName);
-    if (!format || !PATH_IMPORT_FORMATS.has(format)) {
-        throw new Error(
-            `"${fileName}" path preview currently supports GeoJSON only. ` +
-            'Shapefile/GPKG/other formats arrive with the GDAL sidecar phase.'
-        );
+    const allowed = getPathImportFormats();
+    if (!format || !allowed.has(format)) {
+        const hint = hasCapability(getPlatformBundle().platform, 'localGdal')
+            ? 'Unsupported format for path import.'
+            : 'Path preview supports GeoJSON by default. Install sidecar GIS deps (pyogrio) for GPKG/Shapefile/Parquet.';
+        throw new Error(`"${fileName}" cannot use desktop path import. ${hint}`);
     }
 
     const maxFeatures = Number.isFinite(opts.maxFeatures) ? opts.maxFeatures : 500;
@@ -80,11 +109,12 @@ export async function importVectorPreviewByPath(compute, path, opts = {}) {
 
     const dataset = createSpatialDataset(name, geojson, {
         file: fileName,
-        format: 'geojson',
+        format: inspect?.format || format || 'geojson',
         nativePath: path,
         previewOnly: sampled < total,
         fullFeatureCount: total,
-        importRoute: 'desktop-path'
+        importRoute: 'desktop-path',
+        engine: sample?.engine || inspect?.engine
     });
 
     return { dataset, inspect, sample };
@@ -106,4 +136,4 @@ export async function importVectorPreviewFromFile(file, compute, opts = {}) {
     return importVectorPreviewByPath(compute, path, opts);
 }
 
-export { detectPathFormat, PATH_IMPORT_FORMATS };
+export { detectPathFormat, PATH_IMPORT_FORMATS, PATH_IMPORT_FORMATS_BASE, PATH_IMPORT_FORMATS_GDAL };
