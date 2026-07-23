@@ -5,6 +5,7 @@ import { createWebWindowService } from './web-window-service.js';
 import { createWebAtlasDbService } from './web-atlas-db-service.js';
 import { createWebUdotFiberDbService } from './web-udot-fiber-db-service.js';
 import { createWebPingService } from './web-ping-service.js';
+import { createWebGisCatalogService } from './web-gis-catalog-service.js';
 
 /**
  * @param {{ showToast?: (message: string, type?: string) => void }} [opts]
@@ -66,6 +67,7 @@ export function createWebPlatform(opts = {}) {
             atlasDb: createWebAtlasDbService(),
             udotFiberDb: createWebUdotFiberDbService(),
             ping: createWebPingService(),
+            gisCatalog: createWebGisCatalogService(),
             notifications: {
                 show: showToast
             }

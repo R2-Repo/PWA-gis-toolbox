@@ -1,4 +1,5 @@
 mod atlas;
+mod gis_catalog;
 mod jobs;
 mod sidecar;
 mod temp_files;
@@ -13,6 +14,11 @@ use atlas::{
     atlas_ping_list_sessions, atlas_ping_load_session, atlas_ping_many, atlas_ping_one,
     atlas_ping_save, atlas_pref_get, atlas_pref_get_all, atlas_pref_set, AtlasDbState,
     AtlasPingState,
+};
+use gis_catalog::{
+    gis_catalog_get_item, gis_catalog_ingest_path, gis_catalog_library_root, gis_catalog_list_items,
+    gis_catalog_open, gis_catalog_open_library_folder, gis_catalog_read_preview,
+    gis_catalog_remove_item, gis_catalog_touch_item, GisCatalogState,
 };
 use udot_fiber::{
     udot_fiber_db_open, udot_fiber_get_sync_meta, udot_fiber_load_all_layers, udot_fiber_load_layer,
@@ -70,8 +76,7 @@ fn platform_handshake(state: tauri::State<'_, SidecarState>) -> Value {
             },
             "largeDatasetProcessing": large,
             "gisLibrary": {
-                "available": false,
-                "reason": "Local GIS Library catalog not packaged yet"
+                "available": true
             },
             "localSqlite": {
                 "available": true
@@ -111,6 +116,7 @@ pub fn run() {
         .manage(Arc::new(AtlasDbState::default()))
         .manage(Arc::new(AtlasPingState::default()))
         .manage(Arc::new(UdotFiberDbState::default()))
+        .manage(Arc::new(GisCatalogState::default()))
         .setup(|app| {
             // Warm the sidecar health cache during startup (non-fatal).
             let state = app.state::<SidecarState>();
@@ -159,7 +165,16 @@ pub fn run() {
             udot_fiber_set_sync_meta,
             udot_fiber_replace_layer,
             udot_fiber_load_layer,
-            udot_fiber_load_all_layers
+            udot_fiber_load_all_layers,
+            gis_catalog_open,
+            gis_catalog_library_root,
+            gis_catalog_open_library_folder,
+            gis_catalog_list_items,
+            gis_catalog_get_item,
+            gis_catalog_ingest_path,
+            gis_catalog_touch_item,
+            gis_catalog_remove_item,
+            gis_catalog_read_preview
         ])
         .run(tauri::generate_context!())
         .expect("error while running GIS Toolbox desktop shell");

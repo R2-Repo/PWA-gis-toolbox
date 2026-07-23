@@ -154,15 +154,35 @@
  */
 
 /**
- * Local GIS Library catalog (desktop Phase 2+). Metadata only — not Atlas DB.
+ * Local GIS Library catalog (desktop). Metadata only — not Atlas DB.
  * Geometry lives on disk; catalog stores paths and item metadata.
  *
+ * @typedef {Object} GisCatalogIngestPayload
+ * @property {string} sourcePath
+ * @property {string} [displayName]
+ * @property {string} [format]
+ * @property {number} [featureCount]
+ * @property {number} [sampledFeatureCount]
+ * @property {object} [geometryTypes]
+ * @property {string[]} [propertyKeys]
+ * @property {number[]} [bbox]
+ * @property {string} [crsHint]
+ * @property {number} [byteSize]
+ * @property {boolean} [previewOnly]
+ * @property {string} [previewGeojson]
+ * @property {'copy'|'link'} [mode]
+ * @property {string} [description]
+ *
  * @typedef {Object} GisCatalogService
- * @property {() => Promise<void>} [open]
- * @property {() => Promise<{ items: object[] }>} [listItems]
- * @property {(id: string) => Promise<object|null>} [getItem]
- * @property {(item: object) => Promise<object>} [upsertItem]
- * @property {(id: string) => Promise<void>} [removeItem]
+ * @property {() => Promise<{ ok?: boolean, libraryRoot?: string, catalogPath?: string }>} open
+ * @property {() => Promise<{ path: string }>} [libraryRoot]
+ * @property {() => Promise<void>} [openLibraryFolder]
+ * @property {() => Promise<{ items: object[] }>} listItems
+ * @property {(id: string) => Promise<{ item: object|null }>} getItem
+ * @property {(payload: GisCatalogIngestPayload) => Promise<{ item: object }>} ingestPath
+ * @property {(id: string) => Promise<void>} [touchItem]
+ * @property {(id: string, opts?: { deleteFiles?: boolean }) => Promise<object>} removeItem
+ * @property {(id: string) => Promise<{ item: object, geojson: object }>} readPreview
  */
 
 /**

@@ -119,6 +119,7 @@ Do not put widget logic inline in `js/tools/tool-handlers.js`. Copy the closest 
 | `docs/` | Development guide, widget playbook, authoring checklist, **sheet cutting geometry** (`SHEET_CUTTING.md`), **Network Atlas** (`NETWORK_ATLAS.md`), **UGRC API** (`UGRC.md`), PWA↔Desktop blast radius (`PWA_DESKTOP_COMPAT.md`), PWA+Windows plan (`PWA_DESKTOP_WORKFLOW_PLAN.md`), desktop data plane (`DESKTOP_DATA_PLANE.md`) |
 | `js/ugrc/` | UGRC API client (reverse route/milepost, key resolve) |
 | `js/atlas/`, `react/atlas/` | ITS Network Atlas workspace (desktop-first; not a GIS widget) |
+| `js/library/`, `react/library/`, `src-tauri/src/gis_catalog/` | Local GIS Library (desktop catalog; sibling to Atlas DB) |
 | `.cursor/skills/` | Agent skills: `fix-pwa`, `fix-desktop`, `feature-both`, `pwa-desktop-compat` |
 | `.cursor/commands/` | Slash commands: `/fix-pwa`, `/fix-desktop`, `/feature-both`, `/smoke-both`, `/qa-both`, `/which-runtime` |
 | `.cursor/agents/` | Custom subagents (Composer fast): `dual-runtime-qa`, `platform-boundary` (readonly + desktop security), `widget-scaffold` |

@@ -3942,3 +3942,53 @@ textarea { resize: vertical; min-height: 60px; }
 .live-map-preset-picker .import-option-hint {
     text-align: left;
 }
+
+/* Local GIS Library (desktop) */
+.gis-library-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+.gis-library-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+.gis-library-error {
+    color: var(--danger, #b42318);
+    margin: 0;
+}
+.gis-library-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    max-height: 280px;
+    overflow: auto;
+}
+.gis-library-card {
+    border: 1px solid var(--border, #d0d5dd);
+    border-radius: 6px;
+    padding: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    background: var(--surface-2, rgba(0, 0, 0, 0.02));
+}
+.gis-library-card-title {
+    font-weight: 600;
+    font-size: 13px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.gis-library-card-meta {
+    margin-top: 2px;
+}
+.gis-library-card-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}

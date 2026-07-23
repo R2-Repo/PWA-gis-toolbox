@@ -5,6 +5,7 @@ import { createWindowsWindowService } from './windows-window-service.js';
 import { createWindowsAtlasDbService } from './windows-atlas-db-service.js';
 import { createWindowsUdotFiberDbService } from './windows-udot-fiber-db-service.js';
 import { createWindowsPingService } from './windows-ping-service.js';
+import { createWindowsGisCatalogService } from './windows-gis-catalog-service.js';
 import { invokeCommand, isTauriAvailable } from './tauri-bridge.js';
 
 /**
@@ -40,8 +41,8 @@ function capabilitiesFromHandshake(handshake) {
             reason: 'Large-dataset processing not packaged yet'
         },
         gisLibrary: fromShell.gisLibrary || {
-            available: false,
-            reason: 'Local GIS Library catalog not packaged yet'
+            available: isTauriAvailable(),
+            reason: isTauriAvailable() ? undefined : 'Tauri runtime not detected'
         },
         localSqlite: fromShell.localSqlite || {
             available: isTauriAvailable(),
@@ -83,6 +84,7 @@ export function createWindowsPlatform(opts = {}) {
             atlasDb: createWindowsAtlasDbService(),
             udotFiberDb: createWindowsUdotFiberDbService(),
             ping: createWindowsPingService(),
+            gisCatalog: createWindowsGisCatalogService(),
             notifications: {
                 show: showToast
             }

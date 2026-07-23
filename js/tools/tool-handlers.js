@@ -1409,6 +1409,33 @@ export async function openImportForFiles(files, fenceBbox = null) {
 }
 
 /**
+ * Add a Local GIS Library preview FeatureCollection to the map.
+ * @param {object} item
+ * @param {object} geojson
+ * @returns {Promise<string[]>}
+ */
+export async function addLibraryPreviewToMap(item, geojson) {
+    const { createSpatialDataset } = await import('../core/data-model.js');
+    const displayName = item?.displayName || item?.originalFilename || 'Library layer';
+    const name = item?.previewOnly
+        ? `${displayName} (library preview)`
+        : displayName;
+    const dataset = createSpatialDataset(name, geojson, {
+        file: item?.originalFilename || displayName,
+        format: item?.format || 'geojson',
+        libraryItemId: item?.id,
+        previewOnly: Boolean(item?.previewOnly),
+        fullFeatureCount: item?.featureCount,
+        importRoute: 'gis-library'
+    });
+    const { ids } = await _addImportedDatasets([dataset], { useWorkspace: false });
+    if (ids.length) {
+        await mapService.scheduleFitToLayers(ids);
+    }
+    return ids;
+}
+
+/**
  * @param {Array<{ file: File, path: string }>} pathFiles
  * @param {import('../platform/contracts.js').PlatformServices} services
  */
@@ -1436,7 +1463,7 @@ async function _importDesktopPathPreviews(pathFiles, services) {
                 { fileName: file.name, fileIndex: i + 1, fileCount: pathFiles.length }
             );
 
-            const { dataset, inspect } = await importVectorPreviewByPath(services.compute, path, {
+            const { dataset, inspect, sample } = await importVectorPreviewByPath(services.compute, path, {
                 signal: abort.signal,
                 onProgress: (p) => {
                     if (cancelled) return;
@@ -1452,15 +1479,60 @@ async function _importDesktopPathPreviews(pathFiles, services) {
 
             if (cancelled || abort.signal.aborted) break;
 
+            let libraryItem = null;
+            try {
+                const { isGisLibraryAvailable, ingestGisLibraryItem } = await import('../library/gis-library.js');
+                if (isGisLibraryAvailable()) {
+                    progress.update(
+                        Math.min(99, Math.round(((i + 0.85) / pathFiles.length) * 100)),
+                        `Saving ${file.name} to Local GIS Library…`,
+                        { fileName: file.name, fileIndex: i + 1, fileCount: pathFiles.length }
+                    );
+                    const COPY_LIMIT = 500 * 1024 * 1024;
+                    const mode = (file.size || 0) > COPY_LIMIT ? 'link' : 'copy';
+                    libraryItem = await ingestGisLibraryItem({
+                        sourcePath: path,
+                        displayName: file.name,
+                        format: inspect?.format || 'geojson',
+                        featureCount: inspect?.featureCount ?? sample?.featureCount,
+                        sampledFeatureCount: sample?.sampledFeatureCount ?? dataset.geojson?.features?.length,
+                        geometryTypes: inspect?.geometryTypes || sample?.geometryTypes,
+                        propertyKeys: inspect?.propertyKeys || sample?.propertyKeys,
+                        bbox: inspect?.bbox || sample?.bbox,
+                        crsHint: inspect?.crsHint || 'EPSG:4326',
+                        byteSize: inspect?.byteSize ?? file.size,
+                        previewOnly: Boolean(dataset.source?.previewOnly ?? sample?.previewOnly),
+                        previewGeojson: JSON.stringify(dataset.geojson),
+                        mode
+                    });
+                    if (libraryItem?.id) {
+                        dataset.source = {
+                            ...dataset.source,
+                            libraryItemId: libraryItem.id,
+                            libraryMode: mode
+                        };
+                    }
+                }
+            } catch (libErr) {
+                console.warn('GIS Library ingest failed (preview still loaded):', libErr);
+                showToast(
+                    `Preview loaded, but library save failed: ${libErr?.message || libErr}`,
+                    'warning'
+                );
+            }
+
             const { ids } = await _addImportedDatasets([dataset], { useWorkspace: false });
             layerIds.push(...ids);
 
             const total = inspect?.featureCount ?? dataset.source?.fullFeatureCount;
             if (dataset.source?.previewOnly && total != null) {
+                const libNote = libraryItem?.id ? ' Saved to Local GIS Library.' : '';
                 showToast(
-                    `Loaded preview of ${file.name} (${dataset.geojson.features.length.toLocaleString()} of ${Number(total).toLocaleString()} features). Full library ingest comes in a later desktop phase.`,
+                    `Loaded preview of ${file.name} (${dataset.geojson.features.length.toLocaleString()} of ${Number(total).toLocaleString()} features).${libNote}`,
                     'info'
                 );
+            } else if (libraryItem?.id) {
+                showToast(`Saved ${file.name} to Local GIS Library`, 'success');
             }
         }
 

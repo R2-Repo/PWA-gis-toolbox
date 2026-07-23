@@ -1,6 +1,6 @@
 # Desktop GIS data plane
 
-> **Status:** Phases 0–1 landed (path inspect/sample preview for large GeoJSON on desktop). Local GIS Library (Phase 2+) not shipped yet.  
+> **Status:** Phases 0–2 landed — path preview + Local GIS Library catalog (`gis-library/` + `gis-catalog.sqlite`). DuckDB/GDAL/tiles still later.  
 > **Safety:** Must not break the public PWA or Network Atlas.
 
 ## Goal
@@ -20,7 +20,7 @@ Desktop is a **local GIS workstation**: path-based data, native jobs (Python sid
 
 | Role | Store |
 |------|--------|
-| GIS item catalog | `gis-catalog.sqlite` (metadata only) — **Phase 2** |
+| GIS item catalog | `{appData}/gis-library/catalog/gis-catalog.sqlite` (metadata only) |
 | Network Atlas | `network-atlas.sqlite` — **do not merge** |
 | UDOT Fiber cache | `udot-fiber-network.sqlite` — domain-specific |
 | Large vector working | GeoParquet (Phase 3) |
@@ -59,7 +59,7 @@ Desktop App
 | `largeDatasetProcessing` | no | yes when sidecar healthy |
 | `localSqlite` | no | yes (Atlas + future GIS catalog) |
 | `icmpPing` | no | yes (Atlas) |
-| `gisLibrary` | no | Phase 2+ |
+| `gisLibrary` | no | yes (Local GIS Library) |
 | `localGdal` / `localPdal` | no | stub until packaged |
 
 ## Phase map
@@ -68,7 +68,7 @@ Desktop App
 |-------|---------|
 | 0 | This doc + contract stubs |
 | 1 | Path inspect/sample; large GeoJSON preview on desktop; PWA unchanged |
-| 2 | Local GIS Library MVP (managed folders + catalog SQLite) |
+| 2 | Local GIS Library MVP (managed folders + catalog SQLite) — **done** |
 | 3 | DuckDB Spatial + GDAL in sidecar; GeoParquet/COG |
 | 4 | PMTiles/MBTiles; optional Martin on `127.0.0.1` |
 | 5 | Dual-path analysis widgets + lineage |

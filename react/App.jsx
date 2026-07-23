@@ -55,8 +55,12 @@ import {
     setPanelCollapsed,
     openPresentationLinkBuilderWidget,
     bootstrapAppFromUrl,
-    bootstrapDesktopPlatform
+    bootstrapDesktopPlatform,
+    addLibraryPreviewToMap
 } from '../js/tools/tool-handlers.js';
+import { showToast } from '../js/ui/toast.js';
+import { LocalGisLibraryPanel } from './library/LocalGisLibraryPanel.jsx';
+import { isGisLibraryAvailable } from '../js/library/gis-library.js';
 import { getAppUrlConfig } from '../js/url/app-url-detector.js';
 import { getActiveLayer } from '../js/core/state.js';
 import { isLayerVisibleAtScale } from '../js/map/scale-range.js';
@@ -485,6 +489,14 @@ function AppShell() {
                             />
                         ) : (
                             <>
+                                {isGisLibraryAvailable() ? (
+                                    <CollapsibleSection title="Local GIS Library" bodyId="gis-library" defaultOpen={false}>
+                                        <LocalGisLibraryPanel
+                                            showToast={showToast}
+                                            onAddPreviewToMap={addLibraryPreviewToMap}
+                                        />
+                                    </CollapsibleSection>
+                                ) : null}
                                 <CollapsibleSection title="Layers" bodyId="layer-list">
                                     <LayerListPanel
                                         layers={layersForPanel}
