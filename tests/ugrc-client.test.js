@@ -142,7 +142,7 @@ describe('runReverseMilepostLookup', () => {
         );
         expect(status).toBe('missing_key');
         expect(showToast).toHaveBeenCalledWith(
-            expect.stringContaining('VITE_UGRC_API_KEY'),
+            expect.stringContaining('Cloudflare Pages'),
             'warning'
         );
     });

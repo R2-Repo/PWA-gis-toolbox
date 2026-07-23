@@ -32,12 +32,12 @@ Local edits on staging → user commits in GitHub Desktop → user pushes stagin
 
 ### Deployment
 
-GitHub Actions deploys on push (see `.github/workflows/deploy-pages.yml`):
+PWA hosting is **Cloudflare Pages** (Git-connected), not GitHub Pages:
 
-- **`staging`** → preview at `/gis-toolbox/staging/`
-- **`main`** → production site
+- **`staging`** → Cloudflare Pages preview
+- **`main`** → Cloudflare Pages production
 
-Agents do not need to trigger deploys manually; pushing the appropriate branch is enough.
+Build env vars (e.g. `VITE_UGRC_API_KEY`) are set in the Cloudflare project settings — see [`docs/UGRC.md`](docs/UGRC.md). Agents do not need to trigger deploys manually; pushing the appropriate branch is enough.
 
 ### Ending a feature session
 

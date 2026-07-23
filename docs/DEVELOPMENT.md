@@ -19,7 +19,8 @@ This project uses a **local-first, two-branch** workflow. There are no feature b
 
 - All feature work and bug fixes happen here
 - Agents and editors make local file changes on this branch
-- Push to deploy the staging preview at `/gis-toolbox/staging/`
+- Push `staging` → Cloudflare Pages preview (connected Git deploy)
+- Push / promote `main` → Cloudflare Pages production
 
 ### `main` (production)
 
@@ -51,7 +52,7 @@ This project uses a **local-first, two-branch** workflow. There are no feature b
 3. Set **Use workflow from** to **`staging`**
 4. Type `promote` in the confirmation field and run the workflow
 5. The workflow runs tests on `staging`, merges `staging` into `main`, pushes `main`, then syncs `staging` with `main`
-6. The **Deploy Pages** workflow runs automatically and production updates
+6. Cloudflare Pages rebuilds production from `main` (Git integration)
 
 You do not need to switch to or merge `main` locally, and you do not need to open or merge a PR yourself.
 
@@ -87,20 +88,21 @@ Full agent instructions: [AGENTS.md](../AGENTS.md)
 
 Workflows:
 
-| Workflow | Trigger | Result |
-|----------|---------|--------|
-| `deploy-pages.yml` | Push to `staging` | Staging preview built and deployed |
-| `deploy-pages.yml` | Push to `main` | Production site built and deployed |
+| Workflow / host | Trigger | Result |
+|-----------------|---------|--------|
+| **Cloudflare Pages** | Push to `staging` / `main` (Git-connected project) | PWA preview / production deploy |
 | `promote-staging.yml` | Manual (Actions button) | Tests `staging`, merges into `main`, syncs `staging` |
 
-No manual deploy step is required.
+PWA hosting is **Cloudflare Pages**, not GitHub Pages. Repo helpers: [`wrangler.jsonc`](../wrangler.jsonc) (`pages_build_output_dir: ./dist`), [`public/_headers`](../public/_headers).
+
+**Cloudflare project settings (one-time):** production branch = `main`, build = `npm run build`, output = `dist`, env `NODE_VERSION=20`, plus `VITE_UGRC_API_KEY` for Production and Preview — see [`docs/UGRC.md`](UGRC.md).
 
 ## Local setup
 
 ```bash
 npm install
 npm run dev              # web/PWA dev server
-npm run build            # production web build → dist/ (used by Pages deploy)
+npm run build            # production web build → dist/ (Cloudflare Pages build output)
 npm run build:web        # explicit web build → dist-web/
 npm run build:desktop    # Windows frontend build → dist-desktop/ (no PWA SW)
 npm run dev:desktop:ui   # desktop Vite mode in a browser (port 9417; no Tauri window)
@@ -177,7 +179,7 @@ use the Python sidecar (`optionalCapabilities: ['pythonCompute']`). The dialog s
 | `build-windows-preview.yml` | Push to `staging` | Tests + `build:desktop` + `cargo check` → Actions artifact |
 | `build-windows-release.yml` | Push to `main` (after Promote) | Tauri NSIS/MSI → GitHub Release |
 
-Web deploy via `deploy-pages.yml` is unchanged.
+Web/PWA deploy is via **Cloudflare Pages** (Git-connected). Windows CI above is unchanged.
 
 **Git workflow is unchanged:** develop on `staging`, push for preview, Promote to Production for `main`.
 

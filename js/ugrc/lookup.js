@@ -42,7 +42,7 @@ export async function runReverseMilepostLookup(latlng, deps = {}) {
             await deps.openSettings();
         } else {
             showToast(
-                'UGRC is not configured for this build. Add GitHub secret VITE_UGRC_API_KEY and redeploy.',
+                'UGRC is not configured for this build. Set VITE_UGRC_API_KEY in Cloudflare Pages env vars and redeploy.',
                 'warning'
             );
         }
@@ -83,7 +83,7 @@ export async function runReverseMilepostLookup(latlng, deps = {}) {
             await deps.openSettings();
         } else {
             showToast(
-                'UGRC API key was rejected. Check the GitHub secret and browser-key referrer patterns, then redeploy.',
+                'UGRC API key was rejected. Check Cloudflare env VITE_UGRC_API_KEY and browser-key referrer patterns, then redeploy.',
                 'error'
             );
         }
