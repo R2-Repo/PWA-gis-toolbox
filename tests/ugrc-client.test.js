@@ -122,7 +122,7 @@ describe('runReverseMilepostLookup', () => {
         vi.restoreAllMocks();
     });
 
-    it('opens settings when no key is available', async () => {
+    it('opens settings when no key is available and openSettings is provided', async () => {
         const openSettings = vi.fn();
         const showToast = vi.fn();
         const status = await runReverseMilepostLookup(
@@ -132,6 +132,19 @@ describe('runReverseMilepostLookup', () => {
         expect(status).toBe('missing_key');
         expect(openSettings).toHaveBeenCalledOnce();
         expect(showToast).toHaveBeenCalled();
+    });
+
+    it('does not open settings on PWA-style missing key (toast only)', async () => {
+        const showToast = vi.fn();
+        const status = await runReverseMilepostLookup(
+            { lat: 40.7, lng: -111.9 },
+            { showToast }
+        );
+        expect(status).toBe('missing_key');
+        expect(showToast).toHaveBeenCalledWith(
+            expect.stringContaining('VITE_UGRC_API_KEY'),
+            'warning'
+        );
     });
 
     it('toasts success and copies label', async () => {

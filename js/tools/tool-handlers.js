@@ -5107,10 +5107,13 @@ export function openUgrcKeySettings() {
 
 async function lookupRouteAndMilepostAt(latlng) {
     const { runReverseMilepostLookup } = await import('../ugrc/lookup.js');
-    return runReverseMilepostLookup(latlng, {
-        showToast,
-        openSettings: () => openUgrcKeySettings()
-    });
+    const { isWindowsDesktopRuntime } = await import('../platform/create-platform.js');
+    const deps = { showToast };
+    // Settings popup is desktop-only; PWA uses the build-time app key.
+    if (isWindowsDesktopRuntime()) {
+        deps.openSettings = () => openUgrcKeySettings();
+    }
+    return runReverseMilepostLookup(latlng, deps);
 }
 
 export function showToolInfo() {
@@ -5122,11 +5125,12 @@ export function showToolInfo() {
             const root = overlay.querySelector(`#${rootId}`);
             if (!root) return;
             const { mountToolGuideDialog } = await import('../../react/tools/mountToolGuideDialog.jsx');
+            const { isWindowsDesktopRuntime } = await import('../platform/create-platform.js');
             const mounted = mountToolGuideDialog(root, {
                 showTitle: true,
-                onOpenUgrcSettings: () => {
-                    openUgrcKeySettings();
-                }
+                onOpenUgrcSettings: isWindowsDesktopRuntime()
+                    ? () => { openUgrcKeySettings(); }
+                    : undefined
             });
             watchOverlayUnmount(overlay, () => mounted.unmount?.());
         }

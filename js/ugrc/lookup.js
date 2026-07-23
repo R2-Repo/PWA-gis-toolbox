@@ -36,12 +36,15 @@ export async function runReverseMilepostLookup(latlng, deps = {}) {
     });
 
     if (!hasResolvedUgrcApiKey()) {
-        showToast(
-            'UGRC API key required. Desktop users: paste your key in Settings. PWA: set VITE_UGRC_API_KEY for builds.',
-            'warning'
-        );
+        // Desktop may open Settings; PWA should only toast (app key comes from build env).
         if (typeof deps.openSettings === 'function') {
+            showToast('UGRC API key required. Paste your personal key to continue.', 'warning');
             await deps.openSettings();
+        } else {
+            showToast(
+                'UGRC is not configured for this build. Add GitHub secret VITE_UGRC_API_KEY and redeploy.',
+                'warning'
+            );
         }
         return 'missing_key';
     }
@@ -75,9 +78,14 @@ export async function runReverseMilepostLookup(latlng, deps = {}) {
     }
 
     if (outcome.reason === 'http' && (outcome.status === 401 || outcome.status === 403)) {
-        showToast('UGRC API key was rejected. Check the key in Settings or your browser-key referrer pattern.', 'error');
         if (typeof deps.openSettings === 'function') {
+            showToast('UGRC API key was rejected. Check the key in Settings.', 'error');
             await deps.openSettings();
+        } else {
+            showToast(
+                'UGRC API key was rejected. Check the GitHub secret and browser-key referrer patterns, then redeploy.',
+                'error'
+            );
         }
         return 'error';
     }

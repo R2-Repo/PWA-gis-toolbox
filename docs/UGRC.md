@@ -16,9 +16,11 @@ This is separate from the **Route Centerline** GIS Widget, which uses public UDO
 
 | Runtime | Key source |
 |---------|------------|
-| PWA / browser builds | App-owned **browser** key via `VITE_UGRC_API_KEY` (referrer-locked) |
+| PWA / browser builds | App-owned **browser** key via `VITE_UGRC_API_KEY` (referrer-locked). No key popup on the PWA. |
 | Desktop | User pastes a personal key in **Info → UGRC API key…** (`localStorage` key `ugrc.apiKey`) |
-| Override (any runtime) | Saved user key wins over the env key |
+| Override | Saved user key (desktop) wins over the env key |
+
+**Important:** Adding a GitHub secret does not update a site that is already deployed. Push again (or re-run **Deploy Pages**) so CI rebuilds with the secret.
 
 Create keys at [developer.mapserv.utah.gov](https://developer.mapserv.utah.gov). See [Getting started](https://api.mapserv.utah.gov/getting-started/) for browser vs desktop key types.
 
