@@ -18,6 +18,13 @@ import {
 import { buildImportFindings } from './audit.js';
 import { mapHubListRows } from './hub-list.js';
 import { mapConnectedBuildingRows } from './connected-buildings.js';
+import {
+    buildMergeProposals,
+    applyAcceptedMerges,
+    defaultMergeDecisions
+} from './merge-proposals.js';
+import { linkWirelessDrops } from './wireless-drops.js';
+import { mapUnifiedBuildingsRows } from './unified-buildings.js';
 
 function uid() {
     return crypto.randomUUID();
@@ -92,7 +99,11 @@ export async function readWorkbookSheets(buffer) {
  *   atmsFile?: { name: string, text: string },
  *   hubListFile?: { name: string, text: string },
  *   connectedBuildingsFile?: { name: string, text: string },
- *   batchDate?: string
+ *   unifiedBuildingsFile?: { name: string, text: string },
+ *   batchDate?: string,
+ *   mergeDecisions?: Record<string, 'accept'|'reject'>,
+ *   mergeCandidatePicks?: Record<string, string>,
+ *   autoAcceptHighMerge?: boolean
  * }} input
  */
 export async function buildAtlasImportPayload(input) {
@@ -157,9 +168,36 @@ export async function buildAtlasImportPayload(input) {
         }
     }
 
+    if (input.unifiedBuildingsFile?.text) {
+        const uRows = parseCsvText(input.unifiedBuildingsFile.text);
+        for (const row of uRows) {
+            rawRecords.push({ id: uid(), batchId, source: 'UnifiedBuildings', payload: row });
+        }
+        const { hubs: uHubs, buildings: uBuildings } = mapUnifiedBuildingsRows(uRows);
+        for (const mapped of uHubs) {
+            officialHubCodes.add(mapped.hubCode);
+            hubsByCode.set(mapped.hubCode, {
+                id: uid(),
+                hubCode: mapped.hubCode,
+                name: mapped.name,
+                aka: mapped.aka,
+                hubIp: mapped.hubIp,
+                channelsSubnet: mapped.channelsSubnet,
+                lat: mapped.lat,
+                lon: mapped.lon,
+                regionId: mapped.regionId,
+                isShed: mapped.isShed,
+                fromOfficialList: true
+            });
+        }
+        for (const mapped of uBuildings) {
+            connectedBuildings.push({ id: uid(), ...mapped });
+        }
+    }
+
     /** @type {object[]} */
     const connectedBuildings = [];
-    if (input.connectedBuildingsFile?.text) {
+    if (input.connectedBuildingsFile?.text && !input.unifiedBuildingsFile?.text) {
         const buildingRows = parseCsvText(input.connectedBuildingsFile.text);
         for (const row of buildingRows) {
             rawRecords.push({ id: uid(), batchId, source: 'ConnectedBuildings', payload: row });
@@ -183,6 +221,18 @@ export async function buildAtlasImportPayload(input) {
 
     const { joined, unmatchedSwitch } = joinWorkbookTabs(tmdRows, switchRows);
     const atmsMatches = matchAtmsToWorkbook(atmsMapped, switchRows, tmdRows);
+
+    const mergeProposals = buildMergeProposals({ joined, unmatchedSwitch, atmsMatches });
+    const mergeDecisions = input.mergeDecisions
+        ?? defaultMergeDecisions(mergeProposals, input.autoAcceptHighMerge !== false);
+    applyAcceptedMerges({
+        joined,
+        unmatchedSwitch,
+        decisions: mergeDecisions,
+        proposals: mergeProposals,
+        candidatePicks: input.mergeCandidatePicks,
+        atmsMatches
+    });
 
     const ensureHub = (code) => {
         if (!code) return null;
@@ -377,6 +427,7 @@ export async function buildAtlasImportPayload(input) {
         officialHubCodes,
         inferredHubCodes
     });
+    linkWirelessDrops(drops, atmsMatches, findings);
 
     const summary = {
         batchId,
@@ -399,6 +450,8 @@ export async function buildAtlasImportPayload(input) {
             devices: devices.length,
             connectedBuildings: connectedBuildings.length,
             findings: findings.length,
+            mergeProposals: mergeProposals.length,
+            mergeAccepted: Object.values(mergeDecisions).filter((d) => d === 'accept').length,
             rawRecords: rawRecords.length
         },
         fileKind: {
@@ -429,6 +482,8 @@ export async function buildAtlasImportPayload(input) {
         devices,
         connectedBuildings,
         findings,
+        mergeProposals,
+        mergeDecisions,
         summary
     };
 }

@@ -5,7 +5,8 @@ mod temp_files;
 mod udot_fiber;
 
 use atlas::{
-    atlas_db_load_snapshot, atlas_db_open, atlas_finding_update, atlas_import_apply,
+    atlas_db_load_snapshot, atlas_db_open, atlas_entity_move, atlas_entity_update,
+    atlas_finding_update, atlas_import_apply,
     atlas_import_inbox_ensure, atlas_import_inbox_list, atlas_import_inbox_open,
     atlas_import_list_batches, atlas_import_read_file, atlas_ping_cancel,
     atlas_ping_delete_session, atlas_ping_delete_sessions, atlas_ping_finalize_session,
@@ -144,6 +145,8 @@ pub fn run() {
             atlas_pref_get_all,
             atlas_pref_set,
             atlas_finding_update,
+            atlas_entity_update,
+            atlas_entity_move,
             atlas_ping_one,
             atlas_ping_many,
             atlas_ping_cancel,

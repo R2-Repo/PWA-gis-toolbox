@@ -1111,3 +1111,81 @@ button.atlas-dash-card--action:hover {
     border-color: var(--primary);
     color: var(--text);
 }
+
+.atlas-channel-worker {
+    position: fixed;
+    z-index: 12000;
+    width: 360px;
+    max-height: 420px;
+    background: var(--panel-bg, #1e1e1e);
+    border: 1px solid var(--border, #444);
+    border-radius: 8px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45);
+    display: flex;
+    flex-direction: column;
+}
+
+.atlas-channel-worker__header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 10px;
+    cursor: move;
+    border-bottom: 1px solid var(--border, #444);
+}
+
+.atlas-channel-worker__toolbar {
+    padding: 6px 10px;
+    display: flex;
+    gap: 6px;
+}
+
+.atlas-channel-worker__log {
+    margin: 0;
+    padding: 8px 10px;
+    font-size: 11px;
+    line-height: 1.4;
+    overflow: auto;
+    flex: 1;
+    font-family: ui-monospace, monospace;
+}
+
+.atlas-import-merge-proposals {
+    margin-top: 8px;
+}
+
+.atlas-merge-proposal-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 4px;
+}
+
+.atlas-merge-auto {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 12px;
+}
+
+.atlas-merge-hint {
+    flex-basis: 100%;
+    font-size: 11px;
+}
+
+.atlas-badge--high { color: #4ade80; }
+.atlas-badge--medium { color: #fbbf24; }
+.atlas-badge--low { color: #94a3b8; }
+
+.atlas-map-layers__hint {
+    font-size: 11px;
+    margin: 6px 0 4px;
+}
+
+.atlas-map-layer-row {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    justify-content: space-between;
+}

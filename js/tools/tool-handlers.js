@@ -594,6 +594,15 @@ export function buildMapContextMenuItems(payload) {
         }
     });
 
+    items.push({
+        icon: '🛤️',
+        label: 'Get route & milepost',
+        title: 'UDOT state routes and interstates only — not city streets.',
+        action: () => {
+            void lookupRouteAndMilepostAt(latlng);
+        }
+    });
+
     if (mapService.is3DEnabled()) {
         items.push({
             icon: '⛰️',
@@ -5062,6 +5071,48 @@ function startInlineEdit(el, currentValue, onSave) {
 // ============================
 // Tool Info / Help Guide
 // ============================
+export function openUgrcKeySettings() {
+    const rootId = `ugrc-key-settings-${Date.now()}`;
+    return showModal('UGRC API key', `<div id="${rootId}"></div>`, {
+        width: '480px',
+        onMount: async (overlay, close) => {
+            const root = overlay.querySelector(`#${rootId}`);
+            if (!root) return;
+            const { mountUgrcKeySettingsDialog } = await import('../../react/tools/mountUgrcKeySettingsDialog.jsx');
+            const {
+                getEnvUgrcApiKey,
+                getUserUgrcApiKey,
+                setUserUgrcApiKey,
+                clearUserUgrcApiKey
+            } = await import('../ugrc/keys.js');
+            const mounted = mountUgrcKeySettingsDialog(root, {
+                initialKey: getUserUgrcApiKey(),
+                hasEnvKey: Boolean(getEnvUgrcApiKey()),
+                onCancel: () => close(false),
+                onSave: (key) => {
+                    setUserUgrcApiKey(key);
+                    showToast('UGRC API key saved', 'success');
+                    close(true);
+                },
+                onClear: () => {
+                    clearUserUgrcApiKey();
+                    showToast('UGRC API key cleared', 'info');
+                    close(true);
+                }
+            });
+            watchOverlayUnmount(overlay, () => mounted.unmount?.());
+        }
+    });
+}
+
+async function lookupRouteAndMilepostAt(latlng) {
+    const { runReverseMilepostLookup } = await import('../ugrc/lookup.js');
+    return runReverseMilepostLookup(latlng, {
+        showToast,
+        openSettings: () => openUgrcKeySettings()
+    });
+}
+
 export function showToolInfo() {
     const rootId = `tool-guide-react-${Date.now()}`;
     return showModal('Guide', `<div id="${rootId}"></div>`, {
@@ -5071,7 +5122,12 @@ export function showToolInfo() {
             const root = overlay.querySelector(`#${rootId}`);
             if (!root) return;
             const { mountToolGuideDialog } = await import('../../react/tools/mountToolGuideDialog.jsx');
-            const mounted = mountToolGuideDialog(root, { showTitle: true });
+            const mounted = mountToolGuideDialog(root, {
+                showTitle: true,
+                onOpenUgrcSettings: () => {
+                    openUgrcKeySettings();
+                }
+            });
             watchOverlayUnmount(overlay, () => mounted.unmount?.());
         }
     });
@@ -5156,6 +5212,7 @@ const APP_ACTIONS = {
     openCoordConverter,
     mergeLayers: handleMergeLayers,
     showToolInfo,
+    openUgrcKeySettings,
     // Selection
     toggleSelectionMode,
     clearSelection,

@@ -75,6 +75,8 @@ import { isPresentationMode } from '../js/presentation/presentation-mode-detecto
 import { PresentationApp } from './presentation/PresentationApp.jsx';
 import { WorkspaceTabs } from './atlas/WorkspaceTabs.jsx';
 import { AtlasLeftPanel } from './atlas/AtlasLeftPanel.jsx';
+import { ChannelMonitorWorker } from './atlas/ChannelMonitorWorker.jsx';
+import { openChannelWorker } from '../js/atlas/worker-manager.js';
 import { AtlasRightPanel } from './atlas/AtlasRightPanel.jsx';
 import { AtlasImportDialog } from './atlas/AtlasImportDialog.jsx';
 import {
@@ -100,6 +102,7 @@ import {
     atlasCapabilities,
     leaveAtlasMap
 } from '../js/atlas/controller.js';
+import { getAtlasSnapshot } from '../js/atlas/store.js';
 import { getPlatformBundle } from '../js/platform/create-platform.js';
 
 function SaveIndicator() {
@@ -182,6 +185,7 @@ function AppShell() {
     const [atlasAvailable, setAtlasAvailable] = useState(() => isAtlasAvailable());
     const [canAtlasPing, setCanAtlasPing] = useState(() => atlasCapabilities().canPing);
     const [atlasImportOpen, setAtlasImportOpen] = useState(false);
+    const [atlasWorkers, setAtlasWorkers] = useState([]);
     const leftPanel = usePanelCollapse('left');
     const rightPanel = usePanelCollapse('right');
 
@@ -471,6 +475,13 @@ function AppShell() {
                             <AtlasLeftPanel
                                 onSelect={selectAtlasEntity}
                                 onOpenImport={() => setAtlasImportOpen(true)}
+                                onAddMapLayer={() => openImportFlow()}
+                                gisLayers={layersForPanel}
+                                onReorderGisLayer={(id, dir) => {
+                                    const idx = layersForPanel.findIndex((l) => l.id === id);
+                                    if (idx >= 0) moveLayerToIndex(id, idx + dir);
+                                }}
+                                onToggleGisLayer={(id) => toggleLayerVisibilityAndRender(id)}
                             />
                         ) : (
                             <>
@@ -562,6 +573,10 @@ function AppShell() {
                                     onAreaPolygon={() => void onAreaPolygon()}
                                     onClearArea={clearAreaResults}
                                     onSelectFinding={selectFindingEntity}
+                                    onPopOutWorker={(channelNumber) => {
+                                        const w = openChannelWorker(channelNumber);
+                                        setAtlasWorkers((prev) => (prev.some((x) => x.id === w.id) ? prev : [...prev, w]));
+                                    }}
                                 />
                             ) : (
                                 <RightPanel
@@ -586,6 +601,22 @@ function AppShell() {
                 onClose={() => setAtlasImportOpen(false)}
                 onImported={onAtlasImported}
             />
+
+            {atlasWorkers.map((w) => (
+                <ChannelMonitorWorker
+                    key={w.id}
+                    workerId={w.id}
+                    channelNumber={w.channelNumber}
+                    log={w.log || []}
+                    canPing={canAtlasPing}
+                    onClose={() => setAtlasWorkers((prev) => prev.filter((x) => x.id !== w.id))}
+                    onPingChannel={(chNum) => {
+                        const ch = getAtlasSnapshot().channels?.find((c) => c.channelNumber === chNum);
+                        if (ch) void pingChannel(ch.id);
+                    }}
+                    onStartMonitor={(opts) => startAtlasMonitor(opts)}
+                />
+            ))}
 
             <button
                 type="button"

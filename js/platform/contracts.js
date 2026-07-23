@@ -114,6 +114,8 @@
  * @property {() => Promise<{ prefs: Record<string, string|null> }>} [getAllPrefs]
  * @property {(payload: { key: string, value: string|number|null }) => Promise<void>} [setPref]
  * @property {(findingId: string, patch: object) => Promise<void>} [updateFinding]
+ * @property {(entityKind: string, entityId: string, patch: object) => Promise<void>} [updateEntity]
+ * @property {(entityKind: string, entityId: string, lat: number, lon: number) => Promise<void>} [moveEntity]
  * @property {() => Promise<{ path: string }>} [ensureImportInbox]
  * @property {() => Promise<void>} [openImportInbox]
  * @property {() => Promise<{ path: string, files: object[] }>} [listImportInbox]

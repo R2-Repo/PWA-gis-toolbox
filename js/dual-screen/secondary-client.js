@@ -162,6 +162,25 @@ function showSecondaryContextMenu({ latlng, originalEvent, layerId, featureIndex
             .catch(() => showMapToast(text, 'info'));
     }});
 
+    items.push({
+        icon: '🛤️',
+        label: 'Get route & milepost',
+        title: 'UDOT state routes and interstates only — not city streets.',
+        action: () => {
+            void import('../ugrc/lookup.js').then(({ runReverseMilepostLookup }) =>
+                runReverseMilepostLookup(latlng, {
+                    showToast: showMapToast,
+                    openSettings: () => {
+                        showMapToast(
+                            'Set a UGRC API key in the main window (Info → UGRC API key…)',
+                            'warning'
+                        );
+                    }
+                })
+            );
+        }
+    });
+
     if (mapService.is3DEnabled()) {
         items.push({ icon: '⛰️', label: 'Get elevation', action: () => {
             const meters = mapService.queryElevationAt(latlng.lat, latlng.lng);
@@ -213,6 +232,7 @@ function showSecondaryContextMenu({ latlng, originalEvent, layerId, featureIndex
         }
         const el = document.createElement('div');
         el.className = 'ctx-item';
+        if (item.title) el.title = item.title;
         el.innerHTML = `<span class="ctx-icon">${item.icon}</span>${item.label}`;
         el.addEventListener('click', (e) => {
             e.stopPropagation();

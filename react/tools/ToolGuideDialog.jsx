@@ -28,7 +28,7 @@ function HowToList({ tools }) {
     );
 }
 
-export function ToolGuideDialog({ isMobile = false, showTitle = true }) {
+export function ToolGuideDialog({ isMobile = false, showTitle = true, onOpenUgrcSettings }) {
     return (
         <div>
             {showTitle ? <ToolGuideTitle isMobile={isMobile} /> : null}
@@ -53,6 +53,17 @@ export function ToolGuideDialog({ isMobile = false, showTitle = true }) {
                         </details>
                     );
                 })}
+                {typeof onOpenUgrcSettings === 'function' ? (
+                    <div style={{ marginTop: 8, paddingTop: 12, borderTop: '1px solid var(--border)' }}>
+                        <button
+                            type="button"
+                            className="btn btn-secondary btn-sm"
+                            onClick={() => onOpenUgrcSettings()}
+                        >
+                            UGRC API key…
+                        </button>
+                    </div>
+                ) : null}
             </div>
         </div>
     );

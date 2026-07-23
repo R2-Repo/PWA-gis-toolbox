@@ -62,6 +62,19 @@ Full text is available via native `title` tooltips. Shared helpers live in `js/a
 - [x] Phase 6 — Temporary monitoring sessions + CSV export
 - [x] Phase 7 — Reconciliation center + dashboard + exports
 
+## V2 phase checklist (desktop)
+
+- [x] V2-1 — Golden-record merge (import review proposals)
+- [x] V2-2 — Wireless drops + parent fiber link
+- [x] V2-3 — Unified buildings import + hub attached buildings
+- [x] V2-4 — In-Atlas database edit (map + pop-ups)
+- [x] V2-5 — Referral map layers + collapsible reorder
+- [x] V2-6 — Subnet / drop IP range scan
+- [x] V2-7 — Pop-out channel monitor workers
+- [x] V2-8 — Cut extent assistant
+
+See [`docs/NETWORK_ATLAS_V2_BUILD.md`](NETWORK_ATLAS_V2_BUILD.md).
+
 ## Import workflow (not GIS map import)
 
 Atlas source files use a **dedicated path**:

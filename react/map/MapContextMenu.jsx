@@ -29,6 +29,7 @@ function ContextMenuItem({ item, index, dismiss }) {
     <div
       key={`${item.label}-${index}`}
       className="ctx-item"
+      title={item.title || undefined}
       onClick={(e) => {
         e.stopPropagation();
         dismiss();

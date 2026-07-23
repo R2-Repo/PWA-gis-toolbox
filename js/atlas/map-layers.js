@@ -378,6 +378,7 @@ export function buildAtlasMapPayload(snap) {
                 ip: drop.ip || '',
                 hasIp: hasIp ? 1 : 0,
                 hasChannel: hasChannel ? 1 : 0,
+                wireless: drop.wireless ? 1 : 0,
                 pingStatus: displayPingStatus(ping, { hasIp }),
                 hubFillStatus: '',
                 hubIssue: 0,
@@ -427,6 +428,17 @@ export function buildAtlasMapPayload(snap) {
         ['==', ['get', 'hubIssue'], 1]
     ];
 
+    const areaFc = {
+        type: 'FeatureCollection',
+        features: geometry
+            ? [{ type: 'Feature', geometry, properties: {} }]
+            : []
+    };
+    const cutGeometry = snap.cutExtent?.probableZone || null;
+    if (cutGeometry) {
+        areaFc.features.push({ type: 'Feature', geometry: cutGeometry, properties: { atlasKind: 'cutExtent' } });
+    }
+
     return {
         network: { type: 'FeatureCollection', features },
         channel: {
@@ -439,12 +451,7 @@ export function buildAtlasMapPayload(snap) {
                 }]
                 : []
         },
-        area: {
-            type: 'FeatureCollection',
-            features: geometry
-                ? [{ type: 'Feature', geometry, properties: {} }]
-                : []
-        },
+        area: areaFc,
         dropFilter,
         hubFilter,
         buildingFilter,

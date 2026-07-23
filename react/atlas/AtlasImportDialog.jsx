@@ -29,6 +29,10 @@ export function AtlasImportDialog({ open, onClose, busy: busyProp, onImported })
     const [payload, setPayload] = useState(null);
     const [diff, setDiff] = useState(null);
     const [showDiffLists, setShowDiffLists] = useState(false);
+    const [mergeDecisions, setMergeDecisions] = useState({});
+    const [mergeCandidatePicks, setMergeCandidatePicks] = useState({});
+    const [autoAcceptHighMerge, setAutoAcceptHighMerge] = useState(true);
+    const [showMergeProposals, setShowMergeProposals] = useState(false);
     const [error, setError] = useState('');
     const [busyLocal, setBusyLocal] = useState(false);
     const busy = busyProp || busyLocal;
@@ -38,6 +42,9 @@ export function AtlasImportDialog({ open, onClose, busy: busyProp, onImported })
         setPayload(null);
         setDiff(null);
         setShowDiffLists(false);
+        setMergeDecisions({});
+        setMergeCandidatePicks({});
+        setShowMergeProposals(false);
     };
 
     useEffect(() => {
@@ -99,10 +106,18 @@ export function AtlasImportDialog({ open, onClose, busy: busyProp, onImported })
         setError('');
         setBusyLocal(true);
         try {
-            const result = await previewAtlasImport(buildInput());
+            const result = await previewAtlasImport({
+                ...buildInput(),
+                mergeDecisions: Object.keys(mergeDecisions).length ? mergeDecisions : undefined,
+                mergeCandidatePicks: Object.keys(mergeCandidatePicks).length ? mergeCandidatePicks : undefined,
+                autoAcceptHighMerge
+            });
             setSummary(result.summary);
             setPayload(result.payload);
             setDiff(result.diff || result.summary?.diffDetails || null);
+            if (result.payload?.mergeDecisions) {
+                setMergeDecisions(result.payload.mergeDecisions);
+            }
         } catch (err) {
             setError(err?.message || String(err));
             resetReview();
@@ -115,7 +130,12 @@ export function AtlasImportDialog({ open, onClose, busy: busyProp, onImported })
         setError('');
         setBusyLocal(true);
         try {
-            const applied = await runAtlasImport(payload ? { payload } : buildInput());
+            const applied = await runAtlasImport({
+                ...buildInput(),
+                mergeDecisions: Object.keys(mergeDecisions).length ? mergeDecisions : undefined,
+                mergeCandidatePicks: Object.keys(mergeCandidatePicks).length ? mergeCandidatePicks : undefined,
+                autoAcceptHighMerge
+            });
             onImported?.(applied);
             setFilePickerWorkbook(null);
             setFilePickerAtms(null);
@@ -293,7 +313,103 @@ export function AtlasImportDialog({ open, onClose, busy: busyProp, onImported })
                                 </li>
                                 <li>Connected buildings: {counts.connectedBuildings ?? 0}</li>
                                 <li>Findings: {counts.findings}</li>
+                                {counts.mergeProposals != null && (
+                                    <li>
+                                        Merge proposals: {counts.mergeProposals}
+                                        {counts.mergeAccepted != null ? ` (${counts.mergeAccepted} accepted)` : ''}
+                                    </li>
+                                )}
                             </ul>
+                            {!!payload?.mergeProposals?.length && (
+                                <div className="atlas-import-merge-proposals">
+                                    <div className="atlas-toolbar">
+                                        <strong>Golden-record merge</strong>
+                                        <label className="atlas-merge-auto">
+                                            <input
+                                                type="checkbox"
+                                                checked={autoAcceptHighMerge}
+                                                disabled={busy}
+                                                onChange={(e) => setAutoAcceptHighMerge(e.target.checked)}
+                                            />
+                                            Auto-accept high confidence
+                                        </label>
+                                        <button
+                                            type="button"
+                                            className="btn btn-ghost btn-sm"
+                                            onClick={() => setShowMergeProposals((v) => !v)}
+                                        >
+                                            {showMergeProposals ? 'Hide' : 'Show'} proposals
+                                        </button>
+                                        <button
+                                            type="button"
+                                            className="btn btn-ghost btn-sm"
+                                            disabled={busy}
+                                            onClick={() => void onReview()}
+                                            title="Re-run review after changing accept/reject"
+                                        >
+                                            Refresh review
+                                        </button>
+                                    </div>
+                                    {showMergeProposals && (
+                                        <ul className="atlas-simple-list">
+                                            {payload.mergeProposals.map((p) => (
+                                                <li key={p.id} className="atlas-merge-proposal-row">
+                                                    <span className={`atlas-badge atlas-badge--${p.confidence}`}>
+                                                        {p.confidence}
+                                                    </span>
+                                                    {' '}
+                                                    <span className="atlas-muted">{p.reason}</span>
+                                                    {' — '}
+                                                    {p.left?.label || '—'}
+                                                    {p.right?.ip ? ` ↔ ${p.right.ip}` : ''}
+                                                    {p.kind === 'ambiguous' ? ' (pick candidate)' : ''}
+                                                    {p.kind === 'ambiguous' && !!p.candidates?.length && (
+                                                        <label className="atlas-merge-decision">
+                                                            <select
+                                                                value={mergeCandidatePicks[p.id] || ''}
+                                                                onChange={(e) => {
+                                                                    setMergeCandidatePicks((prev) => ({
+                                                                        ...prev,
+                                                                        [p.id]: e.target.value
+                                                                    }));
+                                                                }}
+                                                            >
+                                                                <option value="">Select switch…</option>
+                                                                {p.candidates.map((c) => (
+                                                                    <option
+                                                                        key={c.switchInventoryKey}
+                                                                        value={c.switchInventoryKey}
+                                                                    >
+                                                                        {c.label} ({c.ip || 'no IP'}) — {c.reason}
+                                                                    </option>
+                                                                ))}
+                                                            </select>
+                                                        </label>
+                                                    )}
+                                                    <label className="atlas-merge-decision">
+                                                        <select
+                                                            value={mergeDecisions[p.id] || 'reject'}
+                                                            disabled={p.kind === 'ambiguous' && !mergeCandidatePicks[p.id]}
+                                                            onChange={(e) => {
+                                                                setMergeDecisions((prev) => ({
+                                                                    ...prev,
+                                                                    [p.id]: e.target.value
+                                                                }));
+                                                            }}
+                                                        >
+                                                            <option value="reject">Reject</option>
+                                                            <option value="accept">Accept</option>
+                                                        </select>
+                                                    </label>
+                                                    {p.suggestedAction ? (
+                                                        <span className="atlas-muted atlas-merge-hint">{p.suggestedAction}</span>
+                                                    ) : null}
+                                                </li>
+                                            ))}
+                                        </ul>
+                                    )}
+                                </div>
+                            )}
                             {!!payload?.findings?.length && (
                                 <div className="atlas-import-findings-by-type">
                                     <strong>Findings by type</strong>

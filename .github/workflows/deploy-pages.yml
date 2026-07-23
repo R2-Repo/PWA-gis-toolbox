@@ -43,12 +43,16 @@ jobs:
 
       - name: Build production site (main)
         working-directory: main-src
+        env:
+          VITE_UGRC_API_KEY: ${{ secrets.VITE_UGRC_API_KEY }}
         run: |
           npm ci
           npm run build
 
       - name: Build staging preview (staging branch)
         working-directory: staging-src
+        env:
+          VITE_UGRC_API_KEY: ${{ secrets.VITE_UGRC_API_KEY }}
         run: |
           npm ci
           npm run build -- --base=/gis-toolbox/staging/

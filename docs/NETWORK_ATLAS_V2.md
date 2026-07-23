@@ -1,8 +1,7 @@
-# ITS Network Atlas — V2 idea backlog (pre-planned, not committed)
+# ITS Network Atlas — V2 idea backlog
 
-> **Status:** Brainstorm / potential ideas only.  
-> **Not** an official roadmap, schedule, or implementation checklist.  
-> Nothing here is approved for build until explicitly promoted into a real phase plan.  
+> **Status:** V2 committed ideas are in [`docs/NETWORK_ATLAS_V2_BUILD.md`](NETWORK_ATLAS_V2_BUILD.md).  
+> V3 deferred ideas: [`docs/NETWORK_ATLAS_V3.md`](NETWORK_ATLAS_V3.md).  
 > V1 remains the shipped baseline (`docs/NETWORK_ATLAS.md`).
 
 **Primary job of Atlas:** answer the phone on network status and outages, and help determine the extent of a fiber hit / cable cut — plus other operator conveniences around that workflow.
@@ -26,18 +25,22 @@ Ideas may be reordered, merged, dropped, or never built.
 
 ## Idea index
 
-1. [Cut extent assistant](#1-cut-extent-assistant)
-2. [Impact blast (deferred)](#2-impact-blast-deferred)
-3. [Golden-record merge (ATMS + FiberSwitch)](#3-golden-record-merge-atms--fiberswitch)
-4. [Wireless drop dataset + parent fiber link](#4-wireless-drop-dataset--parent-fiber-link)
-5. [24/7 monitoring (background watches)](#5-247-monitoring-background-watches)
-6. [Project fences](#6-project-fences)
-7. [Outage notification wizard](#7-outage-notification-wizard)
-8. [Subnet / drop IP range scan (known vs rogue)](#8-subnet--drop-ip-range-scan-known-vs-rogue)
-9. [Unified buildings import (Hub + Connected Buildings)](#9-unified-buildings-import-hub--connected-buildings)
-10. [Pop-out channel monitor windows (workers)](#10-pop-out-channel-monitor-windows-workers)
-11. [Atlas map layers — referrals import + reorder](#11-atlas-map-layers--referrals-import--reorder)
-12. [In-Atlas database edit (map + pop-ups)](#12-in-atlas-database-edit-map--pop-ups)
+**V2 committed:** 3, 4, 8, 9, 10, 11, 12, 1 (see build plan for phase order).
+
+**V3 deferred:** 2, 5, 6, 7.
+
+1. [Cut extent assistant](#1-cut-extent-assistant) — **V2**
+2. [Impact blast (deferred)](#2-impact-blast-deferred) — **V3**
+3. [Golden-record merge (ATMS + FiberSwitch)](#3-golden-record-merge-atms--fiberswitch) — **V2**
+4. [Wireless drop dataset + parent fiber link](#4-wireless-drop-dataset--parent-fiber-link) — **V2**
+5. [24/7 monitoring (background watches)](#5-247-monitoring-background-watches) — **V3**
+6. [Project fences](#6-project-fences) — **V3**
+7. [Outage notification wizard](#7-outage-notification-wizard) — **V3**
+8. [Subnet / drop IP range scan (known vs rogue)](#8-subnet--drop-ip-range-scan-known-vs-rogue) — **V2**
+9. [Unified buildings import (Hub + Connected Buildings)](#9-unified-buildings-import-hub--connected-buildings) — **V2**
+10. [Pop-out channel monitor windows (workers)](#10-pop-out-channel-monitor-windows-workers) — **V2**
+11. [Atlas map layers — referrals import + reorder](#11-atlas-map-layers--referrals-import--reorder) — **V2**
+12. [In-Atlas database edit (map + pop-ups)](#12-in-atlas-database-edit-map--pop-ups) — **V2**
 13. [Other candidates (lighter touch)](#13-other-candidates-lighter-touch)
 
 ---
@@ -96,7 +99,7 @@ Later:  One clean dataset → import becomes simple
 **Output:** Canonical site/drop rows with confidence + human accept/reject for ambiguous pairs.
 
 **V1 today:** Join TMD↔SwitchFiber by inventory name; ATMS↔workbook by exact IP then channel+drop (provisional); some field fill when IP already matched; unmatched → provisional / findings (`js/atlas/import/`).  
-**Not yet:** Fuzzy/geo merge UI, systematic blank-fill across near-matches, exportable golden spreadsheet as product goal.  
+**V2 (Phase 1):** `merge-proposals.js` + Review UI — fuzzy name, channel+drop+ATMS IP, geo unique candidate, accept/reject with blank-fill on coords/ATMS linkage. Export golden workbook remains stretch.  
 **Depends on:** Same two imports (plus Hub List / Connected Buildings, or Idea 9’s unified buildings file); operator review for low-confidence links.
 
 ---

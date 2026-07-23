@@ -50,6 +50,12 @@ export function createWindowsAtlasDbService() {
         async updateFinding(findingId, patch) {
             await invokeCommand('atlas_finding_update', { findingId, patch });
         },
+        async updateEntity(entityKind, entityId, patch) {
+            await invokeCommand('atlas_entity_update', { entityKind, entityId, patch });
+        },
+        async moveEntity(entityKind, entityId, lat, lon) {
+            await invokeCommand('atlas_entity_move', { entityKind, entityId, lat, lon });
+        },
         async ensureImportInbox() {
             return invokeCommand('atlas_import_inbox_ensure');
         },

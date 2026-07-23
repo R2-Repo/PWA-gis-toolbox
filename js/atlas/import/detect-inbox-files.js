@@ -118,16 +118,32 @@ function sortNewest(files) {
     });
 }
 
+import { isUnifiedBuildingsFilename } from './unified-buildings.js';
+
+/**
+ * @param {Array<{ name: string, path: string, ext: string, modifiedMs?: number }>} files
+ */
+export function pickNewestUnifiedBuildings(files) {
+    const candidates = (files || []).filter((f) => {
+        const ext = (f.ext || '').toLowerCase();
+        if (ext !== 'csv' && ext !== 'txt') return false;
+        return isUnifiedBuildingsFilename(f);
+    });
+    return sortNewest(candidates)[0] || null;
+}
+
 /**
  * @param {Array<object>} files
- * @returns {{ workbook: object|null, atms: object|null, hubList: object|null, connectedBuildings: object|null }}
+ * @returns {{ workbook: object|null, atms: object|null, hubList: object|null, connectedBuildings: object|null, unifiedBuildings: object|null }}
  */
 export function detectInboxSources(files) {
+    const unified = pickNewestUnifiedBuildings(files);
     return {
         workbook: pickNewestWorkbook(files),
         atms: pickNewestAtmsCsv(files),
-        hubList: pickNewestHubList(files),
-        connectedBuildings: pickNewestConnectedBuildings(files)
+        hubList: unified ? null : pickNewestHubList(files),
+        connectedBuildings: unified ? null : pickNewestConnectedBuildings(files),
+        unifiedBuildings: unified
     };
 }
 

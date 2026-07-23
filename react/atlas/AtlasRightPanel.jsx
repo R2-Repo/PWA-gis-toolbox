@@ -41,7 +41,8 @@ import {
     formatHubTreeLabel
 } from '../../js/atlas/display-label.js';
 import { connectedBuildingIps } from '../../js/atlas/import/connected-buildings.js';
-import { confirm } from '../../js/ui/modals.js';
+import { buildingsForHub, buildingPingTargets } from '../../js/atlas/buildings-hub.js';
+import { runAtlasCutExtent, scanAtlasIpRange } from '../../js/atlas/controller.js';
 import { ChannelSchematic } from './ChannelSchematic.jsx';
 import { CopyIp, CopyIpsButton } from './CopyIp.jsx';
 import { CollapsibleSection } from '../ui/CollapsibleSection.jsx';
@@ -78,7 +79,8 @@ export function AtlasRightPanel({
     onAreaFromDraw,
     onAreaPolygon,
     onClearArea,
-    onSelectFinding
+    onSelectFinding,
+    onPopOutWorker
 }) {
     const initialPrefs = getAtlasSnapshot().prefs || defaultAtlasPrefs();
     const [tick, setTick] = useState(0);
@@ -893,6 +895,32 @@ export function AtlasRightPanel({
                                 </li>
                             ))}
                         </ul>
+                        {(() => {
+                            const attached = buildingsForHub(snap, hubSummary.hub.hubCode);
+                            if (!attached.length) return null;
+                            return (
+                                <>
+                                    <p><strong>Connected buildings:</strong> {attached.length}</p>
+                                    <ul className="atlas-simple-list">
+                                        {attached.map((b) => (
+                                            <li key={b.id}>
+                                                <button type="button" className="atlas-linkish" onClick={() => onSelect?.({ kind: 'building', id: b.id })}>
+                                                    {b.buildingName}
+                                                </button>
+                                                {b.switch1Ip ? (
+                                                    <>
+                                                        {' '}· <CopyIp ip={b.switch1Ip} />
+                                                        {canPing && (
+                                                            <button type="button" className="btn btn-ghost btn-sm" onClick={() => onPingSelectedIps?.(buildingPingTargets(b).map((t) => t.ip))}>Ping</button>
+                                                        )}
+                                                    </>
+                                                ) : null}
+                                            </li>
+                                        ))}
+                                    </ul>
+                                </>
+                            );
+                        })()}
                     </div>
                 )}
                 <ChannelSchematic
@@ -910,6 +938,7 @@ export function AtlasRightPanel({
                     onPingChannel={onPingChannel}
                     onPingDrop={onPingDrop}
                     onStartMonitor={onStartMonitor}
+                    onPopOutWorker={onPopOutWorker}
                 />
             </CollapsibleSection>
 
@@ -1051,9 +1080,30 @@ export function AtlasRightPanel({
                         </button>
                     )}
                 </div>
-                {area && (
-                    <div className="atlas-detail-block">
-                        <p>{area.drops.length} drops · {area.channels.length} channels · {area.hubs.length} hubs</p>
+                    {area && (
+                        <div className="atlas-detail-block">
+                            <p>{area.drops.length} drops · {area.channels.length} channels · {area.hubs.length} hubs</p>
+                            <div className="atlas-toolbar">
+                                <button
+                                    type="button"
+                                    className="btn btn-ghost btn-sm"
+                                    onClick={() => void runAtlasCutExtent({ dropIds: area.drops.map((d) => d.id) })}
+                                >
+                                    Cut extent
+                                </button>
+                                {selection?.kind === 'channel' && canPing && (
+                                    <button
+                                        type="button"
+                                        className="btn btn-ghost btn-sm"
+                                        onClick={() => {
+                                            const ch = (snap.channels || []).find((c) => c.id === selection.id);
+                                            if (ch) void scanAtlasIpRange({ channelNumber: ch.channelNumber });
+                                        }}
+                                    >
+                                        Scan channel IPs
+                                    </button>
+                                )}
+                            </div>
                         {!!area.warnings?.length && (
                             <p className="atlas-stale-warn">{area.warnings.length} open finding(s) in this area</p>
                         )}

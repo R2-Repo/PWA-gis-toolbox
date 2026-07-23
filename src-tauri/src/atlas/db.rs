@@ -177,6 +177,8 @@ fn migrate(conn: &Connection) -> Result<(), String> {
     let _ = conn.execute("ALTER TABLE hub ADD COLUMN hub_ip TEXT", []);
     let _ = conn.execute("ALTER TABLE hub ADD COLUMN channels_subnet TEXT", []);
     let _ = conn.execute("ALTER TABLE hub ADD COLUMN is_shed INTEGER", []);
+    let _ = conn.execute("ALTER TABLE drop_node ADD COLUMN parent_drop_id TEXT", []);
+    let _ = conn.execute("ALTER TABLE drop_node ADD COLUMN wireless_hop_type TEXT", []);
     Ok(())
 }
 
@@ -301,7 +303,7 @@ fn load_snapshot_inner(conn: &Connection) -> Result<Value, String> {
     {
         let mut stmt = conn
             .prepare(
-                "SELECT id, channel_id, channel_number, drop_number, site_id, inventory_name, lat, lon, device_id, ip, model, manufacturer, wireless FROM drop_node",
+                "SELECT id, channel_id, channel_number, drop_number, site_id, inventory_name, lat, lon, device_id, ip, model, manufacturer, wireless, parent_drop_id, wireless_hop_type FROM drop_node",
             )
             .map_err(|e| e.to_string())?;
         let rows = stmt
@@ -320,6 +322,8 @@ fn load_snapshot_inner(conn: &Connection) -> Result<Value, String> {
                     "model": r.get::<_, Option<String>>(10)?,
                     "manufacturer": r.get::<_, Option<String>>(11)?,
                     "wireless": r.get::<_, i64>(12)? != 0,
+                    "parentDropId": r.get::<_, Option<String>>(13)?,
+                    "wirelessHopType": r.get::<_, Option<String>>(14)?,
                 }))
             })
             .map_err(|e| e.to_string())?;
@@ -654,7 +658,7 @@ pub fn atlas_import_apply(
                     .and_then(|v| v.as_bool())
                     .unwrap_or(false) as i64;
                 tx.execute(
-                    "INSERT OR REPLACE INTO drop_node (id, channel_id, channel_number, drop_number, site_id, inventory_name, lat, lon, device_id, ip, model, manufacturer, wireless) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13)",
+                    "INSERT OR REPLACE INTO drop_node (id, channel_id, channel_number, drop_number, site_id, inventory_name, lat, lon, device_id, ip, model, manufacturer, wireless, parent_drop_id, wireless_hop_type) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15)",
                     params![
                         json_str(d.get("id")).unwrap_or_default(),
                         json_str(d.get("channelId")),
@@ -669,6 +673,8 @@ pub fn atlas_import_apply(
                         json_str(d.get("model")),
                         json_str(d.get("manufacturer")),
                         wireless,
+                        json_str(d.get("parentDropId")),
+                        json_str(d.get("wirelessHopType")),
                     ],
                 )
                 .map_err(|e| e.to_string())?;
@@ -1292,6 +1298,99 @@ pub fn atlas_finding_update(
             params![finding_id, status, notes, resolved],
         )
         .map_err(|e| e.to_string())?;
+        Ok(())
+    })
+}
+
+#[tauri::command]
+pub fn atlas_entity_update(
+    entity_kind: String,
+    entity_id: String,
+    patch: Value,
+    state: tauri::State<'_, Arc<AtlasDbState>>,
+) -> Result<(), String> {
+    with_conn(&state, |conn| {
+        match entity_kind.as_str() {
+            "hub" => {
+                conn.execute(
+                    "UPDATE hub SET name = COALESCE(?3, name), aka = COALESCE(?4, aka), hub_ip = COALESCE(?5, hub_ip), lat = COALESCE(?6, lat), lon = COALESCE(?7, lon) WHERE id = ?1 OR hub_code = ?2",
+                    params![
+                        entity_id,
+                        entity_id,
+                        json_str(patch.get("name")),
+                        json_str(patch.get("aka")),
+                        json_str(patch.get("hubIp")),
+                        json_f64(patch.get("lat")),
+                        json_f64(patch.get("lon")),
+                    ],
+                )
+                .map_err(|e| e.to_string())?;
+            }
+            "connected_building" => {
+                conn.execute(
+                    "UPDATE connected_building SET building_name = COALESCE(?2, building_name), building_type = COALESCE(?3, building_type), from_hub = COALESCE(?4, from_hub), to_hub = COALESCE(?5, to_hub), switch_1_ip = COALESCE(?6, switch_1_ip), lat = COALESCE(?7, lat), lon = COALESCE(?8, lon) WHERE id = ?1",
+                    params![
+                        entity_id,
+                        json_str(patch.get("buildingName")),
+                        json_str(patch.get("buildingType")),
+                        json_str(patch.get("fromHub")),
+                        json_str(patch.get("toHub")),
+                        json_str(patch.get("switch1Ip")),
+                        json_f64(patch.get("lat")),
+                        json_f64(patch.get("lon")),
+                    ],
+                )
+                .map_err(|e| e.to_string())?;
+            }
+            "drop" => {
+                conn.execute(
+                    "UPDATE drop_node SET inventory_name = COALESCE(?2, inventory_name), ip = COALESCE(?3, ip), lat = COALESCE(?4, lat), lon = COALESCE(?5, lon), parent_drop_id = COALESCE(?6, parent_drop_id) WHERE id = ?1",
+                    params![
+                        entity_id,
+                        json_str(patch.get("inventoryName")),
+                        json_str(patch.get("ip")),
+                        json_f64(patch.get("lat")),
+                        json_f64(patch.get("lon")),
+                        json_str(patch.get("parentDropId")),
+                    ],
+                )
+                .map_err(|e| e.to_string())?;
+            }
+            _ => return Err(format!("Unsupported entity kind: {entity_kind}")),
+        }
+        Ok(())
+    })
+}
+
+#[tauri::command]
+pub fn atlas_entity_move(
+    entity_kind: String,
+    entity_id: String,
+    lat: f64,
+    lon: f64,
+    state: tauri::State<'_, Arc<AtlasDbState>>,
+) -> Result<(), String> {
+    with_conn(&state, |conn| {
+        match entity_kind.as_str() {
+            "hub" => {
+                conn.execute(
+                    "UPDATE hub SET lat = ?2, lon = ?3 WHERE id = ?1 OR hub_code = ?1",
+                    params![entity_id, lat, lon],
+                )
+                .map_err(|e| e.to_string())?;
+            }
+            "connected_building" | "drop" => {
+                let table = if entity_kind == "connected_building" {
+                    "connected_building"
+                } else {
+                    "drop_node"
+                };
+                let sql = format!("UPDATE {table} SET lat = ?2, lon = ?3 WHERE id = ?1");
+                conn.execute(&sql, params![entity_id, lat, lon])
+                    .map_err(|e| e.to_string())?;
+            }
+            _ => return Err(format!("Unsupported entity kind: {entity_kind}")),
+        }
         Ok(())
     })
 }

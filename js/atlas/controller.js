@@ -323,7 +323,10 @@ export async function previewAtlasImport(files) {
         workbookFile,
         atmsFile,
         hubListFile,
-        connectedBuildingsFile
+        connectedBuildingsFile,
+        mergeDecisions: files?.mergeDecisions,
+        mergeCandidatePicks: files?.mergeCandidatePicks,
+        autoAcceptHighMerge: files?.autoAcceptHighMerge
     });
     const diff = diffAtlasImport(payload, getAtlasSnapshot());
     return {
@@ -925,3 +928,82 @@ export async function reloadAtlasFromDb(opts = {}) {
 }
 
 export { resetAtlasSnapshot };
+
+/**
+ * Toggle map edit mode (V2).
+ * @param {boolean} enabled
+ */
+export function setAtlasEditMode(enabled) {
+    patchAtlasSnapshot({ editMode: !!enabled });
+}
+
+/**
+ * @param {string} entityKind
+ * @param {string} entityId
+ * @param {object} patch
+ */
+export async function updateAtlasEntity(entityKind, entityId, patch) {
+    const service = db();
+    if (!service?.updateEntity) {
+        throw new Error('Entity edit requires the Windows desktop app');
+    }
+    await service.updateEntity(entityKind, entityId, patch);
+    await refreshAtlasFromDb();
+}
+
+/**
+ * @param {string} entityKind
+ * @param {string} entityId
+ * @param {number} lat
+ * @param {number} lon
+ */
+export async function moveAtlasEntity(entityKind, entityId, lat, lon) {
+    const service = db();
+    if (!service?.moveEntity) {
+        throw new Error('Entity move requires the Windows desktop app');
+    }
+    await service.moveEntity(entityKind, entityId, lat, lon);
+    await refreshAtlasFromDb();
+}
+
+/**
+ * @param {{ channelNumber?: string, dropId?: string }} scope
+ */
+export async function scanAtlasIpRange(scope) {
+    const snap = getAtlasSnapshot();
+    const { buildScanTargets, classifyScan } = await import('./ip-scan.js');
+    const { targets, expected } = buildScanTargets(snap, scope);
+    if (!targets.length) return { results: [], targets: [] };
+    const ips = targets.filter(Boolean);
+    const pingFn = ping()?.pingMany;
+    if (!pingFn) throw new Error('Ping requires desktop app');
+    const raw = await pingFn(ips);
+    const pingMap = {};
+    for (const r of raw || []) {
+        if (r?.ip) {
+            pingMap[r.ip] = { reachable: r.reachable, rttMs: r.rttMs };
+            setPingStatuses({
+                [r.ip]: {
+                    status: r.reachable ? 'reachable' : 'unreachable',
+                    at: new Date().toISOString(),
+                    rttMs: r.rttMs
+                }
+            });
+        }
+    }
+    const results = classifyScan(targets, expected, pingMap);
+    return { results, targets };
+}
+
+/**
+ * @param {{ dropIds?: string[], channelNumbers?: string[] }} scope
+ */
+export function runAtlasCutExtent(scope = {}) {
+    const snap = getAtlasSnapshot();
+    return import('./cut-extent.js').then(({ computeCutExtent }) => {
+        const result = computeCutExtent(snap, snap.pingResults, scope);
+        patchAtlasSnapshot({ cutExtent: result });
+        syncAtlasMapLayers(getAtlasSnapshot());
+        return result;
+    });
+}

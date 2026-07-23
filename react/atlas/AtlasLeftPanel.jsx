@@ -4,7 +4,8 @@ import { getAtlasSnapshot } from '../../js/atlas/store.js';
 import { searchAtlasDetailed } from '../../js/atlas/search.js';
 import { buildHierarchyTree } from '../../js/atlas/hierarchy.js';
 import { formatPingWhen } from '../../js/atlas/ping-format.js';
-import { listAtlasImportBatches, reloadAtlasFromDb } from '../../js/atlas/controller.js';
+import { listAtlasImportBatches, reloadAtlasFromDb, runAtlasCutExtent, scanAtlasIpRange, setAtlasEditMode } from '../../js/atlas/controller.js';
+import { AtlasMapLayersPanel } from './AtlasMapLayersPanel.jsx';
 import {
     describeImportBatch,
     formatImportBatchCounts,
@@ -94,7 +95,7 @@ function HierarchyNode({ node, depth, onSelect, selection }) {
     );
 }
 
-export function AtlasLeftPanel({ onSelect, onOpenImport }) {
+export function AtlasLeftPanel({ onSelect, onOpenImport, onAddMapLayer, gisLayers, onReorderGisLayer, onToggleGisLayer }) {
     const [tick, setTick] = useState(0);
     const [query, setQuery] = useState('');
     const [reloadBusy, setReloadBusy] = useState(false);
@@ -232,6 +233,24 @@ export function AtlasLeftPanel({ onSelect, onOpenImport }) {
                         </button>
                     </div>
                 ) : null}
+            </CollapsibleSection>
+
+            <AtlasMapLayersPanel
+                gisLayers={gisLayers || []}
+                onAddMapLayer={onAddMapLayer}
+                onReorderGisLayer={onReorderGisLayer}
+                onToggleGisLayer={onToggleGisLayer}
+            />
+
+            <CollapsibleSection title="Map edit" bodyId="atlas-edit-mode" defaultOpen={false}>
+                <p className="atlas-muted">Enable to drag hub, drop, and building pins to new locations.</p>
+                <button
+                    type="button"
+                    className={`btn btn-sm${getAtlasSnapshot().editMode ? ' btn-primary' : ' btn-secondary'}`}
+                    onClick={() => setAtlasEditMode(!getAtlasSnapshot().editMode)}
+                >
+                    {getAtlasSnapshot().editMode ? 'Edit mode ON' : 'Edit mode OFF'}
+                </button>
             </CollapsibleSection>
 
             <CollapsibleSection title="Network" bodyId="atlas-hierarchy">

@@ -22,6 +22,8 @@ const snapshot = {
     activeSession: null,
     stats: null,
     lastImport: null,
+    editMode: false,
+    cutExtent: null,
     prefs: defaultAtlasPrefs()
 };
 

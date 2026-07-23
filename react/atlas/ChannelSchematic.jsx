@@ -109,6 +109,7 @@ export function ChannelSchematic({
     onPingChannel,
     onPingDrop,
     onStartMonitor,
+    onPopOutWorker,
     monitorInterval,
     monitorActive,
     canPing
@@ -202,6 +203,15 @@ export function ChannelSchematic({
                                 })}
                             >
                                 Start monitor
+                            </button>
+                        )}
+                        {channel?.channelNumber && (
+                            <button
+                                type="button"
+                                className="btn btn-ghost btn-sm"
+                                onClick={() => onPopOutWorker?.(channel.channelNumber)}
+                            >
+                                Pop out
                             </button>
                         )}
                     </div>
