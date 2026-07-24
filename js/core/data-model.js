@@ -201,6 +201,58 @@ export function isPmTilesLayer(layer) {
     return layer?.type === 'pmtiles' || layer?.source?.format === 'pmtiles';
 }
 
+/**
+ * Desktop COG / large raster layer — MapLibre image overview + disk COG path.
+ * @param {object} opts
+ */
+export function createCogLayer({
+    name,
+    cogPath,
+    libraryItemId = null,
+    bbox = null,
+    overviewDataUrl = null,
+    overviewCoordinates = null,
+    byteSize = null
+}) {
+    const coordinates = Array.isArray(overviewCoordinates) && overviewCoordinates.length === 4
+        ? overviewCoordinates
+        : null;
+    const rasters = overviewDataUrl && coordinates
+        ? [{
+            dataUrl: overviewDataUrl,
+            coordinates,
+            bbox: Array.isArray(bbox) ? bbox : null
+        }]
+        : [];
+    return {
+        id: generateId(),
+        name,
+        type: 'spatial',
+        visible: true,
+        active: true,
+        created: new Date().toISOString(),
+        geojson: { type: 'FeatureCollection', features: [] },
+        source: {
+            format: 'cog',
+            file: name,
+            libraryItemId,
+            adapter: 'cog',
+            importRoute: 'gis-library',
+            workingPath: cogPath || null,
+            coverageType: 'raster',
+            coverageRasters: rasters,
+            readOnly: true,
+            byteSize
+        },
+        ...DEFAULT_SCALE_RANGE
+    };
+}
+
+/** @param {object} layer */
+export function isCogLayer(layer) {
+    return layer?.source?.format === 'cog' || layer?.source?.adapter === 'cog';
+}
+
 const LIVE_VECTOR_KINDS = new Set([
     'arcgis-featureserver',
     'arcgis-mapserver-vector',

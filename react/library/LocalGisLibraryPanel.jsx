@@ -10,6 +10,8 @@ import {
     isGisLibraryAvailable,
     listGisLibraryItems,
     openGisLibrary,
+    isGisLibraryRasterItem,
+    optimizeGisLibraryItemToCog,
     optimizeGisLibraryItemToGeoParquet,
     readGisLibraryPreview,
     removeGisLibraryItem,
@@ -182,6 +184,10 @@ export function LocalGisLibraryPanel({ onAddPreviewToMap, onAddItemToMap, showTo
         const { platform } = getPlatformBundle();
         return hasCapability(platform, 'duckdb');
     })();
+    const canOptimizeCog = (() => {
+        const { platform } = getPlatformBundle();
+        return hasCapability(platform, 'pythonCompute');
+    })();
 
     const onOptimize = useCallback(async (item) => {
         if (!item?.id) return;
@@ -192,6 +198,20 @@ export function LocalGisLibraryPanel({ onAddPreviewToMap, onAddItemToMap, showTo
             await refresh();
         } catch (err) {
             showToast?.(err?.message || 'Optimize failed', 'error');
+        } finally {
+            setBusyId(null);
+        }
+    }, [refresh, showToast]);
+
+    const onOptimizeCog = useCallback(async (item) => {
+        if (!item?.id) return;
+        setBusyId(item.id);
+        try {
+            await optimizeGisLibraryItemToCog(item);
+            showToast?.(`Optimized ${item.displayName} → COG`, 'success');
+            await refresh();
+        } catch (err) {
+            showToast?.(err?.message || 'COG optimize failed', 'error');
         } finally {
             setBusyId(null);
         }
@@ -357,7 +377,11 @@ export function LocalGisLibraryPanel({ onAddPreviewToMap, onAddItemToMap, showTo
                                         ? `preview ${sampled} of ${count}`
                                         : `${count} features`}
                                     {item.byteSize != null ? ` · ${formatBytes(item.byteSize)}` : ''}
-                                    {item.workingPath ? ' · GeoParquet' : ''}
+                                    {item.format === 'cog' || item.workingPath?.toLowerCase?.().includes('_cog')
+                                        ? ' · COG'
+                                        : item.workingPath
+                                            ? ' · GeoParquet'
+                                            : ''}
                                     {item.tilePath ? ' · PMTiles' : ''}
                                     {item.derivedOp ? ` · derived (${item.derivedOp})` : ''}
                                 </div>
@@ -373,12 +397,12 @@ export function LocalGisLibraryPanel({ onAddPreviewToMap, onAddItemToMap, showTo
                                 <button
                                     type="button"
                                     className="btn btn-sm btn-primary"
-                                    disabled={busy || (!item.previewPath && !item.tilePath)}
+                                    disabled={busy || (!item.previewPath && !item.tilePath && !(item.format === 'cog' || item.workingPath))}
                                     onClick={() => void onAddToMap(item)}
                                 >
-                                    {item.tilePath ? 'Add tiles' : 'Add to map'}
+                                    {item.tilePath ? 'Add tiles' : item.format === 'cog' ? 'Add COG' : 'Add to map'}
                                 </button>
-                                {!item.tilePath ? (
+                                {!item.tilePath && !isGisLibraryRasterItem(item) ? (
                                     <button
                                         type="button"
                                         className="btn btn-sm"
@@ -388,7 +412,17 @@ export function LocalGisLibraryPanel({ onAddPreviewToMap, onAddItemToMap, showTo
                                         Create tiles
                                     </button>
                                 ) : null}
-                                {canOptimize && !item.workingPath ? (
+                                {canOptimizeCog && isGisLibraryRasterItem(item) && item.format !== 'cog' ? (
+                                    <button
+                                        type="button"
+                                        className="btn btn-sm"
+                                        disabled={busy}
+                                        onClick={() => void onOptimizeCog(item)}
+                                    >
+                                        Optimize to COG
+                                    </button>
+                                ) : null}
+                                {canOptimize && !item.workingPath && !isGisLibraryRasterItem(item) ? (
                                     <button
                                         type="button"
                                         className="btn btn-sm"

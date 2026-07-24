@@ -49,8 +49,15 @@ pub(crate) fn canonicalize_under_library(root: &Path, path: &Path) -> Result<Pat
         .and_then(|e| e.to_str())
         .unwrap_or("")
         .to_ascii_lowercase();
-    if ext != "pmtiles" && ext != "pbf" && ext != "mvt" {
-        return Err("Range reads are limited to tile packages (.pmtiles)".into());
+    // PMTiles tiles + COG overview PNGs / COG GeoTIFFs under the library root
+    if !matches!(
+        ext.as_str(),
+        "pmtiles" | "pbf" | "mvt" | "png" | "tif" | "tiff"
+    ) {
+        return Err(
+            "Range reads are limited to tile packages (.pmtiles) and library rasters (.png/.tif)"
+                .into(),
+        );
     }
     Ok(path_canon)
 }

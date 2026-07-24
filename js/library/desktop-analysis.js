@@ -358,3 +358,151 @@ export async function spatialFilterLayerNative(layer, analysisArea, relation = '
         }
     }
 }
+
+/**
+ * Native spatial_join via sidecar.
+ *
+ * @param {object} leftLayer
+ * @param {object} rightLayer
+ * @param {{ predicate?: string }} [config]
+ * @param {{ onProgress?: Function, signal?: AbortSignal, registerLibrary?: boolean }} [opts]
+ */
+export async function spatialJoinLayersNative(leftLayer, rightLayer, config = {}, opts = {}) {
+    const { platform, services } = getPlatformBundle();
+    if (!hasCapability(platform, 'pythonCompute') || !services.compute?.run) {
+        throw new Error('Native spatial join requires the Windows Python sidecar');
+    }
+
+    let leftPath = resolveLayerNativePath(leftLayer);
+    let rightPath = resolveLayerNativePath(rightLayer);
+    const temps = [];
+
+    try {
+        if (!leftPath) {
+            if (!leftLayer?.geojson) throw new Error('Left layer has no geometry');
+            leftPath = await services.files.writeTempGeoJson(JSON.stringify(leftLayer.geojson));
+            temps.push(leftPath);
+        }
+        if (!rightPath) {
+            if (!rightLayer?.geojson) throw new Error('Right layer has no geometry');
+            rightPath = await services.files.writeTempGeoJson(JSON.stringify(rightLayer.geojson));
+            temps.push(rightPath);
+        }
+
+        const result = await services.compute.run(
+            NATIVE_OPERATIONS.SPATIAL_JOIN,
+            {
+                path: leftPath,
+                rightPath,
+                predicate: config.predicate || 'intersects'
+            },
+            { onProgress: opts.onProgress, signal: opts.signal }
+        );
+
+        if (opts.registerLibrary !== false && isGisLibraryAvailable() && result?.outputPath) {
+            try {
+                const parents = [leftLayer.source?.libraryItemId, rightLayer.source?.libraryItemId]
+                    .filter(Boolean);
+                await registerDerivedLibraryItem({
+                    outputPath: result.outputPath,
+                    displayName: `${leftLayer.name || 'layer'}_spatial_join`,
+                    derivedOp: 'spatial_join',
+                    parentIds: parents,
+                    previewGeojson: result.previewGeojson || result.geojson,
+                    featureCount: result.featureCount,
+                    geometryTypes: result.geometryTypes
+                });
+            } catch {
+                /* non-fatal */
+            }
+        }
+        return result;
+    } finally {
+        for (const p of temps) {
+            try {
+                await services.files.removeTempFile(p);
+            } catch {
+                /* best-effort */
+            }
+        }
+    }
+}
+
+/**
+ * Native reproject_vector via sidecar.
+ *
+ * @param {object} layer
+ * @param {{ fromCrs?: string, toCrs?: string, name?: string }} [config]
+ * @param {{ onProgress?: Function, signal?: AbortSignal, registerLibrary?: boolean }} [opts]
+ */
+export async function reprojectLayerNative(layer, config = {}, opts = {}) {
+    const { platform, services } = getPlatformBundle();
+    if (!hasCapability(platform, 'pythonCompute') || !services.compute?.run) {
+        throw new Error('Native reproject requires the Windows Python sidecar');
+    }
+
+    let path = resolveLayerNativePath(layer);
+    let tempPath = null;
+    if (!path) {
+        if (!layer?.geojson) throw new Error('Layer has no geometry to reproject');
+        path = await services.files.writeTempGeoJson(JSON.stringify(layer.geojson));
+        tempPath = path;
+    }
+
+    try {
+        const result = await services.compute.run(
+            NATIVE_OPERATIONS.REPROJECT_VECTOR,
+            {
+                path,
+                sourceCrs: config.fromCrs || undefined,
+                targetCrs: config.toCrs || 'EPSG:4326'
+            },
+            { onProgress: opts.onProgress, signal: opts.signal }
+        );
+        if (opts.registerLibrary !== false && isGisLibraryAvailable() && result?.outputPath) {
+            try {
+                await registerDerivedLibraryItem({
+                    outputPath: result.outputPath,
+                    displayName: config.name || `${layer.name || 'layer'}_reproject`,
+                    derivedOp: 'reproject_vector',
+                    parentIds: layer.source?.libraryItemId ? [layer.source.libraryItemId] : [],
+                    previewGeojson: result.previewGeojson || result.geojson,
+                    featureCount: result.featureCount,
+                    geometryTypes: result.geometryTypes
+                });
+            } catch {
+                /* non-fatal */
+            }
+        }
+        const fc = result?.geojson?.features?.length
+            ? result.geojson
+            : result?.previewGeojson;
+        if (fc?.type === 'FeatureCollection') {
+            return createSpatialDataset(
+                config.name || `${layer.name || 'layer'}_reproject`,
+                fc,
+                {
+                    format: 'derived',
+                    importRoute: 'desktop-analysis',
+                    nativeOutputPath: result?.outputPath,
+                    fullFeatureCount: result?.featureCount,
+                    crs: config.toCrs || 'EPSG:4326',
+                    libraryItemId: layer.source?.libraryItemId
+                }
+            );
+        }
+        return datasetFromAnalysisResult(
+            result,
+            config.name || `${layer.name || 'layer'}_reproject`,
+            { libraryItemId: layer.source?.libraryItemId, crs: config.toCrs || 'EPSG:4326' }
+        );
+    } finally {
+        if (tempPath) {
+            try {
+                await services.files.removeTempFile(tempPath);
+            } catch {
+                /* best-effort */
+            }
+        }
+    }
+}

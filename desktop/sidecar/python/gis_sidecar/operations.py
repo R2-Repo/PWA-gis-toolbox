@@ -13,6 +13,7 @@ from .engines import duckdb_available, probe_engines, pyogrio_available
 from .protocol import PROTOCOL_VERSION, emit_log, emit_progress
 from .tiling import generate_pmtiles, pmtiles_writer_available, tippecanoe_available
 from . import analysis as analysis_ops
+from . import raster as raster_ops
 
 
 Handler = Callable[[str, Dict[str, Any]], Any]
@@ -46,7 +47,11 @@ def op_health(_request_id: str, _input: Dict[str, Any]) -> Dict[str, Any]:
         "protocolVersion": PROTOCOL_VERSION,
         "operations": sorted(OPERATION_HANDLERS.keys()),
         "engines": engines,
-        "localGdal": bool(engines.get("pyogrio", {}).get("available")),
+        "localGdal": bool(
+            engines.get("pyogrio", {}).get("available")
+            or engines.get("gdalCli", {}).get("available")
+        ),
+        "gdalCli": bool(engines.get("gdalCli", {}).get("available")),
         "duckdb": bool(engines.get("duckdb", {}).get("available")),
     }
 
@@ -672,6 +677,25 @@ def op_nearest_join(request_id: str, input_data: Dict[str, Any]) -> Dict[str, An
     )
 
 
+def op_convert_to_cog(request_id: str, input_data: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Convert a large GeoTIFF/raster to Cloud Optimized GeoTIFF + PNG overview.
+    Input: { "path": "<source>", "outputPath"?: "<dest.tif>", "overviewMax"?: 2048 }
+    """
+    path = _require_path(input_data, "convert_to_cog")
+    default_out = path.parent / f"{path.stem}_cog.tif"
+    if default_out.resolve() == path.resolve():
+        default_out = path.parent / f"{path.stem}.cog.tif"
+    output = _require_output_path(input_data, "convert_to_cog", default_out)
+    overview_max = input_data.get("overviewMax")
+    return raster_ops.convert_to_cog(
+        path,
+        output,
+        request_id,
+        overview_max=int(overview_max) if overview_max not in (None, "") else 2048,
+    )
+
+
 OPERATION_HANDLERS: Dict[str, Handler] = {
     "health": op_health,
     "echo": op_echo,
@@ -680,6 +704,7 @@ OPERATION_HANDLERS: Dict[str, Handler] = {
     "sample_vector": op_sample_vector,
     "file_checksum": op_file_checksum,
     "convert_to_geoparquet": op_convert_to_geoparquet,
+    "convert_to_cog": op_convert_to_cog,
     "summarize_vector": op_summarize_vector,
     "generate_pmtiles": op_generate_pmtiles,
     "buffer_vector": op_buffer_vector,

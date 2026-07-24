@@ -4,6 +4,8 @@
 #
 # Sidecar remains importable without these (stdlib GeoJSON path still works).
 # For large PMTiles, also install tippecanoe on PATH when possible.
+# For COG convert (`convert_to_cog`), install OSGeo4W / GDAL so
+# gdal_translate, gdalinfo, and gdalwarp are on PATH.
 duckdb>=1.1.0
 pyogrio>=0.9.0
 shapely>=2.0.0

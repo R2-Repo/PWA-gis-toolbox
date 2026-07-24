@@ -1468,98 +1468,176 @@ async function _importDesktopPathPreviews(pathFiles, services) {
                 { fileName: file.name, fileIndex: i + 1, fileCount: pathFiles.length }
             );
 
-            const { dataset, inspect, sample } = await importVectorPreviewByPath(services.compute, path, {
-                signal: abort.signal,
-                onProgress: (p) => {
-                    if (cancelled) return;
-                    const base = (i / pathFiles.length) * 100;
-                    const slice = (1 / pathFiles.length) * (p?.percent ?? 0);
-                    progress.update(Math.min(99, Math.round(base + slice)), p?.message || 'Sampling…', {
-                        fileName: file.name,
-                        fileIndex: i + 1,
-                        fileCount: pathFiles.length
-                    });
-                }
-            });
+            const ext = String(file.name || path).toLowerCase().split('.').pop();
+            const isRasterFile = ['tif', 'tiff', 'cog'].includes(ext);
 
-            if (cancelled || abort.signal.aborted) break;
-
+            let dataset = null;
+            let inspect = null;
+            let sample = null;
             let libraryItem = null;
-            try {
-                const { isGisLibraryAvailable, ingestGisLibraryItem } = await import('../library/gis-library.js');
+
+            if (isRasterFile) {
+                progress.update(
+                    Math.round((i / pathFiles.length) * 100),
+                    `Converting ${file.name} → COG…`,
+                    { fileName: file.name, fileIndex: i + 1, fileCount: pathFiles.length }
+                );
+                const {
+                    isGisLibraryAvailable,
+                    ingestGisLibraryItem,
+                    optimizeGisLibraryItemToCog
+                } = await import('../library/gis-library.js');
+                const { cogDatasetFromItem } = await import('../map/layer-source/adapters.js');
                 if (isGisLibraryAvailable()) {
-                    progress.update(
-                        Math.min(99, Math.round(((i + 0.85) / pathFiles.length) * 100)),
-                        `Saving ${file.name} to Local GIS Library…`,
-                        { fileName: file.name, fileIndex: i + 1, fileCount: pathFiles.length }
-                    );
                     const COPY_LIMIT = 500 * 1024 * 1024;
                     const mode = (file.size || 0) > COPY_LIMIT ? 'link' : 'copy';
                     libraryItem = await ingestGisLibraryItem({
                         sourcePath: path,
                         displayName: file.name,
-                        format: inspect?.format || 'geojson',
-                        featureCount: inspect?.featureCount ?? sample?.featureCount,
-                        sampledFeatureCount: sample?.sampledFeatureCount ?? dataset.geojson?.features?.length,
-                        geometryTypes: inspect?.geometryTypes || sample?.geometryTypes,
-                        propertyKeys: inspect?.propertyKeys || sample?.propertyKeys,
-                        bbox: inspect?.bbox || sample?.bbox,
-                        crsHint: inspect?.crsHint || 'EPSG:4326',
-                        byteSize: inspect?.byteSize ?? file.size,
-                        previewOnly: Boolean(dataset.source?.previewOnly ?? sample?.previewOnly),
-                        previewGeojson: JSON.stringify(dataset.geojson),
+                        format: 'tif',
+                        featureCount: 0,
+                        sampledFeatureCount: 0,
+                        crsHint: 'EPSG:4326',
+                        byteSize: file.size,
+                        previewOnly: false,
                         mode
                     });
-                    if (libraryItem?.id) {
-                        dataset.source = {
-                            ...dataset.source,
-                            libraryItemId: libraryItem.id,
-                            libraryMode: mode
-                        };
-                        try {
-                            const { optimizeGisLibraryItemToGeoParquet } = await import('../library/gis-library.js');
-                            const { hasCapability } = await import('../platform/contracts.js');
-                            const { platform } = getPlatformBundle({ showToast });
-                            if (hasCapability(platform, 'duckdb')) {
-                                progress.update(
-                                    Math.min(99, Math.round(((i + 0.92) / pathFiles.length) * 100)),
-                                    `Optimizing ${file.name} → GeoParquet…`,
-                                    { fileName: file.name, fileIndex: i + 1, fileCount: pathFiles.length }
-                                );
-                                const optimized = await optimizeGisLibraryItemToGeoParquet(libraryItem, {
-                                    compute: services.compute,
-                                    signal: abort.signal
-                                });
-                                if (optimized?.workingPath) {
-                                    dataset.source.workingPath = optimized.workingPath;
-                                    libraryItem = optimized;
+                    const optimized = await optimizeGisLibraryItemToCog(libraryItem, {
+                        compute: services.compute,
+                        signal: abort.signal,
+                        onProgress: (p) => {
+                            if (cancelled) return;
+                            const base = (i / pathFiles.length) * 100;
+                            const slice = (1 / pathFiles.length) * (p?.percent ?? 0);
+                            progress.update(Math.min(99, Math.round(base + slice)), p?.message || 'COG…', {
+                                fileName: file.name,
+                                fileIndex: i + 1,
+                                fileCount: pathFiles.length
+                            });
+                        }
+                    });
+                    libraryItem = optimized || libraryItem;
+                    dataset = await cogDatasetFromItem(libraryItem);
+                } else {
+                    const { importRasterCogByPath } = await import('../import/desktop-path-import.js');
+                    const imported = await importRasterCogByPath(services.compute, path, {
+                        signal: abort.signal,
+                        onProgress: (p) => {
+                            if (cancelled) return;
+                            progress.update(p?.percent ?? 50, p?.message || 'COG…', {
+                                fileName: file.name,
+                                fileIndex: i + 1,
+                                fileCount: pathFiles.length
+                            });
+                        }
+                    });
+                    dataset = imported.dataset;
+                }
+            } else {
+                const imported = await importVectorPreviewByPath(services.compute, path, {
+                    signal: abort.signal,
+                    onProgress: (p) => {
+                        if (cancelled) return;
+                        const base = (i / pathFiles.length) * 100;
+                        const slice = (1 / pathFiles.length) * (p?.percent ?? 0);
+                        progress.update(Math.min(99, Math.round(base + slice)), p?.message || 'Sampling…', {
+                            fileName: file.name,
+                            fileIndex: i + 1,
+                            fileCount: pathFiles.length
+                        });
+                    }
+                });
+                dataset = imported.dataset;
+                inspect = imported.inspect;
+                sample = imported.sample;
+
+                try {
+                    const {
+                        isGisLibraryAvailable,
+                        ingestGisLibraryItem,
+                        optimizeGisLibraryItemToGeoParquet
+                    } = await import('../library/gis-library.js');
+                    if (isGisLibraryAvailable()) {
+                        progress.update(
+                            Math.min(99, Math.round(((i + 0.85) / pathFiles.length) * 100)),
+                            `Saving ${file.name} to Local GIS Library…`,
+                            { fileName: file.name, fileIndex: i + 1, fileCount: pathFiles.length }
+                        );
+                        const COPY_LIMIT = 500 * 1024 * 1024;
+                        const mode = (file.size || 0) > COPY_LIMIT ? 'link' : 'copy';
+                        libraryItem = await ingestGisLibraryItem({
+                            sourcePath: path,
+                            displayName: file.name,
+                            format: inspect?.format || 'geojson',
+                            featureCount: inspect?.featureCount ?? sample?.featureCount,
+                            sampledFeatureCount: sample?.sampledFeatureCount ?? dataset.geojson?.features?.length,
+                            geometryTypes: inspect?.geometryTypes || sample?.geometryTypes,
+                            propertyKeys: inspect?.propertyKeys || sample?.propertyKeys,
+                            bbox: inspect?.bbox || sample?.bbox,
+                            crsHint: inspect?.crsHint || 'EPSG:4326',
+                            byteSize: inspect?.byteSize ?? file.size,
+                            previewOnly: Boolean(dataset.source?.previewOnly ?? sample?.previewOnly),
+                            previewGeojson: JSON.stringify(dataset.geojson),
+                            mode
+                        });
+                        if (libraryItem?.id) {
+                            dataset.source = {
+                                ...dataset.source,
+                                libraryItemId: libraryItem.id,
+                                libraryMode: mode
+                            };
+                            try {
+                                const { hasCapability } = await import('../platform/contracts.js');
+                                const { platform } = getPlatformBundle({ showToast });
+                                if (hasCapability(platform, 'duckdb')) {
+                                    progress.update(
+                                        Math.min(99, Math.round(((i + 0.92) / pathFiles.length) * 100)),
+                                        `Optimizing ${file.name} → GeoParquet…`,
+                                        { fileName: file.name, fileIndex: i + 1, fileCount: pathFiles.length }
+                                    );
+                                    const optimized = await optimizeGisLibraryItemToGeoParquet(libraryItem, {
+                                        compute: services.compute,
+                                        signal: abort.signal
+                                    });
+                                    if (optimized?.workingPath) {
+                                        dataset.source.workingPath = optimized.workingPath;
+                                        libraryItem = optimized;
+                                    }
                                 }
+                            } catch (optErr) {
+                                console.warn('GeoParquet optimize skipped:', optErr);
                             }
-                        } catch (optErr) {
-                            console.warn('GeoParquet optimize skipped:', optErr);
                         }
                     }
+                } catch (libErr) {
+                    console.warn('GIS Library ingest failed (preview still loaded):', libErr);
+                    showToast(
+                        `Preview loaded, but library save failed: ${libErr?.message || libErr}`,
+                        'warning'
+                    );
                 }
-            } catch (libErr) {
-                console.warn('GIS Library ingest failed (preview still loaded):', libErr);
-                showToast(
-                    `Preview loaded, but library save failed: ${libErr?.message || libErr}`,
-                    'warning'
-                );
             }
+
+            if (cancelled || abort.signal.aborted) break;
+            if (!dataset) throw new Error(`Failed to import ${file.name}`);
 
             const { ids } = await _addImportedDatasets([dataset], { useWorkspace: false });
             layerIds.push(...ids);
 
-            const total = inspect?.featureCount ?? dataset.source?.fullFeatureCount;
-            if (dataset.source?.previewOnly && total != null) {
+            if (isRasterFile) {
                 const libNote = libraryItem?.id ? ' Saved to Local GIS Library.' : '';
-                showToast(
-                    `Loaded preview of ${file.name} (${dataset.geojson.features.length.toLocaleString()} of ${Number(total).toLocaleString()} features).${libNote}`,
-                    'info'
-                );
-            } else if (libraryItem?.id) {
-                showToast(`Saved ${file.name} to Local GIS Library`, 'success');
+                showToast(`Loaded COG overview for ${file.name}.${libNote}`, 'success');
+            } else {
+                const total = inspect?.featureCount ?? dataset.source?.fullFeatureCount;
+                if (dataset.source?.previewOnly && total != null) {
+                    const libNote = libraryItem?.id ? ' Saved to Local GIS Library.' : '';
+                    showToast(
+                        `Loaded preview of ${file.name} (${dataset.geojson.features.length.toLocaleString()} of ${Number(total).toLocaleString()} features).${libNote}`,
+                        'info'
+                    );
+                } else if (libraryItem?.id) {
+                    showToast(`Saved ${file.name} to Local GIS Library`, 'success');
+                }
             }
         }
 
@@ -2806,12 +2884,15 @@ async function openReproject() {
             if (!root) return;
 
             const { mountReprojectDialog } = await import('../../react/tools/mountReprojectDialog.jsx');
+            const { hasCapability } = await import('../platform/contracts.js');
+            const { platform } = getPlatformBundle();
             const mounted = mountReprojectDialog(root, {
                 layerName: layer.name,
                 sourceCrs,
                 displayReady,
                 crsWarning,
                 sourceCrsError,
+                pythonAvailable: hasCapability(platform, 'pythonCompute'),
                 onCancel: () => close(),
                 onApply: async ({ fromCrs, toCrs, name }) => {
                     close();
@@ -4218,6 +4299,15 @@ export async function bootstrapDesktopPlatform() {
                 });
             }
         })();
+        // Read-only Atlas → GIS layer bridge (keeps Atlas DB separate)
+        try {
+            const { startNetworkAtlasLayerBridge } = await import('../atlas/network-atlas-layer-adapter.js');
+            startNetworkAtlasLayerBridge({ mapService, refreshUI });
+        } catch (bridgeErr) {
+            logger.warn('Atlas', 'NetworkAtlasLayerAdapter not started', {
+                message: bridgeErr?.message || String(bridgeErr)
+            });
+        }
     } catch (err) {
         logger.warn('Platform', 'Desktop handshake failed', {
             message: err?.message || String(err)

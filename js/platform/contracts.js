@@ -187,7 +187,7 @@
  * @property {(id: string) => Promise<void>} [touchItem]
  * @property {(id: string, opts?: { deleteFiles?: boolean }) => Promise<object>} removeItem
  * @property {(id: string) => Promise<{ item: object, geojson: object }>} readPreview
- * @property {(payload: { id: string, workingPath: string, checksum?: string }) => Promise<{ item: object }>} [setWorkingPath]
+ * @property {(payload: { id: string, workingPath: string, checksum?: string, format?: string, bbox?: number[], overviewPath?: string, overviewCoordinates?: number[][] }) => Promise<{ item: object }>} [setWorkingPath]
  * @property {(payload: { id: string, tilePath: string, minZoom?: number, maxZoom?: number, sourceLayer?: string }) => Promise<{ item: object }>} [setTilePath]
  * @property {(payload: { id: string, favorite?: boolean, tags?: string[], folder?: string|null }) => Promise<{ item: object }>} [updateMeta]
  * @property {() => Promise<{ libraryRoot?: string, itemCount?: number, favoriteCount?: number, totalBytes?: number, originalsBytes?: number, datasetsBytes?: number, tilesBytes?: number }>} [storageStats]

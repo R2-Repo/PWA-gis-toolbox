@@ -12,6 +12,7 @@ const ALLOWED_OPS: &[&str] = &[
     "sample_vector",
     "file_checksum",
     "convert_to_geoparquet",
+    "convert_to_cog",
     "summarize_vector",
     "generate_pmtiles",
     "buffer_vector",
@@ -68,6 +69,7 @@ fn validate_operation(operation: &str, input: &Value) -> Result<(), String> {
             | "sample_vector"
             | "file_checksum"
             | "convert_to_geoparquet"
+            | "convert_to_cog"
             | "summarize_vector"
             | "generate_pmtiles"
             | "buffer_vector"

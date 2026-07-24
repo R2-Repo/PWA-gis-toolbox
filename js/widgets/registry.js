@@ -1,6 +1,7 @@
 import { openSpatialAnalyzer } from './spatial-analyzer/controller.js';
 import { openBulkUpdate } from './bulk-update/controller.js';
 import { openProximityJoin } from './proximity-join/controller.js';
+import { openSpatialJoin } from './spatial-join/controller.js';
 import { openRouteMilepostSegment } from './route-milepost-segment/controller.js';
 import { openProjectStationing } from './project-stationing/controller.js';
 import { openLayerMatchAssistant } from './layer-match-assistant/controller.js';
@@ -61,6 +62,16 @@ export const GIS_WIDGETS = [
         requiredCapabilities: [],
         optionalCapabilities: ['pythonCompute'],
         open: openProximityJoin
+    },
+    {
+        type: 'spatial-join',
+        action: 'openSpatialJoin',
+        label: 'Spatial Join',
+        icon: '⧉',
+        tip: 'Join attributes by spatial relationship (within / intersects / contains). Uses Python on Windows for large or library layers when available.',
+        requiredCapabilities: [],
+        optionalCapabilities: ['pythonCompute'],
+        open: openSpatialJoin
     },
     {
         type: 'route-milepost-segment',
@@ -150,7 +161,9 @@ export const GIS_WIDGETS_HIDDEN = [
         action: 'openCrsManager',
         label: 'CRS Manager',
         icon: '🌐',
-        tip: 'Audit layer coordinate systems, batch reproject to WGS 84, register custom WKT.',
+        tip: 'Audit layer coordinate systems, batch reproject to WGS 84, register custom WKT. Uses Python on Windows for large or library layers when available.',
+        requiredCapabilities: [],
+        optionalCapabilities: ['pythonCompute'],
         open: openCrsManager
     },
     {

@@ -1,7 +1,8 @@
-"""Optional GIS engine probes (DuckDB, pyogrio/GDAL bindings, shapely)."""
+"""Optional GIS engine probes (DuckDB, pyogrio/GDAL bindings, shapely, GDAL CLI)."""
 
 from __future__ import annotations
 
+import shutil
 from typing import Any, Dict
 
 
@@ -36,11 +37,29 @@ def _probe_shapely() -> Dict[str, Any]:
         return {"available": False, "reason": str(exc)}
 
 
+def _probe_gdal_cli() -> Dict[str, Any]:
+    translate = shutil.which("gdal_translate")
+    info = shutil.which("gdalinfo")
+    warp = shutil.which("gdalwarp")
+    if translate and info:
+        return {
+            "available": True,
+            "gdal_translate": translate,
+            "gdalinfo": info,
+            "gdalwarp": warp,
+        }
+    return {
+        "available": False,
+        "reason": "gdal_translate/gdalinfo not on PATH",
+    }
+
+
 def probe_engines() -> Dict[str, Any]:
     return {
         "duckdb": _probe_duckdb(),
         "pyogrio": _probe_pyogrio(),
         "shapely": _probe_shapely(),
+        "gdalCli": _probe_gdal_cli(),
     }
 
 
@@ -50,3 +69,7 @@ def duckdb_available() -> bool:
 
 def pyogrio_available() -> bool:
     return bool(_probe_pyogrio().get("available"))
+
+
+def gdal_cli_available() -> bool:
+    return bool(_probe_gdal_cli().get("available"))

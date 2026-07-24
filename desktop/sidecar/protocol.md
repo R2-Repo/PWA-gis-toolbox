@@ -42,13 +42,14 @@ Failure:
 
 ## Allow-listed operations
 
-- `health` — includes `engines` (`duckdb`, `pyogrio`, `shapely`), `localGdal`, `duckdb` flags
+- `health` — includes `engines` (`duckdb`, `pyogrio`, `shapely`, `gdalCli`), `localGdal`, `gdalCli`, `duckdb` flags
 - `echo`
 - `summarize_geojson` — `{ "path": "<file>" }`
 - `inspect_vector` — `{ "path": "<file>" }` — GeoJSON stdlib; GPKG/SHP/Parquet via pyogrio when installed
 - `sample_vector` — `{ "path": "<file>", "maxFeatures"?: number }` — capped FeatureCollection preview
 - `file_checksum` — `{ "path": "<file>" }` — SHA-256
 - `convert_to_geoparquet` — `{ "path": "<file>", "outputPath"?: "<dest.parquet>" }` — requires duckdb or pyogrio
+- `convert_to_cog` — `{ "path": "<raster>", "outputPath"?: "<dest_cog.tif>", "overviewMax"?: 2048 }` — requires GDAL CLI (`gdal_translate`/`gdalinfo`/`gdalwarp`)
 - `summarize_vector` — `{ "path": "<file>" }` — DuckDB/pyogrio when available
 - `generate_pmtiles` — `{ "path": "<file>", "outputPath"?: "<dest.pmtiles>", "minZoom"?: 0, "maxZoom"?: 12 }` — tippecanoe or Python MVT writer
 - `buffer_vector` — `{ "path", "distance", "units"?: "meters"|"kilometers"|"feet"|"miles", "outputPath"? }`

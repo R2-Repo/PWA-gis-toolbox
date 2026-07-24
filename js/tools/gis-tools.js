@@ -705,6 +705,67 @@ export function nearestNeighborAnalysis(dataset) {
 export async function spatialJoinPointsInPolygons(pointsDataset, polygonsDataset, joinFields = [], prefix = '') {
     _requireDisplayReady(pointsDataset, 'Spatial join');
     _requireDisplayReady(polygonsDataset, 'Spatial join');
+
+    try {
+        const { getPlatformBundle } = await import('../platform/create-platform.js');
+        const { hasCapability } = await import('../platform/contracts.js');
+        const {
+            chooseAnalysisProvider,
+            resolveLayerNativePath,
+            spatialJoinLayersNative,
+            datasetFromAnalysisResult
+        } = await import('../library/desktop-analysis.js');
+        const { platform } = getPlatformBundle();
+        const pythonAvailable = hasCapability(platform, 'pythonCompute');
+        const featureCount = pointsDataset.geojson?.features?.length
+            ?? pointsDataset.source?.fullFeatureCount
+            ?? 0;
+        const nativePath = resolveLayerNativePath(pointsDataset)
+            || resolveLayerNativePath(polygonsDataset);
+        if (chooseAnalysisProvider(featureCount, pythonAvailable, nativePath, true) === 'python') {
+            logger.info('GISTools', 'Spatial join via Python sidecar', {
+                count: featureCount,
+                nativePath: Boolean(nativePath)
+            });
+            const raw = await spatialJoinLayersNative(pointsDataset, polygonsDataset, {
+                predicate: 'within'
+            });
+            const fc = raw?.geojson?.features?.length
+                ? raw.geojson
+                : raw?.previewGeojson;
+            if (fc?.type === 'FeatureCollection') {
+                // Map join_* props onto requested fields when specified
+                if (joinFields.length) {
+                    for (const f of fc.features) {
+                        const props = { ...(f.properties || {}) };
+                        for (const field of joinFields) {
+                            const key = prefix + field;
+                            if (props[key] == null && props[`join_${field}`] != null) {
+                                props[key] = props[`join_${field}`];
+                            }
+                        }
+                        f.properties = props;
+                    }
+                }
+                return createSpatialDataset(
+                    `${pointsDataset.name}_spatial_join`,
+                    fc,
+                    {
+                        format: 'derived',
+                        importRoute: 'desktop-analysis',
+                        nativeOutputPath: raw?.outputPath,
+                        fullFeatureCount: raw?.featureCount
+                    }
+                );
+            }
+            return datasetFromAnalysisResult(raw, `${pointsDataset.name}_spatial_join`);
+        }
+    } catch (err) {
+        logger.warn('GISTools', 'Native spatial join unavailable — falling back to Turf', {
+            message: err?.message || String(err)
+        });
+    }
+
     if (typeof turf === 'undefined') throw new Error('Turf.js not loaded');
 
     const task = new TaskRunner('Spatial Join', 'GISTools');

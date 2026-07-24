@@ -600,6 +600,11 @@ pub struct GisCatalogSetWorkingPathRequest {
     pub id: String,
     pub working_path: String,
     pub checksum: Option<String>,
+    /// Optional format override (e.g. "cog" after raster optimize).
+    pub format: Option<String>,
+    pub bbox: Option<Vec<f64>>,
+    pub overview_path: Option<String>,
+    pub overview_coordinates: Option<Value>,
 }
 
 #[tauri::command]
@@ -648,16 +653,44 @@ pub fn gis_catalog_set_working_path(
                 obj.insert("checksum".into(), json!(sum));
             }
             obj.insert("optimizedAt".into(), json!(ts));
+            if let Some(overview) = &payload.overview_path {
+                obj.insert("overviewPath".into(), json!(overview));
+            }
+            if let Some(coords) = &payload.overview_coordinates {
+                obj.insert("overviewCoordinates".into(), coords.clone());
+            }
+            if let Some(bbox) = &payload.bbox {
+                obj.insert("bbox".into(), json!(bbox));
+            }
+            if let Some(fmt) = &payload.format {
+                obj.insert("format".into(), json!(fmt));
+            }
         }
         let manifest_json = serde_json::to_string(&manifest_val).ok();
+        let format_val = payload.format.clone();
+        let bbox_json = payload
+            .bbox
+            .as_ref()
+            .and_then(|b| serde_json::to_string(b).ok());
         let changed = conn
             .execute(
                 r#"
                 UPDATE catalog_item
-                SET working_path = ?1, updated_at = ?2, manifest_json = COALESCE(?3, manifest_json)
-                WHERE id = ?4
+                SET working_path = ?1,
+                    updated_at = ?2,
+                    manifest_json = COALESCE(?3, manifest_json),
+                    format = COALESCE(?4, format),
+                    bbox_json = COALESCE(?5, bbox_json)
+                WHERE id = ?6
                 "#,
-                params![payload.working_path, ts, manifest_json, payload.id],
+                params![
+                    payload.working_path,
+                    ts,
+                    manifest_json,
+                    format_val,
+                    bbox_json,
+                    payload.id
+                ],
             )
             .map_err(|e| format!("set working path: {e}"))?;
         if changed == 0 {
