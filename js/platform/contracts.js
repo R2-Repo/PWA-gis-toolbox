@@ -173,6 +173,9 @@
  * @property {string} [previewGeojson]
  * @property {'copy'|'link'} [mode]
  * @property {string} [description]
+ * @property {string[]} [parentIds]
+ * @property {string} [derivedOp]
+ * @property {boolean} [restorable]
  *
  * @typedef {Object} GisCatalogService
  * @property {() => Promise<{ ok?: boolean, libraryRoot?: string, catalogPath?: string }>} open

@@ -14,6 +14,11 @@ const ALLOWED_OPS: &[&str] = &[
     "convert_to_geoparquet",
     "summarize_vector",
     "generate_pmtiles",
+    "buffer_vector",
+    "clip_vector",
+    "spatial_join",
+    "reproject_vector",
+    "spatial_filter",
 ];
 
 #[derive(Debug, Deserialize)]
@@ -64,6 +69,11 @@ fn validate_operation(operation: &str, input: &Value) -> Result<(), String> {
             | "convert_to_geoparquet"
             | "summarize_vector"
             | "generate_pmtiles"
+            | "buffer_vector"
+            | "clip_vector"
+            | "spatial_join"
+            | "reproject_vector"
+            | "spatial_filter"
     ) {
         let path = input
             .get("path")
@@ -71,6 +81,38 @@ fn validate_operation(operation: &str, input: &Value) -> Result<(), String> {
             .ok_or_else(|| format!("{operation} requires input.path"))?;
         if path.trim().is_empty() {
             return Err(format!("{operation} input.path must be non-empty"));
+        }
+    }
+    if operation == "clip_vector" {
+        let clip = input
+            .get("clipPath")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| "clip_vector requires input.clipPath".to_string())?;
+        if clip.trim().is_empty() {
+            return Err("clip_vector input.clipPath must be non-empty".into());
+        }
+    }
+    if operation == "spatial_join" {
+        let right = input
+            .get("rightPath")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| "spatial_join requires input.rightPath".to_string())?;
+        if right.trim().is_empty() {
+            return Err("spatial_join input.rightPath must be non-empty".into());
+        }
+    }
+    if operation == "buffer_vector" {
+        if input.get("distance").and_then(|v| v.as_f64()).is_none()
+            && input.get("distance").and_then(|v| v.as_i64()).is_none()
+        {
+            return Err("buffer_vector requires input.distance".into());
+        }
+    }
+    if operation == "spatial_filter" {
+        let has_area = input.get("areaPath").and_then(|v| v.as_str()).is_some()
+            || input.get("areaGeojson").is_some();
+        if !has_area {
+            return Err("spatial_filter requires input.areaPath or input.areaGeojson".into());
         }
     }
     Ok(())

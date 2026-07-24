@@ -94,15 +94,23 @@ fn migrate(conn: &Connection) -> Result<(), String> {
             last_used_at TEXT,
             description TEXT,
             manifest_json TEXT,
-            tile_path TEXT
+            tile_path TEXT,
+            parent_ids_json TEXT,
+            derived_op TEXT,
+            restorable INTEGER NOT NULL DEFAULT 0
         );
         CREATE INDEX IF NOT EXISTS idx_catalog_item_updated ON catalog_item(updated_at DESC);
         CREATE INDEX IF NOT EXISTS idx_catalog_item_name ON catalog_item(display_name);
         "#,
     )
     .map_err(|e| format!("gis_catalog migrate: {e}"))?;
-    // Additive column for Phase 4 tile packages (ignore if already present).
+    // Additive columns (ignore if already present).
     let _ = conn.execute_batch("ALTER TABLE catalog_item ADD COLUMN tile_path TEXT;");
+    let _ = conn.execute_batch("ALTER TABLE catalog_item ADD COLUMN parent_ids_json TEXT;");
+    let _ = conn.execute_batch("ALTER TABLE catalog_item ADD COLUMN derived_op TEXT;");
+    let _ = conn.execute_batch(
+        "ALTER TABLE catalog_item ADD COLUMN restorable INTEGER NOT NULL DEFAULT 0;",
+    );
     Ok(())
 }
 
@@ -128,6 +136,9 @@ fn with_conn<T>(
 
 fn row_to_item(row: &rusqlite::Row<'_>) -> Result<Value, rusqlite::Error> {
     let tile_path: Option<String> = row.get(23).unwrap_or(None);
+    let parent_ids = parse_json_field(row.get::<_, Option<String>>(24).unwrap_or(None));
+    let derived_op: Option<String> = row.get(25).unwrap_or(None);
+    let restorable = row.get::<_, i64>(26).unwrap_or(0) != 0;
     Ok(json!({
         "id": row.get::<_, String>(0)?,
         "displayName": row.get::<_, String>(1)?,
@@ -153,6 +164,9 @@ fn row_to_item(row: &rusqlite::Row<'_>) -> Result<Value, rusqlite::Error> {
         "description": row.get::<_, Option<String>>(21)?,
         "manifest": parse_json_field(row.get::<_, Option<String>>(22)?),
         "tilePath": tile_path,
+        "parentIds": parent_ids,
+        "derivedOp": derived_op,
+        "restorable": restorable,
     }))
 }
 
@@ -168,7 +182,8 @@ const SELECT_ITEM: &str = r#"
            managed_original_path, preview_path, working_path, feature_count,
            sampled_feature_count, geometry_types_json, property_keys_json, bbox_json,
            crs_hint, byte_size, status, preview_only, created_at, updated_at,
-           last_used_at, description, manifest_json, tile_path
+           last_used_at, description, manifest_json, tile_path,
+           parent_ids_json, derived_op, restorable
     FROM catalog_item
 "#;
 
@@ -318,6 +333,10 @@ pub struct GisCatalogIngestRequest {
     /// "copy" (default) or "link" (reference original path only)
     pub mode: Option<String>,
     pub description: Option<String>,
+    /// Lineage: parent catalog item ids (derived analysis outputs)
+    pub parent_ids: Option<Value>,
+    pub derived_op: Option<String>,
+    pub restorable: Option<bool>,
 }
 
 #[tauri::command]
@@ -399,7 +418,18 @@ pub fn gis_catalog_ingest_path(
     };
 
     let ts = now_iso();
-    let manifest = json!({
+    let parent_ids_json = payload
+        .parent_ids
+        .as_ref()
+        .and_then(|v| serde_json::to_string(v).ok());
+    let derived_op = payload
+        .derived_op
+        .as_ref()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
+    let restorable = payload.restorable.unwrap_or(false);
+
+    let mut manifest = json!({
         "id": id,
         "sourcePath": payload.source_path,
         "managedOriginalPath": managed_original,
@@ -411,6 +441,17 @@ pub fn gis_catalog_ingest_path(
         "sampledFeatureCount": payload.sampled_feature_count,
         "previewOnly": preview_only,
     });
+    if let Some(obj) = manifest.as_object_mut() {
+        if let Some(ref parents) = payload.parent_ids {
+            obj.insert("parentIds".into(), parents.clone());
+        }
+        if let Some(ref op) = derived_op {
+            obj.insert("derivedOp".into(), json!(op));
+        }
+        if restorable {
+            obj.insert("restorable".into(), json!(true));
+        }
+    }
     write_text(
         &dataset_dir.join("manifest.json"),
         &serde_json::to_string_pretty(&manifest).unwrap_or_else(|_| "{}".into()),
@@ -440,13 +481,13 @@ pub fn gis_catalog_ingest_path(
                 managed_original_path, preview_path, working_path, feature_count,
                 sampled_feature_count, geometry_types_json, property_keys_json, bbox_json,
                 crs_hint, byte_size, status, preview_only, created_at, updated_at,
-                last_used_at, description, manifest_json
+                last_used_at, description, manifest_json, parent_ids_json, derived_op, restorable
             ) VALUES (
                 ?1, ?2, 'vector', ?3, ?4, ?5,
                 ?6, ?7, NULL, ?8,
                 ?9, ?10, ?11, ?12,
                 ?13, ?14, 'ready', ?15, ?16, ?16,
-                ?16, ?17, ?18
+                ?16, ?17, ?18, ?19, ?20, ?21
             )
             "#,
             params![
@@ -468,6 +509,9 @@ pub fn gis_catalog_ingest_path(
                 ts,
                 payload.description,
                 manifest_json,
+                parent_ids_json,
+                derived_op,
+                if restorable { 1 } else { 0 },
             ],
         )
         .map_err(|e| format!("insert catalog item: {e}"))?;

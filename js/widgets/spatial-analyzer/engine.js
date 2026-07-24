@@ -77,6 +77,16 @@ export async function runSpatialAnalysis({
     );
 
     const matchedFeatures = matches.filter(Boolean);
+    return {
+        matchedFeatures,
+        stats: computeMatchStats(matchedFeatures)
+    };
+}
+
+/**
+ * @param {object[]} matchedFeatures
+ */
+export function computeMatchStats(matchedFeatures = []) {
     const stats = {
         points: 0,
         lines: 0,
@@ -136,8 +146,5 @@ export async function runSpatialAnalysis({
         }
     }
 
-    return {
-        matchedFeatures,
-        stats
-    };
+    return stats;
 }

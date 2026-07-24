@@ -12,6 +12,7 @@ from . import __version__
 from .engines import duckdb_available, probe_engines, pyogrio_available
 from .protocol import PROTOCOL_VERSION, emit_log, emit_progress
 from .tiling import generate_pmtiles, pmtiles_writer_available, tippecanoe_available
+from . import analysis as analysis_ops
 
 
 Handler = Callable[[str, Dict[str, Any]], Any]
@@ -578,6 +579,74 @@ def op_generate_pmtiles(request_id: str, input_data: Dict[str, Any]) -> Dict[str
     )
 
 
+def op_buffer_vector(request_id: str, input_data: Dict[str, Any]) -> Dict[str, Any]:
+    path = _require_path(input_data, "buffer_vector")
+    distance = input_data.get("distance")
+    if distance is None:
+        raise ValueError("buffer_vector requires input.distance")
+    units = str(input_data.get("units") or "meters")
+    default_out = path.parent / f"{path.stem}_buffer.geojson"
+    output = _require_output_path(input_data, "buffer_vector", default_out)
+    return analysis_ops.buffer_vector(
+        path, output, request_id, distance=float(distance), units=units
+    )
+
+
+def op_clip_vector(request_id: str, input_data: Dict[str, Any]) -> Dict[str, Any]:
+    path = _require_path(input_data, "clip_vector")
+    clip_path = _require_path(input_data, "clip_vector", key="clipPath")
+    default_out = path.parent / f"{path.stem}_clip.geojson"
+    output = _require_output_path(input_data, "clip_vector", default_out)
+    return analysis_ops.clip_vector(path, clip_path, output, request_id)
+
+
+def op_spatial_join(request_id: str, input_data: Dict[str, Any]) -> Dict[str, Any]:
+    path = _require_path(input_data, "spatial_join")
+    right = _require_path(input_data, "spatial_join", key="rightPath")
+    predicate = str(input_data.get("predicate") or "intersects")
+    default_out = path.parent / f"{path.stem}_join.geojson"
+    output = _require_output_path(input_data, "spatial_join", default_out)
+    return analysis_ops.spatial_join(
+        path, right, output, request_id, predicate=predicate
+    )
+
+
+def op_reproject_vector(request_id: str, input_data: Dict[str, Any]) -> Dict[str, Any]:
+    path = _require_path(input_data, "reproject_vector")
+    target = str(input_data.get("targetCrs") or "EPSG:4326")
+    source = input_data.get("sourceCrs")
+    default_out = path.parent / f"{path.stem}_reproject.geojson"
+    output = _require_output_path(input_data, "reproject_vector", default_out)
+    return analysis_ops.reproject_vector(
+        path,
+        output,
+        request_id,
+        target_crs=target,
+        source_crs=str(source) if source else None,
+    )
+
+
+def op_spatial_filter(request_id: str, input_data: Dict[str, Any]) -> Dict[str, Any]:
+    path = _require_path(input_data, "spatial_filter")
+    relation = str(input_data.get("relation") or "intersects")
+    default_out = path.parent / f"{path.stem}_filter.geojson"
+    output = _require_output_path(input_data, "spatial_filter", default_out)
+    area_path = None
+    if input_data.get("areaPath"):
+        area_path = _require_path(input_data, "spatial_filter", key="areaPath")
+    area_geojson = input_data.get("areaGeojson")
+    if isinstance(area_geojson, str):
+        area_geojson = json.loads(area_geojson)
+    return analysis_ops.spatial_filter(
+        path,
+        output,
+        request_id,
+        area_geojson=area_geojson if isinstance(area_geojson, dict) else None,
+        area_path=area_path,
+        relation=relation,
+    )
+
+
 OPERATION_HANDLERS: Dict[str, Handler] = {
     "health": op_health,
     "echo": op_echo,
@@ -588,6 +657,11 @@ OPERATION_HANDLERS: Dict[str, Handler] = {
     "convert_to_geoparquet": op_convert_to_geoparquet,
     "summarize_vector": op_summarize_vector,
     "generate_pmtiles": op_generate_pmtiles,
+    "buffer_vector": op_buffer_vector,
+    "clip_vector": op_clip_vector,
+    "spatial_join": op_spatial_join,
+    "reproject_vector": op_reproject_vector,
+    "spatial_filter": op_spatial_filter,
 }
 
 

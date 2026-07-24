@@ -78,6 +78,8 @@ describe('platform jobs', () => {
         expect(isKnownNativeOperation(NATIVE_OPERATIONS.FILE_CHECKSUM)).toBe(true);
         expect(isKnownNativeOperation(NATIVE_OPERATIONS.SUMMARIZE_VECTOR)).toBe(true);
         expect(isKnownNativeOperation(NATIVE_OPERATIONS.GENERATE_PMTILES)).toBe(true);
+        expect(isKnownNativeOperation(NATIVE_OPERATIONS.BUFFER_VECTOR)).toBe(true);
+        expect(isKnownNativeOperation(NATIVE_OPERATIONS.SPATIAL_FILTER)).toBe(true);
 
         const jobs = {
             async start({ operation, input }) {

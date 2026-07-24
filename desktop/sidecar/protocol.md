@@ -51,6 +51,11 @@ Failure:
 - `convert_to_geoparquet` — `{ "path": "<file>", "outputPath"?: "<dest.parquet>" }` — requires duckdb or pyogrio
 - `summarize_vector` — `{ "path": "<file>" }` — DuckDB/pyogrio when available
 - `generate_pmtiles` — `{ "path": "<file>", "outputPath"?: "<dest.pmtiles>", "minZoom"?: 0, "maxZoom"?: 12 }` — tippecanoe or Python MVT writer
+- `buffer_vector` — `{ "path", "distance", "units"?: "meters"|"kilometers"|"feet"|"miles", "outputPath"? }`
+- `clip_vector` — `{ "path", "clipPath", "outputPath"? }`
+- `spatial_join` — `{ "path", "rightPath", "predicate"?: "intersects"|"within"|"contains", "outputPath"? }`
+- `reproject_vector` — `{ "path", "targetCrs"?: "EPSG:4326", "sourceCrs"?, "outputPath"? }`
+- `spatial_filter` — `{ "path", "relation"?, "areaGeojson"| "areaPath", "outputPath"? }`
 
 ## Optional engines
 

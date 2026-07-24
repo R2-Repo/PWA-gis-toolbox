@@ -4,6 +4,8 @@ import { WidgetPanelShell } from './shared/WidgetPanelShell.jsx';
 export function SpatialAnalyzerDialog({
     layers = [],
     relationOptions = [],
+    pythonAvailable = false,
+    accelThreshold = 5000,
     onCancel,
     onDrawArea,
     onUseLayerArea,
@@ -16,10 +18,15 @@ export function SpatialAnalyzerDialog({
     const [analysisArea, setAnalysisArea] = useState(null);
     const [areaSource, setAreaSource] = useState(null);
     const [spatialRelation, setSpatialRelation] = useState(relationOptions[0]?.value || 'intersects');
+    const [preferPython, setPreferPython] = useState(true);
     const [running, setRunning] = useState(false);
     const [result, setResult] = useState(null);
     const [error, setError] = useState('');
-    const [message, setMessage] = useState('');
+    const [message, setMessage] = useState(
+        pythonAvailable
+            ? `Python path available for large layers (≥ ${accelThreshold.toLocaleString()} features) or library files.`
+            : ''
+    );
 
     const polygonLayers = useMemo(
         () => layers.filter((layer) => layer.hasPolygons),
@@ -70,9 +77,13 @@ export function SpatialAnalyzerDialog({
                 targetLayerId,
                 analysisArea,
                 areaSource,
-                spatialRelation
+                spatialRelation,
+                preferPython
             });
             setResult(output || null);
+            if (output?.provider === 'python') {
+                setMessage(`Complete via Python sidecar${output.matched > (output.features?.length || 0) ? ' (map shows preview sample)' : ''}.`);
+            }
         } catch (err) {
             setError(err?.message || 'Analysis failed.');
         } finally {
@@ -182,6 +193,25 @@ export function SpatialAnalyzerDialog({
                 </select>
                 <div className="text-xs text-muted" style={{ marginTop: 4 }}>{selectedRelationTip}</div>
             </div>
+
+            {pythonAvailable ? (
+                <div className="form-group">
+                    <label style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+                        <input
+                            type="checkbox"
+                            checked={preferPython}
+                            onChange={(event) => setPreferPython(event.target.checked)}
+                            disabled={running}
+                        />
+                        <span>
+                            Prefer Python for large / library layers
+                            <span className="text-xs" style={{ display: 'block', color: 'var(--text-muted)' }}>
+                                Uses the sidecar at ≥ {accelThreshold.toLocaleString()} features or when a disk path is available.
+                            </span>
+                        </span>
+                    </label>
+                </div>
+            ) : null}
         </WidgetPanelShell>
     );
 }

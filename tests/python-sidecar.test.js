@@ -61,6 +61,9 @@ describe('python sidecar', () => {
         expect(finalMsg.output.operations).toContain('file_checksum');
         expect(finalMsg.output.operations).toContain('summarize_vector');
         expect(finalMsg.output.operations).toContain('generate_pmtiles');
+        expect(finalMsg.output.operations).toContain('buffer_vector');
+        expect(finalMsg.output.operations).toContain('spatial_filter');
+        expect(finalMsg.output.operations).toContain('clip_vector');
         expect(finalMsg.output.engines).toBeTruthy();
         expect(finalMsg.output.version).toMatch(/^0\./);
     }, 30_000);
@@ -217,6 +220,35 @@ describe('python sidecar', () => {
             expect(finalMsg.ok).toBe(true);
             expect(finalMsg.output.outputPath).toBeTruthy();
             expect(finalMsg.output.format).toBe('parquet');
+        } finally {
+            rmSync(dir, { recursive: true, force: true });
+        }
+    }, 60_000);
+
+    it('buffers a GeoJSON file when shapely is installed', () => {
+        const dir = mkdtempSync(join(tmpdir(), 'gis-sidecar-'));
+        const filePath = join(dir, 'pts.geojson');
+        const outPath = join(dir, 'buf.geojson');
+        writeFileSync(filePath, JSON.stringify({
+            type: 'FeatureCollection',
+            features: [{
+                type: 'Feature',
+                properties: { name: 'A' },
+                geometry: { type: 'Point', coordinates: [-111.9, 40.7] }
+            }]
+        }));
+        try {
+            const result = runSidecar({
+                id: 'b1',
+                op: 'buffer_vector',
+                input: { path: filePath, outputPath: outPath, distance: 50, units: 'meters' }
+            });
+            expect(result.status).toBe(0);
+            const finalMsg = parseMessages(result.stdout).at(-1);
+            expect(finalMsg.ok).toBe(true);
+            expect(finalMsg.output.featureCount).toBe(1);
+            expect(finalMsg.output.outputPath).toBeTruthy();
+            expect(finalMsg.output.previewGeojson?.features?.length).toBe(1);
         } finally {
             rmSync(dir, { recursive: true, force: true });
         }

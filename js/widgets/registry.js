@@ -39,9 +39,9 @@ export const GIS_WIDGETS = [
         action: 'openSpatialAnalyzer',
         label: 'Find Features in Area',
         icon: '🔎',
-        tip: 'Search for features from one layer that fall inside a drawn area or polygon layer.',
+        tip: 'Search for features from one layer that fall inside a drawn area or polygon layer. Uses Python on Windows for large or library layers when available.',
         requiredCapabilities: [],
-        optionalCapabilities: [],
+        optionalCapabilities: ['pythonCompute'],
         open: openSpatialAnalyzer
     },
     {

@@ -177,6 +177,7 @@ export function LocalGisLibraryPanel({ onAddPreviewToMap, onAddItemToMap, showTo
                                     {item.byteSize != null ? ` · ${formatBytes(item.byteSize)}` : ''}
                                     {item.workingPath ? ' · GeoParquet' : ''}
                                     {item.tilePath ? ' · PMTiles' : ''}
+                                    {item.derivedOp ? ` · derived (${item.derivedOp})` : ''}
                                 </div>
                             </div>
                             <div className="gis-library-card-actions">
