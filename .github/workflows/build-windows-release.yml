@@ -1,0 +1,64 @@
+name: Build Windows Release
+
+# Fires when main updates (including after Promote to Production).
+# Builds a Windows installer and attaches it to a GitHub Release for private sharing.
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: windows-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Build desktop frontend
+        run: npm run build:desktop
+
+      - name: Build Tauri Windows installer
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: .
+          tauriScript: npm run tauri
+          args: --bundles nsis,msi
+          # Unique per run so promote-to-main can publish repeatedly without tag clashes.
+          tagName: desktop-v__VERSION__-b${{ github.run_number }}
+          releaseName: 'GIS Toolbox Desktop v__VERSION__ (build ${{ github.run_number }})'
+          releaseDraft: false
+          prerelease: false
+          releaseBody: |
+            Private Windows 11 build of GIS Toolbox.
+
+            Install on trusted machines only. Requires WebView2 (preinstalled on Windows 11).
+
+            Shared web/PWA code is unchanged — this package is the native shell + desktop frontend.
