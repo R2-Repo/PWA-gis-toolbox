@@ -463,6 +463,147 @@ def spatial_join(
     )
 
 
+def _haversine_m(lon1: float, lat1: float, lon2: float, lat2: float) -> float:
+    r = 6371000.0
+    p1, p2 = math.radians(lat1), math.radians(lat2)
+    dphi = math.radians(lat2 - lat1)
+    dl = math.radians(lon2 - lon1)
+    a = math.sin(dphi / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dl / 2) ** 2
+    return 2 * r * math.asin(min(1.0, math.sqrt(a)))
+
+
+def _centroid_lonlat(geom: Any) -> Optional[Tuple[float, float]]:
+    from shapely.geometry import shape
+
+    try:
+        g = shape(geom) if isinstance(geom, dict) else geom
+        c = g.centroid
+        return float(c.x), float(c.y)
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _meters_to_units(meters: float, units: str) -> float:
+    u = (units or "meters").lower()
+    if u in {"m", "meter", "meters"}:
+        return meters
+    if u in {"km", "kilometer", "kilometers"}:
+        return meters / 1000.0
+    if u in {"ft", "feet", "foot"}:
+        return meters * 3.28084
+    if u in {"mi", "mile", "miles"}:
+        return meters * 0.000621371
+    return meters
+
+
+def nearest_join(
+    left_path: Path,
+    right_path: Path,
+    output: Path,
+    request_id: str,
+    *,
+    field_mappings: Optional[List[Dict[str, str]]] = None,
+    max_radius: Optional[float] = None,
+    units: str = "meters",
+    write_distance: bool = True,
+    write_match_id: bool = False,
+    match_id_field: str = "",
+    write_match_layer: bool = False,
+    target_layer_name: str = "",
+) -> Dict[str, Any]:
+    """
+    Nearest-neighbor attribute join (centroid distance). Writes updated left features.
+    """
+    _require_shapely()
+    mappings = [
+        {"targetField": str(m.get("targetField")), "newFieldName": str(m.get("newFieldName"))}
+        for m in (field_mappings or [])
+        if m.get("targetField") and m.get("newFieldName")
+    ]
+    max_m = None
+    if max_radius is not None and str(max_radius) != "":
+        max_m = _units_to_meters(float(max_radius), units)
+
+    emit_progress(request_id, percent=10, stage="read", message="Loading join layers")
+    left = _load_features(left_path)
+    right = _load_features(right_path)
+    right_pts: List[Tuple[Tuple[float, float], dict]] = []
+    for f in right:
+        if not f.get("geometry"):
+            continue
+        pt = _centroid_lonlat(f["geometry"])
+        if pt:
+            right_pts.append((pt, dict(f.get("properties") or {})))
+
+    emit_progress(
+        request_id,
+        percent=30,
+        stage="join",
+        message=f"Nearest join {len(left)} × {len(right_pts)}",
+    )
+    out_features: List[dict] = []
+    matched = 0
+    unmatched = 0
+    for i, feat in enumerate(left):
+        props = dict(feat.get("properties") or {})
+        geom = feat.get("geometry")
+        best = None
+        best_m = float("inf")
+        src_pt = _centroid_lonlat(geom) if geom else None
+        if src_pt:
+            for rpt, rprops in right_pts:
+                d = _haversine_m(src_pt[0], src_pt[1], rpt[0], rpt[1])
+                if d < best_m:
+                    best_m = d
+                    best = rprops
+        if best is not None and (max_m is None or best_m <= max_m):
+            matched += 1
+            for m in mappings:
+                props[m["newFieldName"]] = best.get(m["targetField"])
+            if write_distance:
+                props["nearest_distance"] = round(_meters_to_units(best_m, units), 4)
+            if write_match_id and match_id_field:
+                props["matched_target_id"] = best.get(match_id_field)
+            if write_match_layer:
+                props["matched_target_layer"] = target_layer_name
+        else:
+            unmatched += 1
+            for m in mappings:
+                props[m["newFieldName"]] = None
+            if write_distance:
+                props["nearest_distance"] = None
+            if write_match_id:
+                props["matched_target_id"] = None
+            if write_match_layer:
+                props["matched_target_layer"] = None
+        out_features.append({"type": "Feature", "geometry": geom, "properties": props})
+        if i and i % 2000 == 0:
+            pct = 30 + int(55 * i / max(len(left), 1))
+            emit_progress(request_id, percent=min(pct, 88), stage="join", message=f"Joined {i}")
+
+    emit_progress(request_id, percent=92, stage="write", message="Writing join output")
+    _write_geojson(output, out_features)
+    emit_progress(request_id, percent=100, stage="done", message="Nearest join complete")
+    payload = _result_payload(
+        path=left_path,
+        output=output,
+        features=out_features,
+        engine="shapely-haversine",
+        op="nearest_join",
+        extra={
+            "rightPath": str(right_path.resolve()),
+            "matched": matched,
+            "unmatched": unmatched,
+            "units": units,
+        },
+    )
+    # Include full FC when small enough for IPC apply-back
+    encoded = json.dumps({"type": "FeatureCollection", "features": out_features}, separators=(",", ":"))
+    if len(encoded) <= 2_000_000:
+        payload["geojson"] = {"type": "FeatureCollection", "features": out_features}
+    return payload
+
+
 def reproject_vector(
     path: Path,
     output: Path,

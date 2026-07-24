@@ -13,6 +13,7 @@ describe('desktop analysis dual-path', () => {
         expect(isKnownNativeOperation(NATIVE_OPERATIONS.SPATIAL_JOIN)).toBe(true);
         expect(isKnownNativeOperation(NATIVE_OPERATIONS.REPROJECT_VECTOR)).toBe(true);
         expect(isKnownNativeOperation(NATIVE_OPERATIONS.SPATIAL_FILTER)).toBe(true);
+        expect(isKnownNativeOperation(NATIVE_OPERATIONS.NEAREST_JOIN)).toBe(true);
     });
 
     it('chooses javascript on web / without python', () => {

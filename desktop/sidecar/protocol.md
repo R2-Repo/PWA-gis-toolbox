@@ -56,6 +56,7 @@ Failure:
 - `spatial_join` — `{ "path", "rightPath", "predicate"?: "intersects"|"within"|"contains", "outputPath"? }`
 - `reproject_vector` — `{ "path", "targetCrs"?: "EPSG:4326", "sourceCrs"?, "outputPath"? }`
 - `spatial_filter` — `{ "path", "relation"?, "areaGeojson"| "areaPath", "outputPath"? }`
+- `nearest_join` — `{ "path", "rightPath", "fieldMappings"?, "maxRadius"?, "units"?, "writeDistance"?, … }`
 
 ## Optional engines
 

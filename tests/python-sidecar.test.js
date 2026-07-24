@@ -64,6 +64,7 @@ describe('python sidecar', () => {
         expect(finalMsg.output.operations).toContain('buffer_vector');
         expect(finalMsg.output.operations).toContain('spatial_filter');
         expect(finalMsg.output.operations).toContain('clip_vector');
+        expect(finalMsg.output.operations).toContain('nearest_join');
         expect(finalMsg.output.engines).toBeTruthy();
         expect(finalMsg.output.version).toMatch(/^0\./);
     }, 30_000);

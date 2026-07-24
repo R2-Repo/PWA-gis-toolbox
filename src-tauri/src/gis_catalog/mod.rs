@@ -2,8 +2,10 @@
 //! Does not store Network Atlas inventory or ping data.
 
 mod file_range;
+mod pack;
 
 pub use file_range::gis_library_read_range;
+pub use pack::{gis_catalog_export_pack, gis_catalog_import_pack};
 
 use parking_lot::Mutex;
 use rusqlite::{params, Connection, OptionalExtension};
@@ -41,11 +43,11 @@ fn app_data_dir(app: &AppHandle) -> Result<PathBuf, String> {
         .map_err(|e| format!("app data dir: {e}"))
 }
 
-fn library_root_path(app: &AppHandle) -> Result<PathBuf, String> {
+pub(crate) fn library_root_path(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(app_data_dir(app)?.join(LIBRARY_DIR))
 }
 
-fn ensure_library_dirs(root: &Path) -> Result<(), String> {
+pub(crate) fn ensure_library_dirs(root: &Path) -> Result<(), String> {
     for sub in ["catalog", "originals", "datasets", "tiles", "jobs", "temp", "logs"] {
         fs::create_dir_all(root.join(sub)).map_err(|e| format!("create {sub}: {e}"))?;
     }
@@ -62,11 +64,11 @@ Do not edit catalog/gis-catalog.sqlite by hand.\r\n",
     Ok(())
 }
 
-fn db_path(root: &Path) -> PathBuf {
+pub(crate) fn db_path(root: &Path) -> PathBuf {
     root.join("catalog").join("gis-catalog.sqlite")
 }
 
-fn migrate(conn: &Connection) -> Result<(), String> {
+pub(crate) fn migrate(conn: &Connection) -> Result<(), String> {
     conn.execute_batch(
         r#"
         PRAGMA foreign_keys = ON;
@@ -309,7 +311,7 @@ pub fn gis_catalog_list_items(
     })
 }
 
-fn get_item_by_id(state: &GisCatalogState, id: &str) -> Result<Option<Value>, String> {
+pub(crate) fn get_item_by_id(state: &GisCatalogState, id: &str) -> Result<Option<Value>, String> {
     with_conn(state, |conn| {
         let mut stmt = conn
             .prepare(&format!("{SELECT_ITEM} WHERE id = ?1"))

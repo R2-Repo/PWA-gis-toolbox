@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import bus from '../../js/core/event-bus.js';
 import {
+    exportGisLibraryPack,
     filterGisLibraryItems,
     formatBytes,
     generateGisLibraryPmTiles,
     getGisLibraryStorageStats,
+    importGisLibraryPack,
     isGisLibraryAvailable,
     listGisLibraryItems,
     openGisLibrary,
@@ -89,6 +91,51 @@ export function LocalGisLibraryPanel({ onAddPreviewToMap, onAddItemToMap, showTo
             await services.gisCatalog?.openLibraryFolder?.();
         } catch (err) {
             showToast?.(err?.message || 'Could not open library folder', 'error');
+        }
+    }, [showToast]);
+
+    const onImportPack = useCallback(async () => {
+        try {
+            const { services } = getPlatformBundle();
+            const picked = await services.files?.open?.({
+                title: 'Import GIS Library pack',
+                filters: [{ name: 'GIS Pack', extensions: ['gispack', 'zip'] }]
+            });
+            if (picked?.canceled || !picked?.path) return;
+            setLoading(true);
+            const result = await importGisLibraryPack(picked.path);
+            showToast?.(`Imported pack: ${result?.item?.displayName || 'item'}`, 'success');
+            await refresh();
+        } catch (err) {
+            showToast?.(err?.message || 'Import pack failed', 'error');
+        } finally {
+            setLoading(false);
+        }
+    }, [refresh, showToast]);
+
+    const onExportPack = useCallback(async (item) => {
+        if (!item?.id) return;
+        setBusyId(item.id);
+        try {
+            const { services } = getPlatformBundle();
+            const safeName = String(item.displayName || 'library-item')
+                .replace(/[^\w\-]+/g, '_')
+                .slice(0, 60);
+            const saved = await services.files?.save?.({
+                title: 'Export GIS Library pack',
+                defaultPath: `${safeName}.gispack`,
+                filters: [{ name: 'GIS Pack', extensions: ['gispack'] }]
+            });
+            if (saved?.canceled || !saved?.path) return;
+            const result = await exportGisLibraryPack(item.id, saved.path);
+            showToast?.(
+                `Exported pack (${formatBytes(result?.byteSize || 0)})`,
+                'success'
+            );
+        } catch (err) {
+            showToast?.(err?.message || 'Export pack failed', 'error');
+        } finally {
+            setBusyId(null);
         }
     }, [showToast]);
 
@@ -222,6 +269,9 @@ export function LocalGisLibraryPanel({ onAddPreviewToMap, onAddItemToMap, showTo
                 </button>
                 <button type="button" className="btn btn-sm" onClick={() => void onOpenFolder()}>
                     Open folder
+                </button>
+                <button type="button" className="btn btn-sm" onClick={() => void onImportPack()} disabled={loading}>
+                    Import pack
                 </button>
             </div>
 
@@ -363,6 +413,14 @@ export function LocalGisLibraryPanel({ onAddPreviewToMap, onAddItemToMap, showTo
                                     onClick={() => void onEditFolder(item)}
                                 >
                                     Folder
+                                </button>
+                                <button
+                                    type="button"
+                                    className="btn btn-sm"
+                                    disabled={busy}
+                                    onClick={() => void onExportPack(item)}
+                                >
+                                    Export pack
                                 </button>
                                 <button
                                     type="button"

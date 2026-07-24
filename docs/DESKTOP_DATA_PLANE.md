@@ -1,6 +1,6 @@
 # Desktop GIS data plane
 
-> **Status:** Phases 0–6a landed — path preview, Local GIS Library portal polish (search/favorites/tags/folders/storage), DuckDB/GeoParquet, file PMTiles, dual-path analysis (buffer/clip/spatial filter) + lineage. Enterprise (PostGIS/MapServer) still deferred.  
+> **Status:** Phases 0–6b landed — library portal polish, `.gispack` export/import, dual-path analysis (buffer/clip/spatial filter/proximity join), DuckDB/GeoParquet, file PMTiles. Enterprise (PostGIS/MapServer) still deferred.  
 > **Safety:** Must not break the public PWA or Network Atlas.
 
 ## Goal
@@ -77,7 +77,8 @@ Desktop App
 | 4 | File PMTiles + MapLibre protocol — **done** (Martin optional, deferred) |
 | 5 | Dual-path analysis widgets + lineage — **done** (Spatial Analyzer + Buffer/Clip dual-path; join/reproject ops available) |
 | 6a | Library portal polish — **done** (search, favorites, tags, folders, storage stats) |
-| 6+ | MapServer, PostGIS, GeoServer, `.gispack`, Atlas map adapter (deferred) |
+| 6b | Dual-path proximity join + `.gispack` portable item — **done** |
+| 6+ | MapServer, PostGIS, GeoServer, Atlas map adapter (deferred) |
 
 ## No-gos
 

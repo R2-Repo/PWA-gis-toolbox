@@ -15,7 +15,8 @@ export const NATIVE_OPERATIONS = Object.freeze({
     CLIP_VECTOR: 'clip_vector',
     SPATIAL_JOIN: 'spatial_join',
     REPROJECT_VECTOR: 'reproject_vector',
-    SPATIAL_FILTER: 'spatial_filter'
+    SPATIAL_FILTER: 'spatial_filter',
+    NEAREST_JOIN: 'nearest_join'
 });
 
 export const NATIVE_OPERATION_LIST = Object.freeze(Object.values(NATIVE_OPERATIONS));

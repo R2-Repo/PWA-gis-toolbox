@@ -57,7 +57,9 @@ export const GIS_WIDGETS = [
         action: 'openProximityJoin',
         label: 'Proximity Join',
         icon: '↔️',
-        tip: 'Copy attributes from the nearest feature in a target layer to each source feature.',
+        tip: 'Copy attributes from the nearest feature in a target layer to each source feature. Uses Python on Windows for large or library layers when available.',
+        requiredCapabilities: [],
+        optionalCapabilities: ['pythonCompute'],
         open: openProximityJoin
     },
     {

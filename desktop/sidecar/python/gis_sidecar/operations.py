@@ -647,6 +647,31 @@ def op_spatial_filter(request_id: str, input_data: Dict[str, Any]) -> Dict[str, 
     )
 
 
+def op_nearest_join(request_id: str, input_data: Dict[str, Any]) -> Dict[str, Any]:
+    path = _require_path(input_data, "nearest_join")
+    right = _require_path(input_data, "nearest_join", key="rightPath")
+    default_out = path.parent / f"{path.stem}_nearest_join.geojson"
+    output = _require_output_path(input_data, "nearest_join", default_out)
+    mappings = input_data.get("fieldMappings") or []
+    if not isinstance(mappings, list):
+        raise ValueError("nearest_join fieldMappings must be an array")
+    max_radius = input_data.get("maxRadius")
+    return analysis_ops.nearest_join(
+        path,
+        right,
+        output,
+        request_id,
+        field_mappings=mappings,
+        max_radius=float(max_radius) if max_radius not in (None, "") else None,
+        units=str(input_data.get("units") or "meters"),
+        write_distance=bool(input_data.get("writeDistance", True)),
+        write_match_id=bool(input_data.get("writeMatchId", False)),
+        match_id_field=str(input_data.get("matchIdField") or ""),
+        write_match_layer=bool(input_data.get("writeMatchLayer", False)),
+        target_layer_name=str(input_data.get("targetLayerName") or ""),
+    )
+
+
 OPERATION_HANDLERS: Dict[str, Handler] = {
     "health": op_health,
     "echo": op_echo,
@@ -662,6 +687,7 @@ OPERATION_HANDLERS: Dict[str, Handler] = {
     "spatial_join": op_spatial_join,
     "reproject_vector": op_reproject_vector,
     "spatial_filter": op_spatial_filter,
+    "nearest_join": op_nearest_join,
 }
 
 

@@ -19,6 +19,7 @@ const ALLOWED_OPS: &[&str] = &[
     "spatial_join",
     "reproject_vector",
     "spatial_filter",
+    "nearest_join",
 ];
 
 #[derive(Debug, Deserialize)]
@@ -74,6 +75,7 @@ fn validate_operation(operation: &str, input: &Value) -> Result<(), String> {
             | "spatial_join"
             | "reproject_vector"
             | "spatial_filter"
+            | "nearest_join"
     ) {
         let path = input
             .get("path")
@@ -92,13 +94,13 @@ fn validate_operation(operation: &str, input: &Value) -> Result<(), String> {
             return Err("clip_vector input.clipPath must be non-empty".into());
         }
     }
-    if operation == "spatial_join" {
+    if operation == "spatial_join" || operation == "nearest_join" {
         let right = input
             .get("rightPath")
             .and_then(|v| v.as_str())
-            .ok_or_else(|| "spatial_join requires input.rightPath".to_string())?;
+            .ok_or_else(|| format!("{operation} requires input.rightPath"))?;
         if right.trim().is_empty() {
-            return Err("spatial_join input.rightPath must be non-empty".into());
+            return Err(format!("{operation} input.rightPath must be non-empty"));
         }
     }
     if operation == "buffer_vector" {

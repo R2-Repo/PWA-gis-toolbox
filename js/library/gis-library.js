@@ -120,6 +120,31 @@ export async function getGisLibraryStorageStats() {
 }
 
 /**
+ * Export one library item as a portable `.gispack` zip.
+ * @param {string} id
+ * @param {string} outputPath
+ */
+export async function exportGisLibraryPack(id, outputPath) {
+    const catalog = getGisCatalogService();
+    if (!catalog?.exportPack || !id || !outputPath) return null;
+    await catalog.open();
+    return catalog.exportPack(id, outputPath);
+}
+
+/**
+ * Import a `.gispack` into the Local GIS Library.
+ * @param {string} path
+ */
+export async function importGisLibraryPack(path) {
+    const catalog = getGisCatalogService();
+    if (!catalog?.importPack || !path) return null;
+    await catalog.open();
+    const result = await catalog.importPack(path);
+    bus.emit('gis-library:changed', { action: 'import-pack', item: result?.item });
+    return result;
+}
+
+/**
  * Client-side filter for library list UI.
  * @param {object[]} items
  * @param {{ query?: string, favoritesOnly?: boolean, folder?: string }} [opts]

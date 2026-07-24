@@ -20,7 +20,7 @@ use gis_catalog::{
     gis_catalog_open, gis_catalog_open_library_folder, gis_catalog_read_preview,
     gis_catalog_remove_item, gis_catalog_set_tile_path, gis_catalog_set_working_path,
     gis_catalog_storage_stats, gis_catalog_touch_item, gis_catalog_update_meta,
-    gis_library_read_range, GisCatalogState,
+    gis_catalog_export_pack, gis_catalog_import_pack, gis_library_read_range, GisCatalogState,
 };
 use udot_fiber::{
     udot_fiber_db_open, udot_fiber_get_sync_meta, udot_fiber_load_all_layers, udot_fiber_load_layer,
@@ -197,6 +197,8 @@ pub fn run() {
             gis_catalog_set_tile_path,
             gis_catalog_update_meta,
             gis_catalog_storage_stats,
+            gis_catalog_export_pack,
+            gis_catalog_import_pack,
             gis_library_read_range
         ])
         .run(tauri::generate_context!())

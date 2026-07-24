@@ -50,6 +50,12 @@ export function createWindowsGisCatalogService() {
         async storageStats() {
             return invokeCommand('gis_catalog_storage_stats');
         },
+        async exportPack(id, outputPath) {
+            return invokeCommand('gis_catalog_export_pack', { id, outputPath });
+        },
+        async importPack(path) {
+            return invokeCommand('gis_catalog_import_pack', { path });
+        },
         async readFileRange(path, offset, length) {
             return invokeCommand('gis_library_read_range', { path, offset, length });
         }

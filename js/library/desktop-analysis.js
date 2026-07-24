@@ -219,6 +219,84 @@ export async function clipLayerNative(layer, clipGeometry, opts = {}) {
 }
 
 /**
+ * Native nearest-neighbor attribute join (Proximity Join dual-path).
+ *
+ * @param {object} sourceLayer
+ * @param {object} targetLayer
+ * @param {object} config
+ * @param {{ onProgress?: Function, signal?: AbortSignal, registerLibrary?: boolean }} [opts]
+ */
+export async function nearestJoinLayersNative(sourceLayer, targetLayer, config = {}, opts = {}) {
+    const { platform, services } = getPlatformBundle();
+    if (!hasCapability(platform, 'pythonCompute') || !services.compute?.run) {
+        throw new Error('Native proximity join requires the Windows Python sidecar');
+    }
+
+    let leftPath = resolveLayerNativePath(sourceLayer);
+    let rightPath = resolveLayerNativePath(targetLayer);
+    const temps = [];
+
+    try {
+        if (!leftPath) {
+            if (!sourceLayer?.geojson) throw new Error('Source layer has no geometry');
+            leftPath = await services.files.writeTempGeoJson(JSON.stringify(sourceLayer.geojson));
+            temps.push(leftPath);
+        }
+        if (!rightPath) {
+            if (!targetLayer?.geojson) throw new Error('Target layer has no geometry');
+            rightPath = await services.files.writeTempGeoJson(JSON.stringify(targetLayer.geojson));
+            temps.push(rightPath);
+        }
+
+        const result = await services.compute.run(
+            NATIVE_OPERATIONS.NEAREST_JOIN,
+            {
+                path: leftPath,
+                rightPath,
+                fieldMappings: config.fieldMappings || [],
+                maxRadius: config.maxRadius === '' || config.maxRadius == null
+                    ? undefined
+                    : config.maxRadius,
+                units: config.units || 'meters',
+                writeDistance: config.writeDistance !== false,
+                writeMatchId: Boolean(config.writeMatchId),
+                matchIdField: config.matchIdField || '',
+                writeMatchLayer: Boolean(config.writeMatchLayer),
+                targetLayerName: targetLayer.name || ''
+            },
+            { onProgress: opts.onProgress, signal: opts.signal }
+        );
+
+        if (opts.registerLibrary !== false && isGisLibraryAvailable() && result?.outputPath) {
+            try {
+                const parents = [sourceLayer.source?.libraryItemId, targetLayer.source?.libraryItemId]
+                    .filter(Boolean);
+                await registerDerivedLibraryItem({
+                    outputPath: result.outputPath,
+                    displayName: `${sourceLayer.name || 'layer'}_nearest_join`,
+                    derivedOp: 'nearest_join',
+                    parentIds: parents,
+                    previewGeojson: result.previewGeojson || result.geojson,
+                    featureCount: result.featureCount,
+                    geometryTypes: result.geometryTypes
+                });
+            } catch {
+                /* non-fatal */
+            }
+        }
+        return result;
+    } finally {
+        for (const p of temps) {
+            try {
+                await services.files.removeTempFile(p);
+            } catch {
+                /* best-effort */
+            }
+        }
+    }
+}
+
+/**
  * Native spatial filter for Find Features in Area.
  *
  * @param {object} layer
