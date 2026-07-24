@@ -727,3 +727,438 @@ def reproject_vector(
         op="reproject_vector",
         extra={"sourceCrs": source, "targetCrs": target},
     )
+
+
+def simplify_vector(
+    path: Path,
+    output: Path,
+    request_id: str,
+    *,
+    tolerance: float = 0.001,
+) -> Dict[str, Any]:
+    _require_shapely()
+    from shapely.geometry import mapping, shape
+
+    emit_progress(request_id, percent=15, stage="read", message="Loading for simplify")
+    features = _load_features(path)
+    tol = max(0.0, float(tolerance))
+    out: List[dict] = []
+    for i, feat in enumerate(features):
+        if not feat.get("geometry"):
+            continue
+        try:
+            g = shape(feat["geometry"]).simplify(tol, preserve_topology=True)
+            out.append(
+                {
+                    "type": "Feature",
+                    "geometry": mapping(g),
+                    "properties": dict(feat.get("properties") or {}),
+                }
+            )
+        except Exception:  # noqa: BLE001
+            out.append(feat)
+        if i and i % 2000 == 0:
+            emit_progress(request_id, percent=min(85, 15 + int(70 * i / max(len(features), 1))), stage="simplify")
+    _write_geojson(output, out)
+    emit_progress(request_id, percent=100, stage="done", message="Simplify complete")
+    return _result_payload(path=path, output=output, features=out, engine="shapely", op="simplify_vector", extra={"tolerance": tol})
+
+
+def dissolve_vector(
+    path: Path,
+    output: Path,
+    request_id: str,
+    *,
+    field: Optional[str] = None,
+) -> Dict[str, Any]:
+    _require_shapely()
+    from shapely.geometry import mapping, shape
+    from shapely.ops import unary_union
+
+    emit_progress(request_id, percent=15, stage="read", message="Loading for dissolve")
+    features = _load_features(path)
+    groups: Dict[str, List[Any]] = {}
+    key_field = (field or "").strip()
+    for feat in features:
+        if not feat.get("geometry"):
+            continue
+        try:
+            g = shape(feat["geometry"])
+        except Exception:  # noqa: BLE001
+            continue
+        key = str((feat.get("properties") or {}).get(key_field, "")) if key_field else "__all__"
+        groups.setdefault(key, []).append(g)
+    out: List[dict] = []
+    for i, (key, geoms) in enumerate(groups.items()):
+        try:
+            merged = unary_union(geoms)
+            props = {key_field: key} if key_field and key != "__all__" else {}
+            out.append({"type": "Feature", "geometry": mapping(merged), "properties": props})
+        except Exception:  # noqa: BLE001
+            continue
+        if i and i % 50 == 0:
+            emit_progress(request_id, percent=min(85, 20 + i), stage="dissolve")
+    _write_geojson(output, out)
+    emit_progress(request_id, percent=100, stage="done", message="Dissolve complete")
+    return _result_payload(
+        path=path, output=output, features=out, engine="shapely", op="dissolve_vector", extra={"field": key_field or None}
+    )
+
+
+def union_vector(path: Path, output: Path, request_id: str) -> Dict[str, Any]:
+    _require_shapely()
+    from shapely.geometry import mapping, shape
+    from shapely.ops import unary_union
+
+    emit_progress(request_id, percent=15, stage="read", message="Loading for union")
+    features = _load_features(path)
+    geoms = []
+    for feat in features:
+        if not feat.get("geometry"):
+            continue
+        try:
+            g = shape(feat["geometry"])
+            if g.geom_type in {"Polygon", "MultiPolygon"}:
+                geoms.append(g)
+        except Exception:  # noqa: BLE001
+            continue
+    if not geoms:
+        raise ValueError("No polygon features to union")
+    emit_progress(request_id, percent=60, stage="union", message=f"Merging {len(geoms)} polygons")
+    merged = unary_union(geoms)
+    out = [{"type": "Feature", "geometry": mapping(merged), "properties": {}}]
+    _write_geojson(output, out)
+    emit_progress(request_id, percent=100, stage="done", message="Union complete")
+    return _result_payload(path=path, output=output, features=out, engine="shapely", op="union_vector")
+
+
+def _coords_to_vertex_points(coords: Any, props: dict, out: List[dict]) -> None:
+    """Recursively extract vertex points (turf.explode semantics)."""
+    if not isinstance(coords, (list, tuple)) or not coords:
+        return
+    if isinstance(coords[0], (int, float)):
+        out.append(
+            {
+                "type": "Feature",
+                "geometry": {"type": "Point", "coordinates": [float(coords[0]), float(coords[1])]},
+                "properties": props,
+            }
+        )
+        return
+    for part in coords:
+        _coords_to_vertex_points(part, props, out)
+
+
+def explode_vector(path: Path, output: Path, request_id: str) -> Dict[str, Any]:
+    emit_progress(request_id, percent=15, stage="read", message="Loading for explode")
+    features = _load_features(path)
+    out: List[dict] = []
+    for i, feat in enumerate(features):
+        geom = feat.get("geometry")
+        if not isinstance(geom, dict):
+            continue
+        props = dict(feat.get("properties") or {})
+        _coords_to_vertex_points(geom.get("coordinates"), props, out)
+        if i and i % 1000 == 0:
+            emit_progress(
+                request_id,
+                percent=min(85, 15 + int(70 * i / max(len(features), 1))),
+                stage="explode",
+            )
+    if not out:
+        raise ValueError("No vertices extracted")
+    _write_geojson(output, out)
+    emit_progress(request_id, percent=100, stage="done", message="Explode complete")
+    return _result_payload(path=path, output=output, features=out, engine="stdlib", op="explode_vector")
+
+
+def sample_features_vector(
+    path: Path,
+    output: Path,
+    request_id: str,
+    *,
+    count: int = 100,
+) -> Dict[str, Any]:
+    import random
+
+    n = max(1, min(int(count), 50_000))
+    emit_progress(request_id, percent=15, stage="read", message="Sampling features")
+    engine = "stdlib"
+    sampled: List[dict] = []
+
+    # Prefer pyogrio first-N for non-JSON formats (avoids full load).
+    if path.suffix.lower() not in _GEOJSON_SUFFIXES and pyogrio_available():
+        import pyogrio  # type: ignore
+        from shapely import from_wkb  # type: ignore
+        from shapely.geometry import mapping  # type: ignore
+
+        info = pyogrio.read_info(str(path))
+        field_names = [str(f) for f in (info.get("fields") or [])]
+        try:
+            _meta, geometry, field_data = pyogrio.raw.read(str(path), max_features=n)
+        except TypeError:
+            _meta, geometry, field_data = pyogrio.raw.read(str(path))
+            if geometry is not None and len(geometry) > n:
+                geometry = geometry[:n]
+                if field_data is not None:
+                    field_data = [col[:n] for col in field_data]
+        count_g = len(geometry) if geometry is not None else 0
+        for i in range(count_g):
+            geom = None
+            try:
+                if geometry[i] is not None:
+                    geom = mapping(from_wkb(geometry[i]))
+            except Exception:  # noqa: BLE001
+                geom = None
+            props: Dict[str, Any] = {}
+            if field_data is not None and field_names:
+                for fi, name in enumerate(field_names):
+                    if fi < len(field_data):
+                        try:
+                            val = field_data[fi][i]
+                            if hasattr(val, "item"):
+                                val = val.item()
+                            props[name] = val
+                        except Exception:  # noqa: BLE001
+                            props[name] = None
+            sampled.append({"type": "Feature", "geometry": geom, "properties": props})
+        engine = "pyogrio"
+    else:
+        features = _load_features(path)
+        if len(features) <= n:
+            sampled = features
+        else:
+            sampled = random.sample(features, n)
+
+    if not sampled:
+        raise ValueError("No features to sample")
+    _write_geojson(output, sampled)
+    emit_progress(request_id, percent=100, stage="done", message="Sample complete")
+    return _result_payload(
+        path=path, output=output, features=sampled, engine=engine, op="sample_features", extra={"requested": n}
+    )
+
+
+def _eval_attr_rule(props: dict, rule: dict) -> bool:
+    field = rule.get("field")
+    op = str(rule.get("operator") or "equals")
+    target = rule.get("value")
+    val = props.get(field) if field else None
+    if op == "equals":
+        return str(val) == str(target)
+    if op == "not_equals":
+        return str(val) != str(target)
+    if op == "contains":
+        return str(target).lower() in str(val or "").lower()
+    if op == "not_contains":
+        return str(target).lower() not in str(val or "").lower()
+    if op == "starts_with":
+        return str(val or "").lower().startswith(str(target).lower())
+    if op == "ends_with":
+        return str(val or "").lower().endswith(str(target).lower())
+    if op == "greater_than":
+        try:
+            return float(val) > float(target)
+        except (TypeError, ValueError):
+            return False
+    if op == "less_than":
+        try:
+            return float(val) < float(target)
+        except (TypeError, ValueError):
+            return False
+    if op == "gte":
+        try:
+            return float(val) >= float(target)
+        except (TypeError, ValueError):
+            return False
+    if op == "lte":
+        try:
+            return float(val) <= float(target)
+        except (TypeError, ValueError):
+            return False
+    if op == "is_null":
+        return val is None or val == ""
+    if op == "not_null":
+        return val is not None and val != ""
+    return False
+
+
+def filter_attributes(
+    path: Path,
+    output: Path,
+    request_id: str,
+    *,
+    rules: List[dict],
+    logic: str = "AND",
+) -> Dict[str, Any]:
+    if not isinstance(rules, list) or not rules:
+        raise ValueError("filter_attributes requires a non-empty rules array")
+    emit_progress(request_id, percent=15, stage="read", message="Loading for attribute filter")
+    features = _load_features(path)
+    use_and = str(logic or "AND").upper() != "OR"
+    matched: List[dict] = []
+    for i, feat in enumerate(features):
+        props = feat.get("properties") or {}
+        results = [_eval_attr_rule(props, r) for r in rules if isinstance(r, dict)]
+        ok = all(results) if use_and else any(results)
+        if ok:
+            matched.append(feat)
+        if i and i % 2000 == 0:
+            emit_progress(
+                request_id,
+                percent=min(85, 15 + int(70 * i / max(len(features), 1))),
+                stage="filter",
+            )
+    _write_geojson(output, matched)
+    emit_progress(request_id, percent=100, stage="done", message=f"Matched {len(matched)} features")
+    return _result_payload(
+        path=path,
+        output=output,
+        features=matched,
+        engine="stdlib",
+        op="filter_attributes",
+        extra={"logic": "AND" if use_and else "OR", "ruleCount": len(rules)},
+    )
+
+
+def update_attributes(
+    path: Path,
+    output: Path,
+    request_id: str,
+    *,
+    updates: Dict[str, Any],
+    where_field: Optional[str] = None,
+    where_value: Any = None,
+) -> Dict[str, Any]:
+    """Apply attribute updates to matching features; write derived GeoJSON."""
+    if not isinstance(updates, dict) or not updates:
+        raise ValueError("update_attributes requires a non-empty updates object")
+    emit_progress(request_id, percent=15, stage="read", message="Loading for attribute update")
+    features = _load_features(path)
+    changed = 0
+    out: List[dict] = []
+    for feat in features:
+        props = dict(feat.get("properties") or {})
+        match = True
+        if where_field:
+            match = str(props.get(where_field)) == str(where_value)
+        if match:
+            props.update(updates)
+            changed += 1
+        out.append({"type": "Feature", "geometry": feat.get("geometry"), "properties": props})
+    _write_geojson(output, out)
+    emit_progress(request_id, percent=100, stage="done", message=f"Updated {changed} features")
+    return _result_payload(
+        path=path,
+        output=output,
+        features=out,
+        engine="stdlib",
+        op="update_attributes",
+        extra={"changedCount": changed, "whereField": where_field},
+    )
+
+
+def save_vector(
+    path: Path,
+    output: Path,
+    request_id: str,
+    *,
+    format: str = "geojson",
+) -> Dict[str, Any]:
+    """
+    Persist a vector dataset (typically edited viewport/selection GeoJSON) to disk.
+    Formats: geojson | gpkg | parquet
+    """
+    fmt = (format or "geojson").lower().strip()
+    if fmt in {"geopackage", "geopkg"}:
+        fmt = "gpkg"
+    if fmt in {"geoparquet"}:
+        fmt = "parquet"
+    if fmt not in {"geojson", "gpkg", "parquet"}:
+        raise ValueError(f"Unsupported save format: {format}")
+
+    emit_progress(request_id, percent=10, stage="read", message="Loading features to save")
+    features = _load_features(path)
+    if not features:
+        raise ValueError("No features to save")
+
+    emit_progress(request_id, percent=40, stage="write", message=f"Writing {fmt}")
+    engine = "stdlib"
+    if fmt == "geojson":
+        if output.suffix.lower() not in _GEOJSON_SUFFIXES:
+            output = output.with_suffix(".geojson")
+        _write_geojson(output, features)
+    elif fmt == "gpkg":
+        # Prefer DuckDB spatial GDAL write; fall back to GeoJSON if unavailable.
+        if output.suffix.lower() != ".gpkg":
+            output = output.with_suffix(".gpkg")
+        tmp_gj = output.parent / f"{output.stem}_tmp_save.geojson"
+        _write_geojson(tmp_gj, features)
+        if duckdb_available():
+            import duckdb  # type: ignore
+
+            con = duckdb.connect()
+            try:
+                con.execute("INSTALL spatial;")
+                con.execute("LOAD spatial;")
+                src = "'" + _sql_quote_path(tmp_gj) + "'"
+                dest = "'" + _sql_quote_path(output) + "'"
+                con.execute(f"CREATE OR REPLACE TABLE _gis_save AS SELECT * FROM ST_Read({src})")
+                try:
+                    con.execute(
+                        f"COPY _gis_save TO {dest} (FORMAT GDAL, DRIVER 'GPKG')"
+                    )
+                    engine = "duckdb-spatial"
+                except Exception:  # noqa: BLE001
+                    # Older DuckDB: keep GeoJSON beside requested name
+                    gj_out = output.with_suffix(".geojson")
+                    tmp_gj.replace(gj_out)
+                    output = gj_out
+                    engine = "stdlib-geojson-fallback"
+            finally:
+                con.close()
+                try:
+                    if tmp_gj.exists():
+                        tmp_gj.unlink()
+                except Exception:  # noqa: BLE001
+                    pass
+        else:
+            gj_out = output.with_suffix(".geojson")
+            tmp_gj.replace(gj_out)
+            output = gj_out
+            engine = "stdlib-geojson-fallback"
+    else:  # parquet
+        if not duckdb_available():
+            raise ValueError("save_vector parquet requires duckdb")
+        import duckdb  # type: ignore
+
+        tmp_gj = output.parent / f"{output.stem}_tmp_save.geojson"
+        _write_geojson(tmp_gj, features)
+        if output.suffix.lower() not in {".parquet", ".geoparquet"}:
+            output = output.with_suffix(".parquet")
+        con = duckdb.connect()
+        try:
+            con.execute("INSTALL spatial;")
+            con.execute("LOAD spatial;")
+            src = "'" + _sql_quote_path(tmp_gj) + "'"
+            dest = "'" + _sql_quote_path(output) + "'"
+            con.execute(f"CREATE OR REPLACE TABLE _gis_save AS SELECT * FROM ST_Read({src})")
+            con.execute(f"COPY _gis_save TO {dest} (FORMAT PARQUET)")
+        finally:
+            con.close()
+            try:
+                if tmp_gj.exists():
+                    tmp_gj.unlink()
+            except Exception:  # noqa: BLE001
+                pass
+        engine = "duckdb-spatial"
+
+    emit_progress(request_id, percent=100, stage="done", message="Save complete")
+    return _result_payload(
+        path=path,
+        output=output,
+        features=features,
+        engine=engine,
+        op="save_vector",
+        extra={"format": fmt, "savedFeatureCount": len(features)},
+    )

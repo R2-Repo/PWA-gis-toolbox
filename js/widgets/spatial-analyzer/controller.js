@@ -37,10 +37,8 @@ export async function openSpatialAnalyzer(ctx) {
                     throw new Error('Target layer not found.');
                 }
 
-                const featureCount = targetLayer.geojson?.features?.length
-                    ?? targetLayer.pmtiles?.featureCount
-                    ?? targetLayer.source?.fullFeatureCount
-                    ?? 0;
+                const { getLayerAnalysisFeatureCount } = await import('../../library/desktop-analysis.js');
+                const featureCount = getLayerAnalysisFeatureCount(targetLayer);
                 const nativePath = resolveLayerNativePath(targetLayer);
                 const provider = chooseAnalysisProvider(
                     featureCount,

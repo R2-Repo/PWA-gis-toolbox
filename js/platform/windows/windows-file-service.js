@@ -57,6 +57,11 @@ export function createWindowsFileService() {
         async removeTempFile(path) {
             if (!path) return;
             await invokeCommand('remove_temp_file', { path });
+        },
+
+        async stat(path) {
+            if (!path) throw new Error('stat requires a path');
+            return invokeCommand('file_stat', { path });
         }
     };
 }

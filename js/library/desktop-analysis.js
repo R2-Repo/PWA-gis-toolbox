@@ -12,18 +12,42 @@ import { ingestGisLibraryItem, isGisLibraryAvailable } from './gis-library.js';
 export const NATIVE_ANALYSIS_MIN_FEATURES = 5000;
 
 /**
+ * Absolute path suitable for sidecar analysis (full file on disk).
+ * Prefer library working copies, then originals / path-import nativePath.
+ *
  * @param {object} layer
- * @returns {string|null} absolute path suitable for sidecar ops
+ * @returns {string|null}
  */
 export function resolveLayerNativePath(layer) {
+    // Selection subsets must stay in-memory — analysisPath points at the full file.
+    if (layer?._isSelection) return null;
     return (
-        layer?.source?.workingPath
+        layer?.source?.analysisPath
+        || layer?.source?.workingPath
         || layer?.source?.managedOriginalPath
         || layer?.source?.libraryWorkingPath
         || layer?.source?.originalPath
+        || layer?.source?.nativePath
+        || layer?.source?.nativeOutputPath
         || layer?.pmtiles?.path
         || null
     );
+}
+
+/**
+ * Feature count for provider selection — prefer full catalog count over preview FC length.
+ *
+ * @param {object} layer
+ * @returns {number}
+ */
+export function getLayerAnalysisFeatureCount(layer) {
+    const full = Number(
+        layer?.source?.fullFeatureCount
+        ?? layer?.schema?.featureCount
+        ?? layer?.pmtiles?.featureCount
+    );
+    if (Number.isFinite(full) && full > 0) return full;
+    return layer?.geojson?.features?.length || 0;
 }
 
 /**
@@ -35,9 +59,49 @@ export function resolveLayerNativePath(layer) {
  */
 export function chooseAnalysisProvider(featureCount, pythonAvailable, nativePath, preferNative = true) {
     if (!pythonAvailable || !preferNative) return 'javascript';
+    // Any disk-backed layer uses Python — ignore tiny preview feature counts.
     if (nativePath) return 'python';
     if (featureCount >= NATIVE_ANALYSIS_MIN_FEATURES) return 'python';
     return 'javascript';
+}
+
+/**
+ * Attach desktop workstation paths onto a layer source (mutates + returns source).
+ *
+ * @param {object} layer
+ * @param {{
+ *   analysisPath?: string|null,
+ *   workingPath?: string|null,
+ *   managedOriginalPath?: string|null,
+ *   originalPath?: string|null,
+ *   nativePath?: string|null,
+ *   libraryItemId?: string|null,
+ *   fullFeatureCount?: number|null,
+ *   tilePath?: string|null,
+ *   displayMode?: 'pmtiles'|'geojson-preview'|'cog'
+ * }} paths
+ */
+export function attachDesktopLayerPaths(layer, paths = {}) {
+    if (!layer) return null;
+    const analysisPath = paths.analysisPath
+        || paths.workingPath
+        || paths.managedOriginalPath
+        || paths.originalPath
+        || paths.nativePath
+        || resolveLayerNativePath(layer);
+    layer.source = {
+        ...(layer.source || {}),
+        ...(paths.workingPath ? { workingPath: paths.workingPath } : {}),
+        ...(paths.managedOriginalPath ? { managedOriginalPath: paths.managedOriginalPath } : {}),
+        ...(paths.originalPath ? { originalPath: paths.originalPath } : {}),
+        ...(paths.nativePath ? { nativePath: paths.nativePath } : {}),
+        ...(paths.libraryItemId ? { libraryItemId: paths.libraryItemId } : {}),
+        ...(paths.fullFeatureCount != null ? { fullFeatureCount: paths.fullFeatureCount } : {}),
+        ...(paths.tilePath ? { tilePath: paths.tilePath } : {}),
+        ...(paths.displayMode ? { displayMode: paths.displayMode } : {}),
+        analysisPath: analysisPath || layer.source?.analysisPath || null
+    };
+    return layer.source;
 }
 
 /**
@@ -505,4 +569,219 @@ export async function reprojectLayerNative(layer, config = {}, opts = {}) {
             }
         }
     }
+}
+
+/**
+ * @param {object} layer
+ * @param {string} operation
+ * @param {object} input
+ * @param {string} derivedOp
+ * @param {string} nameSuffix
+ * @param {{ onProgress?: Function, signal?: AbortSignal, registerLibrary?: boolean }} [opts]
+ */
+async function runSimpleNativeVectorOp(layer, operation, input, derivedOp, nameSuffix, opts = {}) {
+    const { platform, services } = getPlatformBundle();
+    if (!hasCapability(platform, 'pythonCompute') || !services.compute?.run) {
+        throw new Error(`Native ${derivedOp} requires the Windows Python sidecar`);
+    }
+
+    let path = resolveLayerNativePath(layer);
+    let tempPath = null;
+    if (!path) {
+        if (!layer?.geojson) throw new Error(`Layer has no geometry for ${derivedOp}`);
+        path = await services.files.writeTempGeoJson(JSON.stringify(layer.geojson));
+        tempPath = path;
+    }
+
+    try {
+        const result = await services.compute.run(
+            operation,
+            { path, ...input },
+            { onProgress: opts.onProgress, signal: opts.signal }
+        );
+        if (opts.registerLibrary !== false && isGisLibraryAvailable() && result?.outputPath) {
+            try {
+                await registerDerivedLibraryItem({
+                    outputPath: result.outputPath,
+                    displayName: `${layer.name || 'layer'}_${nameSuffix}`,
+                    derivedOp,
+                    parentIds: layer.source?.libraryItemId ? [layer.source.libraryItemId] : [],
+                    previewGeojson: result.previewGeojson,
+                    featureCount: result.featureCount,
+                    geometryTypes: result.geometryTypes
+                });
+            } catch {
+                /* non-fatal */
+            }
+        }
+        return datasetFromAnalysisResult(
+            result,
+            `${layer.name || 'layer'}_${nameSuffix}`,
+            { libraryItemId: layer.source?.libraryItemId, analysisPath: result?.outputPath }
+        );
+    } finally {
+        if (tempPath) {
+            try {
+                await services.files.removeTempFile(tempPath);
+            } catch {
+                /* best-effort */
+            }
+        }
+    }
+}
+
+/** @param {object} layer @param {number} [tolerance] @param {object} [opts] */
+export async function simplifyLayerNative(layer, tolerance = 0.001, opts = {}) {
+    return runSimpleNativeVectorOp(
+        layer,
+        NATIVE_OPERATIONS.SIMPLIFY_VECTOR,
+        { tolerance },
+        'simplify_vector',
+        'simplified',
+        opts
+    );
+}
+
+/** @param {object} layer @param {string} [field] @param {object} [opts] */
+export async function dissolveLayerNative(layer, field, opts = {}) {
+    return runSimpleNativeVectorOp(
+        layer,
+        NATIVE_OPERATIONS.DISSOLVE_VECTOR,
+        { field: field || undefined },
+        'dissolve_vector',
+        'dissolved',
+        opts
+    );
+}
+
+/** @param {object} layer @param {object} [opts] */
+export async function unionLayerNative(layer, opts = {}) {
+    return runSimpleNativeVectorOp(
+        layer,
+        NATIVE_OPERATIONS.UNION_VECTOR,
+        {},
+        'union_vector',
+        'union',
+        opts
+    );
+}
+
+/** @param {object} layer @param {object} [opts] */
+export async function explodeLayerNative(layer, opts = {}) {
+    return runSimpleNativeVectorOp(
+        layer,
+        NATIVE_OPERATIONS.EXPLODE_VECTOR,
+        {},
+        'explode_vector',
+        'exploded',
+        opts
+    );
+}
+
+/** @param {object} layer @param {number} count @param {object} [opts] */
+export async function sampleLayerNative(layer, count, opts = {}) {
+    return runSimpleNativeVectorOp(
+        layer,
+        NATIVE_OPERATIONS.SAMPLE_FEATURES,
+        { count },
+        'sample_features',
+        `sample_${count}`,
+        opts
+    );
+}
+
+/**
+ * Path-based attribute filter → derived layer.
+ * @param {object} layer
+ * @param {object[]} rules
+ * @param {string} [logic]
+ * @param {object} [opts]
+ */
+export async function filterAttributesLayerNative(layer, rules, logic = 'AND', opts = {}) {
+    return runSimpleNativeVectorOp(
+        layer,
+        NATIVE_OPERATIONS.FILTER_ATTRIBUTES,
+        { rules, logic },
+        'filter_attributes',
+        'filtered',
+        opts
+    );
+}
+
+/**
+ * Path-based bulk attribute update → derived layer (full file).
+ * @param {object} layer
+ * @param {Record<string, unknown>} updates
+ * @param {{ whereField?: string, whereValue?: unknown, onProgress?: Function, signal?: AbortSignal, registerLibrary?: boolean }} [opts]
+ */
+export async function updateAttributesLayerNative(layer, updates, opts = {}) {
+    return runSimpleNativeVectorOp(
+        layer,
+        NATIVE_OPERATIONS.UPDATE_ATTRIBUTES,
+        {
+            updates,
+            whereField: opts.whereField,
+            whereValue: opts.whereValue
+        },
+        'update_attributes',
+        'updated',
+        opts
+    );
+}
+
+/**
+ * Save edited viewport/selection GeoJSON back to library (GPKG / Parquet / GeoJSON).
+ *
+ * @param {object} layer - layer with current (possibly edited) geojson
+ * @param {{ format?: 'geojson'|'gpkg'|'parquet', displayName?: string, onProgress?: Function, signal?: AbortSignal }} [opts]
+ */
+export async function saveLayerEditsNative(layer, opts = {}) {
+    const { platform, services } = getPlatformBundle();
+    if (!hasCapability(platform, 'pythonCompute') || !services.compute?.run) {
+        throw new Error('Save to library requires the Windows Python sidecar');
+    }
+    if (!layer?.geojson?.features?.length) {
+        throw new Error('No features to save');
+    }
+
+    const format = opts.format || 'gpkg';
+    const tempPath = await services.files.writeTempGeoJson(JSON.stringify(layer.geojson));
+    try {
+        const result = await services.compute.run(
+            NATIVE_OPERATIONS.SAVE_VECTOR,
+            { path: tempPath, format },
+            { onProgress: opts.onProgress, signal: opts.signal }
+        );
+        if (isGisLibraryAvailable() && result?.outputPath) {
+            await registerDerivedLibraryItem({
+                outputPath: result.outputPath,
+                displayName: opts.displayName || `${layer.name || 'layer'}_edits`,
+                derivedOp: 'save_vector',
+                parentIds: layer.source?.libraryItemId ? [layer.source.libraryItemId] : [],
+                previewGeojson: result.previewGeojson,
+                featureCount: result.featureCount || result.savedFeatureCount || layer.geojson.features.length,
+                geometryTypes: result.geometryTypes
+            });
+        }
+        if (layer.source) {
+            layer.source.dirty = false;
+            layer.source.editsSavedAt = new Date().toISOString();
+        }
+        return result;
+    } finally {
+        try {
+            await services.files.removeTempFile(tempPath);
+        } catch {
+            /* best-effort */
+        }
+    }
+}
+
+/**
+ * Mark a desktop layer dirty after in-memory edits (viewport/selection).
+ * @param {object} layer
+ */
+export function markLayerEditsDirty(layer) {
+    if (!layer) return;
+    layer.source = { ...(layer.source || {}), dirty: true };
 }

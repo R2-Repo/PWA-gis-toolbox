@@ -32,6 +32,8 @@ import {
 
 import { isProjectKitFile } from '../../js/core/project-kit.js';
 
+import { getNativeFilePath } from '../../js/import/import-policy.js';
+
 import { ImportFieldSelector } from './ImportFieldSelector.jsx';
 
 import { ImportOptionCard } from './ImportOptionCard.jsx';
@@ -44,7 +46,7 @@ import { LiveLayerCatalogPicker } from './LiveLayerCatalogPicker.jsx';
 
 
 
-const LOCAL_FILE_ACCEPT = '.geojson,.json,.csv,.tsv,.txt,.xlsx,.xls,.kml,.kmz,.gpx,.zip,.xml,.gis-toolbox,.gtbx';
+const LOCAL_FILE_ACCEPT = '.geojson,.json,.csv,.tsv,.txt,.xlsx,.xls,.kml,.kmz,.gpx,.zip,.xml,.gis-toolbox,.gtbx,.tif,.tiff,.gpkg,.shp,.parquet';
 
 export function ImportFlowDialog({
 
@@ -69,6 +71,11 @@ export function ImportFlowDialog({
     desktopUdotFiber = null,
 
     onOptimizeImport,
+
+    /** When set, Local Files uses the native Open dialog (path-backed large imports). */
+    onPickLocalFiles = null,
+
+    desktopPathImportAvailable = false,
 
     hasActiveFence = false,
 
@@ -194,11 +201,18 @@ export function ImportFlowDialog({
 
         if (!files?.length) return;
 
+        const pathRoutable = desktopPathImportAvailable && files.every(
+            (f) => getNativeFilePath(f) || isProjectKitFile(f)
+        );
         const check = preflightFiles(files);
 
-        if (check.reject) {
+        if (check.reject && !pathRoutable) {
 
-            setError(check.messages.join(' '));
+            setError(
+                desktopPathImportAvailable
+                    ? `${check.messages.join(' ')} Use Local Files (native Open dialog) for large desktop imports.`
+                    : check.messages.join(' ')
+            );
 
             return;
 
@@ -344,11 +358,21 @@ export function ImportFlowDialog({
 
         if (files.length === 0) return;
 
+        // Desktop path import bypasses browser 6 MB text hard-reject.
+        const pathRoutable = desktopPathImportAvailable && files.every(
+            (f) => getNativeFilePath(f) || isProjectKitFile(f)
+        );
         const check = preflightFiles(files);
 
-        if (check.reject) {
+        if (check.reject && !pathRoutable) {
 
-            setError(check.messages.join(' '));
+            if (desktopPathImportAvailable) {
+                setError(
+                    `${check.messages.join(' ')} On desktop, click Local Files to use the native Open dialog (or drag from Explorer) so large files import from disk.`
+                );
+            } else {
+                setError(check.messages.join(' '));
+            }
 
             return;
 
@@ -368,6 +392,17 @@ export function ImportFlowDialog({
 
             return;
 
+        }
+
+        // Path-backed desktop picks: no browser File bytes — skip scan/optimizer.
+        if (pathRoutable && files.some((f) => getNativeFilePath(f))) {
+            setFieldNames([]);
+            setSelectedFields([]);
+            setImportScans([]);
+            setRouteAssessment({ route: 'desktop-path', useWorkspace: false });
+            setReadyToImport(true);
+            setPreflight({ reject: false, messages: [], level: 'ok', files: [] });
+            return;
         }
 
 
@@ -724,11 +759,26 @@ export function ImportFlowDialog({
 
                             title="Local Files"
 
-                            description="GeoJSON, CSV, Excel, KML, Shapefile…"
+                            description={desktopPathImportAvailable
+                                ? 'Large files OK — opens native dialog (disk path import)'
+                                : 'GeoJSON, CSV, Excel, KML, Shapefile…'}
 
                             className={localDragOver ? 'import-option-card--dragover' : ''}
 
-                            onClick={() => fileInputRef.current?.click()}
+                            onClick={() => {
+                                if (onPickLocalFiles) {
+                                    void (async () => {
+                                        try {
+                                            const picked = await onPickLocalFiles();
+                                            if (picked?.length) void handleFiles(picked);
+                                        } catch (err) {
+                                            setError(err?.message || 'Could not open file dialog.');
+                                        }
+                                    })();
+                                    return;
+                                }
+                                fileInputRef.current?.click();
+                            }}
 
                             onDragEnter={(e) => {
 

@@ -17,7 +17,15 @@ export const NATIVE_OPERATIONS = Object.freeze({
     SPATIAL_JOIN: 'spatial_join',
     REPROJECT_VECTOR: 'reproject_vector',
     SPATIAL_FILTER: 'spatial_filter',
-    NEAREST_JOIN: 'nearest_join'
+    NEAREST_JOIN: 'nearest_join',
+    SIMPLIFY_VECTOR: 'simplify_vector',
+    DISSOLVE_VECTOR: 'dissolve_vector',
+    UNION_VECTOR: 'union_vector',
+    EXPLODE_VECTOR: 'explode_vector',
+    SAMPLE_FEATURES: 'sample_features',
+    FILTER_ATTRIBUTES: 'filter_attributes',
+    UPDATE_ATTRIBUTES: 'update_attributes',
+    SAVE_VECTOR: 'save_vector'
 });
 
 export const NATIVE_OPERATION_LIST = Object.freeze(Object.values(NATIVE_OPERATIONS));

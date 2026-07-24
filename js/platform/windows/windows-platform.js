@@ -41,8 +41,11 @@ function capabilitiesFromHandshake(handshake) {
             reason: 'Install sidecar DuckDB deps'
         },
         largeDatasetProcessing: fromShell.largeDatasetProcessing || {
-            available: false,
-            reason: 'Large-dataset processing not packaged yet'
+            // Path import works once the shell is present; sidecar handshake may refine this.
+            available: isTauriAvailable(),
+            reason: isTauriAvailable()
+                ? undefined
+                : 'Large-dataset processing requires the Windows desktop app'
         },
         gisLibrary: fromShell.gisLibrary || {
             available: isTauriAvailable(),

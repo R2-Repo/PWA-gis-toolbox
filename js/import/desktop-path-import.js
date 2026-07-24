@@ -169,11 +169,18 @@ export async function importVectorPreviewByPath(compute, path, opts = {}) {
         file: fileName,
         format: inspect?.format || format || 'geojson',
         nativePath: path,
+        analysisPath: path,
+        originalPath: path,
         previewOnly: sampled < total,
         fullFeatureCount: total,
+        displayMode: 'geojson-preview',
+        adapter: 'desktop-vector',
         importRoute: 'desktop-path',
         engine: sample?.engine || inspect?.engine
     });
+    if (dataset.schema && total > 0) {
+        dataset.schema = { ...dataset.schema, featureCount: total };
+    }
 
     return { dataset, inspect, sample };
 }

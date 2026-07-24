@@ -975,7 +975,7 @@ async function _addImportedDatasets(datasets, importOpts = {}) {
 export async function handleFileImport(files, fenceBbox = null, options = {}) {
     const fileList = Array.from(files || []);
     const kitFiles = fileList.filter(isProjectKitFile);
-    const dataFiles = fileList.filter((file) => !isProjectKitFile(file));
+    let dataFiles = fileList.filter((file) => !isProjectKitFile(file));
 
     if (kitFiles.length) {
         if (!dataFiles.length) {
@@ -985,6 +985,32 @@ export async function handleFileImport(files, fenceBbox = null, options = {}) {
             await importProjectKit(file);
         }
         if (!dataFiles.length) return;
+    }
+
+    // Desktop: peel off path-backed / oversized files before browser memory import.
+    try {
+        const platform = options.platform ?? getPlatformBundle({ showToast }).platform;
+        const { services } = getPlatformBundle({ showToast });
+        const { classifyImportFiles } = await import('../import/import-policy.js');
+        const { memoryFiles, pathFiles, blockedLargeNoPath } = classifyImportFiles(dataFiles, platform);
+        if (blockedLargeNoPath.length) {
+            const names = blockedLargeNoPath.map((f) => f.name).join(', ');
+            throw new Error(
+                `${names}: too large for in-memory import. Click Local Files (native Open dialog) or drag from Explorer.`
+            );
+        }
+        if (pathFiles.length) {
+            await _importDesktopPathPreviews(pathFiles, services);
+            if (!memoryFiles.length) {
+                options.onComplete?.();
+                return;
+            }
+            dataFiles = memoryFiles;
+        }
+    } catch (routeErr) {
+        if (options.onAborted) options.onAborted();
+        showErrorToast(handleError(routeErr, 'Import', 'Desktop path route'));
+        return;
     }
 
     let progress = null;
@@ -1226,6 +1252,8 @@ function _openImportFlowModal(flowProps = {}) {
             const { getPlatformBundle } = await import('../platform/create-platform.js');
             const { hasCapability } = await import('../platform/contracts.js');
             const platformBundle = getPlatformBundle({ showToast });
+            const desktopPathImportAvailable = platformBundle.platform?.runtime === 'windows'
+                && hasCapability(platformBundle.platform, 'nativeFiles');
             const desktopUdotAvailable = hasCapability(platformBundle.platform, 'localSqlite')
                 && !!platformBundle.services?.udotFiberDb
                 && platformBundle.platform?.runtime === 'windows';
@@ -1243,16 +1271,45 @@ function _openImportFlowModal(flowProps = {}) {
             const mounted = mountImportFlowDialog(root, {
                 onCancel: () => close(),
                 hasActiveFence: hasActiveImportFence(),
+                desktopPathImportAvailable,
+                onPickLocalFiles: desktopPathImportAvailable
+                    ? async () => {
+                        const { pickDesktopImportFiles } = await import('../import/desktop-path-files.js');
+                        return pickDesktopImportFiles(platformBundle.services.files);
+                    }
+                    : null,
                 onImportFiles: async (files, importOpts = {}, ui = {}) => {
-                    await handleFileImport(files, _fenceBbox, {
-                        preflightConfirmed: importOpts.preflightConfirmed,
+                    // Large / path-backed desktop files → sidecar path import (not 6 MB browser path).
+                    const { classifyImportFiles } = await import('../import/import-policy.js');
+                    const { memoryFiles, pathFiles, blockedLargeNoPath } = classifyImportFiles(
+                        files,
+                        platformBundle.platform
+                    );
+                    if (blockedLargeNoPath.length) {
+                        const names = blockedLargeNoPath.map((f) => f.name).join(', ');
+                        throw new Error(
+                            `${names}: too large for in-memory import. Click Local Files to use the native Open dialog, or drag from Explorer.`
+                        );
+                    }
+                    if (pathFiles.length) {
+                        await _importDesktopPathPreviews(pathFiles, platformBundle.services);
+                        if (!memoryFiles.length) {
+                            ui.close?.();
+                            ui.onComplete?.();
+                            return;
+                        }
+                    }
+                    if (!memoryFiles.length) return;
+                    await handleFileImport(memoryFiles, _fenceBbox, {
+                        preflightConfirmed: true,
                         importMode: importOpts.importMode,
                         useWorkspace: importOpts.useWorkspace,
                         selectedFields: importOpts.selectedFields,
                         onProgress: ui.onProgress,
                         onCancelReady: ui.onCancelReady,
                         onAborted: ui.onAborted,
-                        onComplete: () => ui.close?.()
+                        onComplete: () => ui.close?.(),
+                        platform: platformBundle.platform
                     });
                 },
                 onOptimizeImport: (files) => {
@@ -1555,11 +1612,14 @@ async function _importDesktopPathPreviews(pathFiles, services) {
                     const {
                         isGisLibraryAvailable,
                         ingestGisLibraryItem,
-                        optimizeGisLibraryItemToGeoParquet
+                        optimizeGisLibraryItemToGeoParquet,
+                        generateGisLibraryPmTiles
                     } = await import('../library/gis-library.js');
+                    const { attachDesktopLayerPaths } = await import('../library/desktop-analysis.js');
+                    const { pmtilesDatasetFromItem } = await import('../map/layer-source/adapters.js');
                     if (isGisLibraryAvailable()) {
                         progress.update(
-                            Math.min(99, Math.round(((i + 0.85) / pathFiles.length) * 100)),
+                            Math.min(99, Math.round(((i + 0.7) / pathFiles.length) * 100)),
                             `Saving ${file.name} to Local GIS Library…`,
                             { fileName: file.name, fileIndex: i + 1, fileCount: pathFiles.length }
                         );
@@ -1581,31 +1641,94 @@ async function _importDesktopPathPreviews(pathFiles, services) {
                             mode
                         });
                         if (libraryItem?.id) {
-                            dataset.source = {
-                                ...dataset.source,
+                            attachDesktopLayerPaths(dataset, {
                                 libraryItemId: libraryItem.id,
-                                libraryMode: mode
-                            };
+                                nativePath: path,
+                                originalPath: libraryItem.originalPath || path,
+                                managedOriginalPath: libraryItem.managedOriginalPath || null,
+                                fullFeatureCount: libraryItem.featureCount
+                                    ?? dataset.source?.fullFeatureCount
+                                    ?? null,
+                                displayMode: 'geojson-preview'
+                            });
+                            dataset.source.libraryMode = mode;
+
+                            const { hasCapability } = await import('../platform/contracts.js');
+                            const { platform } = getPlatformBundle({ showToast });
                             try {
-                                const { hasCapability } = await import('../platform/contracts.js');
-                                const { platform } = getPlatformBundle({ showToast });
                                 if (hasCapability(platform, 'duckdb')) {
                                     progress.update(
-                                        Math.min(99, Math.round(((i + 0.92) / pathFiles.length) * 100)),
+                                        Math.min(99, Math.round(((i + 0.82) / pathFiles.length) * 100)),
                                         `Optimizing ${file.name} → GeoParquet…`,
                                         { fileName: file.name, fileIndex: i + 1, fileCount: pathFiles.length }
                                     );
                                     const optimized = await optimizeGisLibraryItemToGeoParquet(libraryItem, {
                                         compute: services.compute,
-                                        signal: abort.signal
+                                        signal: abort.signal,
+                                        onProgress: (p) => {
+                                            if (cancelled) return;
+                                            progress.update(
+                                                Math.min(99, Math.round(((i + 0.82) / pathFiles.length) * 100 + (p?.percent || 0) * 0.05)),
+                                                p?.message || 'GeoParquet…',
+                                                { fileName: file.name, fileIndex: i + 1, fileCount: pathFiles.length }
+                                            );
+                                        }
                                     });
                                     if (optimized?.workingPath) {
-                                        dataset.source.workingPath = optimized.workingPath;
                                         libraryItem = optimized;
+                                        attachDesktopLayerPaths(dataset, {
+                                            workingPath: optimized.workingPath,
+                                            analysisPath: optimized.workingPath,
+                                            fullFeatureCount: optimized.featureCount
+                                                ?? dataset.source?.fullFeatureCount
+                                        });
                                     }
                                 }
                             } catch (optErr) {
                                 console.warn('GeoParquet optimize skipped:', optErr);
+                            }
+
+                            // Auto-create PMTiles so the map shows the full layer (QGIS-style).
+                            try {
+                                progress.update(
+                                    Math.min(99, Math.round(((i + 0.9) / pathFiles.length) * 100)),
+                                    `Creating map tiles for ${file.name}…`,
+                                    { fileName: file.name, fileIndex: i + 1, fileCount: pathFiles.length }
+                                );
+                                const tiled = await generateGisLibraryPmTiles(libraryItem, {
+                                    compute: services.compute,
+                                    signal: abort.signal,
+                                    onProgress: (p) => {
+                                        if (cancelled) return;
+                                        progress.update(
+                                            Math.min(99, Math.round(((i + 0.9) / pathFiles.length) * 100 + (p?.percent || 0) * 0.08)),
+                                            p?.message || 'Tiling…',
+                                            { fileName: file.name, fileIndex: i + 1, fileCount: pathFiles.length }
+                                        );
+                                    }
+                                });
+                                if (tiled?.tilePath) {
+                                    libraryItem = tiled;
+                                    dataset = pmtilesDatasetFromItem(tiled);
+                                    attachDesktopLayerPaths(dataset, {
+                                        libraryItemId: tiled.id,
+                                        workingPath: tiled.workingPath,
+                                        managedOriginalPath: tiled.managedOriginalPath,
+                                        originalPath: tiled.originalPath || path,
+                                        nativePath: path,
+                                        analysisPath: tiled.workingPath
+                                            || tiled.managedOriginalPath
+                                            || tiled.originalPath
+                                            || path,
+                                        fullFeatureCount: tiled.featureCount
+                                            ?? inspect?.featureCount
+                                            ?? null,
+                                        tilePath: tiled.tilePath,
+                                        displayMode: 'pmtiles'
+                                    });
+                                }
+                            } catch (tileErr) {
+                                console.warn('Auto PMTiles skipped:', tileErr);
                             }
                         }
                     }
@@ -1627,10 +1750,16 @@ async function _importDesktopPathPreviews(pathFiles, services) {
             if (isRasterFile) {
                 const libNote = libraryItem?.id ? ' Saved to Local GIS Library.' : '';
                 showToast(`Loaded COG overview for ${file.name}.${libNote}`, 'success');
+            } else if (dataset?.type === 'pmtiles' || dataset?.source?.displayMode === 'pmtiles') {
+                const total = dataset.source?.fullFeatureCount ?? inspect?.featureCount;
+                showToast(
+                    `Full file in Library — map uses tiles${total != null ? ` (${Number(total).toLocaleString()} features)` : ''}; tools use disk.`,
+                    'success'
+                );
             } else {
                 const total = inspect?.featureCount ?? dataset.source?.fullFeatureCount;
                 if (dataset.source?.previewOnly && total != null) {
-                    const libNote = libraryItem?.id ? ' Saved to Local GIS Library.' : '';
+                    const libNote = libraryItem?.id ? ' Full file in Local GIS Library — create tiles for full map.' : '';
                     showToast(
                         `Loaded preview of ${file.name} (${dataset.geojson.features.length.toLocaleString()} of ${Number(total).toLocaleString()} features).${libNote}`,
                         'info'
@@ -2668,6 +2797,42 @@ export async function openFilterBuilder(targetLayerId) {
                     close();
                 },
                 onApply: async ({ rules, logic }) => {
+                    // Desktop path-backed layers: attribute filter on full file → derived layer.
+                    try {
+                        const { getPlatformBundle } = await import('../platform/create-platform.js');
+                        const { hasCapability } = await import('../platform/contracts.js');
+                        const {
+                            chooseAnalysisProvider,
+                            resolveLayerNativePath,
+                            getLayerAnalysisFeatureCount,
+                            filterAttributesLayerNative
+                        } = await import('../library/desktop-analysis.js');
+                        const { platform } = getPlatformBundle();
+                        const pythonAvailable = hasCapability(platform, 'pythonCompute');
+                        const nativePath = resolveLayerNativePath(layer);
+                        const featureCount = getLayerAnalysisFeatureCount(layer);
+                        if (
+                            chooseAnalysisProvider(featureCount, pythonAvailable, nativePath, true) === 'python'
+                            && nativePath
+                        ) {
+                            close();
+                            const derived = await runWithTaskProgress('Filter (disk)', () =>
+                                filterAttributesLayerNative(layer, rules, logic)
+                            );
+                            if (!derived) return;
+                            addLayer(derived);
+                            mapService.addLayer(derived, getLayers().indexOf(derived), { fit: true });
+                            refreshUI();
+                            showToast(
+                                `Filtered ${featureCount.toLocaleString()} features on disk → ${derived.geojson?.features?.length ?? 0} preview`,
+                                'success'
+                            );
+                            return;
+                        }
+                    } catch (err) {
+                        /* fall through to in-memory filter */
+                    }
+
                     const sourceFeatures = layer._preFilterSnapshot
                         ? JSON.parse(JSON.stringify(layer._preFilterSnapshot)).features
                         : getFeatures();
@@ -3086,6 +3251,12 @@ export async function deleteSelectedFeatures() {
     const remaining = layer.geojson.features.filter((_, i) => !selectedSet.has(i));
     saveSnapshot(layer.id, `Delete ${indices.length} feature(s)`, layer.geojson);
     layer.geojson = { type: 'FeatureCollection', features: remaining };
+    try {
+        const { markLayerEditsDirty } = await import('../library/desktop-analysis.js');
+        markLayerEditsDirty(layer);
+    } catch {
+        /* optional */
+    }
 
     layer.schema = analyzeSchema(layer.geojson);
     bus.emit('layer:updated', layer);
@@ -5154,6 +5325,32 @@ export function fixAGOL() {
     showToast('AGOL fixes applied', 'success');
 }
 
+/**
+ * Save viewport/selection GeoJSON edits back to Local GIS Library (GPKG by default).
+ * @param {string} [layerId]
+ */
+export async function saveLayerEditsToLibrary(layerId) {
+    const layer = layerId
+        ? getLayers().find((l) => l.id === layerId)
+        : getActiveLayer();
+    if (!layer?.geojson?.features?.length) {
+        return showToast('No editable features on this layer', 'warning');
+    }
+    try {
+        const { saveLayerEditsNative } = await import('../library/desktop-analysis.js');
+        await runWithTaskProgress('Save edits', () =>
+            saveLayerEditsNative(layer, {
+                format: 'gpkg',
+                displayName: `${layer.name || 'layer'}_edits`
+            })
+        );
+        showToast('Saved edits to Local GIS Library (GeoPackage)', 'success');
+        refreshUI();
+    } catch (e) {
+        showErrorToast(handleError(e, 'DesktopEdit', 'Save edits'));
+    }
+}
+
 // ============================
 // Rename Layer
 // ============================
@@ -5448,6 +5645,7 @@ const APP_ACTIONS = {
     moveLayerToIndex,
     toggleField, selectAllFields, filterFields,
     renameLayer, renameField,
+    saveLayerEditsToLibrary,
     addField,
     doExport,
     exportProjectKit,

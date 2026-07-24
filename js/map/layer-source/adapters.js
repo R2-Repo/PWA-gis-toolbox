@@ -26,14 +26,21 @@ export function resolveLibrarySourceKind(item) {
 export function geojsonPreviewDatasetFromItem(item, geojson) {
     const displayName = item?.displayName || item?.originalFilename || 'Library layer';
     const name = item?.previewOnly ? `${displayName} (library preview)` : displayName;
+    const analysisPath = item?.workingPath || item?.managedOriginalPath || item?.originalPath || null;
     return createSpatialDataset(name, geojson, {
         file: item?.originalFilename || displayName,
         format: item?.format || 'geojson',
         libraryItemId: item?.id,
         previewOnly: Boolean(item?.previewOnly),
         fullFeatureCount: item?.featureCount,
+        analysisPath,
+        workingPath: item?.workingPath || null,
+        managedOriginalPath: item?.managedOriginalPath || null,
+        originalPath: item?.originalPath || null,
+        nativePath: item?.originalPath || null,
+        displayMode: 'geojson-preview',
         importRoute: 'gis-library',
-        adapter: 'geojson-preview'
+        adapter: 'desktop-vector'
     });
 }
 
@@ -44,6 +51,7 @@ export function geojsonPreviewDatasetFromItem(item, geojson) {
 export function pmtilesDatasetFromItem(item) {
     const displayName = item?.displayName || item?.originalFilename || 'Library layer';
     const manifest = item?.manifest && typeof item.manifest === 'object' ? item.manifest : {};
+    const analysisPath = item?.workingPath || item?.managedOriginalPath || item?.originalPath || null;
     return createPmTilesLayer({
         name: `${displayName} (tiles)`,
         tilePath: item.tilePath,
@@ -52,7 +60,10 @@ export function pmtilesDatasetFromItem(item) {
         sourceLayer: manifest.tileSourceLayer || 'default',
         minZoom: manifest.tileMinZoom ?? 0,
         maxZoom: manifest.tileMaxZoom ?? 22,
-        featureCount: item.featureCount
+        featureCount: item.featureCount,
+        analysisPath,
+        workingPath: item?.workingPath || null,
+        nativePath: item?.originalPath || null
     });
 }
 

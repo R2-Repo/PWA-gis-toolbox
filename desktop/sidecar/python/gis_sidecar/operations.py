@@ -677,6 +677,93 @@ def op_nearest_join(request_id: str, input_data: Dict[str, Any]) -> Dict[str, An
     )
 
 
+def op_simplify_vector(request_id: str, input_data: Dict[str, Any]) -> Dict[str, Any]:
+    path = _require_path(input_data, "simplify_vector")
+    default_out = path.parent / f"{path.stem}_simplify.geojson"
+    output = _require_output_path(input_data, "simplify_vector", default_out)
+    tolerance = input_data.get("tolerance", 0.001)
+    return analysis_ops.simplify_vector(
+        path, output, request_id, tolerance=float(tolerance if tolerance is not None else 0.001)
+    )
+
+
+def op_dissolve_vector(request_id: str, input_data: Dict[str, Any]) -> Dict[str, Any]:
+    path = _require_path(input_data, "dissolve_vector")
+    default_out = path.parent / f"{path.stem}_dissolve.geojson"
+    output = _require_output_path(input_data, "dissolve_vector", default_out)
+    field = input_data.get("field")
+    return analysis_ops.dissolve_vector(
+        path, output, request_id, field=str(field) if field not in (None, "") else None
+    )
+
+
+def op_union_vector(request_id: str, input_data: Dict[str, Any]) -> Dict[str, Any]:
+    path = _require_path(input_data, "union_vector")
+    default_out = path.parent / f"{path.stem}_union.geojson"
+    output = _require_output_path(input_data, "union_vector", default_out)
+    return analysis_ops.union_vector(path, output, request_id)
+
+
+def op_explode_vector(request_id: str, input_data: Dict[str, Any]) -> Dict[str, Any]:
+    path = _require_path(input_data, "explode_vector")
+    default_out = path.parent / f"{path.stem}_explode.geojson"
+    output = _require_output_path(input_data, "explode_vector", default_out)
+    return analysis_ops.explode_vector(path, output, request_id)
+
+
+def op_sample_features(request_id: str, input_data: Dict[str, Any]) -> Dict[str, Any]:
+    path = _require_path(input_data, "sample_features")
+    default_out = path.parent / f"{path.stem}_sample.geojson"
+    output = _require_output_path(input_data, "sample_features", default_out)
+    count = input_data.get("count", 100)
+    return analysis_ops.sample_features_vector(
+        path, output, request_id, count=int(count if count is not None else 100)
+    )
+
+
+def op_filter_attributes(request_id: str, input_data: Dict[str, Any]) -> Dict[str, Any]:
+    path = _require_path(input_data, "filter_attributes")
+    default_out = path.parent / f"{path.stem}_attr_filter.geojson"
+    output = _require_output_path(input_data, "filter_attributes", default_out)
+    rules = input_data.get("rules") or []
+    if not isinstance(rules, list):
+        raise ValueError("filter_attributes rules must be an array")
+    return analysis_ops.filter_attributes(
+        path,
+        output,
+        request_id,
+        rules=rules,
+        logic=str(input_data.get("logic") or "AND"),
+    )
+
+
+def op_update_attributes(request_id: str, input_data: Dict[str, Any]) -> Dict[str, Any]:
+    path = _require_path(input_data, "update_attributes")
+    default_out = path.parent / f"{path.stem}_updated.geojson"
+    output = _require_output_path(input_data, "update_attributes", default_out)
+    updates = input_data.get("updates")
+    if not isinstance(updates, dict):
+        raise ValueError("update_attributes requires input.updates object")
+    where_field = input_data.get("whereField")
+    return analysis_ops.update_attributes(
+        path,
+        output,
+        request_id,
+        updates=updates,
+        where_field=str(where_field) if where_field not in (None, "") else None,
+        where_value=input_data.get("whereValue"),
+    )
+
+
+def op_save_vector(request_id: str, input_data: Dict[str, Any]) -> Dict[str, Any]:
+    path = _require_path(input_data, "save_vector")
+    fmt = str(input_data.get("format") or "geojson").lower()
+    suffix = ".geojson" if fmt == "geojson" else ".gpkg" if fmt in {"gpkg", "geopackage"} else ".parquet"
+    default_out = path.parent / f"{path.stem}_saved{suffix}"
+    output = _require_output_path(input_data, "save_vector", default_out)
+    return analysis_ops.save_vector(path, output, request_id, format=fmt)
+
+
 def op_convert_to_cog(request_id: str, input_data: Dict[str, Any]) -> Dict[str, Any]:
     """
     Convert a large GeoTIFF/raster to Cloud Optimized GeoTIFF + PNG overview.
@@ -713,6 +800,14 @@ OPERATION_HANDLERS: Dict[str, Handler] = {
     "reproject_vector": op_reproject_vector,
     "spatial_filter": op_spatial_filter,
     "nearest_join": op_nearest_join,
+    "simplify_vector": op_simplify_vector,
+    "dissolve_vector": op_dissolve_vector,
+    "union_vector": op_union_vector,
+    "explode_vector": op_explode_vector,
+    "sample_features": op_sample_features,
+    "filter_attributes": op_filter_attributes,
+    "update_attributes": op_update_attributes,
+    "save_vector": op_save_vector,
 }
 
 

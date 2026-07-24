@@ -166,9 +166,12 @@ export function createPmTilesLayer({
     sourceLayer = 'default',
     minZoom = 0,
     maxZoom = 22,
-    featureCount = null
+    featureCount = null,
+    analysisPath = null,
+    workingPath = null,
+    nativePath = null
 }) {
-    return {
+    const layer = {
         id: generateId(),
         name,
         type: 'pmtiles',
@@ -190,15 +193,93 @@ export function createPmTilesLayer({
             file: name,
             libraryItemId,
             adapter: 'pmtiles',
-            importRoute: 'gis-library'
+            importRoute: 'gis-library',
+            displayMode: 'pmtiles',
+            tilePath: String(tilePath || '').trim(),
+            analysisPath: analysisPath || workingPath || nativePath || null,
+            workingPath: workingPath || null,
+            nativePath: nativePath || null,
+            fullFeatureCount: featureCount
+        },
+        schema: {
+            fields: [],
+            geometryType: null,
+            featureCount: featureCount ?? 0,
+            crs: 'EPSG:4326'
         },
         ...DEFAULT_SCALE_RANGE
     };
+    return layer;
 }
 
 /** @param {object} layer */
 export function isPmTilesLayer(layer) {
     return layer?.type === 'pmtiles' || layer?.source?.format === 'pmtiles';
+}
+
+/**
+ * Desktop workstation layer: full data on disk; map uses tiles or bounded preview.
+ * @param {object} layer
+ */
+export function isDesktopVectorLayer(layer) {
+    if (!layer) return false;
+    if (isPmTilesLayer(layer)) return Boolean(layer.source?.analysisPath || layer.source?.workingPath || layer.source?.nativePath);
+    return Boolean(
+        layer.source?.analysisPath
+        || layer.source?.importRoute === 'desktop-path'
+        || layer.source?.adapter === 'desktop-vector'
+    );
+}
+
+/**
+ * UI badge for layer list: Preview | Tiles (full) | Library | ''
+ * @param {object} layer
+ * @returns {string}
+ */
+export function getDesktopLayerBadge(layer) {
+    if (!layer) return '';
+    if (layer.source?.dirty) return 'Dirty';
+    if (isPmTilesLayer(layer)) return 'Tiles (full)';
+    if (layer.source?.format === 'cog' || layer.source?.adapter === 'cog') return 'COG';
+    if (layer.source?.displayMode === 'pmtiles' || layer.source?.tilePath) return 'Tiles (full)';
+    if (layer.source?.previewOnly && (layer.source?.analysisPath || layer.source?.nativePath || layer.source?.libraryItemId)) {
+        return 'Preview';
+    }
+    if (layer.source?.libraryItemId || layer.source?.analysisPath) return 'Library';
+    return '';
+}
+
+/**
+ * Enrich createPmTilesLayer source with analysis path for dual-path tools.
+ * @param {object} layer - pmtiles layer
+ * @param {object} [paths]
+ */
+export function withDesktopAnalysisPaths(layer, paths = {}) {
+    if (!layer) return layer;
+    const analysisPath = paths.analysisPath
+        || paths.workingPath
+        || paths.managedOriginalPath
+        || paths.originalPath
+        || paths.nativePath
+        || layer.source?.analysisPath
+        || layer.source?.workingPath
+        || layer.source?.nativePath
+        || null;
+    layer.source = {
+        ...(layer.source || {}),
+        ...paths,
+        analysisPath,
+        adapter: layer.source?.adapter || (layer.type === 'pmtiles' ? 'pmtiles' : 'desktop-vector'),
+        fullFeatureCount: paths.fullFeatureCount
+            ?? layer.source?.fullFeatureCount
+            ?? layer.pmtiles?.featureCount
+            ?? layer.schema?.featureCount
+            ?? null
+    };
+    if (layer.schema && layer.source.fullFeatureCount != null) {
+        layer.schema = { ...layer.schema, featureCount: layer.source.fullFeatureCount };
+    }
+    return layer;
 }
 
 /**
@@ -273,6 +354,8 @@ export function isAnalyzableLayer(layer) {
 /** Feature/row count for UI labels — workspace layers use schema.featureCount, not in-memory geojson length. */
 export function getLayerFeatureCount(layer) {
     if (!layer) return 0;
+    const full = Number(layer.source?.fullFeatureCount);
+    if (Number.isFinite(full) && full > 0) return full;
     if (isWorkspaceLayer(layer)) {
         return layer.schema?.featureCount ?? 0;
     }
@@ -283,7 +366,9 @@ export function getLayerFeatureCount(layer) {
         return layer.geojson?.features?.length ?? layer.schema?.featureCount ?? 0;
     }
     if (layer.type === 'spatial') {
-        return layer.geojson?.features?.length ?? layer.schema?.featureCount ?? 0;
+        return layer.schema?.featureCount
+            ?? layer.geojson?.features?.length
+            ?? 0;
     }
     return layer.rows?.length ?? 0;
 }

@@ -65,6 +65,14 @@ describe('python sidecar', () => {
         expect(finalMsg.output.operations).toContain('spatial_filter');
         expect(finalMsg.output.operations).toContain('clip_vector');
         expect(finalMsg.output.operations).toContain('nearest_join');
+        expect(finalMsg.output.operations).toContain('simplify_vector');
+        expect(finalMsg.output.operations).toContain('dissolve_vector');
+        expect(finalMsg.output.operations).toContain('union_vector');
+        expect(finalMsg.output.operations).toContain('explode_vector');
+        expect(finalMsg.output.operations).toContain('sample_features');
+        expect(finalMsg.output.operations).toContain('filter_attributes');
+        expect(finalMsg.output.operations).toContain('update_attributes');
+        expect(finalMsg.output.operations).toContain('save_vector');
         expect(finalMsg.output.operations).toContain('convert_to_cog');
         expect(finalMsg.output.engines).toBeTruthy();
         expect(finalMsg.output.version).toMatch(/^0\./);

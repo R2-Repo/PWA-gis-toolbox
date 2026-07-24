@@ -21,6 +21,14 @@ const ALLOWED_OPS: &[&str] = &[
     "reproject_vector",
     "spatial_filter",
     "nearest_join",
+    "simplify_vector",
+    "dissolve_vector",
+    "union_vector",
+    "explode_vector",
+    "sample_features",
+    "filter_attributes",
+    "update_attributes",
+    "save_vector",
 ];
 
 #[derive(Debug, Deserialize)]
@@ -78,6 +86,14 @@ fn validate_operation(operation: &str, input: &Value) -> Result<(), String> {
             | "reproject_vector"
             | "spatial_filter"
             | "nearest_join"
+            | "simplify_vector"
+            | "dissolve_vector"
+            | "union_vector"
+            | "explode_vector"
+            | "sample_features"
+            | "filter_attributes"
+            | "update_attributes"
+            | "save_vector"
     ) {
         let path = input
             .get("path")
@@ -117,6 +133,25 @@ fn validate_operation(operation: &str, input: &Value) -> Result<(), String> {
             || input.get("areaGeojson").is_some();
         if !has_area {
             return Err("spatial_filter requires input.areaPath or input.areaGeojson".into());
+        }
+    }
+    if operation == "sample_features" {
+        if input.get("count").and_then(|v| v.as_i64()).is_none()
+            && input.get("count").and_then(|v| v.as_f64()).is_none()
+        {
+            return Err("sample_features requires input.count".into());
+        }
+    }
+    if operation == "filter_attributes" {
+        let rules = input.get("rules").and_then(|v| v.as_array());
+        if rules.map(|r| r.is_empty()).unwrap_or(true) {
+            return Err("filter_attributes requires a non-empty input.rules array".into());
+        }
+    }
+    if operation == "update_attributes" {
+        let updates = input.get("updates").and_then(|v| v.as_object());
+        if updates.map(|u| u.is_empty()).unwrap_or(true) {
+            return Err("update_attributes requires a non-empty input.updates object".into());
         }
     }
     Ok(())

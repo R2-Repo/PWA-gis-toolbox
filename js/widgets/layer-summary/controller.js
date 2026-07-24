@@ -5,6 +5,11 @@ import { NATIVE_OPERATIONS } from '../../platform/jobs/allowed-operations.js';
 import { isTauriShellPresent } from '../../platform/create-platform.js';
 import { formatSummaryResult } from '../geojson-file-summary/engine.js';
 import {
+    resolveLayerNativePath,
+    getLayerAnalysisFeatureCount,
+    chooseAnalysisProvider
+} from '../../library/desktop-analysis.js';
+import {
     PYTHON_ACCEL_MIN_FEATURES,
     chooseSummaryProvider,
     providerLabel,
@@ -15,6 +20,7 @@ import {
 /**
  * Shared widget: summarize a workspace layer.
  * Uses JavaScript by default; optionally accelerates large layers via Python on Windows.
+ * Desktop path-backed layers prefer summarize_vector on analysisPath (no temp GeoJSON of preview).
  *
  * @param {import('../widget-types.js').WidgetContext} ctx
  */
@@ -38,8 +44,57 @@ export async function openLayerSummary(ctx) {
                 const layer = ctx.getLayers().find((entry) => entry.id === layerId);
                 if (!layer) throw new Error('Layer not found.');
 
+                const nativePath = resolveLayerNativePath(layer);
+                const analysisCount = getLayerAnalysisFeatureCount(layer);
+                const useNativePath = Boolean(
+                    nativePath
+                    && pythonAvailable
+                    && isTauriShellPresent()
+                    && preferPython !== false
+                    && chooseAnalysisProvider(analysisCount, true, nativePath, true) === 'python'
+                );
+
+                if (useNativePath) {
+                    onProgress?.({
+                        percent: 10,
+                        stage: 'provider',
+                        message: 'Using Python (disk path)'
+                    });
+                    onProgress?.({ percent: 30, stage: 'sidecar', message: 'Summarizing file on disk' });
+                    const raw = await ctx.services.compute.run(
+                        NATIVE_OPERATIONS.SUMMARIZE_VECTOR,
+                        { path: nativePath },
+                        { onProgress }
+                    );
+                    const summary = formatSummaryResult(raw || {});
+                    return {
+                        ...summary,
+                        provider: 'python',
+                        providerLabel: 'Python (disk path)',
+                        layerName: layer.name,
+                        featureCount: summary.featureCount ?? analysisCount
+                    };
+                }
+
                 const validation = validateLayerGeoJson(layer.geojson);
-                if (!validation.ok) throw new Error(validation.error);
+                if (!validation.ok) {
+                    if (nativePath && pythonAvailable && isTauriShellPresent()) {
+                        onProgress?.({ percent: 30, stage: 'sidecar', message: 'Summarizing file on disk' });
+                        const raw = await ctx.services.compute.run(
+                            NATIVE_OPERATIONS.SUMMARIZE_VECTOR,
+                            { path: nativePath },
+                            { onProgress }
+                        );
+                        const summary = formatSummaryResult(raw || {});
+                        return {
+                            ...summary,
+                            provider: 'python',
+                            providerLabel: 'Python (disk path)',
+                            layerName: layer.name
+                        };
+                    }
+                    throw new Error(validation.error);
+                }
 
                 const provider = chooseSummaryProvider(
                     validation.featureCount,

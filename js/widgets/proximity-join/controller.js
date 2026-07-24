@@ -99,9 +99,8 @@ export async function openProximityJoin(ctx) {
                     throw new Error(validation.errors[0]);
                 }
 
-                const featureCount = sourceLayer.geojson?.features?.length
-                    ?? sourceLayer.source?.fullFeatureCount
-                    ?? 0;
+                const { getLayerAnalysisFeatureCount } = await import('../../library/desktop-analysis.js');
+                const featureCount = getLayerAnalysisFeatureCount(sourceLayer);
                 const nativePath = resolveLayerNativePath(sourceLayer)
                     || resolveLayerNativePath(targetLayer);
                 const usePython = chooseAnalysisProvider(

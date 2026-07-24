@@ -20,14 +20,13 @@ export async function reprojectLayer(dataset, options = {}) {
         const {
             chooseAnalysisProvider,
             resolveLayerNativePath,
+            getLayerAnalysisFeatureCount,
             reprojectLayerNative,
             NATIVE_ANALYSIS_MIN_FEATURES
         } = await import('../library/desktop-analysis.js');
         const { platform } = getPlatformBundle();
         const pythonAvailable = hasCapability(platform, 'pythonCompute');
-        const featureCount = dataset.geojson?.features?.length
-            ?? dataset.source?.fullFeatureCount
-            ?? 0;
+        const featureCount = getLayerAnalysisFeatureCount(dataset);
         const nativePath = resolveLayerNativePath(dataset);
         const prefer = options.preferPython !== false;
         if (chooseAnalysisProvider(featureCount, pythonAvailable, nativePath, prefer) === 'python') {

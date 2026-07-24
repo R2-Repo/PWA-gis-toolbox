@@ -1,3 +1,4 @@
+use serde_json::{json, Value};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -41,6 +42,32 @@ pub fn write_temp_geojson(contents: String) -> Result<String, String> {
     fs::write(&path, contents.as_bytes())
         .map_err(|err| format!("Failed to write temp GeoJSON: {err}"))?;
     Ok(path.to_string_lossy().into_owned())
+}
+
+/// Lightweight file metadata for desktop path-backed imports.
+#[tauri::command]
+pub fn file_stat(path: String) -> Result<Value, String> {
+    if path.trim().is_empty() || path.contains("..") {
+        return Err("Invalid path".into());
+    }
+    let p = PathBuf::from(&path);
+    if !p.is_absolute() {
+        return Err("Path must be absolute".into());
+    }
+    let meta = fs::metadata(&p).map_err(|err| format!("stat failed: {err}"))?;
+    if !meta.is_file() {
+        return Err("Path is not a file".into());
+    }
+    let name = p
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("file")
+        .to_string();
+    Ok(json!({
+        "path": path,
+        "name": name,
+        "size": meta.len(),
+    }))
 }
 
 /// Delete a temp file previously created by write_temp_geojson.

@@ -31,7 +31,7 @@ use serde_json::{json, Value};
 use sidecar::{check_sidecar_health, SidecarState};
 use std::sync::Arc;
 use tauri::Manager;
-use temp_files::{remove_temp_file, write_temp_geojson};
+use temp_files::{file_stat, remove_temp_file, write_temp_geojson};
 
 #[tauri::command]
 fn platform_handshake(state: tauri::State<'_, SidecarState>) -> Value {
@@ -152,6 +152,7 @@ pub fn run() {
             reveal_in_explorer,
             write_temp_geojson,
             remove_temp_file,
+            file_stat,
             job_start,
             job_cancel,
             sidecar_health,

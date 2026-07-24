@@ -14,6 +14,14 @@ describe('desktop analysis dual-path', () => {
         expect(isKnownNativeOperation(NATIVE_OPERATIONS.REPROJECT_VECTOR)).toBe(true);
         expect(isKnownNativeOperation(NATIVE_OPERATIONS.SPATIAL_FILTER)).toBe(true);
         expect(isKnownNativeOperation(NATIVE_OPERATIONS.NEAREST_JOIN)).toBe(true);
+        expect(isKnownNativeOperation(NATIVE_OPERATIONS.SIMPLIFY_VECTOR)).toBe(true);
+        expect(isKnownNativeOperation(NATIVE_OPERATIONS.DISSOLVE_VECTOR)).toBe(true);
+        expect(isKnownNativeOperation(NATIVE_OPERATIONS.UNION_VECTOR)).toBe(true);
+        expect(isKnownNativeOperation(NATIVE_OPERATIONS.EXPLODE_VECTOR)).toBe(true);
+        expect(isKnownNativeOperation(NATIVE_OPERATIONS.SAMPLE_FEATURES)).toBe(true);
+        expect(isKnownNativeOperation(NATIVE_OPERATIONS.FILTER_ATTRIBUTES)).toBe(true);
+        expect(isKnownNativeOperation(NATIVE_OPERATIONS.UPDATE_ATTRIBUTES)).toBe(true);
+        expect(isKnownNativeOperation(NATIVE_OPERATIONS.SAVE_VECTOR)).toBe(true);
         expect(isKnownNativeOperation(NATIVE_OPERATIONS.CONVERT_TO_COG)).toBe(true);
     });
 
@@ -35,6 +43,11 @@ describe('desktop analysis dual-path', () => {
     it('resolves library disk paths from layer source', () => {
         expect(
             resolveLayerNativePath({
+                source: { analysisPath: 'C:/gis/work.parquet' }
+            })
+        ).toBe('C:/gis/work.parquet');
+        expect(
+            resolveLayerNativePath({
                 source: { workingPath: 'C:/gis/data.parquet' }
             })
         ).toBe('C:/gis/data.parquet');
@@ -44,5 +57,11 @@ describe('desktop analysis dual-path', () => {
             })
         ).toBe('C:/gis/orig.geojson');
         expect(resolveLayerNativePath({ geojson: { features: [] } })).toBe(null);
+        expect(
+            resolveLayerNativePath({
+                _isSelection: true,
+                source: { analysisPath: 'C:/gis/work.parquet' }
+            })
+        ).toBe(null);
     });
 });

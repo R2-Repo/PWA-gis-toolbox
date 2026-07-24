@@ -48,6 +48,7 @@
  * @property {(path: string) => Promise<void>} [revealInExplorer]
  * @property {(contents: string) => Promise<string>} [writeTempGeoJson]
  * @property {(path: string) => Promise<void>} [removeTempFile]
+ * @property {(path: string) => Promise<{ path: string, name: string, size: number }>} [stat]
  */
 
 /**

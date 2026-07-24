@@ -23,16 +23,14 @@ export function getNativeFilePath(file) {
 }
 
 /**
- * Desktop can use sidecar path import when native files + large-dataset processing are available.
+ * Desktop can path-route when the Windows shell has native files.
+ * (Sidecar is still required at import time for inspect/sample.)
  * @param {import('../platform/contracts.js').PlatformInfo|null|undefined} platform
  * @returns {boolean}
  */
 export function canUseDesktopPathImport(platform) {
     if (!platform || platform.runtime !== 'windows') return false;
-    return (
-        hasCapability(platform, 'nativeFiles') &&
-        hasCapability(platform, 'largeDatasetProcessing')
-    );
+    return hasCapability(platform, 'nativeFiles');
 }
 
 /**
@@ -55,12 +53,15 @@ export function exceedsBrowserImportStrongLimit(file, options = {}) {
  */
 export function shouldRouteFileViaDesktopPath(file, platform, options = {}) {
     if (!canUseDesktopPathImport(platform)) return false;
-    if (!exceedsBrowserImportStrongLimit(file, options)) return false;
-    return Boolean(getNativeFilePath(file));
+    const path = getNativeFilePath(file);
+    if (!path) return false;
+    // Path-backed native picks always go through disk import (no browser File bytes).
+    if (file?.__pathBacked) return true;
+    return exceedsBrowserImportStrongLimit(file, options);
 }
 
 /**
- * Partition files for openImportForFiles.
+ * Partition files for openImportForFiles / handleFileImport.
  * @param {File[]} files
  * @param {import('../platform/contracts.js').PlatformInfo|null|undefined} platform
  * @returns {{
@@ -76,16 +77,21 @@ export function classifyImportFiles(files, platform) {
     const desktopPath = canUseDesktopPathImport(platform);
 
     for (const file of files || []) {
-        if (!desktopPath || !exceedsBrowserImportStrongLimit(file)) {
+        if (!desktopPath) {
             memoryFiles.push(file);
             continue;
         }
+
         const path = getNativeFilePath(file);
-        if (path) {
+        if (path && (file?.__pathBacked || exceedsBrowserImportStrongLimit(file))) {
             pathFiles.push({ file, path });
-        } else {
-            blockedLargeNoPath.push(file);
+            continue;
         }
+        if (!path && exceedsBrowserImportStrongLimit(file)) {
+            blockedLargeNoPath.push(file);
+            continue;
+        }
+        memoryFiles.push(file);
     }
 
     return { memoryFiles, pathFiles, blockedLargeNoPath };

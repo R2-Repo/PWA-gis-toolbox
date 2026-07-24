@@ -22,7 +22,7 @@ import { classifyImportFiles } from './import-policy.js';
  * @returns {Promise<{ cancelled: boolean, check: ReturnType<typeof preflightFiles>, guardVersion: string }>}
  */
 export async function guardFilesBeforeImport(files, options = {}) {
-    const { memoryFiles, blockedLargeNoPath } = classifyImportFiles(files, options.platform);
+    const { memoryFiles, pathFiles, blockedLargeNoPath } = classifyImportFiles(files, options.platform);
 
     if (blockedLargeNoPath.length) {
         const names = blockedLargeNoPath.map((f) => f.name).join(', ');
@@ -34,16 +34,27 @@ export async function guardFilesBeforeImport(files, options = {}) {
         );
     }
 
-    const layerBudget = checkExistingLayerMemory(options.getLayers);
-    if (!layerBudget.ok) {
-        throw new AppError(
-            layerBudget.message,
-            ErrorCategory.OUT_OF_MEMORY,
-            { source: options.source, guardVersion: IMPORT_GUARD_VERSION }
-        );
+    // Path-routed desktop files skip browser layer-memory and size guards entirely.
+    if (pathFiles.length && !memoryFiles.length) {
+        return {
+            cancelled: false,
+            check: { reject: false, messages: [], level: 'ok', files: [] },
+            guardVersion: IMPORT_GUARD_VERSION
+        };
     }
 
-    // All files path-routed on desktop — skip browser size/memory rejects.
+    // Mixed batches: only enforce in-memory budgets against browser-path files.
+    if (!pathFiles.length) {
+        const layerBudget = checkExistingLayerMemory(options.getLayers);
+        if (!layerBudget.ok) {
+            throw new AppError(
+                layerBudget.message,
+                ErrorCategory.OUT_OF_MEMORY,
+                { source: options.source, guardVersion: IMPORT_GUARD_VERSION }
+            );
+        }
+    }
+
     if (!memoryFiles.length) {
         return {
             cancelled: false,

@@ -46,9 +46,8 @@ export async function openSpatialJoin(ctx) {
                     throw new Error(validation.errors[0]);
                 }
 
-                const featureCount = leftLayer.geojson?.features?.length
-                    ?? leftLayer.source?.fullFeatureCount
-                    ?? 0;
+                const { getLayerAnalysisFeatureCount } = await import('../../library/desktop-analysis.js');
+                const featureCount = getLayerAnalysisFeatureCount(leftLayer);
                 const nativePath = resolveLayerNativePath(leftLayer)
                     || resolveLayerNativePath(rightLayer);
                 const usePython = chooseAnalysisProvider(

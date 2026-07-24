@@ -75,10 +75,28 @@ describe('import-policy', () => {
         expect(classified.memoryFiles).toHaveLength(0);
     });
 
-    it('keeps small desktop files on the in-memory import path', () => {
+    it('keeps small desktop files on the in-memory import path unless path-backed', () => {
         const small = fakeFile('small.geojson', 1024, 'C:\\\\small.geojson');
         const classified = classifyImportFiles([small], desktopReady);
         expect(classified.memoryFiles).toHaveLength(1);
         expect(classified.pathFiles).toHaveLength(0);
+
+        const backed = fakeFile('small.geojson', 1024, 'C:\\\\small.geojson');
+        backed.__pathBacked = true;
+        const classifiedBacked = classifyImportFiles([backed], desktopReady);
+        expect(classifiedBacked.pathFiles).toHaveLength(1);
+        expect(classifiedBacked.memoryFiles).toHaveLength(0);
+    });
+
+    it('enables desktop path import with nativeFiles alone (no sidecar handshake required)', () => {
+        const desktopFilesOnly = {
+            runtime: 'windows',
+            os: 'windows',
+            capabilities: {
+                nativeFiles: { available: true },
+                largeDatasetProcessing: { available: false }
+            }
+        };
+        expect(canUseDesktopPathImport(desktopFilesOnly)).toBe(true);
     });
 });
