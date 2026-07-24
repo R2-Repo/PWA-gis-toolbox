@@ -14,7 +14,6 @@ import { openCrsManager } from './crs-manager/controller.js';
 import { openQuery } from './query/controller.js';
 import { openWirelessSitePlanning } from './wireless-site-planning/controller.js';
 import { openPresentationLinkBuilder } from './presentation-link-builder/controller.js';
-import { openGeoJsonFileSummary } from './geojson-file-summary/controller.js';
 import { openLayerSummary } from './layer-summary/controller.js';
 import logger from '../core/logger.js';
 import {
@@ -32,7 +31,7 @@ import { getPlatformBundle } from '../platform/create-platform.js';
  *
  * Optional metadata (defaults keep current web behavior):
  * - requiredCapabilities: hide widget when any capability is missing
- * - optionalCapabilities: available for accelerated Windows providers later
+ * - optionalCapabilities: reserved for future browser accelerators
  */
 export const GIS_WIDGETS = [
     {
@@ -40,9 +39,8 @@ export const GIS_WIDGETS = [
         action: 'openSpatialAnalyzer',
         label: 'Find Features in Area',
         icon: '🔎',
-        tip: 'Search for features from one layer that fall inside a drawn area or polygon layer. Uses Python on Windows for large or library layers when available.',
+        tip: 'Search for features from one layer that fall inside a drawn area or polygon layer.',
         requiredCapabilities: [],
-        optionalCapabilities: ['pythonCompute'],
         open: openSpatialAnalyzer
     },
     {
@@ -58,9 +56,8 @@ export const GIS_WIDGETS = [
         action: 'openProximityJoin',
         label: 'Proximity Join',
         icon: '↔️',
-        tip: 'Copy attributes from the nearest feature in a target layer to each source feature. Uses Python on Windows for large or library layers when available.',
+        tip: 'Copy attributes from the nearest feature in a target layer to each source feature.',
         requiredCapabilities: [],
-        optionalCapabilities: ['pythonCompute'],
         open: openProximityJoin
     },
     {
@@ -68,9 +65,8 @@ export const GIS_WIDGETS = [
         action: 'openSpatialJoin',
         label: 'Spatial Join',
         icon: '⧉',
-        tip: 'Join attributes by spatial relationship (within / intersects / contains). Uses Python on Windows for large or library layers when available.',
+        tip: 'Join attributes by spatial relationship (within / intersects / contains).',
         requiredCapabilities: [],
-        optionalCapabilities: ['pythonCompute'],
         open: openSpatialJoin
     },
     {
@@ -126,20 +122,9 @@ export const GIS_WIDGETS = [
         action: 'openLayerSummary',
         label: 'Layer Summary',
         icon: '📊',
-        tip: 'Summarize feature counts, geometry types, and fields for a map layer. Uses Python on Windows for large layers when available.',
+        tip: 'Summarize feature counts, geometry types, and fields for a map layer.',
         requiredCapabilities: [],
-        optionalCapabilities: ['pythonCompute'],
         open: openLayerSummary
-    },
-    {
-        type: 'geojson-file-summary',
-        action: 'openGeoJsonFileSummary',
-        label: 'GeoJSON File Summary',
-        icon: '📄',
-        tip: 'Desktop only: summarize a local GeoJSON file with the Python sidecar (feature counts, geometry types, fields).',
-        requiredCapabilities: ['pythonCompute', 'nativeFiles'],
-        optionalCapabilities: [],
-        open: openGeoJsonFileSummary
     }
 ];
 
@@ -161,9 +146,8 @@ export const GIS_WIDGETS_HIDDEN = [
         action: 'openCrsManager',
         label: 'CRS Manager',
         icon: '🌐',
-        tip: 'Audit layer coordinate systems, batch reproject to WGS 84, register custom WKT. Uses Python on Windows for large or library layers when available.',
+        tip: 'Audit layer coordinate systems, batch reproject to WGS 84, register custom WKT.',
         requiredCapabilities: [],
-        optionalCapabilities: ['pythonCompute'],
         open: openCrsManager
     },
     {

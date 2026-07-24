@@ -42,7 +42,6 @@ import {
     renameLayer,
     renameField,
     openFilterBuilder,
-    saveLayerEditsToLibrary,
     doExport,
     fixAGOL,
     showDataTable,
@@ -56,13 +55,8 @@ import {
     setPanelCollapsed,
     openPresentationLinkBuilderWidget,
     bootstrapAppFromUrl,
-    bootstrapDesktopPlatform,
-    addLibraryPreviewToMap,
-    addLibraryItemToMap
+    bootstrapDesktopPlatform
 } from '../js/tools/tool-handlers.js';
-import { showToast } from '../js/ui/toast.js';
-import { LocalGisLibraryPanel } from './library/LocalGisLibraryPanel.jsx';
-import { isGisLibraryAvailable } from '../js/library/gis-library.js';
 import { getAppUrlConfig } from '../js/url/app-url-detector.js';
 import { getActiveLayer } from '../js/core/state.js';
 import { isLayerVisibleAtScale } from '../js/map/scale-range.js';
@@ -79,36 +73,6 @@ import { mountToastHost } from './ui/mountToastHost.jsx';
 import { CollapsibleSection } from './ui/CollapsibleSection.jsx';
 import { isPresentationMode } from '../js/presentation/presentation-mode-detector.js';
 import { PresentationApp } from './presentation/PresentationApp.jsx';
-import { WorkspaceTabs } from './atlas/WorkspaceTabs.jsx';
-import { AtlasLeftPanel } from './atlas/AtlasLeftPanel.jsx';
-import { ChannelMonitorWorker } from './atlas/ChannelMonitorWorker.jsx';
-import { openChannelWorker } from '../js/atlas/worker-manager.js';
-import { AtlasRightPanel } from './atlas/AtlasRightPanel.jsx';
-import { AtlasImportDialog } from './atlas/AtlasImportDialog.jsx';
-import {
-    isAtlasAvailable,
-    getWorkspaceMode,
-    setWorkspaceMode,
-    restoreWorkspaceMode
-} from '../js/atlas/workspace.js';
-import {
-    openAtlasWorkspace,
-    selectAtlasEntity,
-    selectFindingEntity,
-    pingChannel,
-    pingDrop,
-    pingHub,
-    pingTargets,
-    runAreaQuery,
-    clearAreaResults,
-    startAtlasMonitor,
-    stopAtlasMonitor,
-    updateFindingStatus,
-    updateFindingNotes,
-    atlasCapabilities,
-    leaveAtlasMap
-} from '../js/atlas/controller.js';
-import { getAtlasSnapshot } from '../js/atlas/store.js';
 import { getPlatformBundle } from '../js/platform/create-platform.js';
 
 function SaveIndicator() {
@@ -187,125 +151,8 @@ function AppShell() {
     const [basemapTone, setBasemapTone] = useState(() => mapService.getBasemapTone?.() || { tint: 'default', opacity: 1 });
     const [dimension, setDimension] = useState('2d');
     const [popupMode, setPopupMode] = useState(() => mapService.getPopupMode?.() || 'full');
-    const [workspaceMode, setWorkspaceModeState] = useState(() => getWorkspaceMode());
-    const [atlasAvailable, setAtlasAvailable] = useState(() => isAtlasAvailable());
-    const [canAtlasPing, setCanAtlasPing] = useState(() => atlasCapabilities().canPing);
-    const [atlasImportOpen, setAtlasImportOpen] = useState(false);
-    const [atlasWorkers, setAtlasWorkers] = useState([]);
     const leftPanel = usePanelCollapse('left');
     const rightPanel = usePanelCollapse('right');
-
-    useEffect(() => {
-        const refreshCaps = () => {
-            setAtlasAvailable(isAtlasAvailable());
-            setCanAtlasPing(atlasCapabilities().canPing);
-            const mode = restoreWorkspaceMode();
-            setWorkspaceModeState(mode);
-            if (mode === 'atlas' && isAtlasAvailable()) {
-                void openAtlasWorkspace().catch((err) => {
-                    getPlatformBundle().services?.notifications?.show?.(
-                        err?.message || 'Failed to open Atlas database',
-                        'error'
-                    );
-                });
-            }
-        };
-        refreshCaps();
-        window.addEventListener('gis-platform-ready', refreshCaps);
-        const unsub = bus.on('workspace:mode', (mode) => setWorkspaceModeState(mode === 'atlas' ? 'atlas' : 'gis'));
-        return () => {
-            window.removeEventListener('gis-platform-ready', refreshCaps);
-            unsub?.();
-        };
-    }, []);
-
-    const enterAtlas = useCallback(async () => {
-        if (!isAtlasAvailable()) {
-            getPlatformBundle().services?.notifications?.show?.(
-                'Network Atlas requires the Windows desktop app',
-                'warning'
-            );
-            return;
-        }
-        setWorkspaceMode('atlas');
-        setWorkspaceModeState('atlas');
-        try {
-            await openAtlasWorkspace();
-        } catch (err) {
-            getPlatformBundle().services?.notifications?.show?.(
-                err?.message || 'Failed to open Atlas database',
-                'error'
-            );
-        }
-    }, []);
-
-    const leaveAtlas = useCallback(() => {
-        setWorkspaceMode('gis');
-        setWorkspaceModeState('gis');
-        leaveAtlasMap();
-    }, []);
-
-    const onWorkspaceTab = useCallback((mode) => {
-        if (mode === 'atlas') void enterAtlas();
-        else leaveAtlas();
-    }, [enterAtlas, leaveAtlas]);
-
-    const onNetworkAtlasHeader = useCallback(() => {
-        if (getWorkspaceMode() === 'atlas') leaveAtlas();
-        else void enterAtlas();
-    }, [enterAtlas, leaveAtlas]);
-
-    const onAtlasImported = useCallback((summary) => {
-        getPlatformBundle().services?.notifications?.show?.(
-            `Atlas import complete: ${summary?.counts?.drops ?? 0} drops, ${summary?.counts?.findings ?? 0} findings`,
-            'success'
-        );
-    }, []);
-
-    const onAreaFromDraw = useCallback(async () => {
-        try {
-            const bbox = await mapService.startRectangleDraw?.('Draw an area for Atlas query. Esc cancels.');
-            if (!bbox) return;
-            // map-manager returns [west, south, east, north]
-            let west;
-            let south;
-            let east;
-            let north;
-            if (Array.isArray(bbox) && bbox.length === 4 && typeof bbox[0] === 'number') {
-                [west, south, east, north] = bbox;
-            } else if (bbox?.west != null) {
-                ({ west, south, east, north } = bbox);
-            } else {
-                getPlatformBundle().services?.notifications?.show?.('Could not read drawn rectangle', 'warning');
-                return;
-            }
-            const geometry = {
-                type: 'Polygon',
-                coordinates: [[
-                    [west, south],
-                    [east, south],
-                    [east, north],
-                    [west, north],
-                    [west, south]
-                ]]
-            };
-            runAreaQuery(geometry);
-        } catch (err) {
-            getPlatformBundle().services?.notifications?.show?.(err?.message || 'Area query cancelled', 'info');
-        }
-    }, []);
-
-    const onAreaPolygon = useCallback(async () => {
-        try {
-            const geometry = await mapService.startSketchPolygon?.({
-                bannerText: 'Click vertices for Atlas area. Double-click to finish. Esc cancels.'
-            });
-            if (!geometry) return;
-            runAreaQuery(geometry);
-        } catch (err) {
-            getPlatformBundle().services?.notifications?.show?.(err?.message || 'Polygon query cancelled', 'info');
-        }
-    }, []);
 
     useEffect(() => {
         return bus.on('app-url:panel', (panel) => {
@@ -344,7 +191,6 @@ function AppShell() {
         groupSelectedLayers,
         exportLayerGroup,
         openFilterBuilder: (id) => openFilterBuilder(id),
-        saveLayerEditsToLibrary: (id) => saveLayerEditsToLibrary(id),
         toggleField,
         selectAllFields,
         addField,
@@ -437,9 +283,6 @@ function AppShell() {
                     onInfo={showToolInfo}
                     onExportMapView={exportMapView}
                     onPresentationLink={openPresentationLinkBuilderWidget}
-                    onNetworkAtlas={onNetworkAtlasHeader}
-                    showNetworkAtlas={atlasAvailable}
-                    networkAtlasActive={workspaceMode === 'atlas'}
                     getActiveLayer={getActiveLayer}
                     getSelectionCount={(layerId) => mapService.getSelectionCount(layerId)}
                     onDeleteSelected={deleteSelectedFeatures}
@@ -456,10 +299,10 @@ function AppShell() {
 
             <SaveIndicator />
 
-            <div className={`app-layout${workspaceMode === 'atlas' ? ' atlas-workspace-active' : ''}`}>
+            <div className="app-layout">
                 <aside className={`panel panel-left${leftPanel.collapsed ? ' collapsed' : ''}`}>
                     <div className="panel-header">
-                        <span>{workspaceMode === 'atlas' ? 'Network Atlas' : 'Layers & Fields'}</span>
+                        <span>Layers & Fields</span>
                         <button
                             type="button"
                             className="btn-icon"
@@ -470,63 +313,31 @@ function AppShell() {
                             {leftPanel.collapsed ? '▶' : '◀'}
                         </button>
                     </div>
-                    {workspaceMode === 'atlas' ? (
-                        <WorkspaceTabs
-                            mode={workspaceMode}
-                            atlasAvailable={atlasAvailable}
-                            onChange={onWorkspaceTab}
-                        />
-                    ) : null}
                     <div className="panel-body">
-                        {workspaceMode === 'atlas' ? (
-                            <AtlasLeftPanel
-                                onSelect={selectAtlasEntity}
-                                onOpenImport={() => setAtlasImportOpen(true)}
-                                onAddMapLayer={() => openImportFlow()}
-                                gisLayers={layersForPanel}
-                                onReorderGisLayer={(id, dir) => {
-                                    const idx = layersForPanel.findIndex((l) => l.id === id);
-                                    if (idx >= 0) moveLayerToIndex(id, idx + dir);
-                                }}
-                                onToggleGisLayer={(id) => toggleLayerVisibilityAndRender(id)}
+                        <CollapsibleSection title="Layers" bodyId="layer-list">
+                            <LayerListPanel
+                                layers={layersForPanel}
+                                layerGroups={layerGroups}
+                                activeLayerId={activeLayer?.id || null}
+                                actions={panelActions}
                             />
-                        ) : (
-                            <>
-                                {isGisLibraryAvailable() ? (
-                                    <CollapsibleSection title="Local GIS Library" bodyId="gis-library" defaultOpen={false}>
-                                        <LocalGisLibraryPanel
-                                            showToast={showToast}
-                                            onAddPreviewToMap={addLibraryPreviewToMap}
-                                            onAddItemToMap={addLibraryItemToMap}
-                                        />
-                                    </CollapsibleSection>
-                                ) : null}
-                                <CollapsibleSection title="Layers" bodyId="layer-list">
-                                    <LayerListPanel
-                                        layers={layersForPanel}
-                                        layerGroups={layerGroups}
-                                        activeLayerId={activeLayer?.id || null}
-                                        actions={panelActions}
-                                    />
-                                </CollapsibleSection>
-                                <CollapsibleSection title="Fields" bodyId="field-list" defaultOpen={false}>
-                                    <FieldListPanel
-                                        activeLayer={activeLayer}
-                                        fields={fields}
-                                        actions={panelActions}
-                                    />
-                                </CollapsibleSection>
-                                <div id="dataprep-tools">
-                                    <DataPrepToolsPanel
-                                        activeLayer={activeLayer}
-                                        hasLayers={layers.length > 0}
-                                        gisTools={(
-                                            <GisToolsPanel />
-                                        )}
-                                    />
-                                </div>
-                            </>
-                        )}
+                        </CollapsibleSection>
+                        <CollapsibleSection title="Fields" bodyId="field-list" defaultOpen={false}>
+                            <FieldListPanel
+                                activeLayer={activeLayer}
+                                fields={fields}
+                                actions={panelActions}
+                            />
+                        </CollapsibleSection>
+                        <div id="dataprep-tools">
+                            <DataPrepToolsPanel
+                                activeLayer={activeLayer}
+                                hasLayers={layers.length > 0}
+                                gisTools={(
+                                    <GisToolsPanel />
+                                )}
+                            />
+                        </div>
                     </div>
                 </aside>
 
@@ -562,77 +373,25 @@ function AppShell() {
                         >
                             {rightPanel.collapsed ? '◀' : '▶'}
                         </button>
-                        <span>{workspaceMode === 'atlas' ? 'Atlas Details' : 'Output & Export'}</span>
+                        <span>Output & Export</span>
                     </div>
-                    {workspaceMode === 'atlas' ? (
-                        <WorkspaceTabs
-                            mode={workspaceMode}
-                            atlasAvailable={atlasAvailable}
-                            onChange={onWorkspaceTab}
-                        />
-                    ) : null}
                     <div className="panel-right-body">
                         <div className="panel-body" id="output-panel-content">
-                            {workspaceMode === 'atlas' ? (
-                                <AtlasRightPanel
-                                    canPing={canAtlasPing}
-                                    onPingChannel={(id) => void pingChannel(id)}
-                                    onPingDrop={(id) => void pingDrop(id)}
-                                    onPingHub={(id, role) => void pingHub(id, role)}
-                                    onSelect={selectAtlasEntity}
-                                    onPingSelectedIps={(ips) => void pingTargets(ips)}
-                                    onStartMonitor={(opts) => startAtlasMonitor(opts)}
-                                    onStopMonitor={(id) => stopAtlasMonitor(id)}
-                                    onUpdateFinding={updateFindingStatus}
-                                    onUpdateFindingNotes={updateFindingNotes}
-                                    onAreaFromDraw={() => void onAreaFromDraw()}
-                                    onAreaPolygon={() => void onAreaPolygon()}
-                                    onClearArea={clearAreaResults}
-                                    onSelectFinding={selectFindingEntity}
-                                    onPopOutWorker={(channelNumber) => {
-                                        const w = openChannelWorker(channelNumber);
-                                        setAtlasWorkers((prev) => (prev.some((x) => x.id === w.id) ? prev : [...prev, w]));
-                                    }}
-                                />
-                            ) : (
-                                <RightPanel
-                                    snapshot={rightSnapshot}
-                                    onToggleAgol={onToggleAgol}
-                                    onExport={doExport}
-                                    onExportProjectKit={exportProjectKit}
-                                    onFixAgol={fixAGOL}
-                                    onShowDataTable={showDataTable}
-                                    onStyleChange={handleLayerStyleChange}
-                                    onScaleRangeChange={handleLayerScaleRangeChange}
-                                />
-                            )}
+                            <RightPanel
+                                snapshot={rightSnapshot}
+                                onToggleAgol={onToggleAgol}
+                                onExport={doExport}
+                                onExportProjectKit={exportProjectKit}
+                                onFixAgol={fixAGOL}
+                                onShowDataTable={showDataTable}
+                                onStyleChange={handleLayerStyleChange}
+                                onScaleRangeChange={handleLayerScaleRangeChange}
+                            />
                         </div>
                         <div id="widget-panel-dock" className="widget-panel-dock" aria-live="polite" />
                     </div>
                 </aside>
             </div>
-
-            <AtlasImportDialog
-                open={atlasImportOpen}
-                onClose={() => setAtlasImportOpen(false)}
-                onImported={onAtlasImported}
-            />
-
-            {atlasWorkers.map((w) => (
-                <ChannelMonitorWorker
-                    key={w.id}
-                    workerId={w.id}
-                    channelNumber={w.channelNumber}
-                    log={w.log || []}
-                    canPing={canAtlasPing}
-                    onClose={() => setAtlasWorkers((prev) => prev.filter((x) => x.id !== w.id))}
-                    onPingChannel={(chNum) => {
-                        const ch = getAtlasSnapshot().channels?.find((c) => c.channelNumber === chNum);
-                        if (ch) void pingChannel(ch.id);
-                    }}
-                    onStartMonitor={(opts) => startAtlasMonitor(opts)}
-                />
-            ))}
 
             <button
                 type="button"

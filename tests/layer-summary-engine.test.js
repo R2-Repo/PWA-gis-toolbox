@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-    PYTHON_ACCEL_MIN_FEATURES,
-    chooseSummaryProvider,
+    formatByteSize,
     providerLabel,
     summarizeFeatureCollection,
     validateLayerGeoJson
@@ -36,11 +35,8 @@ describe('layer-summary engine', () => {
         expect(summary.path).toBe('layer:Demo');
     });
 
-    it('chooses python only when available and above threshold', () => {
-        expect(chooseSummaryProvider(10, true, true)).toBe('javascript');
-        expect(chooseSummaryProvider(PYTHON_ACCEL_MIN_FEATURES, false, true)).toBe('javascript');
-        expect(chooseSummaryProvider(PYTHON_ACCEL_MIN_FEATURES, true, true)).toBe('python');
-        expect(chooseSummaryProvider(PYTHON_ACCEL_MIN_FEATURES, true, false)).toBe('javascript');
-        expect(providerLabel('python')).toMatch(/accelerated/i);
+    it('formats JavaScript provider output', () => {
+        expect(providerLabel('javascript')).toBe('JavaScript');
+        expect(formatByteSize(2048)).toBe('2.0 KB');
     });
 });

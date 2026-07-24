@@ -3,8 +3,7 @@ import {
     isSpatialLayer,
     isLiveVectorLayer,
     isServiceLayer,
-    getLayerFeatureCount,
-    getDesktopLayerBadge
+    getLayerFeatureCount
 } from '../../js/core/data-model.js';
 import { isLayerDisplayReady, layerCrsWarning } from '../../js/crs/layer-crs.js';
 import { buildLayerPanelRows, isGroupFullyVisible, isGroupPartiallyVisible } from '../../js/core/layer-groups.js';
@@ -104,26 +103,6 @@ function LayerItemRow({
                     >
                         {layer.name}
                     </div>
-                    {(() => {
-                        const badge = getDesktopLayerBadge(layer);
-                        if (!badge) return null;
-                        return (
-                            <span
-                                className="layer-filter-badge layer-desktop-badge"
-                                title={
-                                    badge === 'Tiles (full)'
-                                        ? 'Full layer on map via PMTiles; tools use the file on disk'
-                                        : badge === 'Preview'
-                                            ? 'Sample on map — full file is in the Local GIS Library for tools'
-                                            : badge === 'Dirty'
-                                                ? 'In-memory edits not saved — use Save edits to library'
-                                                : 'Registered in Local GIS Library'
-                                }
-                            >
-                                {badge}
-                            </span>
-                        );
-                    })()}
                     {layer._activeFilter ? (
                         <span
                             className="layer-filter-badge"
@@ -180,19 +159,6 @@ function LayerItemRow({
                         {count} · {fieldCount} fields {geomType ? <span className="badge badge-info">{geomType}</span> : null}
                     </div>
                     <div className="layer-actions">
-                        {(layer.source?.dirty || (layer.source?.analysisPath && layer.geojson?.features?.length)) ? (
-                            <button
-                                type="button"
-                                className="btn-icon"
-                                title="Save viewport/selection edits to Local GIS Library (GeoPackage)"
-                                onClick={(e) => {
-                                    e.stopPropagation();
-                                    actions.saveLayerEditsToLibrary?.(layer.id);
-                                }}
-                            >
-                                💾
-                            </button>
-                        ) : null}
                         <button
                             type="button"
                             className="btn-icon"

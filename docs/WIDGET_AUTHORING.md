@@ -173,7 +173,7 @@ Defined in `js/widgets/widget-types.js`:
 5. Cancel mid-flow — no stuck draw mode; map selection is always-on when idle (use `mapService.getSelectedIndices`, not local selection state)
 6. `npm test` still green
 
-> **Mobile:** viewports below 768px show `MobileGate` (splash only). Widget smoke is desktop/tablet only.
+> **Mobile:** viewports below 768px show `MobileGate` (splash only). Widget smoke is tablet-or-wider only.
 
 ---
 

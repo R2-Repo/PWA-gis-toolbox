@@ -14,13 +14,9 @@ This is separate from the **Route Centerline** GIS Widget, which uses public UDO
 
 ## API keys
 
-| Runtime | Key source |
-|---------|------------|
-| PWA / browser builds | App-owned **browser** key via `VITE_UGRC_API_KEY` (referrer-locked). No key popup on the PWA. |
-| Desktop | User pastes a personal key in **Info → UGRC API key…** (`localStorage` key `ugrc.apiKey`) |
-| Override | Saved user key (desktop) wins over the env key |
+The PWA uses an app-owned **browser** key via `VITE_UGRC_API_KEY` (referrer-locked). No key popup in the app.
 
-Create keys at [developer.mapserv.utah.gov](https://developer.mapserv.utah.gov). See [Getting started](https://api.mapserv.utah.gov/getting-started/) for browser vs desktop key types.
+Create keys at [developer.mapserv.utah.gov](https://developer.mapserv.utah.gov). See [Getting started](https://api.mapserv.utah.gov/getting-started/) for browser key setup.
 
 ### Cloudflare Pages (PWA deploy)
 
@@ -29,7 +25,7 @@ The public PWA is built and hosted on **Cloudflare Pages** (not GitHub Pages).
 1. Cloudflare Dashboard → **Workers & Pages** → your GIS Toolbox project  
 2. **Settings** → **Environment variables**  
 3. Add `VITE_UGRC_API_KEY` = your UGRC browser key  
-4. Apply to **Production** and **Preview** (preview builds from `staging` / PRs)  
+4. Apply to **Production** and **Preview** (preview builds from `staging`)  
 5. **Redeploy** the latest deployment (or push a new commit) so the variable is baked into the Vite build  
 
 Adding the variable alone does not update an already-built deploy — Cloudflare must rebuild.
@@ -48,16 +44,15 @@ Typical patterns for this app:
 2. Set `VITE_UGRC_API_KEY=…`
 3. Restart `npm run dev`
 
-Do **not** commit real keys. The old GitHub secret `VITE_UGRC_API_KEY` is unused if you only deploy via Cloudflare.
+Do **not** commit real keys.
 
 ## Code map
 
 | Path | Role |
 |------|------|
 | `js/ugrc/client.js` | HTTP client + format helpers |
-| `js/ugrc/keys.js` | User / env key resolve |
+| `js/ugrc/keys.js` | Env key resolve |
 | `js/ugrc/lookup.js` | Toast + clipboard orchestration |
-| `react/tools/UgrcKeySettingsDialog.jsx` | Settings UI (desktop) |
 
 ## Roadmap (not in v1)
 
@@ -65,4 +60,4 @@ Do **not** commit real keys. The old GitHub secret `VITE_UGRC_API_KEY` is unused
 - Coord-search marker popup action
 - Reverse address geocode
 - Forward route/milepost geocode
-- Optional Cloudflare Worker proxy if desktop key friction becomes painful
+- Optional Cloudflare Worker proxy if key friction becomes painful

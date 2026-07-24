@@ -1,6 +1,5 @@
 /**
  * Unified pre-import guard — size checks and memory budget before heavy parse work.
- * Desktop path-routed files should be filtered out before calling this (see import-policy.js).
  */
 import { AppError, ErrorCategory } from '../core/error-handler.js';
 import { preflightFiles } from './import-preflight.js';
@@ -27,14 +26,13 @@ export async function guardFilesBeforeImport(files, options = {}) {
     if (blockedLargeNoPath.length) {
         const names = blockedLargeNoPath.map((f) => f.name).join(', ');
         throw new AppError(
-            `${names}: too large for in-memory import and no filesystem path is available. ` +
-            'On the desktop app, drag from Explorer or use a native Open dialog so the file can be read from disk.',
+            `${names}: too large for in-memory import.`,
             ErrorCategory.OUT_OF_MEMORY,
             { files: blockedLargeNoPath.map((f) => f.name), source: options.source, guardVersion: IMPORT_GUARD_VERSION }
         );
     }
 
-    // Path-routed desktop files skip browser layer-memory and size guards entirely.
+    // Reserved for alternate import policies; the web policy keeps this empty.
     if (pathFiles.length && !memoryFiles.length) {
         return {
             cancelled: false,
@@ -43,7 +41,7 @@ export async function guardFilesBeforeImport(files, options = {}) {
         };
     }
 
-    // Mixed batches: only enforce in-memory budgets against browser-path files.
+    // Only enforce layer-memory budgets against in-memory files.
     if (!pathFiles.length) {
         const layerBudget = checkExistingLayerMemory(options.getLayers);
         if (!layerBudget.ok) {

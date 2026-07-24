@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GIS Toolbox — Map (Dual Screen)</title>
+    <meta name="robots" content="noindex">
+    <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" crossorigin="anonymous">
+    <link rel="icon" type="image/png" href="icons/favicon.png">
+  <script type="module" crossorigin src="./assets/mapWindow-DGWFK62M.js"></script>
+  <link rel="modulepreload" crossorigin href="./assets/react-vendor-DLNZdlO5.js">
+  <link rel="modulepreload" crossorigin href="./assets/vendor-CuvXQQ5W.js">
+  <link rel="modulepreload" crossorigin href="./assets/app-domain-a2loz-yT.js">
+  <link rel="modulepreload" crossorigin href="./assets/map-layers-CL2o9mAy.js">
+  <link rel="stylesheet" crossorigin href="./assets/vendor-n_aH-omA.css">
+  <link rel="stylesheet" crossorigin href="./assets/mapWindow-C9TPECdS.css">
+</head>
+<body class="map-window-body">
+    <header class="map-window-header">
+        <span class="map-window-title">GIS-Toolbox.com — Dual Screen Map</span>
+        <div class="map-window-header-controls">
+            <div class="header-toggle" id="basemap-toggle"></div>
+            <div class="header-toggle" id="dimension-toggle">
+                <button type="button" class="header-toggle-option active" data-value="2d">2D</button>
+                <button type="button" class="header-toggle-option" data-value="3d">3D</button>
+            </div>
+            <div class="header-print-menu" id="map-print-menu">
+                <button type="button" class="btn btn-secondary btn-sm" id="btn-print-map" title="Download map as PNG, PDF, or orbit GIF">🖨️ Print ▾</button>
+                <div class="header-print-dropdown" id="map-print-dropdown">
+                    <button type="button" class="header-print-item" data-format="png">Download PNG</button>
+                    <button type="button" class="header-print-item" data-format="pdf">Download PDF</button>
+                    <button type="button" class="header-print-item" data-format="gif">Download Orbit GIF</button>
+                </div>
+            </div>
+            <button type="button" class="btn btn-secondary btn-sm" id="btn-exit-dual-screen">Exit Dual Screen</button>
+        </div>
+    </header>
+    <main class="map-window-main">
+        <div id="map-container"></div>
+    </main>
+    <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@turf/turf@7.1.0/turf.min.js"></script>
+</body>
+</html>

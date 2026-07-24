@@ -1,0 +1,1 @@
+import{ck as r}from"./app-domain-a2loz-yT.js";import{P as t}from"./PipelineEditor-B5YeUDbD.js";import"./vendor-CuvXQQ5W.js";import"./react-vendor-DLNZdlO5.js";function u(o,i={}){return r(o,t,i)}export{u as mountPipelineEditor};

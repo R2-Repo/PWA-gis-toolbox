@@ -3,7 +3,7 @@ import { JobCanceledError } from '../jobs/job-errors.js';
 
 /**
  * Web job service.
- * Native Python/GPU operations are rejected; optional local runners can be registered for tests.
+ * Optional local runners can be registered for tests and browser-safe work.
  *
  * @param {{ runners?: Record<string, (input: unknown, ctx: object) => Promise<unknown>> }} [opts]
  * @returns {import('../contracts.js').JobService}
@@ -17,7 +17,7 @@ export function createWebJobService(opts = {}) {
             if (!runner) {
                 throw new Error(
                     `Web job service cannot start "${operation}". ` +
-                    'Long-running native jobs require the Windows desktop application.'
+                    'No browser runner is registered for this operation.'
                 );
             }
 

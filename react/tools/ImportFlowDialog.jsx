@@ -32,8 +32,6 @@ import {
 
 import { isProjectKitFile } from '../../js/core/project-kit.js';
 
-import { getNativeFilePath } from '../../js/import/import-policy.js';
-
 import { ImportFieldSelector } from './ImportFieldSelector.jsx';
 
 import { ImportOptionCard } from './ImportOptionCard.jsx';
@@ -68,14 +66,7 @@ export function ImportFlowDialog({
 
     onAddCatalogLiveLayer,
 
-    desktopUdotFiber = null,
-
     onOptimizeImport,
-
-    /** When set, Local Files uses the native Open dialog (path-backed large imports). */
-    onPickLocalFiles = null,
-
-    desktopPathImportAvailable = false,
 
     hasActiveFence = false,
 
@@ -201,18 +192,11 @@ export function ImportFlowDialog({
 
         if (!files?.length) return;
 
-        const pathRoutable = desktopPathImportAvailable && files.every(
-            (f) => getNativeFilePath(f) || isProjectKitFile(f)
-        );
         const check = preflightFiles(files);
 
-        if (check.reject && !pathRoutable) {
+        if (check.reject) {
 
-            setError(
-                desktopPathImportAvailable
-                    ? `${check.messages.join(' ')} Use Local Files (native Open dialog) for large desktop imports.`
-                    : check.messages.join(' ')
-            );
+            setError(check.messages.join(' '));
 
             return;
 
@@ -358,21 +342,11 @@ export function ImportFlowDialog({
 
         if (files.length === 0) return;
 
-        // Desktop path import bypasses browser 6 MB text hard-reject.
-        const pathRoutable = desktopPathImportAvailable && files.every(
-            (f) => getNativeFilePath(f) || isProjectKitFile(f)
-        );
         const check = preflightFiles(files);
 
-        if (check.reject && !pathRoutable) {
+        if (check.reject) {
 
-            if (desktopPathImportAvailable) {
-                setError(
-                    `${check.messages.join(' ')} On desktop, click Local Files to use the native Open dialog (or drag from Explorer) so large files import from disk.`
-                );
-            } else {
-                setError(check.messages.join(' '));
-            }
+            setError(check.messages.join(' '));
 
             return;
 
@@ -393,19 +367,6 @@ export function ImportFlowDialog({
             return;
 
         }
-
-        // Path-backed desktop picks: no browser File bytes — skip scan/optimizer.
-        if (pathRoutable && files.some((f) => getNativeFilePath(f))) {
-            setFieldNames([]);
-            setSelectedFields([]);
-            setImportScans([]);
-            setRouteAssessment({ route: 'desktop-path', useWorkspace: false });
-            setReadyToImport(true);
-            setPreflight({ reject: false, messages: [], level: 'ok', files: [] });
-            return;
-        }
-
-
 
         const shouldPreScan = files.some((f) => {
 
@@ -739,8 +700,6 @@ export function ImportFlowDialog({
 
                     onAddCatalogLiveLayer={onAddCatalogLiveLayer}
 
-                    desktopUdotFiber={desktopUdotFiber}
-
                 />
 
             ) : null}
@@ -759,26 +718,11 @@ export function ImportFlowDialog({
 
                             title="Local Files"
 
-                            description={desktopPathImportAvailable
-                                ? 'Large files OK — opens native dialog (disk path import)'
-                                : 'GeoJSON, CSV, Excel, KML, Shapefile…'}
+                            description="GeoJSON, CSV, Excel, KML, Shapefile…"
 
                             className={localDragOver ? 'import-option-card--dragover' : ''}
 
-                            onClick={() => {
-                                if (onPickLocalFiles) {
-                                    void (async () => {
-                                        try {
-                                            const picked = await onPickLocalFiles();
-                                            if (picked?.length) void handleFiles(picked);
-                                        } catch (err) {
-                                            setError(err?.message || 'Could not open file dialog.');
-                                        }
-                                    })();
-                                    return;
-                                }
-                                fileInputRef.current?.click();
-                            }}
+                            onClick={() => fileInputRef.current?.click()}
 
                             onDragEnter={(e) => {
 

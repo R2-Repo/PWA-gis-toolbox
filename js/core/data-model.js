@@ -146,144 +146,13 @@ export function isServiceLayer(layer) {
     return layer?.type === 'service';
 }
 
-/**
- * Local PMTiles vector layer (desktop GIS Library). Empty geojson; map uses vector tiles.
- * @param {object} options
- * @param {string} options.name
- * @param {string} options.tilePath - absolute path under gis-library
- * @param {string} [options.libraryItemId]
- * @param {number[]|null} [options.bbox]
- * @param {string} [options.sourceLayer]
- * @param {number} [options.minZoom]
- * @param {number} [options.maxZoom]
- * @param {number} [options.featureCount]
- */
-export function createPmTilesLayer({
-    name,
-    tilePath,
-    libraryItemId = null,
-    bbox = null,
-    sourceLayer = 'default',
-    minZoom = 0,
-    maxZoom = 22,
-    featureCount = null,
-    analysisPath = null,
-    workingPath = null,
-    nativePath = null
-}) {
-    const layer = {
-        id: generateId(),
-        name,
-        type: 'pmtiles',
-        visible: true,
-        active: true,
-        created: new Date().toISOString(),
-        geojson: { type: 'FeatureCollection', features: [] },
-        pmtiles: {
-            path: String(tilePath || '').trim(),
-            sourceLayer: sourceLayer || 'default',
-            minZoom,
-            maxZoom,
-            bbox: Array.isArray(bbox) ? bbox : null,
-            libraryItemId,
-            featureCount
-        },
-        source: {
-            format: 'pmtiles',
-            file: name,
-            libraryItemId,
-            adapter: 'pmtiles',
-            importRoute: 'gis-library',
-            displayMode: 'pmtiles',
-            tilePath: String(tilePath || '').trim(),
-            analysisPath: analysisPath || workingPath || nativePath || null,
-            workingPath: workingPath || null,
-            nativePath: nativePath || null,
-            fullFeatureCount: featureCount
-        },
-        schema: {
-            fields: [],
-            geometryType: null,
-            featureCount: featureCount ?? 0,
-            crs: 'EPSG:4326'
-        },
-        ...DEFAULT_SCALE_RANGE
-    };
-    return layer;
-}
-
 /** @param {object} layer */
 export function isPmTilesLayer(layer) {
     return layer?.type === 'pmtiles' || layer?.source?.format === 'pmtiles';
 }
 
 /**
- * Desktop workstation layer: full data on disk; map uses tiles or bounded preview.
- * @param {object} layer
- */
-export function isDesktopVectorLayer(layer) {
-    if (!layer) return false;
-    if (isPmTilesLayer(layer)) return Boolean(layer.source?.analysisPath || layer.source?.workingPath || layer.source?.nativePath);
-    return Boolean(
-        layer.source?.analysisPath
-        || layer.source?.importRoute === 'desktop-path'
-        || layer.source?.adapter === 'desktop-vector'
-    );
-}
-
-/**
- * UI badge for layer list: Preview | Tiles (full) | Library | ''
- * @param {object} layer
- * @returns {string}
- */
-export function getDesktopLayerBadge(layer) {
-    if (!layer) return '';
-    if (layer.source?.dirty) return 'Dirty';
-    if (isPmTilesLayer(layer)) return 'Tiles (full)';
-    if (layer.source?.format === 'cog' || layer.source?.adapter === 'cog') return 'COG';
-    if (layer.source?.displayMode === 'pmtiles' || layer.source?.tilePath) return 'Tiles (full)';
-    if (layer.source?.previewOnly && (layer.source?.analysisPath || layer.source?.nativePath || layer.source?.libraryItemId)) {
-        return 'Preview';
-    }
-    if (layer.source?.libraryItemId || layer.source?.analysisPath) return 'Library';
-    return '';
-}
-
-/**
- * Enrich createPmTilesLayer source with analysis path for dual-path tools.
- * @param {object} layer - pmtiles layer
- * @param {object} [paths]
- */
-export function withDesktopAnalysisPaths(layer, paths = {}) {
-    if (!layer) return layer;
-    const analysisPath = paths.analysisPath
-        || paths.workingPath
-        || paths.managedOriginalPath
-        || paths.originalPath
-        || paths.nativePath
-        || layer.source?.analysisPath
-        || layer.source?.workingPath
-        || layer.source?.nativePath
-        || null;
-    layer.source = {
-        ...(layer.source || {}),
-        ...paths,
-        analysisPath,
-        adapter: layer.source?.adapter || (layer.type === 'pmtiles' ? 'pmtiles' : 'desktop-vector'),
-        fullFeatureCount: paths.fullFeatureCount
-            ?? layer.source?.fullFeatureCount
-            ?? layer.pmtiles?.featureCount
-            ?? layer.schema?.featureCount
-            ?? null
-    };
-    if (layer.schema && layer.source.fullFeatureCount != null) {
-        layer.schema = { ...layer.schema, featureCount: layer.source.fullFeatureCount };
-    }
-    return layer;
-}
-
-/**
- * Desktop COG / large raster layer — MapLibre image overview + disk COG path.
+ * COG / large raster layer — MapLibre image overview + disk COG path.
  * @param {object} opts
  */
 export function createCogLayer({
@@ -318,7 +187,7 @@ export function createCogLayer({
             file: name,
             libraryItemId,
             adapter: 'cog',
-            importRoute: 'gis-library',
+            importRoute: 'raster-cog',
             workingPath: cogPath || null,
             coverageType: 'raster',
             coverageRasters: rasters,

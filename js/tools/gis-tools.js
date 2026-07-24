@@ -31,33 +31,9 @@ function _requireDisplayReady(dataset, context) {
 
 /**
  * Buffer features by distance.
- * Desktop: large layers / library disk paths use the Python sidecar when available.
  */
 export async function bufferFeatures(dataset, distance, units = 'kilometers') {
     _requireDisplayReady(dataset, 'Buffer');
-
-    try {
-        const { getPlatformBundle } = await import('../platform/create-platform.js');
-        const { hasCapability } = await import('../platform/contracts.js');
-        const {
-            chooseAnalysisProvider,
-            resolveLayerNativePath,
-            getLayerAnalysisFeatureCount,
-            bufferLayerNative
-        } = await import('../library/desktop-analysis.js');
-        const { platform } = getPlatformBundle();
-        const pythonAvailable = hasCapability(platform, 'pythonCompute');
-        const featureCount = getLayerAnalysisFeatureCount(dataset);
-        const nativePath = resolveLayerNativePath(dataset);
-        if (chooseAnalysisProvider(featureCount, pythonAvailable, nativePath, true) === 'python') {
-            logger.info('GISTools', 'Buffer via Python sidecar', { count: featureCount, nativePath: Boolean(nativePath) });
-            return bufferLayerNative(dataset, distance, units);
-        }
-    } catch (err) {
-        logger.warn('GISTools', 'Native buffer unavailable — falling back to Turf', {
-            message: err?.message || String(err)
-        });
-    }
 
     if (typeof turf === 'undefined') throw new Error('Turf.js not loaded');
     if (dataset.geojson.features.length > LARGE_DATASET_WARNING) {
@@ -98,30 +74,6 @@ export async function bufferFeatures(dataset, distance, units = 'kilometers') {
  */
 export async function simplifyFeatures(dataset, tolerance = 0.001) {
     _requireDisplayReady(dataset, 'Simplify');
-
-    try {
-        const { getPlatformBundle } = await import('../platform/create-platform.js');
-        const { hasCapability } = await import('../platform/contracts.js');
-        const {
-            chooseAnalysisProvider,
-            resolveLayerNativePath,
-            getLayerAnalysisFeatureCount,
-            simplifyLayerNative
-        } = await import('../library/desktop-analysis.js');
-        const { platform } = getPlatformBundle();
-        const pythonAvailable = hasCapability(platform, 'pythonCompute');
-        const featureCount = getLayerAnalysisFeatureCount(dataset);
-        const nativePath = resolveLayerNativePath(dataset);
-        if (chooseAnalysisProvider(featureCount, pythonAvailable, nativePath, true) === 'python') {
-            logger.info('GISTools', 'Simplify via Python sidecar', { count: featureCount, nativePath: Boolean(nativePath) });
-            const datasetOut = await simplifyLayerNative(dataset, tolerance);
-            return { dataset: datasetOut, stats: { verticesBefore: null, verticesAfter: null, provider: 'python' } };
-        }
-    } catch (err) {
-        logger.warn('GISTools', 'Native simplify unavailable — falling back to Turf', {
-            message: err?.message || String(err)
-        });
-    }
 
     if (typeof turf === 'undefined') throw new Error('Turf.js not loaded');
 
@@ -165,33 +117,9 @@ export async function simplifyFeatures(dataset, tolerance = 0.001) {
 
 /**
  * Clip features to a bounding box or polygon.
- * Desktop: large layers / library disk paths use the Python sidecar when available.
  */
 export async function clipFeatures(dataset, clipGeometry) {
     _requireDisplayReady(dataset, 'Clip');
-
-    try {
-        const { getPlatformBundle } = await import('../platform/create-platform.js');
-        const { hasCapability } = await import('../platform/contracts.js');
-        const {
-            chooseAnalysisProvider,
-            resolveLayerNativePath,
-            getLayerAnalysisFeatureCount,
-            clipLayerNative
-        } = await import('../library/desktop-analysis.js');
-        const { platform } = getPlatformBundle();
-        const pythonAvailable = hasCapability(platform, 'pythonCompute');
-        const featureCount = getLayerAnalysisFeatureCount(dataset);
-        const nativePath = resolveLayerNativePath(dataset);
-        if (chooseAnalysisProvider(featureCount, pythonAvailable, nativePath, true) === 'python') {
-            logger.info('GISTools', 'Clip via Python sidecar', { count: featureCount, nativePath: Boolean(nativePath) });
-            return clipLayerNative(dataset, clipGeometry);
-        }
-    } catch (err) {
-        logger.warn('GISTools', 'Native clip unavailable — falling back to Turf', {
-            message: err?.message || String(err)
-        });
-    }
 
     if (typeof turf === 'undefined') throw new Error('Turf.js not loaded');
 
@@ -251,29 +179,6 @@ export async function clipFeatures(dataset, clipGeometry) {
  */
 export async function dissolveFeatures(dataset, field) {
     _requireDisplayReady(dataset, 'Dissolve');
-
-    try {
-        const { getPlatformBundle } = await import('../platform/create-platform.js');
-        const { hasCapability } = await import('../platform/contracts.js');
-        const {
-            chooseAnalysisProvider,
-            resolveLayerNativePath,
-            getLayerAnalysisFeatureCount,
-            dissolveLayerNative
-        } = await import('../library/desktop-analysis.js');
-        const { platform } = getPlatformBundle();
-        const pythonAvailable = hasCapability(platform, 'pythonCompute');
-        const featureCount = getLayerAnalysisFeatureCount(dataset);
-        const nativePath = resolveLayerNativePath(dataset);
-        if (chooseAnalysisProvider(featureCount, pythonAvailable, nativePath, true) === 'python') {
-            logger.info('GISTools', 'Dissolve via Python sidecar', { count: featureCount, nativePath: Boolean(nativePath) });
-            return dissolveLayerNative(dataset, field);
-        }
-    } catch (err) {
-        logger.warn('GISTools', 'Native dissolve unavailable — falling back to Turf', {
-            message: err?.message || String(err)
-        });
-    }
 
     if (typeof turf === 'undefined') throw new Error('Turf.js not loaded');
 
@@ -647,29 +552,6 @@ export function combineFeatures(dataset) {
 export async function unionFeatures(dataset) {
     _requireDisplayReady(dataset, 'Union');
 
-    try {
-        const { getPlatformBundle } = await import('../platform/create-platform.js');
-        const { hasCapability } = await import('../platform/contracts.js');
-        const {
-            chooseAnalysisProvider,
-            resolveLayerNativePath,
-            getLayerAnalysisFeatureCount,
-            unionLayerNative
-        } = await import('../library/desktop-analysis.js');
-        const { platform } = getPlatformBundle();
-        const pythonAvailable = hasCapability(platform, 'pythonCompute');
-        const featureCount = getLayerAnalysisFeatureCount(dataset);
-        const nativePath = resolveLayerNativePath(dataset);
-        if (chooseAnalysisProvider(featureCount, pythonAvailable, nativePath, true) === 'python') {
-            logger.info('GISTools', 'Union via Python sidecar', { count: featureCount, nativePath: Boolean(nativePath) });
-            return unionLayerNative(dataset);
-        }
-    } catch (err) {
-        logger.warn('GISTools', 'Native union unavailable — falling back to Turf', {
-            message: err?.message || String(err)
-        });
-    }
-
     if (typeof turf === 'undefined') throw new Error('Turf.js not loaded');
     const task = new TaskRunner('Union', 'GISTools');
     return task.run(async (t) => {
@@ -780,65 +662,6 @@ export function nearestNeighborAnalysis(dataset) {
 export async function spatialJoinPointsInPolygons(pointsDataset, polygonsDataset, joinFields = [], prefix = '') {
     _requireDisplayReady(pointsDataset, 'Spatial join');
     _requireDisplayReady(polygonsDataset, 'Spatial join');
-
-    try {
-        const { getPlatformBundle } = await import('../platform/create-platform.js');
-        const { hasCapability } = await import('../platform/contracts.js');
-        const {
-            chooseAnalysisProvider,
-            resolveLayerNativePath,
-            getLayerAnalysisFeatureCount,
-            spatialJoinLayersNative,
-            datasetFromAnalysisResult
-        } = await import('../library/desktop-analysis.js');
-        const { platform } = getPlatformBundle();
-        const pythonAvailable = hasCapability(platform, 'pythonCompute');
-        const featureCount = getLayerAnalysisFeatureCount(pointsDataset);
-        const nativePath = resolveLayerNativePath(pointsDataset)
-            || resolveLayerNativePath(polygonsDataset);
-        if (chooseAnalysisProvider(featureCount, pythonAvailable, nativePath, true) === 'python') {
-            logger.info('GISTools', 'Spatial join via Python sidecar', {
-                count: featureCount,
-                nativePath: Boolean(nativePath)
-            });
-            const raw = await spatialJoinLayersNative(pointsDataset, polygonsDataset, {
-                predicate: 'within'
-            });
-            const fc = raw?.geojson?.features?.length
-                ? raw.geojson
-                : raw?.previewGeojson;
-            if (fc?.type === 'FeatureCollection') {
-                // Map join_* props onto requested fields when specified
-                if (joinFields.length) {
-                    for (const f of fc.features) {
-                        const props = { ...(f.properties || {}) };
-                        for (const field of joinFields) {
-                            const key = prefix + field;
-                            if (props[key] == null && props[`join_${field}`] != null) {
-                                props[key] = props[`join_${field}`];
-                            }
-                        }
-                        f.properties = props;
-                    }
-                }
-                return createSpatialDataset(
-                    `${pointsDataset.name}_spatial_join`,
-                    fc,
-                    {
-                        format: 'derived',
-                        importRoute: 'desktop-analysis',
-                        nativeOutputPath: raw?.outputPath,
-                        fullFeatureCount: raw?.featureCount
-                    }
-                );
-            }
-            return datasetFromAnalysisResult(raw, `${pointsDataset.name}_spatial_join`);
-        }
-    } catch (err) {
-        logger.warn('GISTools', 'Native spatial join unavailable — falling back to Turf', {
-            message: err?.message || String(err)
-        });
-    }
 
     if (typeof turf === 'undefined') throw new Error('Turf.js not loaded');
 
@@ -1265,29 +1088,6 @@ export async function sampleFeatures(dataset, num) {
         throw new Error('Sample count must be a positive number');
     }
 
-    try {
-        const { getPlatformBundle } = await import('../platform/create-platform.js');
-        const { hasCapability } = await import('../platform/contracts.js');
-        const {
-            chooseAnalysisProvider,
-            resolveLayerNativePath,
-            getLayerAnalysisFeatureCount,
-            sampleLayerNative
-        } = await import('../library/desktop-analysis.js');
-        const { platform } = getPlatformBundle();
-        const pythonAvailable = hasCapability(platform, 'pythonCompute');
-        const featureCount = getLayerAnalysisFeatureCount(dataset);
-        const nativePath = resolveLayerNativePath(dataset);
-        if (chooseAnalysisProvider(featureCount, pythonAvailable, nativePath, true) === 'python') {
-            logger.info('GISTools', 'Sample via Python sidecar', { count: featureCount, nativePath: Boolean(nativePath) });
-            return sampleLayerNative(dataset, count);
-        }
-    } catch (err) {
-        logger.warn('GISTools', 'Native sample unavailable — falling back to Turf', {
-            message: err?.message || String(err)
-        });
-    }
-
     if (typeof turf === 'undefined') throw new Error('Turf.js not loaded');
 
     const features = dataset.geojson.features.filter((f) => f.geometry);
@@ -1305,29 +1105,6 @@ export async function sampleFeatures(dataset, num) {
  */
 export async function explodeFeatures(dataset) {
     _requireDisplayReady(dataset, 'Explode');
-
-    try {
-        const { getPlatformBundle } = await import('../platform/create-platform.js');
-        const { hasCapability } = await import('../platform/contracts.js');
-        const {
-            chooseAnalysisProvider,
-            resolveLayerNativePath,
-            getLayerAnalysisFeatureCount,
-            explodeLayerNative
-        } = await import('../library/desktop-analysis.js');
-        const { platform } = getPlatformBundle();
-        const pythonAvailable = hasCapability(platform, 'pythonCompute');
-        const featureCount = getLayerAnalysisFeatureCount(dataset);
-        const nativePath = resolveLayerNativePath(dataset);
-        if (chooseAnalysisProvider(featureCount, pythonAvailable, nativePath, true) === 'python') {
-            logger.info('GISTools', 'Explode via Python sidecar', { count: featureCount, nativePath: Boolean(nativePath) });
-            return explodeLayerNative(dataset);
-        }
-    } catch (err) {
-        logger.warn('GISTools', 'Native explode unavailable — falling back to Turf', {
-            message: err?.message || String(err)
-        });
-    }
 
     if (typeof turf === 'undefined') throw new Error('Turf.js not loaded');
 

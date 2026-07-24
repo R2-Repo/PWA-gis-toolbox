@@ -6,13 +6,8 @@ import { VitePWA } from 'vite-plugin-pwa';
 
 /**
  * Build targets:
- * - default / production / web → public PWA (service worker + offline)
- * - desktop → Windows shell frontend (no PWA registration)
- *
- * Outputs:
- * - npm run build           → dist/          (unchanged for existing Pages deploy)
- * - npm run build:web       → dist-web/
- * - npm run build:desktop   → dist-desktop/
+ * - default / production → public PWA → dist/
+ * - web → public PWA → dist-web/
  */
 
 /** Serve and copy repo-root pipelines/ (example JSON + manifest). */
@@ -158,51 +153,26 @@ function createPwaPlugin() {
 }
 
 export default defineConfig(({ mode }) => {
-  const isDesktop = mode === 'desktop';
-  const outDir = isDesktop
-    ? 'dist-desktop'
-    : (mode === 'web' ? 'dist-web' : 'dist');
-  const gisRuntime = isDesktop ? 'windows' : 'web';
-
-  const host = process.env.TAURI_DEV_HOST;
+  const outDir = mode === 'web' ? 'dist-web' : 'dist';
 
   return {
     base: './',
-    // Keep Rust errors visible when launched via `tauri dev`
-    clearScreen: false,
-    envPrefix: ['VITE_', 'TAURI_ENV_*'],
+    envPrefix: ['VITE_'],
     server: {
-      // Desktop uses 9417 (away from common Vite 5173/5174). Web/PWA stays on 5174.
-      port: isDesktop ? 9417 : 5174,
-      strictPort: true,
-      host: host || false,
-      hmr: host
-        ? {
-            protocol: 'ws',
-            host,
-            port: 1421
-          }
-        : undefined,
-      watch: {
-        ignored: ['**/src-tauri/**']
-      }
+      port: 5174,
+      strictPort: true
     },
     define: {
-      'import.meta.env.VITE_GIS_RUNTIME': JSON.stringify(gisRuntime)
+      'import.meta.env.VITE_GIS_RUNTIME': JSON.stringify('web')
     },
     plugins: [
       react(),
       pipelinesStaticPlugin(outDir),
-      // Desktop/Windows builds must not register a service worker or PWA install UI.
-      ...(isDesktop ? [] : [createPwaPlugin()])
+      createPwaPlugin()
     ],
     build: {
       outDir,
       emptyOutDir: true,
-      // When packaging inside Tauri, target a modern Chromium (WebView2 on Windows).
-      target: isDesktop || process.env.TAURI_ENV_PLATFORM === 'windows'
-        ? 'chrome105'
-        : undefined,
       rollupOptions: {
         input: {
           main: resolve(__dirname, 'index.html'),
@@ -215,4 +185,3 @@ export default defineConfig(({ mode }) => {
     }
   };
 });
-

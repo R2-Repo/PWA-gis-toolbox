@@ -5,12 +5,7 @@ import {
     listAvailableOptionalCapabilities
 } from '../js/platform/contracts.js';
 import { createWebPlatform } from '../js/platform/web/web-platform.js';
-import {
-    createPlatform,
-    isTauriShellPresent,
-    isWindowsDesktopRuntime
-} from '../js/platform/create-platform.js';
-import { createWindowsPlatform } from '../js/platform/windows/windows-platform.js';
+import { createPlatform, refreshPlatformBundle } from '../js/platform/create-platform.js';
 
 /**
  * Local mirror of registry filtering — avoids importing controllers that need DOM.
@@ -37,8 +32,6 @@ describe('platform contracts', () => {
     });
 
     it('createPlatform defaults to the web provider in Node/test', () => {
-        expect(isWindowsDesktopRuntime()).toBe(false);
-        expect(isTauriShellPresent()).toBe(false);
         const bundle = createPlatform();
         expect(bundle.platform.runtime).toBe('web');
         expect(bundle.services.compute).toBeTruthy();
@@ -47,13 +40,10 @@ describe('platform contracts', () => {
         expect(bundle.services.windows?.openMapWindow).toBeTypeOf('function');
     });
 
-    it('windows platform marks nativeFiles when Tauri globals are absent', () => {
-        const { platform, services } = createWindowsPlatform();
-        expect(platform.runtime).toBe('windows');
-        expect(platform.capabilities.nativeFiles.available).toBe(false);
-        expect(services.files.open).toBeTypeOf('function');
-        expect(services.files.revealInExplorer).toBeTypeOf('function');
-        expect(services.windows?.openMapWindow).toBeTypeOf('function');
+    it('refreshPlatformBundle keeps the web provider', async () => {
+        const bundle = await refreshPlatformBundle();
+        expect(bundle.platform.runtime).toBe('web');
+        expect(bundle.services.windows?.openMapWindow).toBeTypeOf('function');
     });
 
     it('keeps shared widgets visible when they require no special capabilities', () => {
@@ -70,38 +60,9 @@ describe('platform contracts', () => {
         expect(visible.map((w) => w.type)).toEqual(['spatial-analyzer', 'sheet-cutting']);
     });
 
-    it('web compute/job stubs reject unknown native operations', async () => {
+    it('web compute/job stubs reject unknown operations', async () => {
         const { services } = createWebPlatform();
-        await expect(services.compute.run('generate-contours', {})).rejects.toThrow(/Windows desktop/i);
-        await expect(services.jobs.start({ operation: 'generate-contours', input: {} })).rejects.toThrow(/Windows desktop/i);
-    });
-
-    it('exposes udotFiberDb on both platforms (web stub rejects)', async () => {
-        const web = createWebPlatform();
-        expect(web.services.udotFiberDb?.open).toBeTypeOf('function');
-        await expect(web.services.udotFiberDb.open()).rejects.toThrow(/Windows desktop/i);
-
-        const win = createWindowsPlatform();
-        expect(win.services.udotFiberDb?.open).toBeTypeOf('function');
-        expect(win.services.udotFiberDb?.loadAllLayers).toBeTypeOf('function');
-    });
-
-    it('shows geojson-file-summary only when nativeFiles + pythonCompute are available', () => {
-        const required = ['pythonCompute', 'nativeFiles'];
-        const web = createWebPlatform().platform;
-        expect(hasRequiredCapabilities(web, required)).toBe(false);
-
-        const desktopReady = {
-            runtime: 'windows',
-            os: 'windows',
-            capabilities: {
-                nativeFiles: { available: true },
-                pythonCompute: { available: true, version: '0.1.0' }
-            }
-        };
-        expect(hasRequiredCapabilities(desktopReady, required)).toBe(true);
-        expect(filterVisible(web, [{ type: 'geojson-file-summary', requiredCapabilities: required }])).toEqual([]);
-        expect(filterVisible(desktopReady, [{ type: 'geojson-file-summary', requiredCapabilities: required }])
-            .map((w) => w.type)).toEqual(['geojson-file-summary']);
+        await expect(services.compute.run('generate-contours', {})).rejects.toThrow(/No browser implementation/i);
+        await expect(services.jobs.start({ operation: 'generate-contours', input: {} })).rejects.toThrow(/No browser runner/i);
     });
 });

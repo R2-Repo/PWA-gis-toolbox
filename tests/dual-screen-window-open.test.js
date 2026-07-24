@@ -6,8 +6,7 @@ import {
     isSecondaryMapWindowOpen,
     openSecondaryMapWindow,
     MAP_WINDOW_PATH,
-    MAP_WINDOW_NAME,
-    MAP_WEBVIEW_LABEL
+    MAP_WINDOW_NAME
 } from '../js/dual-screen/window-open.js';
 import { createWebWindowService } from '../js/platform/web/web-window-service.js';
 
@@ -83,8 +82,8 @@ describe('web window service', () => {
     });
 });
 
-describe('openSecondaryMapWindow (web platform)', () => {
-    it('uses the web window service in Node/test', async () => {
+describe('openSecondaryMapWindow', () => {
+    it('uses browser window.open in Node/test', async () => {
         const fakeWin = { closed: false, opener: window, focus: vi.fn(), close: vi.fn() };
         const openSpy = vi.spyOn(window, 'open').mockReturnValue(fakeWin);
         const handle = await openSecondaryMapWindow();
@@ -95,7 +94,6 @@ describe('openSecondaryMapWindow (web platform)', () => {
             MAP_WINDOW_NAME,
             expect.stringContaining('width=')
         );
-        expect(MAP_WEBVIEW_LABEL).toBe('map');
         openSpy.mockRestore();
     });
 });

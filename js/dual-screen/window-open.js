@@ -1,16 +1,9 @@
 /**
- * Dual Screen — open the secondary map window via the platform WindowService.
- *
- * Web/PWA: browser window.open (unchanged behavior).
- * Windows desktop: Tauri WebviewWindow (js/platform/windows/).
+ * Dual Screen — open the secondary map window with browser window.open.
  */
-
-import { getPlatformBundle } from '../platform/create-platform.js';
 
 export const MAP_WINDOW_NAME = 'gis-toolbox-map';
 export const MAP_WINDOW_PATH = 'map-window.html';
-/** Tauri webview label for the secondary map window. */
-export const MAP_WEBVIEW_LABEL = 'map';
 
 /**
  * @param {Pick<Screen, 'availWidth' | 'availHeight' | 'availLeft' | 'availTop'>} [screenLike]
@@ -58,26 +51,46 @@ export function isSecondaryMapWindowOpen(handle) {
 }
 
 /**
+ * @param {Window} win
+ * @returns {import('../platform/contracts.js').MapWindowHandle}
+ */
+function wrapBrowserWindow(win) {
+    return {
+        get closed() {
+            try {
+                return Boolean(win.closed);
+            } catch {
+                return true;
+            }
+        },
+        focus() {
+            try {
+                win.focus();
+            } catch {
+                /* ignore */
+            }
+        },
+        close() {
+            try {
+                win.close();
+            } catch {
+                /* ignore */
+            }
+        }
+    };
+}
+
+/**
  * Open (or reuse) the secondary map window for the active platform.
  * @returns {Promise<import('../platform/contracts.js').MapWindowHandle | null>}
  */
 export async function openSecondaryMapWindow() {
-    const bounds = buildMapWindowBounds();
     const features = buildMapWindowFeatures();
-    const windows = getPlatformBundle().services.windows;
-    if (!windows?.openMapWindow) return null;
-
     try {
-        return await windows.openMapWindow({
-            url: MAP_WINDOW_PATH,
-            name: MAP_WINDOW_NAME,
-            label: MAP_WEBVIEW_LABEL,
-            title: 'GIS Toolbox — Map',
-            features,
-            bounds
-        });
+        const win = window.open(MAP_WINDOW_PATH, MAP_WINDOW_NAME, features);
+        return win ? wrapBrowserWindow(win) : null;
     } catch (err) {
-        console.warn('[DualScreen] openMapWindow failed', err);
+        console.warn('[DualScreen] window.open failed', err);
         return null;
     }
 }

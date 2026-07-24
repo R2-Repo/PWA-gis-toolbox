@@ -68,6 +68,8 @@ Project rules live in `.cursor/rules/` and apply to every agent session:
 |------|---------|
 | `git-workflow.mdc` | Mandatory git workflow — always applied |
 | `project-core.mdc` | Project entry point and code standards |
+| `widget-authoring.mdc` | GIS Widget playbook pointers |
+| `fix-pwa.mdc` | PWA fix/update intent |
 
 Full agent instructions: [AGENTS.md](../AGENTS.md)
 
@@ -86,12 +88,10 @@ Full agent instructions: [AGENTS.md](../AGENTS.md)
 
 ## Deployment
 
-Workflows:
-
-| Workflow / host | Trigger | Result |
-|-----------------|---------|--------|
-| **Cloudflare Pages** | Push to `staging` / `main` (Git-connected project) | PWA preview / production deploy |
-| `promote-staging.yml` | Manual (Actions button) | Tests `staging`, merges into `main`, syncs `staging` |
+| Host / trigger | Result |
+|----------------|--------|
+| **Cloudflare Pages** — push to `staging` / `main` (Git-connected project) | PWA preview / production deploy |
+| `promote-staging.yml` — manual (Actions button) | Tests `staging`, merges into `main`, syncs `staging` |
 
 PWA hosting is **Cloudflare Pages**, not GitHub Pages. Repo helpers: [`wrangler.jsonc`](../wrangler.jsonc) (`pages_build_output_dir: ./dist`), [`public/_headers`](../public/_headers).
 
@@ -101,87 +101,19 @@ PWA hosting is **Cloudflare Pages**, not GitHub Pages. Repo helpers: [`wrangler.
 
 ```bash
 npm install
-npm run dev              # web/PWA dev server
-npm run build            # production web build → dist/ (Cloudflare Pages build output)
+npm run dev              # Vite dev server (port 5174)
+npm run build            # production build → dist/ (Cloudflare Pages output)
 npm run build:web        # explicit web build → dist-web/
-npm run build:desktop    # Windows frontend build → dist-desktop/ (no PWA SW)
-npm run dev:desktop:ui   # desktop Vite mode in a browser (port 9417; no Tauri window)
-npm run dev:desktop      # Tauri Windows shell + desktop Vite on port 9417 (requires Rust + Windows)
-                         # Or double-click Start-Desktop-Dev.bat (frees 9417 first, keeps window open)
-npm run build:desktop:app # package Windows installer via Tauri (Windows machine)
 npm test                 # run tests
+npm run preview          # preview production build locally
 ```
 
-### Dual runtime (PWA + Windows desktop)
+Platform contracts live in `js/platform/web/`. Widget controllers receive `ctx.platform` and `ctx.services` via `getWidgetContext()`.
 
-GIS Toolbox is one shared frontend with two build targets. See
-[`docs/PWA_DESKTOP_COMPAT.md`](PWA_DESKTOP_COMPAT.md) for the blast-radius matrix
-(what breaks what), and [`docs/PWA_DESKTOP_WORKFLOW_PLAN.md`](PWA_DESKTOP_WORKFLOW_PLAN.md)
-for architecture and packaging.
-
-**Agent shortcuts** (or type `/` in chat):
+### Agent shortcuts
 
 - “fix/update PWA” → `/fix-pwa`
-- “fix/update desktop” → `/fix-desktop`
-- “feature for both” → `/feature-both`
-- dual smoke → `/smoke-both`
-- cheap tests/docs QA → `/qa-both` (Composer `dual-runtime-qa`)
-- boundary + desktop security → `/platform-boundary`
 - after widget Build Plan → `/widget-scaffold`
-
-| Target | Command | Output |
-|--------|---------|--------|
-| Public PWA (existing deploy) | `npm run build` | `dist/` |
-| Explicit web | `npm run build:web` | `dist-web/` |
-| Windows shell frontend | `npm run build:desktop` | `dist-desktop/` |
-| Windows installed app | `npm run build:desktop:app` | installer under `src-tauri/target/` |
-
-Platform contracts live in `js/platform/`. Widget controllers receive `ctx.platform` and
-`ctx.services` via `getWidgetContext()`. Do not import Tauri APIs outside `js/platform/windows/`.
-
-The Tauri shell lives in `src-tauri/` (Windows 11 / WebView2). Day-to-day widget work still
-uses `npm run dev` in the browser. Use `npm run dev:desktop` on a Windows machine when you
-need the native window, file dialogs, or sidecar features.
-
-### Desktop jobs + Python sidecar
-
-Long-running native work uses `ctx.services.jobs` / `ctx.services.compute` with allow-listed
-operations (`echo`, `summarize_geojson`). The Python sidecar is under
-`desktop/sidecar/python/` (stdlib only for v0.1).
-
-```bash
-# Smoke the sidecar without Tauri
-cd desktop/sidecar/python
-printf '%s\n' '{"id":"1","op":"health","input":{}}' | python3 -m gis_sidecar
-```
-
-On Windows, package a frozen binary later with:
-
-`powershell -File desktop/scripts/package-sidecar-windows.ps1`
-
-### Desktop-only GIS Widget
-
-**GeoJSON File Summary** (`js/widgets/geojson-file-summary/`) appears in the GIS Widgets
-panel only when `pythonCompute` and `nativeFiles` capabilities are available (Windows
-desktop shell with a healthy Python sidecar). It is hidden in the public PWA.
-
-### Shared accelerated widget
-
-**Layer Summary** (`js/widgets/layer-summary/`) works in the public PWA and desktop app.
-It always has a JavaScript provider. On Windows, layers with ≥ 2,500 features can optionally
-use the Python sidecar (`optionalCapabilities: ['pythonCompute']`). The dialog shows
-**Mode: JavaScript** or **Mode: Python (accelerated)**.
-
-### Windows CI
-
-| Workflow | Trigger | Result |
-|----------|---------|--------|
-| `build-windows-preview.yml` | Push to `staging` | Tests + `build:desktop` + `cargo check` → Actions artifact |
-| `build-windows-release.yml` | Push to `main` (after Promote) | Tauri NSIS/MSI → GitHub Release |
-
-Web/PWA deploy is via **Cloudflare Pages** (Git-connected). Windows CI above is unchanged.
-
-**Git workflow is unchanged:** develop on `staging`, push for preview, Promote to Production for `main`.
 
 ## Planned features
 

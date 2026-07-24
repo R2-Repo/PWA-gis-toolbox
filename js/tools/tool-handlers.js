@@ -53,7 +53,6 @@ import { isPresentationMode } from '../presentation/presentation-mode-detector.j
 import { installDualScreenPrimaryHandlers } from '../dual-screen/primary-handlers.js';
 import {
     POPUP_BLOCKED_MESSAGE,
-    DESKTOP_MAP_WINDOW_FAILED_MESSAGE,
     RELOAD_REMINDER_MESSAGE,
     consumeDualScreenReloadReminder
 } from '../dual-screen/storage-hint.js';
@@ -103,7 +102,7 @@ import {
     restoreOpenWidget
 } from '../widgets/widget-state-store.js';
 import { createWidgetContext } from '../widgets/widget-context.js';
-import { getPlatformBundle, isTauriShellPresent, refreshPlatformBundle } from '../platform/create-platform.js';
+import { getPlatformBundle } from '../platform/create-platform.js';
 import { openImportStationTable } from '../widgets/project-stationing/controller.js';
 import { isProjectStationingCenterline } from '../widgets/project-stationing/route-profile.js';
 import { createWorkflowController } from '../workflow/workflow-controller.js';
@@ -1250,55 +1249,17 @@ function _openImportFlowModal(flowProps = {}) {
             const { listCatalogLiveLayers } = await import('../live-layers/catalog-schema.js');
             const { addCatalogLayerToMap } = await import('../live-layers/live-layer-bootstrap.js');
             const { getPlatformBundle } = await import('../platform/create-platform.js');
-            const { hasCapability } = await import('../platform/contracts.js');
             const platformBundle = getPlatformBundle({ showToast });
-            const desktopPathImportAvailable = platformBundle.platform?.runtime === 'windows'
-                && hasCapability(platformBundle.platform, 'nativeFiles');
-            const desktopUdotAvailable = hasCapability(platformBundle.platform, 'localSqlite')
-                && !!platformBundle.services?.udotFiberDb
-                && platformBundle.platform?.runtime === 'windows';
-
-            let udotSyncMeta = null;
-            if (desktopUdotAvailable) {
-                try {
-                    await platformBundle.services.udotFiberDb.open();
-                    udotSyncMeta = await platformBundle.services.udotFiberDb.getSyncMeta();
-                } catch {
-                    udotSyncMeta = null;
-                }
-            }
 
             const mounted = mountImportFlowDialog(root, {
                 onCancel: () => close(),
                 hasActiveFence: hasActiveImportFence(),
-                desktopPathImportAvailable,
-                onPickLocalFiles: desktopPathImportAvailable
-                    ? async () => {
-                        const { pickDesktopImportFiles } = await import('../import/desktop-path-files.js');
-                        return pickDesktopImportFiles(platformBundle.services.files);
-                    }
-                    : null,
                 onImportFiles: async (files, importOpts = {}, ui = {}) => {
-                    // Large / path-backed desktop files → sidecar path import (not 6 MB browser path).
                     const { classifyImportFiles } = await import('../import/import-policy.js');
-                    const { memoryFiles, pathFiles, blockedLargeNoPath } = classifyImportFiles(
+                    const { memoryFiles } = classifyImportFiles(
                         files,
                         platformBundle.platform
                     );
-                    if (blockedLargeNoPath.length) {
-                        const names = blockedLargeNoPath.map((f) => f.name).join(', ');
-                        throw new Error(
-                            `${names}: too large for in-memory import. Click Local Files to use the native Open dialog, or drag from Explorer.`
-                        );
-                    }
-                    if (pathFiles.length) {
-                        await _importDesktopPathPreviews(pathFiles, platformBundle.services);
-                        if (!memoryFiles.length) {
-                            ui.close?.();
-                            ui.onComplete?.();
-                            return;
-                        }
-                    }
                     if (!memoryFiles.length) return;
                     await handleFileImport(memoryFiles, _fenceBbox, {
                         preflightConfirmed: true,
@@ -1348,36 +1309,6 @@ function _openImportFlowModal(flowProps = {}) {
                         showErrorToast(handleError(error, 'Import', 'Add live layer'));
                     }
                 },
-                desktopUdotFiber: desktopUdotAvailable ? {
-                    available: true,
-                    busy: false,
-                    syncMeta: udotSyncMeta,
-                    onSync: async (force) => {
-                        try {
-                            const { syncUdotFiberDbIfStale } = await import('../symbology/udot-fiber/desktop-sync.js');
-                            showToast(force ? 'Force-syncing UDOT Fiber…' : 'Checking UDOT Fiber sync…', 'info');
-                            const result = await syncUdotFiberDbIfStale({ force: !!force });
-                            if (result.skipped) {
-                                showToast(`UDOT Fiber DB fresh (${result.reason})`, 'success');
-                            } else {
-                                showToast('UDOT Fiber Network synced to local DB', 'success');
-                            }
-                            close();
-                            _openImportFlowModal({ ...flowProps, initialLiveLayersView: true });
-                        } catch (error) {
-                            showErrorToast(handleError(error, 'Import', 'UDOT Fiber sync'));
-                        }
-                    },
-                    onLoadLocal: async () => {
-                        close();
-                        try {
-                            const { addUdotFiberFromLocalDb } = await import('../symbology/udot-fiber/map-loader.js');
-                            await addUdotFiberFromLocalDb({ mapService, showToast, refreshUI }, { syncFirst: false });
-                        } catch (error) {
-                            showErrorToast(handleError(error, 'Import', 'UDOT Fiber local load'));
-                        }
-                    }
-                } : null,
                 ...flowProps
             });
             watchOverlayUnmount(overlay, () => mounted.unmount?.());
@@ -1391,7 +1322,6 @@ function _openImportFlowModal(flowProps = {}) {
 
 /**
  * Shared entry for drag-drop, toolbar, and routed imports — guard + route before parse.
- * Desktop: large files with a filesystem path use sidecar inspect/sample preview (not full JS ingest).
  * @param {File[]} files
  * @param {Array|null} [fenceBbox]
  */
@@ -1422,19 +1352,7 @@ export async function openImportForFiles(files, fenceBbox = null) {
 
     try {
     const { classifyImportFiles } = await import('../import/import-policy.js');
-    const { memoryFiles, pathFiles, blockedLargeNoPath } = classifyImportFiles(dataFiles, platform);
-
-    if (blockedLargeNoPath.length) {
-        const names = blockedLargeNoPath.map((f) => f.name).join(', ');
-        showToast(
-            `${names}: too large for in-memory import. Drag from Explorer or use a native Open dialog.`,
-            'error'
-        );
-    }
-
-    if (pathFiles.length) {
-        await _importDesktopPathPreviews(pathFiles, services);
-    }
+    const { memoryFiles } = classifyImportFiles(dataFiles, platform);
 
     if (!memoryFiles.length) return;
 
@@ -1464,322 +1382,6 @@ export async function openImportForFiles(files, fenceBbox = null) {
     } catch (e) {
         const classified = handleError(e, 'Import', 'openImportForFiles');
         showErrorToast(classified);
-    }
-}
-
-/**
- * Add a Local GIS Library preview FeatureCollection to the map.
- * @param {object} item
- * @param {object} geojson
- * @returns {Promise<string[]>}
- */
-export async function addLibraryPreviewToMap(item, geojson) {
-    const { geojsonPreviewDatasetFromItem } = await import('../map/layer-source/adapters.js');
-    const dataset = geojsonPreviewDatasetFromItem(item, geojson);
-    const { ids } = await _addImportedDatasets([dataset], { useWorkspace: false });
-    if (ids.length) {
-        await mapService.scheduleFitToLayers(ids);
-    }
-    return ids;
-}
-
-/**
- * Add a library item using PMTiles when available, else preview GeoJSON.
- * @param {object} item
- */
-export async function addLibraryItemToMap(item) {
-    const { materializeLibraryMapDataset } = await import('../map/layer-source/adapters.js');
-    const dataset = await materializeLibraryMapDataset(item);
-    const { ids } = await _addImportedDatasets([dataset], { useWorkspace: false });
-    if (ids.length) {
-        await mapService.scheduleFitToLayers(ids);
-    }
-    return ids;
-}
-
-/**
- * @param {Array<{ file: File, path: string }>} pathFiles
- * @param {import('../platform/contracts.js').PlatformServices} services
- */
-async function _importDesktopPathPreviews(pathFiles, services) {
-    const { importVectorPreviewByPath } = await import('../import/desktop-path-import.js');
-    const progress = showProgressModal('Desktop path import');
-    const layerIds = [];
-    const abort = new AbortController();
-    let cancelled = false;
-
-    progress.onCancel(() => {
-        cancelled = true;
-        abort.abort();
-        progress.close();
-        showToast('Import cancelled', 'warning');
-    });
-
-    try {
-        for (let i = 0; i < pathFiles.length; i++) {
-            if (cancelled || abort.signal.aborted) break;
-            const { path, file } = pathFiles[i];
-            progress.update(
-                Math.round((i / pathFiles.length) * 100),
-                `Sampling ${file.name} from disk…`,
-                { fileName: file.name, fileIndex: i + 1, fileCount: pathFiles.length }
-            );
-
-            const ext = String(file.name || path).toLowerCase().split('.').pop();
-            const isRasterFile = ['tif', 'tiff', 'cog'].includes(ext);
-
-            let dataset = null;
-            let inspect = null;
-            let sample = null;
-            let libraryItem = null;
-
-            if (isRasterFile) {
-                progress.update(
-                    Math.round((i / pathFiles.length) * 100),
-                    `Converting ${file.name} → COG…`,
-                    { fileName: file.name, fileIndex: i + 1, fileCount: pathFiles.length }
-                );
-                const {
-                    isGisLibraryAvailable,
-                    ingestGisLibraryItem,
-                    optimizeGisLibraryItemToCog
-                } = await import('../library/gis-library.js');
-                const { cogDatasetFromItem } = await import('../map/layer-source/adapters.js');
-                if (isGisLibraryAvailable()) {
-                    const COPY_LIMIT = 500 * 1024 * 1024;
-                    const mode = (file.size || 0) > COPY_LIMIT ? 'link' : 'copy';
-                    libraryItem = await ingestGisLibraryItem({
-                        sourcePath: path,
-                        displayName: file.name,
-                        format: 'tif',
-                        featureCount: 0,
-                        sampledFeatureCount: 0,
-                        crsHint: 'EPSG:4326',
-                        byteSize: file.size,
-                        previewOnly: false,
-                        mode
-                    });
-                    const optimized = await optimizeGisLibraryItemToCog(libraryItem, {
-                        compute: services.compute,
-                        signal: abort.signal,
-                        onProgress: (p) => {
-                            if (cancelled) return;
-                            const base = (i / pathFiles.length) * 100;
-                            const slice = (1 / pathFiles.length) * (p?.percent ?? 0);
-                            progress.update(Math.min(99, Math.round(base + slice)), p?.message || 'COG…', {
-                                fileName: file.name,
-                                fileIndex: i + 1,
-                                fileCount: pathFiles.length
-                            });
-                        }
-                    });
-                    libraryItem = optimized || libraryItem;
-                    dataset = await cogDatasetFromItem(libraryItem);
-                } else {
-                    const { importRasterCogByPath } = await import('../import/desktop-path-import.js');
-                    const imported = await importRasterCogByPath(services.compute, path, {
-                        signal: abort.signal,
-                        onProgress: (p) => {
-                            if (cancelled) return;
-                            progress.update(p?.percent ?? 50, p?.message || 'COG…', {
-                                fileName: file.name,
-                                fileIndex: i + 1,
-                                fileCount: pathFiles.length
-                            });
-                        }
-                    });
-                    dataset = imported.dataset;
-                }
-            } else {
-                const imported = await importVectorPreviewByPath(services.compute, path, {
-                    signal: abort.signal,
-                    onProgress: (p) => {
-                        if (cancelled) return;
-                        const base = (i / pathFiles.length) * 100;
-                        const slice = (1 / pathFiles.length) * (p?.percent ?? 0);
-                        progress.update(Math.min(99, Math.round(base + slice)), p?.message || 'Sampling…', {
-                            fileName: file.name,
-                            fileIndex: i + 1,
-                            fileCount: pathFiles.length
-                        });
-                    }
-                });
-                dataset = imported.dataset;
-                inspect = imported.inspect;
-                sample = imported.sample;
-
-                try {
-                    const {
-                        isGisLibraryAvailable,
-                        ingestGisLibraryItem,
-                        optimizeGisLibraryItemToGeoParquet,
-                        generateGisLibraryPmTiles
-                    } = await import('../library/gis-library.js');
-                    const { attachDesktopLayerPaths } = await import('../library/desktop-analysis.js');
-                    const { pmtilesDatasetFromItem } = await import('../map/layer-source/adapters.js');
-                    if (isGisLibraryAvailable()) {
-                        progress.update(
-                            Math.min(99, Math.round(((i + 0.7) / pathFiles.length) * 100)),
-                            `Saving ${file.name} to Local GIS Library…`,
-                            { fileName: file.name, fileIndex: i + 1, fileCount: pathFiles.length }
-                        );
-                        const COPY_LIMIT = 500 * 1024 * 1024;
-                        const mode = (file.size || 0) > COPY_LIMIT ? 'link' : 'copy';
-                        libraryItem = await ingestGisLibraryItem({
-                            sourcePath: path,
-                            displayName: file.name,
-                            format: inspect?.format || 'geojson',
-                            featureCount: inspect?.featureCount ?? sample?.featureCount,
-                            sampledFeatureCount: sample?.sampledFeatureCount ?? dataset.geojson?.features?.length,
-                            geometryTypes: inspect?.geometryTypes || sample?.geometryTypes,
-                            propertyKeys: inspect?.propertyKeys || sample?.propertyKeys,
-                            bbox: inspect?.bbox || sample?.bbox,
-                            crsHint: inspect?.crsHint || 'EPSG:4326',
-                            byteSize: inspect?.byteSize ?? file.size,
-                            previewOnly: Boolean(dataset.source?.previewOnly ?? sample?.previewOnly),
-                            previewGeojson: JSON.stringify(dataset.geojson),
-                            mode
-                        });
-                        if (libraryItem?.id) {
-                            attachDesktopLayerPaths(dataset, {
-                                libraryItemId: libraryItem.id,
-                                nativePath: path,
-                                originalPath: libraryItem.originalPath || path,
-                                managedOriginalPath: libraryItem.managedOriginalPath || null,
-                                fullFeatureCount: libraryItem.featureCount
-                                    ?? dataset.source?.fullFeatureCount
-                                    ?? null,
-                                displayMode: 'geojson-preview'
-                            });
-                            dataset.source.libraryMode = mode;
-
-                            const { hasCapability } = await import('../platform/contracts.js');
-                            const { platform } = getPlatformBundle({ showToast });
-                            try {
-                                if (hasCapability(platform, 'duckdb')) {
-                                    progress.update(
-                                        Math.min(99, Math.round(((i + 0.82) / pathFiles.length) * 100)),
-                                        `Optimizing ${file.name} → GeoParquet…`,
-                                        { fileName: file.name, fileIndex: i + 1, fileCount: pathFiles.length }
-                                    );
-                                    const optimized = await optimizeGisLibraryItemToGeoParquet(libraryItem, {
-                                        compute: services.compute,
-                                        signal: abort.signal,
-                                        onProgress: (p) => {
-                                            if (cancelled) return;
-                                            progress.update(
-                                                Math.min(99, Math.round(((i + 0.82) / pathFiles.length) * 100 + (p?.percent || 0) * 0.05)),
-                                                p?.message || 'GeoParquet…',
-                                                { fileName: file.name, fileIndex: i + 1, fileCount: pathFiles.length }
-                                            );
-                                        }
-                                    });
-                                    if (optimized?.workingPath) {
-                                        libraryItem = optimized;
-                                        attachDesktopLayerPaths(dataset, {
-                                            workingPath: optimized.workingPath,
-                                            analysisPath: optimized.workingPath,
-                                            fullFeatureCount: optimized.featureCount
-                                                ?? dataset.source?.fullFeatureCount
-                                        });
-                                    }
-                                }
-                            } catch (optErr) {
-                                console.warn('GeoParquet optimize skipped:', optErr);
-                            }
-
-                            // Auto-create PMTiles so the map shows the full layer (QGIS-style).
-                            try {
-                                progress.update(
-                                    Math.min(99, Math.round(((i + 0.9) / pathFiles.length) * 100)),
-                                    `Creating map tiles for ${file.name}…`,
-                                    { fileName: file.name, fileIndex: i + 1, fileCount: pathFiles.length }
-                                );
-                                const tiled = await generateGisLibraryPmTiles(libraryItem, {
-                                    compute: services.compute,
-                                    signal: abort.signal,
-                                    onProgress: (p) => {
-                                        if (cancelled) return;
-                                        progress.update(
-                                            Math.min(99, Math.round(((i + 0.9) / pathFiles.length) * 100 + (p?.percent || 0) * 0.08)),
-                                            p?.message || 'Tiling…',
-                                            { fileName: file.name, fileIndex: i + 1, fileCount: pathFiles.length }
-                                        );
-                                    }
-                                });
-                                if (tiled?.tilePath) {
-                                    libraryItem = tiled;
-                                    dataset = pmtilesDatasetFromItem(tiled);
-                                    attachDesktopLayerPaths(dataset, {
-                                        libraryItemId: tiled.id,
-                                        workingPath: tiled.workingPath,
-                                        managedOriginalPath: tiled.managedOriginalPath,
-                                        originalPath: tiled.originalPath || path,
-                                        nativePath: path,
-                                        analysisPath: tiled.workingPath
-                                            || tiled.managedOriginalPath
-                                            || tiled.originalPath
-                                            || path,
-                                        fullFeatureCount: tiled.featureCount
-                                            ?? inspect?.featureCount
-                                            ?? null,
-                                        tilePath: tiled.tilePath,
-                                        displayMode: 'pmtiles'
-                                    });
-                                }
-                            } catch (tileErr) {
-                                console.warn('Auto PMTiles skipped:', tileErr);
-                            }
-                        }
-                    }
-                } catch (libErr) {
-                    console.warn('GIS Library ingest failed (preview still loaded):', libErr);
-                    showToast(
-                        `Preview loaded, but library save failed: ${libErr?.message || libErr}`,
-                        'warning'
-                    );
-                }
-            }
-
-            if (cancelled || abort.signal.aborted) break;
-            if (!dataset) throw new Error(`Failed to import ${file.name}`);
-
-            const { ids } = await _addImportedDatasets([dataset], { useWorkspace: false });
-            layerIds.push(...ids);
-
-            if (isRasterFile) {
-                const libNote = libraryItem?.id ? ' Saved to Local GIS Library.' : '';
-                showToast(`Loaded COG overview for ${file.name}.${libNote}`, 'success');
-            } else if (dataset?.type === 'pmtiles' || dataset?.source?.displayMode === 'pmtiles') {
-                const total = dataset.source?.fullFeatureCount ?? inspect?.featureCount;
-                showToast(
-                    `Full file in Library — map uses tiles${total != null ? ` (${Number(total).toLocaleString()} features)` : ''}; tools use disk.`,
-                    'success'
-                );
-            } else {
-                const total = inspect?.featureCount ?? dataset.source?.fullFeatureCount;
-                if (dataset.source?.previewOnly && total != null) {
-                    const libNote = libraryItem?.id ? ' Full file in Local GIS Library — create tiles for full map.' : '';
-                    showToast(
-                        `Loaded preview of ${file.name} (${dataset.geojson.features.length.toLocaleString()} of ${Number(total).toLocaleString()} features).${libNote}`,
-                        'info'
-                    );
-                } else if (libraryItem?.id) {
-                    showToast(`Saved ${file.name} to Local GIS Library`, 'success');
-                }
-            }
-        }
-
-        if (!cancelled && !abort.signal.aborted && layerIds.length) {
-            await mapService.scheduleFitToLayers(layerIds);
-        }
-    } catch (err) {
-        if (cancelled || abort.signal.aborted) return;
-        const { isJobCanceledError } = await import('../platform/jobs/job-errors.js');
-        if (isJobCanceledError(err)) return;
-        throw err;
-    } finally {
-        if (!cancelled) progress.close();
     }
 }
 
@@ -2152,10 +1754,7 @@ function setupDualScreenMode() {
         }
         const ok = await dualScreenCoordinator.activate();
         if (!ok) {
-            const msg = isTauriShellPresent()
-                ? DESKTOP_MAP_WINDOW_FAILED_MESSAGE
-                : POPUP_BLOCKED_MESSAGE;
-            showToast(msg, 'error', { duration: 8000 });
+            showToast(POPUP_BLOCKED_MESSAGE, 'error', { duration: 8000 });
         }
     };
 
@@ -2797,42 +2396,6 @@ export async function openFilterBuilder(targetLayerId) {
                     close();
                 },
                 onApply: async ({ rules, logic }) => {
-                    // Desktop path-backed layers: attribute filter on full file → derived layer.
-                    try {
-                        const { getPlatformBundle } = await import('../platform/create-platform.js');
-                        const { hasCapability } = await import('../platform/contracts.js');
-                        const {
-                            chooseAnalysisProvider,
-                            resolveLayerNativePath,
-                            getLayerAnalysisFeatureCount,
-                            filterAttributesLayerNative
-                        } = await import('../library/desktop-analysis.js');
-                        const { platform } = getPlatformBundle();
-                        const pythonAvailable = hasCapability(platform, 'pythonCompute');
-                        const nativePath = resolveLayerNativePath(layer);
-                        const featureCount = getLayerAnalysisFeatureCount(layer);
-                        if (
-                            chooseAnalysisProvider(featureCount, pythonAvailable, nativePath, true) === 'python'
-                            && nativePath
-                        ) {
-                            close();
-                            const derived = await runWithTaskProgress('Filter (disk)', () =>
-                                filterAttributesLayerNative(layer, rules, logic)
-                            );
-                            if (!derived) return;
-                            addLayer(derived);
-                            mapService.addLayer(derived, getLayers().indexOf(derived), { fit: true });
-                            refreshUI();
-                            showToast(
-                                `Filtered ${featureCount.toLocaleString()} features on disk → ${derived.geojson?.features?.length ?? 0} preview`,
-                                'success'
-                            );
-                            return;
-                        }
-                    } catch (err) {
-                        /* fall through to in-memory filter */
-                    }
-
                     const sourceFeatures = layer._preFilterSnapshot
                         ? JSON.parse(JSON.stringify(layer._preFilterSnapshot)).features
                         : getFeatures();
@@ -3049,15 +2612,13 @@ async function openReproject() {
             if (!root) return;
 
             const { mountReprojectDialog } = await import('../../react/tools/mountReprojectDialog.jsx');
-            const { hasCapability } = await import('../platform/contracts.js');
-            const { platform } = getPlatformBundle();
             const mounted = mountReprojectDialog(root, {
                 layerName: layer.name,
                 sourceCrs,
                 displayReady,
                 crsWarning,
                 sourceCrsError,
-                pythonAvailable: hasCapability(platform, 'pythonCompute'),
+                pythonAvailable: false,
                 onCancel: () => close(),
                 onApply: async ({ fromCrs, toCrs, name }) => {
                     close();
@@ -3251,12 +2812,6 @@ export async function deleteSelectedFeatures() {
     const remaining = layer.geojson.features.filter((_, i) => !selectedSet.has(i));
     saveSnapshot(layer.id, `Delete ${indices.length} feature(s)`, layer.geojson);
     layer.geojson = { type: 'FeatureCollection', features: remaining };
-    try {
-        const { markLayerEditsDirty } = await import('../library/desktop-analysis.js');
-        markLayerEditsDirty(layer);
-    } catch {
-        /* optional */
-    }
 
     layer.schema = analyzeSchema(layer.geojson);
     bus.emit('layer:updated', layer);
@@ -4447,47 +4002,10 @@ export function bootstrapAppFromUrl() {
     bootstrapAppUrl({ mapService, setPanelCollapsed });
 }
 
-/**
- * Refresh Windows capability handshake when running inside the Tauri shell.
- * Safe no-op in the public PWA / browser.
- */
+/** PWA cleanup: desktop bootstrapping is intentionally disabled. */
 export async function bootstrapDesktopPlatform() {
-    try {
-        await refreshPlatformBundle({ showToast });
-        // Background UDOT Fiber SQLite sync when stale (24h) — never blocks UI
-        void (async () => {
-            try {
-                const { platform, services } = getPlatformBundle({ showToast });
-                if (platform?.runtime !== 'windows' || !services?.udotFiberDb) return;
-                const { syncUdotFiberDbIfStale } = await import('../symbology/udot-fiber/desktop-sync.js');
-                const result = await syncUdotFiberDbIfStale({ force: false });
-                if (!result?.skipped) {
-                    logger.info('UDOTFiber', 'Background sync completed', result?.counts || {});
-                }
-            } catch (syncErr) {
-                logger.warn('UDOTFiber', 'Background sync skipped/failed', {
-                    message: syncErr?.message || String(syncErr)
-                });
-            }
-        })();
-        // Read-only Atlas → GIS layer bridge (keeps Atlas DB separate)
-        try {
-            const { startNetworkAtlasLayerBridge } = await import('../atlas/network-atlas-layer-adapter.js');
-            startNetworkAtlasLayerBridge({ mapService, refreshUI });
-        } catch (bridgeErr) {
-            logger.warn('Atlas', 'NetworkAtlasLayerAdapter not started', {
-                message: bridgeErr?.message || String(bridgeErr)
-            });
-        }
-    } catch (err) {
-        logger.warn('Platform', 'Desktop handshake failed', {
-            message: err?.message || String(err)
-        });
-    } finally {
-        // Let React panels re-read capability-gated widgets (e.g. desktop-only).
-        if (typeof window !== 'undefined') {
-            window.dispatchEvent(new CustomEvent('gis-platform-ready'));
-        }
+    if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('gis-platform-ready'));
     }
 }
 
@@ -5325,30 +4843,9 @@ export function fixAGOL() {
     showToast('AGOL fixes applied', 'success');
 }
 
-/**
- * Save viewport/selection GeoJSON edits back to Local GIS Library (GPKG by default).
- * @param {string} [layerId]
- */
-export async function saveLayerEditsToLibrary(layerId) {
-    const layer = layerId
-        ? getLayers().find((l) => l.id === layerId)
-        : getActiveLayer();
-    if (!layer?.geojson?.features?.length) {
-        return showToast('No editable features on this layer', 'warning');
-    }
-    try {
-        const { saveLayerEditsNative } = await import('../library/desktop-analysis.js');
-        await runWithTaskProgress('Save edits', () =>
-            saveLayerEditsNative(layer, {
-                format: 'gpkg',
-                displayName: `${layer.name || 'layer'}_edits`
-            })
-        );
-        showToast('Saved edits to Local GIS Library (GeoPackage)', 'success');
-        refreshUI();
-    } catch (e) {
-        showErrorToast(handleError(e, 'DesktopEdit', 'Save edits'));
-    }
+/** Removed from the PWA. Kept as a compatibility no-op for old action maps. */
+export async function saveLayerEditsToLibrary() {
+    showToast('Save edits to disk is unavailable in the PWA.', 'info');
 }
 
 // ============================
@@ -5588,12 +5085,7 @@ export function openUgrcKeySettings() {
 
 async function lookupRouteAndMilepostAt(latlng) {
     const { runReverseMilepostLookup } = await import('../ugrc/lookup.js');
-    const { isWindowsDesktopRuntime } = await import('../platform/create-platform.js');
     const deps = { showToast };
-    // Settings popup is desktop-only; PWA uses the build-time app key.
-    if (isWindowsDesktopRuntime()) {
-        deps.openSettings = () => openUgrcKeySettings();
-    }
     return runReverseMilepostLookup(latlng, deps);
 }
 
@@ -5606,12 +5098,8 @@ export function showToolInfo() {
             const root = overlay.querySelector(`#${rootId}`);
             if (!root) return;
             const { mountToolGuideDialog } = await import('../../react/tools/mountToolGuideDialog.jsx');
-            const { isWindowsDesktopRuntime } = await import('../platform/create-platform.js');
             const mounted = mountToolGuideDialog(root, {
-                showTitle: true,
-                onOpenUgrcSettings: isWindowsDesktopRuntime()
-                    ? () => { openUgrcKeySettings(); }
-                    : undefined
+                showTitle: true
             });
             watchOverlayUnmount(overlay, () => mounted.unmount?.());
         }
@@ -5645,7 +5133,6 @@ const APP_ACTIONS = {
     moveLayerToIndex,
     toggleField, selectAllFields, filterFields,
     renameLayer, renameField,
-    saveLayerEditsToLibrary,
     addField,
     doExport,
     exportProjectKit,

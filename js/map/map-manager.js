@@ -11,7 +11,6 @@ import {
     isServiceLayer,
     isPmTilesLayer
 } from '../core/data-model.js';
-import { ensurePmtilesProtocol, pmtilesMapUrl, registerLibraryPmTiles } from './pmtiles-protocol.js';
 import { getCoverageRasters, isCoverageRasterLayer } from '../core/coverage-raster-layer.js';
 import { MAP_CHUNK_BATCH_SIZE, RENDER_LIMITS } from './render-limits.js';
 import { buildViewportGeoJSON } from '../workspace/viewport-loader.js';
@@ -321,8 +320,6 @@ class MapManager {
             logger.error('Map', 'MapLibre GL JS not loaded');
             return;
         }
-
-        ensurePmtilesProtocol();
 
         const mapInit = isPresentationMode()
             ? resolvePresentationMapInit(getPresentationModeState().scene)
@@ -685,116 +682,16 @@ class MapManager {
     }
 
     /**
-     * Add a desktop Local GIS Library PMTiles vector layer (no full GeoJSON load).
+     * PMTiles disk layers were part of the removed desktop library path.
      * @param {object} dataset
      * @param {number} [colorIndex]
      * @param {{ fit?: boolean }} [options]
      */
     async addPmTilesLayer(dataset, colorIndex = 0, { fit = false } = {}) {
-        if (!this.map || !dataset?.pmtiles?.path) return;
-        this.removeLayer(dataset.id);
-
-        const diskPath = dataset.pmtiles.path;
-        await registerLibraryPmTiles(diskPath);
-
-        const defaultColor = LAYER_COLORS[colorIndex % LAYER_COLORS.length];
-        const stored = this._layerStyles.get(dataset.id);
-        let layerStyle = normalizeStyle(stored, defaultColor);
-        if (!stored) this._layerStyles.set(dataset.id, { ...layerStyle });
-
-        const styPoly = compilePaint(layerStyle, 'polygon');
-        const styLine = compilePaint(layerStyle, 'line');
-        const styPoint = compilePaint(layerStyle, 'point');
-
-        const sourceId = `src-${dataset.id}`;
-        const sourceLayer = dataset.pmtiles.sourceLayer || 'default';
-        const urlPath = String(diskPath).replace(/\\/g, '/');
-        this.map.addSource(sourceId, {
-            type: 'vector',
-            url: pmtilesMapUrl(urlPath),
-            minzoom: dataset.pmtiles.minZoom ?? 0,
-            maxzoom: dataset.pmtiles.maxZoom ?? 22
-        });
-
-        const layerIds = [];
-        const fillId = `${dataset.id}-fill`;
-        this.map.addLayer({
-            id: fillId,
-            type: 'fill',
-            source: sourceId,
-            'source-layer': sourceLayer,
-            filter: ['in', ['geometry-type'], ['literal', ['Polygon', 'MultiPolygon']]],
-            paint: { 'fill-color': styPoly.fillColor, 'fill-opacity': styPoly.fillOpacity }
-        });
-        layerIds.push(fillId);
-
-        const outlineId = `${dataset.id}-outline`;
-        this.map.addLayer({
-            id: outlineId,
-            type: 'line',
-            source: sourceId,
-            'source-layer': sourceLayer,
-            filter: ['in', ['geometry-type'], ['literal', ['Polygon', 'MultiPolygon', 'LineString', 'MultiLineString']]],
-            paint: {
-                'line-color': styLine.strokeColor || styPoly.strokeColor,
-                'line-width': styLine.strokeWidth ?? 1.5,
-                'line-opacity': styLine.strokeOpacity ?? 0.9
-            }
-        });
-        layerIds.push(outlineId);
-
-        const pointId = `${dataset.id}-circle`;
-        this.map.addLayer({
-            id: pointId,
-            type: 'circle',
-            source: sourceId,
-            'source-layer': sourceLayer,
-            filter: ['in', ['geometry-type'], ['literal', ['Point', 'MultiPoint']]],
-            paint: {
-                'circle-color': styPoint.fillColor || defaultColor,
-                'circle-radius': styPoint.radius ?? 4,
-                'circle-opacity': styPoint.fillOpacity ?? 0.9,
-                'circle-stroke-color': styPoint.strokeColor || '#ffffff',
-                'circle-stroke-width': styPoint.strokeWidth ?? 1
-            }
-        });
-        layerIds.push(pointId);
-
-        this.dataLayers.set(dataset.id, {
-            sourceId,
-            layerIds,
-            chunkSources: [{ sourceId, layerIds }],
+        logger.warn('Map', 'PMTiles disk layers are unavailable in the PWA', {
+            layer: dataset?.name,
             colorIndex,
-            geojson: { type: 'FeatureCollection', features: [] },
-            scaleRange: normalizeScaleRange(dataset),
-            pmtiles: true,
-            bounds: Array.isArray(dataset.pmtiles.bbox) && dataset.pmtiles.bbox.length === 4
-                ? dataset.pmtiles.bbox
-                : null
-        });
-        this._layerNames.set(dataset.id, dataset.name);
-        this._applyDatasetVisibility(dataset);
-        this._applyDatasetLock(dataset);
-
-        if (fit) {
-            const bb = this.dataLayers.get(dataset.id)?.bounds;
-            if (bb) {
-                try {
-                    this.map.fitBounds(
-                        [[bb[0], bb[1]], [bb[2], bb[3]]],
-                        { padding: 30, maxZoom: 16, duration: 0 }
-                    );
-                } catch {
-                    /* ignore bad bbox */
-                }
-            }
-        }
-
-        bus.emit('map:layerAdded', { id: dataset.id, name: dataset.name });
-        logger.info('Map', 'PMTiles layer added', {
-            layer: dataset.name,
-            path: urlPath,
-            featureCount: dataset.pmtiles.featureCount
+            fit
         });
     }
 

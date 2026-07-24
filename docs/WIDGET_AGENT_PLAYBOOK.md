@@ -206,7 +206,7 @@ Legacy import paths only — see `js/widgets/spatial-analyzer-engine.js`.
 
 ### Step 7 — Smoke test (browser)
 
-See checklist in [`WIDGET_AUTHORING.md`](WIDGET_AUTHORING.md). Run `npm run dev`, desktop/tablet viewport (mobile shows `MobileGate` only).
+See checklist in [`WIDGET_AUTHORING.md`](WIDGET_AUTHORING.md). Run `npm run dev`, tablet-or-wider viewport (mobile shows `MobileGate` only).
 
 ---
 

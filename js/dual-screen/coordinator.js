@@ -357,7 +357,7 @@ class DualScreenCoordinator {
                     const resolve = this._activateResolve;
                     this._activateResolve = null;
                     resolve?.(true);
-                    // Secondary is live; mirror GIS snapshot + notify Atlas overlays.
+                    // Secondary is live; mirror the GIS snapshot.
                     this._secondaryReady = true;
                     this.sendSnapshot();
                     bus.emit('dual-screen:secondary-ready');
@@ -366,17 +366,6 @@ class DualScreenCoordinator {
                 this._secondaryReady = true;
                 this.sendSnapshot();
                 bus.emit('dual-screen:secondary-ready');
-                break;
-            case MessageType.ATLAS_PICK:
-                if (msg.payload?.kind && msg.payload?.id) {
-                    bus.emit('atlas:pick', {
-                        kind: msg.payload.kind,
-                        id: String(msg.payload.id)
-                    });
-                }
-                break;
-            case MessageType.ATLAS_CLEAR:
-                bus.emit('atlas:clear-focus');
                 break;
             case MessageType.VIEWPORT:
                 if (msg.payload) {

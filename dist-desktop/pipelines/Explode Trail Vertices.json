@@ -1,0 +1,54 @@
+{
+  "_format": "gis-toolbox-workflow",
+  "version": 1,
+  "description": "Imports a trail line, explodes it into vertex points, then previews and adds the points to the map.",
+  "sampleData": {
+    "node-1": {
+      "type": "spatial",
+      "name": "Bonneville Shoreline Trail",
+      "geojson": {
+        "type": "FeatureCollection",
+        "features": [
+          {
+            "type": "Feature",
+            "geometry": {
+              "type": "LineString",
+              "coordinates": [
+                [-111.8550, 40.7520],
+                [-111.8480, 40.7545],
+                [-111.8410, 40.7580],
+                [-111.8340, 40.7610],
+                [-111.8270, 40.7640],
+                [-111.8200, 40.7670]
+              ]
+            },
+            "properties": { "trail_name": "Bonneville Shoreline Trail", "segment": "City Creek", "length_mi": 1.2 }
+          }
+        ]
+      },
+      "schema": {
+        "fields": [
+          { "name": "trail_name", "type": "string" },
+          { "name": "segment", "type": "string" },
+          { "name": "length_mi", "type": "number" }
+        ],
+        "geometryType": "LineString",
+        "featureCount": 1,
+        "crs": "EPSG:4326"
+      }
+    }
+  },
+  "pipeline": {
+    "nodes": [
+      { "id": "node-1", "type": "file-import", "position": { "x": 80, "y": 200 }, "config": { "fileName": "Bonneville Shoreline Trail.geojson" }, "comment": "Loads a trail line with 6 vertices along the Bonneville Shoreline Trail." },
+      { "id": "node-2", "type": "explode", "position": { "x": 360, "y": 200 }, "config": {}, "comment": "Extracts every trail vertex as a point feature, keeping trail attributes on each point." },
+      { "id": "node-3", "type": "preview", "position": { "x": 640, "y": 120 }, "config": { "maxRows": 500 }, "comment": "Preview the exploded vertex points." },
+      { "id": "node-4", "type": "add-to-map", "position": { "x": 640, "y": 280 }, "config": { "layerName": "Trail Vertices" }, "comment": "Adds the vertex points to the map." }
+    ],
+    "wires": [
+      { "from": "node-1", "fromPort": "out", "to": "node-2", "toPort": "in" },
+      { "from": "node-2", "fromPort": "out", "to": "node-3", "toPort": "in" },
+      { "from": "node-2", "fromPort": "out", "to": "node-4", "toPort": "in" }
+    ]
+  }
+}

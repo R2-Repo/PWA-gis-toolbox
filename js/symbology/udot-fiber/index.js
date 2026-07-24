@@ -40,4 +40,3 @@ export {
     UDOT_FIBER_STYLES_BY_KEY
 } from './styles.js';
 
-// desktop-sync / map-loader import app state — load via direct path, not this barrel.

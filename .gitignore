@@ -18,15 +18,8 @@ desktop.ini
 node_modules/
 dist/
 dist-web/
-dist-desktop/
 
-# Tauri / Rust
-src-tauri/target/
-src-tauri/gen/schemas/
-src-tauri/binaries/build/
-src-tauri/binaries/spec/
-
-# Python
+# Python (asset build helpers)
 __pycache__/
 *.py[cod]
 *.egg-info/

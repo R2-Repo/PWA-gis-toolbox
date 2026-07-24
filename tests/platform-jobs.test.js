@@ -1,9 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createJobHandle, nextJobId } from '../js/platform/jobs/create-job-handle.js';
 import { JobCanceledError, isJobCanceledError } from '../js/platform/jobs/job-errors.js';
-import { isKnownNativeOperation, NATIVE_OPERATIONS } from '../js/platform/jobs/allowed-operations.js';
 import { createWebJobService } from '../js/platform/web/web-job-service.js';
-import { createWindowsComputeService } from '../js/platform/windows/windows-compute-service.js';
 
 describe('platform jobs', () => {
     it('creates job ids and streams progress', async () => {
@@ -67,36 +65,6 @@ describe('platform jobs', () => {
         const job = await jobs.start({ operation: 'echo', input: { a: 1 } });
         await expect(job.result).resolves.toEqual({ echo: { a: 1 } });
         await expect(jobs.start({ operation: 'summarize_geojson', input: {} }))
-            .rejects.toThrow(/Windows desktop application/i);
-    });
-
-    it('windows compute service routes known ops through jobs', async () => {
-        expect(isKnownNativeOperation(NATIVE_OPERATIONS.SUMMARIZE_GEOJSON)).toBe(true);
-        expect(isKnownNativeOperation(NATIVE_OPERATIONS.INSPECT_VECTOR)).toBe(true);
-        expect(isKnownNativeOperation(NATIVE_OPERATIONS.SAMPLE_VECTOR)).toBe(true);
-        expect(isKnownNativeOperation(NATIVE_OPERATIONS.CONVERT_TO_GEOPARQUET)).toBe(true);
-        expect(isKnownNativeOperation(NATIVE_OPERATIONS.FILE_CHECKSUM)).toBe(true);
-        expect(isKnownNativeOperation(NATIVE_OPERATIONS.SUMMARIZE_VECTOR)).toBe(true);
-        expect(isKnownNativeOperation(NATIVE_OPERATIONS.GENERATE_PMTILES)).toBe(true);
-        expect(isKnownNativeOperation(NATIVE_OPERATIONS.CONVERT_TO_COG)).toBe(true);
-        expect(isKnownNativeOperation(NATIVE_OPERATIONS.BUFFER_VECTOR)).toBe(true);
-        expect(isKnownNativeOperation(NATIVE_OPERATIONS.SPATIAL_FILTER)).toBe(true);
-
-        const jobs = {
-            async start({ operation, input }) {
-                return createJobHandle({
-                    id: 'mock',
-                    operation,
-                    async run() {
-                        return { operation, input };
-                    }
-                });
-            }
-        };
-        const compute = createWindowsComputeService(jobs);
-        await expect(compute.run('echo', { hello: 'world' }))
-            .resolves.toEqual({ operation: 'echo', input: { hello: 'world' } });
-        await expect(compute.run('not-real', {}))
-            .rejects.toThrow(/no handler/i);
+            .rejects.toThrow(/No browser runner/i);
     });
 });

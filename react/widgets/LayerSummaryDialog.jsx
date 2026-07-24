@@ -1,26 +1,19 @@
 import { useMemo, useState } from 'react';
 import { WidgetPanelShell } from './shared/WidgetPanelShell.jsx';
 import { LayerSelect } from './shared/LayerSelect.jsx';
-import { formatByteSize } from '../../js/widgets/geojson-file-summary/engine.js';
+import { formatByteSize } from '../../js/widgets/layer-summary/engine.js';
 
 export function LayerSummaryDialog({
     layers = [],
-    pythonAvailable = false,
-    accelThreshold = 2500,
     onCancel,
     onRun
 }) {
     const [layerId, setLayerId] = useState(layers[0]?.id || '');
-    const [preferPython, setPreferPython] = useState(true);
     const [running, setRunning] = useState(false);
     const [progress, setProgress] = useState(null);
     const [result, setResult] = useState(null);
     const [error, setError] = useState('');
-    const [message, setMessage] = useState(
-        pythonAvailable
-            ? `Python acceleration available for layers with ≥ ${accelThreshold.toLocaleString()} features.`
-            : 'Summarizes the selected layer in JavaScript.'
-    );
+    const [message, setMessage] = useState('Summarizes the selected layer in JavaScript.');
 
     const selected = useMemo(
         () => layers.find((layer) => layer.id === layerId),
@@ -35,7 +28,6 @@ export function LayerSummaryDialog({
         try {
             const output = await onRun?.({
                 layerId,
-                preferPython,
                 onProgress: (p) => setProgress(p || null)
             });
             setResult(output || null);
@@ -106,7 +98,6 @@ export function LayerSummaryDialog({
             <div className="text-sm" style={{ display: 'grid', gap: 12 }}>
                 <p style={{ margin: 0, color: 'var(--text-muted)' }}>
                     Summarize feature counts, geometry types, and attribute fields for a map layer.
-                    On Windows, large layers can use the Python sidecar when available.
                 </p>
                 <LayerSelect
                     label="Layer"
@@ -114,22 +105,6 @@ export function LayerSummaryDialog({
                     value={layerId}
                     onChange={setLayerId}
                 />
-                {pythonAvailable ? (
-                    <label style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
-                        <input
-                            type="checkbox"
-                            checked={preferPython}
-                            onChange={(event) => setPreferPython(event.target.checked)}
-                            disabled={running}
-                        />
-                        <span>
-                            Prefer Python acceleration for large layers
-                            <span className="text-xs" style={{ display: 'block', color: 'var(--text-muted)' }}>
-                                Uses Python when the layer has at least {accelThreshold.toLocaleString()} features.
-                            </span>
-                        </span>
-                    </label>
-                ) : null}
                 {selected ? (
                     <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
                         Selected: {selected.name}

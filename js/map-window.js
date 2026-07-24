@@ -18,13 +18,6 @@ import {
 } from './dual-screen/secondary-client.js';
 import { setupMapPrintMenu } from './map/map-export.js';
 import { mountBasemapToggle, syncBasemapToggleActive } from './map/basemap-catalog.js';
-import { isTauriShellPresent } from './platform/create-platform.js';
-import {
-    applyAtlasMapToMap,
-    clearAtlasMapFromMap,
-    enableAtlasMapInteraction,
-    disableAtlasMapInteraction
-} from './atlas/map-layers.js';
 
 const ROLE = 'secondary';
 const QUEUED_MESSAGE_TYPES = new Set([
@@ -53,14 +46,8 @@ function sendBye() {
     post(MessageType.BYE, {});
 }
 
-/** Close this secondary map window (browser Window or Tauri WebviewWindow). */
+/** Close this secondary map window. */
 function closeSelfWindow() {
-    if (isTauriShellPresent()) {
-        void import('./platform/windows/tauri-bridge.js').then(({ closeCurrentWebviewWindow }) => {
-            void closeCurrentWebviewWindow();
-        });
-        return;
-    }
     try {
         window.close();
     } catch (_) { /* ignore */ }
@@ -243,21 +230,8 @@ function onMapReady() {
     post(MessageType.HELLO, {});
 }
 
-function wireAtlasSecondaryInteraction() {
-    const map = mapService.getMap();
-    if (!map) return;
-    enableAtlasMapInteraction(
-        (sel) => {
-            if (!sel?.kind || !sel?.id) return;
-            post(MessageType.ATLAS_PICK, { kind: sel.kind, id: sel.id });
-        },
-        map,
-        () => post(MessageType.ATLAS_CLEAR, {})
-    );
-}
-
 function applyMapCmd(payload) {
-    const { action, geojson, duration, options, layerId, range, latitude, style, dataset, payload: atlasPayload } = payload || {};
+    const { action, geojson, duration, options, layerId, range, latitude, style, dataset } = payload || {};
     switch (action) {
         case 'showTempFeature':
             mapService.showTempFeature(geojson, duration ?? 10000, options);
@@ -277,18 +251,6 @@ function applyMapCmd(payload) {
         case 'cancelInteraction':
             mapService.cancelInteraction?.();
             break;
-        case 'atlasSync': {
-            const map = mapService.getMap();
-            if (!map || !atlasPayload) break;
-            applyAtlasMapToMap(map, atlasPayload);
-            wireAtlasSecondaryInteraction();
-            break;
-        }
-        case 'atlasClear': {
-            disableAtlasMapInteraction();
-            clearAtlasMapFromMap(mapService.getMap());
-            break;
-        }
         case 'setLayerScaleRange': {
             const map = mapService.getMap();
             if (!layerId || !range || !map) break;
@@ -445,11 +407,6 @@ function boot() {
     initSecondaryClient({ post, getChannel: () => channel });
 
     const map = mapService.getMap();
-    if (isTauriShellPresent() && map) {
-        void import('./platform/windows/map-wheel-zoom.js').then(({ installDesktopMapZoom }) => {
-            installDesktopMapZoom(map);
-        });
-    }
     if (map?.loaded()) onMapReady();
     else map?.once('load', onMapReady);
 

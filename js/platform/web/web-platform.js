@@ -2,10 +2,6 @@ import { createWebFileService } from './web-file-service.js';
 import { createWebComputeService } from './web-compute-service.js';
 import { createWebJobService } from './web-job-service.js';
 import { createWebWindowService } from './web-window-service.js';
-import { createWebAtlasDbService } from './web-atlas-db-service.js';
-import { createWebUdotFiberDbService } from './web-udot-fiber-db-service.js';
-import { createWebPingService } from './web-ping-service.js';
-import { createWebGisCatalogService } from './web-gis-catalog-service.js';
 
 /**
  * @param {{ showToast?: (message: string, type?: string) => void }} [opts]
@@ -20,62 +16,13 @@ export function createWebPlatform(opts = {}) {
         platform: {
             runtime: 'web',
             os: 'browser',
-            capabilities: {
-                nativeFiles: {
-                    available: false,
-                    reason: 'Native file dialogs require the Windows desktop application'
-                },
-                pythonCompute: {
-                    available: false,
-                    reason: 'Python compute requires the Windows desktop application'
-                },
-                gpuCompute: {
-                    available: false,
-                    reason: 'GPU compute requires the Windows desktop application'
-                },
-                localGdal: {
-                    available: false,
-                    reason: 'Local GDAL requires the Windows desktop application'
-                },
-                localPdal: {
-                    available: false,
-                    reason: 'Local PDAL requires the Windows desktop application'
-                },
-                duckdb: {
-                    available: false,
-                    reason: 'DuckDB requires the Windows desktop application'
-                },
-                largeDatasetProcessing: {
-                    available: false,
-                    reason: 'Large-dataset processing requires the Windows desktop application'
-                },
-                gisLibrary: {
-                    available: false,
-                    reason: 'Local GIS Library requires the Windows desktop application'
-                },
-                localMartin: {
-                    available: false,
-                    reason: 'Martin tile server is desktop-only and currently deferred (file PMTiles)'
-                },
-                localSqlite: {
-                    available: false,
-                    reason: 'Network Atlas SQLite requires the Windows desktop application'
-                },
-                icmpPing: {
-                    available: false,
-                    reason: 'ICMP ping requires the Windows desktop application'
-                }
-            }
+            capabilities: {}
         },
         services: {
             files: createWebFileService(),
             compute: createWebComputeService(),
             jobs: createWebJobService(),
             windows: createWebWindowService(),
-            atlasDb: createWebAtlasDbService(),
-            udotFiberDb: createWebUdotFiberDbService(),
-            ping: createWebPingService(),
-            gisCatalog: createWebGisCatalogService(),
             notifications: {
                 show: showToast
             }

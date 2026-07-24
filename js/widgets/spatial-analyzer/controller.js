@@ -1,22 +1,10 @@
 import { openReactIsland } from '../../ui/open-react-island.js';
 import { getSpatialLayerOptions } from '../widget-context.js';
 import { createAreaDrawHandlers } from '../map-draw-helpers.js';
-import { listAvailableOptionalCapabilities } from '../../platform/contracts.js';
-import { isTauriShellPresent } from '../../platform/create-platform.js';
-import {
-    chooseAnalysisProvider,
-    NATIVE_ANALYSIS_MIN_FEATURES,
-    resolveLayerNativePath,
-    spatialFilterLayerNative
-} from '../../library/desktop-analysis.js';
 import { SPATIAL_RELATIONS, runSpatialAnalysis, computeMatchStats } from './engine.js';
 
 export async function openSpatialAnalyzer(ctx) {
     const areaHandlers = createAreaDrawHandlers(ctx);
-    const pythonAvailable = listAvailableOptionalCapabilities(
-        ctx.platform,
-        ['pythonCompute']
-    ).includes('pythonCompute');
 
     await openReactIsland({
         title: 'Find Features in Area',
@@ -26,8 +14,8 @@ export async function openSpatialAnalyzer(ctx) {
         getProps: (close) => ({
             layers: getSpatialLayerOptions(ctx, { requirePolygons: true }),
             relationOptions: SPATIAL_RELATIONS,
-            pythonAvailable,
-            accelThreshold: NATIVE_ANALYSIS_MIN_FEATURES,
+            pythonAvailable: false,
+            accelThreshold: null,
             onCancel: close,
             onDrawArea: areaHandlers.draw,
             onUseLayerArea: areaHandlers.useLayerArea,
@@ -35,42 +23,6 @@ export async function openSpatialAnalyzer(ctx) {
                 const targetLayer = ctx.getLayers().find((layer) => layer.id === targetLayerId);
                 if (!targetLayer) {
                     throw new Error('Target layer not found.');
-                }
-
-                const { getLayerAnalysisFeatureCount } = await import('../../library/desktop-analysis.js');
-                const featureCount = getLayerAnalysisFeatureCount(targetLayer);
-                const nativePath = resolveLayerNativePath(targetLayer);
-                const provider = chooseAnalysisProvider(
-                    featureCount,
-                    pythonAvailable && isTauriShellPresent(),
-                    nativePath,
-                    preferPython !== false
-                );
-
-                if (provider === 'python') {
-                    const raw = await spatialFilterLayerNative(
-                        targetLayer,
-                        analysisArea,
-                        spatialRelation
-                    );
-                    const matchedFeatures = raw?.previewGeojson?.features || [];
-                    const matched = Number(raw?.featureCount) || matchedFeatures.length;
-                    const stats = computeMatchStats(matchedFeatures);
-
-                    ctx.mapService.showTempFeature(
-                        { type: 'FeatureCollection', features: matchedFeatures },
-                        15000
-                    );
-
-                    return {
-                        matched,
-                        total: Number(raw?.inputFeatureCount) || featureCount || matched,
-                        features: matchedFeatures,
-                        stats,
-                        targetLayerName: targetLayer.name,
-                        provider: 'python',
-                        nativeOutputPath: raw?.outputPath
-                    };
                 }
 
                 if (!targetLayer?.geojson?.features?.length) {

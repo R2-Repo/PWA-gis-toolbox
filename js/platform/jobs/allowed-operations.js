@@ -1,6 +1,6 @@
 /**
- * Narrow allow-list of native compute / job operations.
- * Keep in sync with desktop/sidecar/python and src-tauri job handlers.
+ * Narrow allow-list of compute / job operation names.
+ * Reserved for future browser workers (e.g. WASM); the web platform currently stubs these.
  */
 export const NATIVE_OPERATIONS = Object.freeze({
     ECHO: 'echo',

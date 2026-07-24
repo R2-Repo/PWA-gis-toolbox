@@ -63,33 +63,14 @@ When work is complete:
 - Only add tests when requested or when they add meaningful coverage
 - Comments only for non-obvious business logic
 
-## PWA vs Desktop intents (CRITICAL for dual-runtime work)
+## PWA intents
 
-GIS Toolbox is **one shared app** with two runtimes (public PWA + private Windows desktop). When the user says:
+GIS Toolbox is a **browser-only progressive web app**. When the user says **fix / update the PWA** (web, browser, staging preview) — or `/fix-pwa`:
 
-| User says… | Agent must… |
-|------------|-------------|
-| **fix / update the PWA** (web, browser, staging preview) — or `/fix-pwa` | Follow `.cursor/skills/fix-pwa/SKILL.md` + `.cursor/rules/fix-pwa.mdc` |
-| **fix / update the desktop app** (Windows, Tauri, WebView2) — or `/fix-desktop` | Follow `.cursor/skills/fix-desktop/SKILL.md` + `.cursor/rules/fix-desktop.mdc` |
-| **Feature for both** / works on PWA and desktop — or `/feature-both` | Follow `.cursor/skills/feature-both/SKILL.md` + `.cursor/rules/feature-both.mdc` |
-| Dual smoke / “did we break the other?” — or `/smoke-both` | Blast-radius checks from `docs/PWA_DESKTOP_COMPAT.md` |
-| QA / tests / dual-runtime docs after a change — or `/qa-both` | Delegate to subagent `.cursor/agents/dual-runtime-qa.md` (**Composer fast**, not the parent model) |
-| Boundary / desktop security audit — or `/platform-boundary` | Readonly subagent `.cursor/agents/platform-boundary.md` (Composer fast) |
-| After a widget **Build Plan** — or `/widget-scaffold` | Subagent `.cursor/agents/widget-scaffold.md` (Composer fast) reviews plan + PWA/desktop gating |
-| Bug with **no** runtime named — or `/which-runtime` | Follow `.cursor/skills/pwa-desktop-compat/SKILL.md` — classify first |
+- Follow `.cursor/skills/fix-pwa/SKILL.md` + `.cursor/rules/fix-pwa.mdc`
+- After a widget **Build Plan** — or `/widget-scaffold` — delegate to `.cursor/agents/widget-scaffold.md` (Composer fast) for playbook compliance review
 
-**Slash commands** (type `/` in chat): `fix-pwa`, `fix-desktop`, `feature-both`, `smoke-both`, `qa-both`, `platform-boundary`, `widget-scaffold`, `which-runtime`.
-
-**Cost tip:** Parent (expensive) model plans/implements. Composer subagents do QA, boundary/security scan, and widget plan review. Do not use Fable/Opus-class models for those mechanical passes.
-
-**Always read** [`docs/PWA_DESKTOP_COMPAT.md`](docs/PWA_DESKTOP_COMPAT.md) for the path matrix and blast radius.
-
-Implied constraints (user should not need to repeat):
-
-- Desktop-only fixes start in `src-tauri/` / `js/platform/windows/` / `desktop/sidecar/`
-- Shared changes use platform adapters — do not rewrite the other runtime’s path
-- No `@tauri-apps/*` outside `js/platform/windows/`
-- After shared or desktop work: keep **both** `npm run build` and `npm run build:desktop` green
+**Slash commands** (type `/` in chat): `fix-pwa`, `widget-scaffold`.
 
 ## GIS Widgets (multi-step panel wizards)
 
@@ -109,28 +90,26 @@ Do not put widget logic inline in `js/tools/tool-handlers.js`. Copy the closest 
 |------|---------|
 | `js/widgets/` | GIS Widget engines, controllers, registry |
 | `react/widgets/` | Widget React dialogs and shared wizard UI |
-| `js/platform/` | Web/Windows platform contracts and providers (no Tauri in shared code) |
-| `src-tauri/` | Tauri 2 Windows shell (WebView2); packages `dist-desktop/` |
+| `js/platform/` | Web platform contracts and providers |
 | `js/` | Core app logic (map, import, export, workflow, tools) |
 | `react/` | React UI islands (tools, panels, workflow editor) |
 | `css/` | Stylesheets |
 | `pipelines/` | Saved workflow pipeline JSON |
 | `public/` | Static assets |
-| `docs/` | Development guide, widget playbook, authoring checklist, **sheet cutting geometry** (`SHEET_CUTTING.md`), **Network Atlas** (`NETWORK_ATLAS.md`), **UGRC API** (`UGRC.md`), PWA↔Desktop blast radius (`PWA_DESKTOP_COMPAT.md`), PWA+Windows plan (`PWA_DESKTOP_WORKFLOW_PLAN.md`), desktop data plane (`DESKTOP_DATA_PLANE.md`) |
+| `docs/` | Development guide, widget playbook, authoring checklist, **sheet cutting geometry** (`SHEET_CUTTING.md`), **UGRC API** (`UGRC.md`) |
 | `js/ugrc/` | UGRC API client (reverse route/milepost, key resolve) |
-| `js/atlas/`, `react/atlas/` | ITS Network Atlas workspace (desktop-first; not a GIS widget) |
-| `js/library/`, `react/library/`, `src-tauri/src/gis_catalog/` | Local GIS Library (desktop catalog; sibling to Atlas DB) |
-| `.cursor/skills/` | Agent skills: `fix-pwa`, `fix-desktop`, `feature-both`, `pwa-desktop-compat` |
-| `.cursor/commands/` | Slash commands: `/fix-pwa`, `/fix-desktop`, `/feature-both`, `/smoke-both`, `/qa-both`, `/which-runtime` |
-| `.cursor/agents/` | Custom subagents (Composer fast): `dual-runtime-qa`, `platform-boundary` (readonly + desktop security), `widget-scaffold` |
+| `.cursor/skills/` | Agent skills: `fix-pwa` |
+| `.cursor/commands/` | Slash commands: `/fix-pwa`, `/widget-scaffold` |
+| `.cursor/agents/` | Custom subagents (Composer fast): `widget-scaffold` |
 
-**Build targets:** `npm run build` → `dist/` (existing Pages deploy), `npm run build:web` → `dist-web/`, `npm run build:desktop` → `dist-desktop/` (no PWA service worker).
+**Build targets:** `npm run build` → `dist/` (Cloudflare Pages deploy), `npm run build:web` → `dist-web/`.
 
 ## Local development
 
 ```bash
 npm install
 npm run dev
+npm test
 ```
 
 See `docs/DEVELOPMENT.md` for the full workflow and deployment details.

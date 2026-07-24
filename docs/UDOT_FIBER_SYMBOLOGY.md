@@ -2,14 +2,11 @@
 
 Shared ArcGIS/Bentley style pack for the [UDOT Fiber Network MapServer](https://central.udot.utah.gov/server/rest/services/Fiber/UDOT_Fiber_Network/MapServer).
 
-## Runtime split
+## Adding layers (PWA)
 
-| Runtime | How to add layers | Feature storage |
-|---------|-------------------|-----------------|
-| **PWA** | Import → Live Layers → **UDOT Fiber Network** (vector viewport query) or ArcGIS REST import presets | Session / viewport only |
-| **Desktop** | Same live catalog, **or** Live Layers → Sync / Add from local DB | SQLite `udot-fiber-network.sqlite` (app data), 24h sync |
+Import → Live Layers → **UDOT Fiber Network** (vector viewport query) or ArcGIS REST import presets. Features are session / viewport only in the browser.
 
-Styles live in `js/symbology/udot-fiber/` and are shared. Desktop never requires the PWA service worker.
+Styles live in `js/symbology/udot-fiber/`.
 
 ## Style sources
 
@@ -30,5 +27,4 @@ Procedural CAD glyphs (square-X, bowtie, dashed box) are ruled in `js/symbology/
 ## Platform
 
 - Contract: `UdotFiberDbService` in `js/platform/contracts.js`
-- Web stub: `js/platform/web/web-udot-fiber-db-service.js`
-- Windows: `js/platform/windows/windows-udot-fiber-db-service.js` + `src-tauri/src/udot_fiber/`
+- Web provider: `js/platform/web/web-udot-fiber-db-service.js`

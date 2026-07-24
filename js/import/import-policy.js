@@ -1,37 +1,9 @@
-/**
- * Platform-aware import policy — PWA keeps browser caps; desktop can path-route large files.
- */
-import { hasCapability } from '../platform/contracts.js';
+/** Browser import policy. */
 import {
     TEXT_STRONG_BYTES,
     BINARY_STRONG_BYTES,
     getPreflightLimits
 } from './import-preflight.js';
-
-/**
- * Absolute path on disk when available (Tauri drag-drop / native File).
- * @param {File|object} file
- * @returns {string|null}
- */
-export function getNativeFilePath(file) {
-    if (!file || typeof file !== 'object') return null;
-    if (typeof file.path === 'string' && file.path.trim()) return file.path.trim();
-    if (typeof file.__tauri_path === 'string' && file.__tauri_path.trim()) {
-        return file.__tauri_path.trim();
-    }
-    return null;
-}
-
-/**
- * Desktop can path-route when the Windows shell has native files.
- * (Sidecar is still required at import time for inspect/sample.)
- * @param {import('../platform/contracts.js').PlatformInfo|null|undefined} platform
- * @returns {boolean}
- */
-export function canUseDesktopPathImport(platform) {
-    if (!platform || platform.runtime !== 'windows') return false;
-    return hasCapability(platform, 'nativeFiles');
-}
 
 /**
  * @param {File} file
@@ -45,56 +17,20 @@ export function exceedsBrowserImportStrongLimit(file, options = {}) {
 }
 
 /**
- * True when this file should be ingested via desktop path + sidecar (not full JS File read).
- * @param {File} file
- * @param {import('../platform/contracts.js').PlatformInfo|null|undefined} platform
- * @param {{ format?: string|null }} [options]
- * @returns {boolean}
- */
-export function shouldRouteFileViaDesktopPath(file, platform, options = {}) {
-    if (!canUseDesktopPathImport(platform)) return false;
-    const path = getNativeFilePath(file);
-    if (!path) return false;
-    // Path-backed native picks always go through disk import (no browser File bytes).
-    if (file?.__pathBacked) return true;
-    return exceedsBrowserImportStrongLimit(file, options);
-}
-
-/**
  * Partition files for openImportForFiles / handleFileImport.
  * @param {File[]} files
- * @param {import('../platform/contracts.js').PlatformInfo|null|undefined} platform
  * @returns {{
  *   memoryFiles: File[],
  *   pathFiles: Array<{ file: File, path: string }>,
  *   blockedLargeNoPath: File[]
  * }}
  */
-export function classifyImportFiles(files, platform) {
-    const memoryFiles = [];
-    const pathFiles = [];
-    const blockedLargeNoPath = [];
-    const desktopPath = canUseDesktopPathImport(platform);
-
-    for (const file of files || []) {
-        if (!desktopPath) {
-            memoryFiles.push(file);
-            continue;
-        }
-
-        const path = getNativeFilePath(file);
-        if (path && (file?.__pathBacked || exceedsBrowserImportStrongLimit(file))) {
-            pathFiles.push({ file, path });
-            continue;
-        }
-        if (!path && exceedsBrowserImportStrongLimit(file)) {
-            blockedLargeNoPath.push(file);
-            continue;
-        }
-        memoryFiles.push(file);
-    }
-
-    return { memoryFiles, pathFiles, blockedLargeNoPath };
+export function classifyImportFiles(files) {
+    return {
+        memoryFiles: Array.from(files || []),
+        pathFiles: [],
+        blockedLargeNoPath: []
+    };
 }
 
 export {

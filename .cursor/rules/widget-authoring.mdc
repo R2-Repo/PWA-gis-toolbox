@@ -10,7 +10,7 @@ When the user asks to **build, add, plan, or change a GIS Widget** (left-panel m
 1. **Read first:** [`docs/WIDGET_AGENT_PLAYBOOK.md`](../../docs/WIDGET_AGENT_PLAYBOOK.md)
 2. **Then:** [`docs/WIDGET_AUTHORING.md`](../../docs/WIDGET_AUTHORING.md) for the step-by-step checklist
 3. **Copy patterns from** the closest reference widget in `js/widgets/` (simplest: `spatial-analyzer/`)
-4. **After a Build Plan:** run `/widget-scaffold` (Composer subagent) before heavy implementation — checks PWA vs desktop-only gating and registry conflicts
+4. **After a Build Plan:** run `/widget-scaffold` (Composer subagent) before heavy implementation — checks playbook compliance and registry conflicts
 
 ## Rules
 
@@ -18,5 +18,4 @@ When the user asks to **build, add, plan, or change a GIS Widget** (left-panel m
 - Wire UI through `controller.js` + `openReactIsland()` — **not** inline in `tool-handlers.js`
 - Engine logic stays pure in `engine.js`; React dialog gets callbacks via props
 - Reuse `react/widgets/shared/` (`WidgetPanelShell`, `LayerSelect`, etc.)
-- Desktop-only widgets need `requiredCapabilities` so they stay hidden on the PWA
-- Shared widgets that optionally use Python need `optionalCapabilities` + a web JS path
+- Widget engines run in the **browser** (JavaScript); no native or server-side compute paths

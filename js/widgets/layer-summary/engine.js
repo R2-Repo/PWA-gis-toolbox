@@ -1,18 +1,9 @@
 /**
  * Pure Layer Summary helpers.
  * Web always uses summarizeFeatureCollection().
- * Windows may optionally accelerate large layers via the Python sidecar.
  */
 
-import {
-    formatByteSize,
-    formatSummaryResult
-} from '../geojson-file-summary/engine.js';
-
 export const WIDGET_ID = 'layer-summary';
-
-/** Prefer Python sidecar at/above this feature count when available. */
-export const PYTHON_ACCEL_MIN_FEATURES = 2500;
 
 /**
  * @param {object} [geojson]
@@ -80,29 +71,46 @@ export function summarizeFeatureCollection(geojson, opts = {}) {
 }
 
 /**
- * @param {number} featureCount
- * @param {boolean} pythonAvailable
- * @param {boolean} [preferPython]
- * @returns {'javascript' | 'python'}
- */
-export function chooseSummaryProvider(featureCount, pythonAvailable, preferPython = true) {
-    if (
-        preferPython &&
-        pythonAvailable &&
-        Number(featureCount) >= PYTHON_ACCEL_MIN_FEATURES
-    ) {
-        return 'python';
-    }
-    return 'javascript';
-}
-
-/**
- * @param {'javascript' | 'python'} provider
+ * @param {'javascript'} provider
  * @returns {string}
  */
 export function providerLabel(provider) {
-    if (provider === 'python') return 'Python (accelerated)';
     return 'JavaScript';
+}
+
+/**
+ * Normalize summary output for the dialog.
+ * @param {object} [raw]
+ * @returns {object}
+ */
+export function formatSummaryResult(raw = {}) {
+    const geometryTypes = raw.geometryTypes && typeof raw.geometryTypes === 'object'
+        ? raw.geometryTypes
+        : {};
+    const propertyKeys = Array.isArray(raw.propertyKeys) ? raw.propertyKeys : [];
+
+    return {
+        path: String(raw.path || ''),
+        rootType: raw.rootType || 'unknown',
+        featureCount: Number(raw.featureCount) || 0,
+        geometryTypes,
+        propertyKeys,
+        byteSize: Number(raw.byteSize) || 0,
+        geometryTypeEntries: Object.entries(geometryTypes)
+            .map(([type, count]) => ({ type, count: Number(count) || 0 }))
+            .sort((a, b) => b.count - a.count || a.type.localeCompare(b.type))
+    };
+}
+
+/**
+ * @param {number} bytes
+ * @returns {string}
+ */
+export function formatByteSize(bytes) {
+    const n = Number(bytes) || 0;
+    if (n < 1024) return `${n} B`;
+    if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+    return `${(n / (1024 * 1024)).toFixed(2)} MB`;
 }
 
 /**
@@ -116,5 +124,3 @@ function roughUtf8Size(value) {
         return 0;
     }
 }
-
-export { formatByteSize, formatSummaryResult };
