@@ -153,6 +153,72 @@ export async function bufferLayerNative(layer, distance, units = 'meters', opts 
 }
 
 /**
+ * Run clip_vector via sidecar (clip layer written to a temp GeoJSON path).
+ *
+ * @param {object} layer
+ * @param {object} clipGeometry - GeoJSON geometry or Feature
+ * @param {{ onProgress?: Function, signal?: AbortSignal, registerLibrary?: boolean }} [opts]
+ */
+export async function clipLayerNative(layer, clipGeometry, opts = {}) {
+    const { platform, services } = getPlatformBundle();
+    if (!hasCapability(platform, 'pythonCompute') || !services.compute?.run) {
+        throw new Error('Native clip requires the Windows Python sidecar');
+    }
+
+    let path = resolveLayerNativePath(layer);
+    let tempPath = null;
+    let clipTemp = null;
+    if (!path) {
+        if (!layer?.geojson) throw new Error('Layer has no geometry to clip');
+        path = await services.files.writeTempGeoJson(JSON.stringify(layer.geojson));
+        tempPath = path;
+    }
+
+    const clipFeature = clipGeometry?.type === 'Feature'
+        ? clipGeometry
+        : { type: 'Feature', properties: {}, geometry: clipGeometry };
+    const clipFc = { type: 'FeatureCollection', features: [clipFeature] };
+
+    try {
+        clipTemp = await services.files.writeTempGeoJson(JSON.stringify(clipFc));
+        const result = await services.compute.run(
+            NATIVE_OPERATIONS.CLIP_VECTOR,
+            { path, clipPath: clipTemp },
+            { onProgress: opts.onProgress, signal: opts.signal }
+        );
+        if (opts.registerLibrary !== false && isGisLibraryAvailable()) {
+            try {
+                await registerDerivedLibraryItem({
+                    outputPath: result.outputPath,
+                    displayName: `${layer.name || 'layer'}_clip`,
+                    derivedOp: 'clip_vector',
+                    parentIds: layer.source?.libraryItemId ? [layer.source.libraryItemId] : [],
+                    previewGeojson: result.previewGeojson,
+                    featureCount: result.featureCount,
+                    geometryTypes: result.geometryTypes
+                });
+            } catch {
+                /* non-fatal */
+            }
+        }
+        return datasetFromAnalysisResult(
+            result,
+            `${layer.name || 'layer'}_clipped`,
+            { libraryItemId: layer.source?.libraryItemId }
+        );
+    } finally {
+        for (const p of [tempPath, clipTemp]) {
+            if (!p) continue;
+            try {
+                await services.files.removeTempFile(p);
+            } catch {
+                /* best-effort */
+            }
+        }
+    }
+}
+
+/**
  * Native spatial filter for Find Features in Area.
  *
  * @param {object} layer

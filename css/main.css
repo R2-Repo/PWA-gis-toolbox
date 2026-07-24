@@ -3954,6 +3954,57 @@ textarea { resize: vertical; min-height: 60px; }
     flex-wrap: wrap;
     gap: 6px;
 }
+.gis-library-storage {
+    margin: 0;
+}
+.gis-library-filters {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+}
+.gis-library-search {
+    flex: 1 1 140px;
+    min-width: 0;
+    font-size: 12px;
+    padding: 4px 8px;
+}
+.gis-library-fav-filter {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 12px;
+    white-space: nowrap;
+}
+.gis-library-folder-filter {
+    font-size: 12px;
+    max-width: 140px;
+}
+.gis-library-star {
+    border: none;
+    background: transparent;
+    padding: 0 4px 0 0;
+    cursor: pointer;
+    font-size: 14px;
+    line-height: 1;
+    color: var(--text-muted, #667085);
+}
+.gis-library-star.is-on {
+    color: #ca8a04;
+}
+.gis-library-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-top: 4px;
+}
+.gis-library-tag {
+    font-size: 10px;
+    padding: 1px 6px;
+    border-radius: 999px;
+    background: var(--surface-3, rgba(0, 0, 0, 0.06));
+    color: var(--text-muted, #667085);
+}
 .gis-library-error {
     color: var(--danger, #b42318);
     margin: 0;

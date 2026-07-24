@@ -1,14 +1,17 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import bus from '../../js/core/event-bus.js';
 import {
+    filterGisLibraryItems,
     formatBytes,
     generateGisLibraryPmTiles,
+    getGisLibraryStorageStats,
     isGisLibraryAvailable,
     listGisLibraryItems,
     openGisLibrary,
     optimizeGisLibraryItemToGeoParquet,
     readGisLibraryPreview,
-    removeGisLibraryItem
+    removeGisLibraryItem,
+    updateGisLibraryMeta
 } from '../../js/library/gis-library.js';
 import { hasCapability } from '../../js/platform/contracts.js';
 import { getPlatformBundle } from '../../js/platform/create-platform.js';
@@ -22,11 +25,16 @@ export function LocalGisLibraryPanel({ onAddPreviewToMap, onAddItemToMap, showTo
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
     const [busyId, setBusyId] = useState(null);
+    const [query, setQuery] = useState('');
+    const [favoritesOnly, setFavoritesOnly] = useState(false);
+    const [folderFilter, setFolderFilter] = useState('');
+    const [stats, setStats] = useState(null);
 
     const refresh = useCallback(async () => {
         if (!isGisLibraryAvailable()) {
             setAvailable(false);
             setItems([]);
+            setStats(null);
             return;
         }
         setAvailable(true);
@@ -35,6 +43,11 @@ export function LocalGisLibraryPanel({ onAddPreviewToMap, onAddItemToMap, showTo
         try {
             await openGisLibrary();
             setItems(await listGisLibraryItems());
+            try {
+                setStats(await getGisLibraryStorageStats());
+            } catch {
+                setStats(null);
+            }
         } catch (err) {
             setError(err?.message || String(err));
             setItems([]);
@@ -52,6 +65,23 @@ export function LocalGisLibraryPanel({ onAddPreviewToMap, onAddItemToMap, showTo
             unsub?.();
         };
     }, [refresh]);
+
+    const folders = useMemo(() => {
+        const set = new Set();
+        for (const item of items) {
+            if (item.folder) set.add(String(item.folder));
+        }
+        return [...set].sort((a, b) => a.localeCompare(b));
+    }, [items]);
+
+    const visible = useMemo(
+        () => filterGisLibraryItems(items, {
+            query,
+            favoritesOnly,
+            folder: folderFilter || undefined
+        }),
+        [items, query, favoritesOnly, folderFilter]
+    );
 
     const onOpenFolder = useCallback(async () => {
         try {
@@ -134,6 +164,54 @@ export function LocalGisLibraryPanel({ onAddPreviewToMap, onAddItemToMap, showTo
         }
     }, [refresh, showToast]);
 
+    const onToggleFavorite = useCallback(async (item) => {
+        if (!item?.id) return;
+        setBusyId(item.id);
+        try {
+            await updateGisLibraryMeta(item.id, { favorite: !item.favorite });
+        } catch (err) {
+            showToast?.(err?.message || 'Could not update favorite', 'error');
+        } finally {
+            setBusyId(null);
+        }
+    }, [showToast]);
+
+    const onEditTags = useCallback(async (item) => {
+        if (!item?.id) return;
+        const current = Array.isArray(item.tags) ? item.tags.join(', ') : '';
+        const next = window.prompt('Tags (comma-separated)', current);
+        if (next == null) return;
+        const tags = next
+            .split(',')
+            .map((t) => t.trim())
+            .filter(Boolean)
+            .slice(0, 12);
+        setBusyId(item.id);
+        try {
+            await updateGisLibraryMeta(item.id, { tags });
+            showToast?.('Tags updated', 'success');
+        } catch (err) {
+            showToast?.(err?.message || 'Could not update tags', 'error');
+        } finally {
+            setBusyId(null);
+        }
+    }, [showToast]);
+
+    const onEditFolder = useCallback(async (item) => {
+        if (!item?.id) return;
+        const next = window.prompt('Folder name (blank to clear)', item.folder || '');
+        if (next == null) return;
+        setBusyId(item.id);
+        try {
+            await updateGisLibraryMeta(item.id, { folder: next.trim() });
+            showToast?.('Folder updated', 'success');
+        } catch (err) {
+            showToast?.(err?.message || 'Could not update folder', 'error');
+        } finally {
+            setBusyId(null);
+        }
+    }, [showToast]);
+
     if (!available) return null;
 
     return (
@@ -146,6 +224,45 @@ export function LocalGisLibraryPanel({ onAddPreviewToMap, onAddItemToMap, showTo
                     Open folder
                 </button>
             </div>
+
+            {stats ? (
+                <p className="gis-library-storage text-sm text-muted">
+                    {stats.itemCount ?? 0} items
+                    {stats.favoriteCount ? ` · ${stats.favoriteCount} ★` : ''}
+                    {stats.totalBytes != null ? ` · ${formatBytes(stats.totalBytes)} on disk` : ''}
+                </p>
+            ) : null}
+
+            <div className="gis-library-filters">
+                <input
+                    type="search"
+                    className="gis-library-search"
+                    placeholder="Search name, tag, folder…"
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                />
+                <label className="gis-library-fav-filter">
+                    <input
+                        type="checkbox"
+                        checked={favoritesOnly}
+                        onChange={(e) => setFavoritesOnly(e.target.checked)}
+                    />
+                    Favorites
+                </label>
+                {folders.length ? (
+                    <select
+                        className="gis-library-folder-filter"
+                        value={folderFilter}
+                        onChange={(e) => setFolderFilter(e.target.value)}
+                    >
+                        <option value="">All folders</option>
+                        {folders.map((f) => (
+                            <option key={f} value={f}>{f}</option>
+                        ))}
+                    </select>
+                ) : null}
+            </div>
+
             {error ? <p className="gis-library-error text-sm">{error}</p> : null}
             {loading && !items.length ? <p className="text-sm text-muted">Loading library…</p> : null}
             {!loading && !items.length && !error ? (
@@ -153,8 +270,12 @@ export function LocalGisLibraryPanel({ onAddPreviewToMap, onAddItemToMap, showTo
                     No library items yet. Drag a large GeoJSON from Explorer to import a preview and save it here.
                 </p>
             ) : null}
+            {!loading && items.length && !visible.length ? (
+                <p className="text-sm text-muted">No items match this filter.</p>
+            ) : null}
+
             <ul className="gis-library-list">
-                {items.map((item) => {
+                {visible.map((item) => {
                     const count = item.featureCount != null
                         ? Number(item.featureCount).toLocaleString()
                         : '—';
@@ -162,13 +283,24 @@ export function LocalGisLibraryPanel({ onAddPreviewToMap, onAddItemToMap, showTo
                         ? Number(item.sampledFeatureCount).toLocaleString()
                         : null;
                     const busy = busyId === item.id;
+                    const tags = Array.isArray(item.tags) ? item.tags : [];
                     return (
                         <li key={item.id} className="gis-library-card">
                             <div className="gis-library-card-main">
                                 <div className="gis-library-card-title" title={item.displayName}>
+                                    <button
+                                        type="button"
+                                        className={`gis-library-star${item.favorite ? ' is-on' : ''}`}
+                                        title={item.favorite ? 'Unfavorite' : 'Favorite'}
+                                        disabled={busy}
+                                        onClick={() => void onToggleFavorite(item)}
+                                    >
+                                        {item.favorite ? '★' : '☆'}
+                                    </button>
                                     {item.displayName}
                                 </div>
                                 <div className="gis-library-card-meta text-sm text-muted">
+                                    {item.folder ? `${item.folder} · ` : ''}
                                     {item.format || 'vector'}
                                     {' · '}
                                     {item.previewOnly && sampled
@@ -179,6 +311,13 @@ export function LocalGisLibraryPanel({ onAddPreviewToMap, onAddItemToMap, showTo
                                     {item.tilePath ? ' · PMTiles' : ''}
                                     {item.derivedOp ? ` · derived (${item.derivedOp})` : ''}
                                 </div>
+                                {tags.length ? (
+                                    <div className="gis-library-tags">
+                                        {tags.map((t) => (
+                                            <span key={t} className="gis-library-tag">{t}</span>
+                                        ))}
+                                    </div>
+                                ) : null}
                             </div>
                             <div className="gis-library-card-actions">
                                 <button
@@ -209,6 +348,22 @@ export function LocalGisLibraryPanel({ onAddPreviewToMap, onAddItemToMap, showTo
                                         Optimize
                                     </button>
                                 ) : null}
+                                <button
+                                    type="button"
+                                    className="btn btn-sm"
+                                    disabled={busy}
+                                    onClick={() => void onEditTags(item)}
+                                >
+                                    Tags
+                                </button>
+                                <button
+                                    type="button"
+                                    className="btn btn-sm"
+                                    disabled={busy}
+                                    onClick={() => void onEditFolder(item)}
+                                >
+                                    Folder
+                                </button>
                                 <button
                                     type="button"
                                     className="btn btn-sm"

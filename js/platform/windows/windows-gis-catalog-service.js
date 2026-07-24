@@ -44,6 +44,12 @@ export function createWindowsGisCatalogService() {
         async setTilePath(payload) {
             return invokeCommand('gis_catalog_set_tile_path', { payload });
         },
+        async updateMeta(payload) {
+            return invokeCommand('gis_catalog_update_meta', { payload });
+        },
+        async storageStats() {
+            return invokeCommand('gis_catalog_storage_stats');
+        },
         async readFileRange(path, offset, length) {
             return invokeCommand('gis_library_read_range', { path, offset, length });
         }

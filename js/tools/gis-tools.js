@@ -138,10 +138,34 @@ export async function simplifyFeatures(dataset, tolerance = 0.001) {
 }
 
 /**
- * Clip features to a bounding box or polygon
+ * Clip features to a bounding box or polygon.
+ * Desktop: large layers / library disk paths use the Python sidecar when available.
  */
 export async function clipFeatures(dataset, clipGeometry) {
     _requireDisplayReady(dataset, 'Clip');
+
+    try {
+        const { getPlatformBundle } = await import('../platform/create-platform.js');
+        const { hasCapability } = await import('../platform/contracts.js');
+        const {
+            chooseAnalysisProvider,
+            resolveLayerNativePath,
+            clipLayerNative
+        } = await import('../library/desktop-analysis.js');
+        const { platform } = getPlatformBundle();
+        const pythonAvailable = hasCapability(platform, 'pythonCompute');
+        const featureCount = dataset.geojson?.features?.length || 0;
+        const nativePath = resolveLayerNativePath(dataset);
+        if (chooseAnalysisProvider(featureCount, pythonAvailable, nativePath, true) === 'python') {
+            logger.info('GISTools', 'Clip via Python sidecar', { count: featureCount, nativePath: Boolean(nativePath) });
+            return clipLayerNative(dataset, clipGeometry);
+        }
+    } catch (err) {
+        logger.warn('GISTools', 'Native clip unavailable — falling back to Turf', {
+            message: err?.message || String(err)
+        });
+    }
+
     if (typeof turf === 'undefined') throw new Error('Turf.js not loaded');
 
     const task = new TaskRunner('Clip', 'GISTools');

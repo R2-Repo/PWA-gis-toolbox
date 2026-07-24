@@ -97,7 +97,10 @@ fn migrate(conn: &Connection) -> Result<(), String> {
             tile_path TEXT,
             parent_ids_json TEXT,
             derived_op TEXT,
-            restorable INTEGER NOT NULL DEFAULT 0
+            restorable INTEGER NOT NULL DEFAULT 0,
+            favorite INTEGER NOT NULL DEFAULT 0,
+            tags_json TEXT,
+            folder TEXT
         );
         CREATE INDEX IF NOT EXISTS idx_catalog_item_updated ON catalog_item(updated_at DESC);
         CREATE INDEX IF NOT EXISTS idx_catalog_item_name ON catalog_item(display_name);
@@ -111,6 +114,11 @@ fn migrate(conn: &Connection) -> Result<(), String> {
     let _ = conn.execute_batch(
         "ALTER TABLE catalog_item ADD COLUMN restorable INTEGER NOT NULL DEFAULT 0;",
     );
+    let _ = conn.execute_batch(
+        "ALTER TABLE catalog_item ADD COLUMN favorite INTEGER NOT NULL DEFAULT 0;",
+    );
+    let _ = conn.execute_batch("ALTER TABLE catalog_item ADD COLUMN tags_json TEXT;");
+    let _ = conn.execute_batch("ALTER TABLE catalog_item ADD COLUMN folder TEXT;");
     Ok(())
 }
 
@@ -139,6 +147,9 @@ fn row_to_item(row: &rusqlite::Row<'_>) -> Result<Value, rusqlite::Error> {
     let parent_ids = parse_json_field(row.get::<_, Option<String>>(24).unwrap_or(None));
     let derived_op: Option<String> = row.get(25).unwrap_or(None);
     let restorable = row.get::<_, i64>(26).unwrap_or(0) != 0;
+    let favorite = row.get::<_, i64>(27).unwrap_or(0) != 0;
+    let tags = parse_json_field(row.get::<_, Option<String>>(28).unwrap_or(None));
+    let folder: Option<String> = row.get(29).unwrap_or(None);
     Ok(json!({
         "id": row.get::<_, String>(0)?,
         "displayName": row.get::<_, String>(1)?,
@@ -167,6 +178,9 @@ fn row_to_item(row: &rusqlite::Row<'_>) -> Result<Value, rusqlite::Error> {
         "parentIds": parent_ids,
         "derivedOp": derived_op,
         "restorable": restorable,
+        "favorite": favorite,
+        "tags": tags,
+        "folder": folder,
     }))
 }
 
@@ -183,7 +197,7 @@ const SELECT_ITEM: &str = r#"
            sampled_feature_count, geometry_types_json, property_keys_json, bbox_json,
            crs_hint, byte_size, status, preview_only, created_at, updated_at,
            last_used_at, description, manifest_json, tile_path,
-           parent_ids_json, derived_op, restorable
+           parent_ids_json, derived_op, restorable, favorite, tags_json, folder
     FROM catalog_item
 "#;
 
@@ -760,4 +774,144 @@ pub fn gis_catalog_read_preview(
     let geojson: Value =
         serde_json::from_str(&text).map_err(|e| format!("parse preview GeoJSON: {e}"))?;
     Ok(json!({ "item": item, "geojson": geojson }))
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GisCatalogUpdateMetaRequest {
+    pub id: String,
+    pub favorite: Option<bool>,
+    pub tags: Option<Value>,
+    pub folder: Option<String>,
+}
+
+/// Update portal metadata (favorite / tags / folder). Does not touch geometry paths.
+#[tauri::command]
+pub fn gis_catalog_update_meta(
+    state: tauri::State<'_, Arc<GisCatalogState>>,
+    payload: GisCatalogUpdateMetaRequest,
+) -> Result<Value, String> {
+    if payload.id.trim().is_empty()
+        || payload.id.contains("..")
+        || payload.id.contains('/')
+        || payload.id.contains('\\')
+    {
+        return Err("Invalid catalog item id".into());
+    }
+    if payload.favorite.is_none() && payload.tags.is_none() && payload.folder.is_none() {
+        return Err("Nothing to update".into());
+    }
+    let ts = now_iso();
+    let tags_json = payload
+        .tags
+        .as_ref()
+        .and_then(|v| {
+            if v.is_null() {
+                Some("[]".to_string())
+            } else {
+                serde_json::to_string(v).ok()
+            }
+        });
+    let folder = payload.folder.as_ref().map(|s| {
+        let t = s.trim();
+        if t.contains("..") {
+            "".to_string()
+        } else {
+            t.chars().take(120).collect::<String>()
+        }
+    });
+
+    with_conn(&state, |conn| {
+        let changed = conn
+            .execute(
+                r#"
+                UPDATE catalog_item SET
+                    favorite = COALESCE(?1, favorite),
+                    tags_json = COALESCE(?2, tags_json),
+                    folder = COALESCE(?3, folder),
+                    updated_at = ?4
+                WHERE id = ?5
+                "#,
+                params![
+                    payload.favorite.map(|f| if f { 1i64 } else { 0 }),
+                    tags_json,
+                    folder,
+                    ts,
+                    payload.id,
+                ],
+            )
+            .map_err(|e| format!("update meta: {e}"))?;
+        if changed == 0 {
+            return Err("Catalog item not found".into());
+        }
+        Ok(())
+    })?;
+
+    let item = get_item_by_id(&state, &payload.id)?
+        .ok_or_else(|| "Catalog item not found".to_string())?;
+    Ok(json!({ "item": item }))
+}
+
+fn dir_byte_size(path: &Path) -> u64 {
+    let mut total = 0u64;
+    let walk = fs::read_dir(path);
+    let Ok(entries) = walk else {
+        return 0;
+    };
+    for entry in entries.flatten() {
+        let p = entry.path();
+        if p.is_dir() {
+            total = total.saturating_add(dir_byte_size(&p));
+        } else if let Ok(meta) = entry.metadata() {
+            total = total.saturating_add(meta.len());
+        }
+    }
+    total
+}
+
+/// Disk usage summary for the Local GIS Library folder (not Atlas).
+#[tauri::command]
+pub fn gis_catalog_storage_stats(
+    app: AppHandle,
+    state: tauri::State<'_, Arc<GisCatalogState>>,
+) -> Result<Value, String> {
+    let root = {
+        let locked = state.library_root.lock().clone();
+        match locked {
+            Some(r) => r,
+            None => library_root_path(&app)?,
+        }
+    };
+    ensure_library_dirs(&root)?;
+
+    let item_count: i64 = with_conn(&state, |conn| {
+        conn.query_row("SELECT COUNT(*) FROM catalog_item", [], |row| row.get(0))
+            .map_err(|e| format!("count items: {e}"))
+    })
+    .unwrap_or(0);
+
+    let favorites: i64 = with_conn(&state, |conn| {
+        conn.query_row(
+            "SELECT COUNT(*) FROM catalog_item WHERE favorite != 0",
+            [],
+            |row| row.get(0),
+        )
+        .map_err(|e| format!("count favorites: {e}"))
+    })
+    .unwrap_or(0);
+
+    let total_bytes = dir_byte_size(&root);
+    let originals = dir_byte_size(&root.join("originals"));
+    let datasets = dir_byte_size(&root.join("datasets"));
+    let tiles = dir_byte_size(&root.join("tiles"));
+
+    Ok(json!({
+        "libraryRoot": root.to_string_lossy(),
+        "itemCount": item_count,
+        "favoriteCount": favorites,
+        "totalBytes": total_bytes,
+        "originalsBytes": originals,
+        "datasetsBytes": datasets,
+        "tilesBytes": tiles,
+    }))
 }

@@ -189,6 +189,8 @@
  * @property {(id: string) => Promise<{ item: object, geojson: object }>} readPreview
  * @property {(payload: { id: string, workingPath: string, checksum?: string }) => Promise<{ item: object }>} [setWorkingPath]
  * @property {(payload: { id: string, tilePath: string, minZoom?: number, maxZoom?: number, sourceLayer?: string }) => Promise<{ item: object }>} [setTilePath]
+ * @property {(payload: { id: string, favorite?: boolean, tags?: string[], folder?: string|null }) => Promise<{ item: object }>} [updateMeta]
+ * @property {() => Promise<{ libraryRoot?: string, itemCount?: number, favoriteCount?: number, totalBytes?: number, originalsBytes?: number, datasetsBytes?: number, tilesBytes?: number }>} [storageStats]
  * @property {(path: string, offset: number, length: number) => Promise<{ base64: string, bytesRead: number, offset?: number }>} [readFileRange]
  */
 

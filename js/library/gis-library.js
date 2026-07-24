@@ -92,7 +92,63 @@ export function formatBytes(n) {
     const bytes = Number(n) || 0;
     if (bytes < 1024) return `${bytes} B`;
     if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+    if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+    return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+}
+
+/**
+ * @param {string} id
+ * @param {{ favorite?: boolean, tags?: string[], folder?: string|null }} patch
+ */
+export async function updateGisLibraryMeta(id, patch = {}) {
+    const catalog = getGisCatalogService();
+    if (!catalog?.updateMeta || !id) return null;
+    await catalog.open();
+    const { item } = await catalog.updateMeta({ id, ...patch });
+    bus.emit('gis-library:changed', { action: 'meta', item });
+    return item || null;
+}
+
+/**
+ * @returns {Promise<object|null>}
+ */
+export async function getGisLibraryStorageStats() {
+    const catalog = getGisCatalogService();
+    if (!catalog?.storageStats) return null;
+    await catalog.open();
+    return catalog.storageStats();
+}
+
+/**
+ * Client-side filter for library list UI.
+ * @param {object[]} items
+ * @param {{ query?: string, favoritesOnly?: boolean, folder?: string }} [opts]
+ */
+export function filterGisLibraryItems(items, opts = {}) {
+    const list = Array.isArray(items) ? items : [];
+    const q = String(opts.query || '').trim().toLowerCase();
+    const favoritesOnly = Boolean(opts.favoritesOnly);
+    const folder = opts.folder != null && opts.folder !== '' ? String(opts.folder) : null;
+
+    return list.filter((item) => {
+        if (favoritesOnly && !item.favorite) return false;
+        if (folder != null && String(item.folder || '') !== folder) return false;
+        if (!q) return true;
+        const tags = Array.isArray(item.tags) ? item.tags.join(' ') : '';
+        const hay = [
+            item.displayName,
+            item.originalFilename,
+            item.format,
+            item.derivedOp,
+            item.folder,
+            tags,
+            item.description
+        ]
+            .filter(Boolean)
+            .join(' ')
+            .toLowerCase();
+        return hay.includes(q);
+    });
 }
 
 /**
