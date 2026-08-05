@@ -21,8 +21,6 @@ export async function openProximityJoin(ctx) {
                 value: entry.value,
                 label: `${entry.label} (${entry.abbr})`
             })),
-            pythonAvailable: false,
-            accelThreshold: null,
             onCancel: close,
             onLayerFocus: (layerId) => {
                 if (!layerId) return;
@@ -127,8 +125,7 @@ export async function openProximityJoin(ctx) {
 
                 return {
                     ...result,
-                    unitsLabel: unitAbbr(config.units),
-                    provider: 'javascript'
+                    unitsLabel: unitAbbr(config.units)
                 };
             }
         })

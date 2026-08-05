@@ -9,7 +9,7 @@ Shared style pack for the [UDOT Fiber Network MapServer](https://central.udot.ut
 python scripts/build-udot-fiber-drawing-info.py
 
 # Bentley RGB/label map from workbook
-python scripts/build-udot-fiber-bentley-symbols.py "C:\path\to\NewSymbols.xlsx"
+python scripts/build-udot-fiber-bentley-symbols.py /path/to/NewSymbols.xlsx
 ```
 
 ## Runtime

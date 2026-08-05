@@ -10,7 +10,6 @@ export async function openBulkUpdate(ctx) {
         mountExport: 'mountBulkUpdateDialog',
         getProps: (close) => ({
             layers: getSpatialLayerOptions(ctx, { includeFields: true }),
-            pythonAvailable: false,
             onCancel: close,
             onLayerFocus: (layerId) => {
                 if (!layerId) return;

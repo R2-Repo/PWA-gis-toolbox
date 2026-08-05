@@ -29,9 +29,9 @@ import { getPlatformBundle } from '../platform/create-platform.js';
  * Widgets shown in the GIS Widgets panel (`react/panels/WidgetPanel.jsx`).
  * To re-enable a hidden widget, move its entry from `GIS_WIDGETS_HIDDEN` into this array.
  *
- * Optional metadata (defaults keep current web behavior):
- * - requiredCapabilities: hide widget when any capability is missing
- * - optionalCapabilities: reserved for future browser accelerators
+ * Optional metadata:
+ * - requiredCapabilities: hide widget when any capability is missing (unused on web today)
+ * - optionalCapabilities: reserved for future browser features
  */
 export const GIS_WIDGETS = [
     {

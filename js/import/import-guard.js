@@ -21,36 +21,15 @@ import { classifyImportFiles } from './import-policy.js';
  * @returns {Promise<{ cancelled: boolean, check: ReturnType<typeof preflightFiles>, guardVersion: string }>}
  */
 export async function guardFilesBeforeImport(files, options = {}) {
-    const { memoryFiles, pathFiles, blockedLargeNoPath } = classifyImportFiles(files, options.platform);
+    const { memoryFiles } = classifyImportFiles(files);
 
-    if (blockedLargeNoPath.length) {
-        const names = blockedLargeNoPath.map((f) => f.name).join(', ');
+    const layerBudget = checkExistingLayerMemory(options.getLayers);
+    if (!layerBudget.ok) {
         throw new AppError(
-            `${names}: too large for in-memory import.`,
+            layerBudget.message,
             ErrorCategory.OUT_OF_MEMORY,
-            { files: blockedLargeNoPath.map((f) => f.name), source: options.source, guardVersion: IMPORT_GUARD_VERSION }
+            { source: options.source, guardVersion: IMPORT_GUARD_VERSION }
         );
-    }
-
-    // Reserved for alternate import policies; the web policy keeps this empty.
-    if (pathFiles.length && !memoryFiles.length) {
-        return {
-            cancelled: false,
-            check: { reject: false, messages: [], level: 'ok', files: [] },
-            guardVersion: IMPORT_GUARD_VERSION
-        };
-    }
-
-    // Only enforce layer-memory budgets against in-memory files.
-    if (!pathFiles.length) {
-        const layerBudget = checkExistingLayerMemory(options.getLayers);
-        if (!layerBudget.ok) {
-            throw new AppError(
-                layerBudget.message,
-                ErrorCategory.OUT_OF_MEMORY,
-                { source: options.source, guardVersion: IMPORT_GUARD_VERSION }
-            );
-        }
     }
 
     if (!memoryFiles.length) {

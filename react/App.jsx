@@ -477,7 +477,6 @@ export function App() {
         if (!bootRanRef.current) {
             bootRanRef.current = true;
             void (async () => {
-                window.dispatchEvent(new CustomEvent('gis-platform-ready'));
                 bootstrapAppFromUrl();
                 if (window.innerWidth >= 768) {
                     await showToolInfo();

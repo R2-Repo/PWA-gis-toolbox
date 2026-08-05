@@ -17,7 +17,7 @@ Regenerate:
 
 ```bash
 python scripts/build-udot-fiber-drawing-info.py
-python scripts/build-udot-fiber-bentley-symbols.py "C:\path\to\NewSymbols.xlsx"
+python scripts/build-udot-fiber-bentley-symbols.py /path/to/NewSymbols.xlsx
 ```
 
 ## Point glyphs

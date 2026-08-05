@@ -1,18 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { getVisibleWidgets } from '../../js/widgets/registry.js';
 
-/** Fired when the web platform bundle is ready for widget filtering. */
-export const PLATFORM_READY_EVENT = 'gis-platform-ready';
-
 export function WidgetPanel() {
-    const [widgets, setWidgets] = useState(() => getVisibleWidgets());
-
-    useEffect(() => {
-        const sync = () => setWidgets(getVisibleWidgets());
-        sync();
-        window.addEventListener(PLATFORM_READY_EVENT, sync);
-        return () => window.removeEventListener(PLATFORM_READY_EVENT, sync);
-    }, []);
+    const [widgets] = useState(() => getVisibleWidgets());
 
     return (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>

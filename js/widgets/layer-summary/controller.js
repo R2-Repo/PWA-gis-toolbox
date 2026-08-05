@@ -1,14 +1,12 @@
 import { openReactIsland } from '../../ui/open-react-island.js';
 import { getSpatialLayerOptions } from '../widget-context.js';
 import {
-    providerLabel,
     summarizeFeatureCollection,
     validateLayerGeoJson
 } from './engine.js';
 
 /**
- * Shared widget: summarize a workspace layer.
- * Uses JavaScript by default; optionally accelerates large in-memory layers via Python.
+ * Summarize a workspace layer in the browser.
  *
  * @param {import('../widget-types.js').WidgetContext} ctx
  */
@@ -30,23 +28,13 @@ export async function openLayerSummary(ctx) {
                     throw new Error(validation.error);
                 }
 
-                const provider = 'javascript';
-
-                onProgress?.({
-                    percent: 5,
-                    stage: 'provider',
-                    message: `Using ${providerLabel(provider)}`
-                });
-
-                onProgress?.({ percent: 60, stage: 'analyze', message: 'Summarizing in JavaScript' });
+                onProgress?.({ percent: 60, stage: 'analyze', message: 'Summarizing…' });
                 const summary = summarizeFeatureCollection(layer.geojson, {
                     layerName: layer.name
                 });
                 onProgress?.({ percent: 100, stage: 'done', message: 'Complete' });
                 return {
                     ...summary,
-                    provider,
-                    providerLabel: providerLabel(provider),
                     layerName: layer.name
                 };
             }

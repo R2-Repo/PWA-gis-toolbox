@@ -2592,7 +2592,6 @@ async function openReproject() {
                 displayReady,
                 crsWarning,
                 sourceCrsError,
-                pythonAvailable: false,
                 onCancel: () => close(),
                 onApply: async ({ fromCrs, toCrs, name }) => {
                     close();

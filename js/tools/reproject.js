@@ -7,7 +7,7 @@ import { normalizeCrsCode } from '../crs/registry.js';
 
 /**
  * @param {object} dataset
- * @param {{ fromCrs?: string, toCrs?: string, name?: string, preferPython?: boolean }} options
+ * @param {{ fromCrs?: string, toCrs?: string, name?: string }} options
  */
 export async function reprojectLayer(dataset, options = {}) {
     const fromCrs = normalizeCrsCode(options.fromCrs || getLayerCrs(dataset));
