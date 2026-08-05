@@ -18,6 +18,7 @@ desktop.ini
 node_modules/
 dist/
 dist-web/
+dist-desktop/
 
 # Python (asset build helpers)
 __pycache__/

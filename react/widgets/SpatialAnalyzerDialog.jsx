@@ -22,11 +22,7 @@ export function SpatialAnalyzerDialog({
     const [running, setRunning] = useState(false);
     const [result, setResult] = useState(null);
     const [error, setError] = useState('');
-    const [message, setMessage] = useState(
-        pythonAvailable
-            ? `Python path available for large layers (≥ ${accelThreshold.toLocaleString()} features) or library files.`
-            : ''
-    );
+    const [message, setMessage] = useState('');
 
     const polygonLayers = useMemo(
         () => layers.filter((layer) => layer.hasPolygons),

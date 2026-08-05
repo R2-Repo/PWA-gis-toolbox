@@ -12,12 +12,11 @@ python scripts/build-udot-fiber-drawing-info.py
 python scripts/build-udot-fiber-bentley-symbols.py "C:\path\to\NewSymbols.xlsx"
 ```
 
-## Runtime split
+## Runtime
 
-| Runtime | Data path | Style |
-|---------|-----------|--------|
-| PWA | Live vector MapServer query / ArcGIS import | Same style pack |
-| Desktop | SQLite `udot-fiber-network.sqlite` (24h sync) | Same style pack |
+| Path | Data | Style |
+|------|------|--------|
+| PWA | Live vector MapServer query / ArcGIS import | This style pack |
 
 ## Point glyphs
 

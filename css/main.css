@@ -323,7 +323,7 @@ html, body {
 .btn-success { background: var(--success); color: white; }
 .btn-success:hover:not(:disabled) { background: #28b84c; }
 
-/* ========== Layout — Desktop 3-Panel ========== */
+/* ========== Layout — Wide 3-Panel ========== */
 .app-layout {
     display: flex;
     height: calc(100vh - var(--header-h));
@@ -521,10 +521,10 @@ html, body {
     height: 100%;
 }
 
-/* Dual Screen Mode — primary layout (desktop) */
-.dual-screen-desktop-only { display: inline-flex; }
+/* Dual Screen Mode — hide on narrow viewports */
+.dual-screen-wide-only { display: inline-flex; }
 @media (max-width: 767px) {
-    .dual-screen-desktop-only { display: none !important; }
+    .dual-screen-wide-only { display: none !important; }
 }
 .dual-screen-header-sep {
     margin-left: 10px;

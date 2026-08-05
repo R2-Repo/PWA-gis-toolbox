@@ -26,5 +26,4 @@ Procedural CAD glyphs (square-X, bowtie, dashed box) are ruled in `js/symbology/
 
 ## Platform
 
-- Contract: `UdotFiberDbService` in `js/platform/contracts.js`
-- Web provider: `js/platform/web/web-udot-fiber-db-service.js`
+Browser-only. Styles apply on ArcGIS / live-layer import via `js/symbology/udot-fiber/` (no local SQLite sync in this repo).

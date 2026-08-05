@@ -54,8 +54,7 @@ import {
     buildMapContextMenuItems,
     setPanelCollapsed,
     openPresentationLinkBuilderWidget,
-    bootstrapAppFromUrl,
-    bootstrapDesktopPlatform
+    bootstrapAppFromUrl
 } from '../js/tools/tool-handlers.js';
 import { getAppUrlConfig } from '../js/url/app-url-detector.js';
 import { getActiveLayer } from '../js/core/state.js';
@@ -73,8 +72,6 @@ import { mountToastHost } from './ui/mountToastHost.jsx';
 import { CollapsibleSection } from './ui/CollapsibleSection.jsx';
 import { isPresentationMode } from '../js/presentation/presentation-mode-detector.js';
 import { PresentationApp } from './presentation/PresentationApp.jsx';
-import { getPlatformBundle } from '../js/platform/create-platform.js';
-
 function SaveIndicator() {
     const [status, setStatus] = useState(null);
 
@@ -480,10 +477,9 @@ export function App() {
         if (!bootRanRef.current) {
             bootRanRef.current = true;
             void (async () => {
-                await bootstrapDesktopPlatform();
+                window.dispatchEvent(new CustomEvent('gis-platform-ready'));
                 bootstrapAppFromUrl();
-                const isWindowsDesktop = getPlatformBundle().platform?.runtime === 'windows';
-                if (window.innerWidth >= 768 && !isWindowsDesktop) {
+                if (window.innerWidth >= 768) {
                     await showToolInfo();
                 }
                 await restoreSessionIfAvailable();

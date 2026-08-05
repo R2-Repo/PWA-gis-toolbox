@@ -210,8 +210,7 @@ export function getWidgetOptionalCapabilities(widget, platform) {
 
 /**
  * Build APP_ACTIONS for all registered visible-list widgets.
- * Capability gating is enforced here and in the panel filter so desktop-only
- * widgets remain callable after a late platform handshake refresh.
+ * Capability gating is enforced here and in the panel filter.
  * @param {() => WidgetContext} getCtx
  * @returns {Record<string, () => void>}
  */
@@ -227,7 +226,7 @@ export function buildWidgetActions(getCtx) {
                     requiredCapabilities: widget.requiredCapabilities
                 });
                 ctx.showToast?.(
-                    `${widget.label} requires the Windows desktop app with the needed native capabilities.`,
+                    `${widget.label} is not available in this browser build.`,
                     'warning'
                 );
                 return;

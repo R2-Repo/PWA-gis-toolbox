@@ -1,6 +1,5 @@
 /**
  * Dual Screen Mode — sessionStorage UX hint only (not session / layer data).
- * @see docs/DUAL_SCREEN_MODE.md
  */
 
 export const DUAL_SCREEN_HINT_KEY = 'dualScreenActive';
@@ -8,9 +7,6 @@ export const DUAL_SCREEN_HINT_VALUE = '1';
 
 export const POPUP_BLOCKED_MESSAGE =
     'Could not open the Dual Screen map window. Allow pop-ups for this site, then click Dual Screen again.';
-
-export const DESKTOP_MAP_WINDOW_FAILED_MESSAGE =
-    'Could not open the Dual Screen map window. Restart the desktop app and try Dual Screen again.';
 
 export const RELOAD_REMINDER_MESSAGE =
     'Dual Screen was on before this reload. Click Dual Screen to open the map window again (not opened automatically).';

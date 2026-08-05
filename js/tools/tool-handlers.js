@@ -986,32 +986,6 @@ export async function handleFileImport(files, fenceBbox = null, options = {}) {
         if (!dataFiles.length) return;
     }
 
-    // Desktop: peel off path-backed / oversized files before browser memory import.
-    try {
-        const platform = options.platform ?? getPlatformBundle({ showToast }).platform;
-        const { services } = getPlatformBundle({ showToast });
-        const { classifyImportFiles } = await import('../import/import-policy.js');
-        const { memoryFiles, pathFiles, blockedLargeNoPath } = classifyImportFiles(dataFiles, platform);
-        if (blockedLargeNoPath.length) {
-            const names = blockedLargeNoPath.map((f) => f.name).join(', ');
-            throw new Error(
-                `${names}: too large for in-memory import. Click Local Files (native Open dialog) or drag from Explorer.`
-            );
-        }
-        if (pathFiles.length) {
-            await _importDesktopPathPreviews(pathFiles, services);
-            if (!memoryFiles.length) {
-                options.onComplete?.();
-                return;
-            }
-            dataFiles = memoryFiles;
-        }
-    } catch (routeErr) {
-        if (options.onAborted) options.onAborted();
-        showErrorToast(handleError(routeErr, 'Import', 'Desktop path route'));
-        return;
-    }
-
     let progress = null;
     let userCancelled = false;
     const batchLayerIds = [];
@@ -4002,13 +3976,6 @@ export function bootstrapAppFromUrl() {
     bootstrapAppUrl({ mapService, setPanelCollapsed });
 }
 
-/** PWA cleanup: desktop bootstrapping is intentionally disabled. */
-export async function bootstrapDesktopPlatform() {
-    if (typeof window !== 'undefined') {
-        window.dispatchEvent(new CustomEvent('gis-platform-ready'));
-    }
-}
-
 export async function materializeServiceLayerWithConfirm(layerId) {
     const layer = getLayers().find((entry) => entry.id === layerId);
     if (!layer || !isServiceLayer(layer)) return;
@@ -4841,11 +4808,6 @@ export function fixAGOL() {
     layer.schema = analyzeSchema(layer.geojson);
     refreshUI();
     showToast('AGOL fixes applied', 'success');
-}
-
-/** Removed from the PWA. Kept as a compatibility no-op for old action maps. */
-export async function saveLayerEditsToLibrary() {
-    showToast('Save edits to disk is unavailable in the PWA.', 'info');
 }
 
 // ============================

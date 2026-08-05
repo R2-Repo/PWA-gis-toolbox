@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { getVisibleWidgets } from '../../js/widgets/registry.js';
 
-/** Fired after desktop platform handshake refreshes capabilities. */
+/** Fired when the web platform bundle is ready for widget filtering. */
 export const PLATFORM_READY_EVENT = 'gis-platform-ready';
 
 export function WidgetPanel() {

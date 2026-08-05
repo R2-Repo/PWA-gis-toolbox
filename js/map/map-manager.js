@@ -682,13 +682,13 @@ class MapManager {
     }
 
     /**
-     * PMTiles disk layers were part of the removed desktop library path.
+     * PMTiles disk-backed layers are not supported in the browser PWA.
      * @param {object} dataset
      * @param {number} [colorIndex]
      * @param {{ fit?: boolean }} [options]
      */
     async addPmTilesLayer(dataset, colorIndex = 0, { fit = false } = {}) {
-        logger.warn('Map', 'PMTiles disk layers are unavailable in the PWA', {
+        logger.warn('Map', 'PMTiles disk layers are unavailable in the browser', {
             layer: dataset?.name,
             colorIndex,
             fit
