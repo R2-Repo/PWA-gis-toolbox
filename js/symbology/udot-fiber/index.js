@@ -3,7 +3,6 @@ export {
     UDOT_FIBER_LAYERS,
     UDOT_FIBER_LAYER_BY_KEY,
     UDOT_FIBER_LAYER_BY_ID,
-    UDOT_FIBER_SYNC_INTERVAL_MS,
     UDOT_FIBER_CATALOG_ID,
     layerUrl,
     matchUdotFiberLayerUrl

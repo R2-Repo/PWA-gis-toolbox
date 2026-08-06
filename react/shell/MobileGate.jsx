@@ -4,7 +4,7 @@ import { ToolGuideTitle } from '../tools/ToolGuideDialog.jsx';
 
 const MOBILE_BREAKPOINT = 768;
 
-const GATE_MESSAGE = 'GIS Toolbox works best on a larger screen. Please use a tablet or desktop for the full experience.';
+const GATE_MESSAGE = 'GIS Toolbox works best on a larger screen. Please use a tablet or computer for the full experience.';
 
 function HowToList({ tools }) {
     return (

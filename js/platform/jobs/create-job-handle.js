@@ -1,5 +1,5 @@
 /**
- * Shared job handle factory used by web mocks and Windows IPC jobs.
+ * Shared job handle factory for browser platform jobs.
  */
 
 /**

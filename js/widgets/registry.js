@@ -29,9 +29,9 @@ import { getPlatformBundle } from '../platform/create-platform.js';
  * Widgets shown in the GIS Widgets panel (`react/panels/WidgetPanel.jsx`).
  * To re-enable a hidden widget, move its entry from `GIS_WIDGETS_HIDDEN` into this array.
  *
- * Optional metadata (defaults keep current web behavior):
- * - requiredCapabilities: hide widget when any capability is missing
- * - optionalCapabilities: reserved for future browser accelerators
+ * Optional metadata:
+ * - requiredCapabilities: hide widget when any capability is missing (unused on web today)
+ * - optionalCapabilities: reserved for future browser features
  */
 export const GIS_WIDGETS = [
     {
@@ -210,8 +210,7 @@ export function getWidgetOptionalCapabilities(widget, platform) {
 
 /**
  * Build APP_ACTIONS for all registered visible-list widgets.
- * Capability gating is enforced here and in the panel filter so desktop-only
- * widgets remain callable after a late platform handshake refresh.
+ * Capability gating is enforced here and in the panel filter.
  * @param {() => WidgetContext} getCtx
  * @returns {Record<string, () => void>}
  */
@@ -227,7 +226,7 @@ export function buildWidgetActions(getCtx) {
                     requiredCapabilities: widget.requiredCapabilities
                 });
                 ctx.showToast?.(
-                    `${widget.label} requires the Windows desktop app with the needed native capabilities.`,
+                    `${widget.label} is not available in this browser build.`,
                     'warning'
                 );
                 return;

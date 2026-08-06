@@ -36,7 +36,7 @@ export async function runReverseMilepostLookup(latlng, deps = {}) {
     });
 
     if (!hasResolvedUgrcApiKey()) {
-        // Desktop may open Settings; PWA should only toast (app key comes from build env).
+        // Optional personal-key dialog when a host provides openSettings; otherwise toast.
         if (typeof deps.openSettings === 'function') {
             showToast('UGRC API key required. Paste your personal key to continue.', 'warning');
             await deps.openSettings();

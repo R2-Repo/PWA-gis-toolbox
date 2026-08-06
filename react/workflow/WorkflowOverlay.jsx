@@ -259,7 +259,7 @@ export function WorkflowOverlay({ controller, getLayers, importFile }) {
                     </button>
                     <button
                         type="button"
-                        className="wf-topbar-btn dual-screen-desktop-only"
+                        className="wf-topbar-btn dual-screen-wide-only"
                         id="wf-dual-screen"
                         data-dual-screen-toggle
                         title="Open map in a second window (Dual Screen)"

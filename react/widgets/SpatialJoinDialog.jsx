@@ -5,8 +5,6 @@ import { WidgetPanelShell } from './shared/WidgetPanelShell.jsx';
 export function SpatialJoinDialog({
     layers = [],
     predicateOptions = [],
-    pythonAvailable = false,
-    accelThreshold = 5000,
     onCancel,
     onRun,
     onLayerFocus
@@ -14,7 +12,6 @@ export function SpatialJoinDialog({
     const [leftLayerId, setLeftLayerId] = useState('');
     const [rightLayerId, setRightLayerId] = useState('');
     const [predicate, setPredicate] = useState('within');
-    const [preferPython, setPreferPython] = useState(true);
     const [outputName, setOutputName] = useState('');
     const [busy, setBusy] = useState(false);
     const [status, setStatus] = useState('');
@@ -31,9 +28,7 @@ export function SpatialJoinDialog({
 
     const canRun = Boolean(leftLayerId && rightLayerId && leftLayerId !== rightLayerId && !busy);
 
-    const hint = pythonAvailable
-        ? `Windows: layers with a library path or ≥${accelThreshold.toLocaleString()} features use Python when available.`
-        : 'Runs in the browser (Turf points-in-polygons).';
+    const hint = 'Runs in the browser (Turf points-in-polygons).';
 
     return (
         <WidgetPanelShell
@@ -52,7 +47,6 @@ export function SpatialJoinDialog({
                             leftLayerId,
                             rightLayerId,
                             predicate,
-                            preferPython,
                             outputName: outputName.trim() || undefined
                         },
                         {
@@ -68,8 +62,7 @@ export function SpatialJoinDialog({
             }}
         >
             <p className="text-sm text-muted mb-8">
-                Copy attributes from the join layer onto matching features. Desktop can use the
-                Python sidecar for large or library-backed layers.
+                Copy attributes from the join layer onto matching features in the browser.
             </p>
 
             <LayerSelect
@@ -114,17 +107,6 @@ export function SpatialJoinDialog({
                     placeholder={leftLayer ? `${leftLayer.name}_spatial_join` : 'Auto'}
                 />
             </div>
-
-            {pythonAvailable ? (
-                <label className="form-group" style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                    <input
-                        type="checkbox"
-                        checked={preferPython}
-                        onChange={(e) => setPreferPython(e.target.checked)}
-                    />
-                    Prefer Python sidecar when available
-                </label>
-            ) : null}
 
             {leftLayer && rightLayer ? (
                 <p className="text-xs text-muted">

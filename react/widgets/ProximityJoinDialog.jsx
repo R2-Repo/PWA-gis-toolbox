@@ -71,8 +71,6 @@ function buildSummary({
 export function ProximityJoinDialog({
     layers = [],
     unitOptions = [],
-    pythonAvailable = false,
-    accelThreshold = 5000,
     onCancel,
     onPreview,
     onRun,
@@ -90,7 +88,6 @@ export function ProximityJoinDialog({
     const [writeMatchId, setWriteMatchId] = useState(false);
     const [matchIdField, setMatchIdField] = useState('');
     const [writeMatchLayer, setWriteMatchLayer] = useState(false);
-    const [preferPython, setPreferPython] = useState(true);
     const [selectedFields, setSelectedFields] = useState([]);
     const [preview, setPreview] = useState(null);
     const [results, setResults] = useState(null);
@@ -132,8 +129,7 @@ export function ProximityJoinDialog({
         writeMatchId,
         matchIdField,
         writeMatchLayer,
-        fieldMappings,
-        preferPython
+        fieldMappings
     }), [
         sourceLayerId,
         targetLayerId,
@@ -144,8 +140,7 @@ export function ProximityJoinDialog({
         writeMatchId,
         matchIdField,
         writeMatchLayer,
-        fieldMappings,
-        preferPython
+        fieldMappings
     ]);
 
     const canAdvanceStep1 = Boolean(
@@ -528,22 +523,6 @@ export function ProximityJoinDialog({
 
             {step === 3 ? (
                 <>
-                    {pythonAvailable && applyTo !== 'selection' ? (
-                        <label className="checkbox-row" style={{ marginBottom: 10 }}>
-                            <input
-                                type="checkbox"
-                                checked={preferPython}
-                                onChange={(e) => setPreferPython(e.target.checked)}
-                                disabled={running}
-                            />
-                            <span>
-                                Prefer Python for large / library layers
-                                <span className="text-xs text-muted" style={{ display: 'block' }}>
-                                    Uses the sidecar at ≥ {accelThreshold.toLocaleString()} features or when a disk path is available. Selection-only runs stay in JavaScript.
-                                </span>
-                            </span>
-                        </label>
-                    ) : null}
                     <div className="form-group">
                         <label>Summary</label>
                         <ul className="text-xs text-muted" style={{ paddingLeft: 16, margin: 0 }}>

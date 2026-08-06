@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
     formatByteSize,
-    providerLabel,
     summarizeFeatureCollection,
     validateLayerGeoJson
 } from '../js/widgets/layer-summary/engine.js';
@@ -23,7 +22,7 @@ describe('layer-summary engine', () => {
         ]
     };
 
-    it('validates layers and summarizes in JavaScript', () => {
+    it('validates layers and summarizes in the browser', () => {
         expect(validateLayerGeoJson(null).ok).toBe(false);
         expect(validateLayerGeoJson(sample).ok).toBe(true);
 
@@ -35,8 +34,7 @@ describe('layer-summary engine', () => {
         expect(summary.path).toBe('layer:Demo');
     });
 
-    it('formats JavaScript provider output', () => {
-        expect(providerLabel('javascript')).toBe('JavaScript');
+    it('formats byte sizes for summary display', () => {
         expect(formatByteSize(2048)).toBe('2.0 KB');
     });
 });

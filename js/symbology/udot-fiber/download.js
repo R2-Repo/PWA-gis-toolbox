@@ -1,5 +1,5 @@
 /**
- * Shared full-layer download for UDOT Fiber Network (PWA import + desktop sync).
+ * Full-layer download helpers for UDOT Fiber Network (browser / ArcGIS import).
  */
 import { ArcGISRestImporter } from '../../arcgis/rest-importer.js';
 import { UDOT_FIBER_LAYERS, layerUrl } from './constants.js';

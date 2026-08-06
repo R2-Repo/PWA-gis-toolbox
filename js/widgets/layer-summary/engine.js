@@ -37,7 +37,7 @@ export function extractFeatures(geojson) {
 }
 
 /**
- * JavaScript provider — mirrors sidecar summarize_geojson semantics for in-memory layers.
+ * Summarize an in-memory GeoJSON FeatureCollection.
  * @param {object} geojson
  * @param {{ layerName?: string }} [opts]
  * @returns {object}
@@ -68,14 +68,6 @@ export function summarizeFeatureCollection(geojson, opts = {}) {
         propertyKeys: [...propertyKeys].sort(),
         byteSize: approxBytes
     });
-}
-
-/**
- * @param {'javascript'} provider
- * @returns {string}
- */
-export function providerLabel(provider) {
-    return 'JavaScript';
 }
 
 /**

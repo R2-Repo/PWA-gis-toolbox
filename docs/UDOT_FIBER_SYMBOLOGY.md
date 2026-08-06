@@ -17,7 +17,7 @@ Regenerate:
 
 ```bash
 python scripts/build-udot-fiber-drawing-info.py
-python scripts/build-udot-fiber-bentley-symbols.py "C:\path\to\NewSymbols.xlsx"
+python scripts/build-udot-fiber-bentley-symbols.py /path/to/NewSymbols.xlsx
 ```
 
 ## Point glyphs
@@ -26,5 +26,4 @@ Procedural CAD glyphs (square-X, bowtie, dashed box) are ruled in `js/symbology/
 
 ## Platform
 
-- Contract: `UdotFiberDbService` in `js/platform/contracts.js`
-- Web provider: `js/platform/web/web-udot-fiber-db-service.js`
+Browser-only. Styles apply on ArcGIS / live-layer import via `js/symbology/udot-fiber/` (no local SQLite sync in this repo).

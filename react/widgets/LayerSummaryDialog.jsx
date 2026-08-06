@@ -31,9 +31,7 @@ export function LayerSummaryDialog({
                 onProgress: (p) => setProgress(p || null)
             });
             setResult(output || null);
-            setMessage(output?.providerLabel
-                ? `Complete via ${output.providerLabel}.`
-                : 'Summary complete.');
+            setMessage('Summary complete.');
         } catch (err) {
             setError(err?.message || 'Summary failed.');
             setResult(null);
@@ -51,7 +49,6 @@ export function LayerSummaryDialog({
                 status={message}
             >
                 <div className="text-sm" style={{ display: 'grid', gap: 10 }}>
-                    <ProviderBadge label={result.providerLabel || 'JavaScript'} accelerated={result.provider === 'python'} />
                     <div>
                         <div className="text-xs" style={{ color: 'var(--text-muted)' }}>Layer</div>
                         <div>{result.layerName || selected?.name || '—'}</div>
@@ -120,25 +117,6 @@ export function LayerSummaryDialog({
                 ) : null}
             </div>
         </WidgetPanelShell>
-    );
-}
-
-function ProviderBadge({ label, accelerated }) {
-    return (
-        <div
-            className="text-xs"
-            style={{
-                display: 'inline-flex',
-                alignSelf: 'start',
-                padding: '4px 8px',
-                borderRadius: 999,
-                border: '1px solid var(--border, #333)',
-                background: accelerated ? 'rgba(46, 160, 67, 0.15)' : 'transparent',
-                color: accelerated ? 'var(--success, #3fb950)' : 'var(--text-muted)'
-            }}
-        >
-            Mode: {label}
-        </div>
     );
 }
 

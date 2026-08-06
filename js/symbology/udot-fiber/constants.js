@@ -23,9 +23,6 @@ export const UDOT_FIBER_LAYER_BY_ID = Object.freeze(
     Object.fromEntries(UDOT_FIBER_LAYERS.map((layer) => [layer.id, layer]))
 );
 
-/** Desktop sync interval (ms). */
-export const UDOT_FIBER_SYNC_INTERVAL_MS = 24 * 60 * 60 * 1000;
-
 /** Catalog / style pack id prefix. */
 export const UDOT_FIBER_CATALOG_ID = 'udot-fiber-network';
 

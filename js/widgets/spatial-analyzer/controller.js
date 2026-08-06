@@ -1,7 +1,7 @@
 import { openReactIsland } from '../../ui/open-react-island.js';
 import { getSpatialLayerOptions } from '../widget-context.js';
 import { createAreaDrawHandlers } from '../map-draw-helpers.js';
-import { SPATIAL_RELATIONS, runSpatialAnalysis, computeMatchStats } from './engine.js';
+import { SPATIAL_RELATIONS, runSpatialAnalysis } from './engine.js';
 
 export async function openSpatialAnalyzer(ctx) {
     const areaHandlers = createAreaDrawHandlers(ctx);
@@ -14,12 +14,10 @@ export async function openSpatialAnalyzer(ctx) {
         getProps: (close) => ({
             layers: getSpatialLayerOptions(ctx, { requirePolygons: true }),
             relationOptions: SPATIAL_RELATIONS,
-            pythonAvailable: false,
-            accelThreshold: null,
             onCancel: close,
             onDrawArea: areaHandlers.draw,
             onUseLayerArea: areaHandlers.useLayerArea,
-            onRun: async ({ targetLayerId, analysisArea, spatialRelation, preferPython }) => {
+            onRun: async ({ targetLayerId, analysisArea, spatialRelation }) => {
                 const targetLayer = ctx.getLayers().find((layer) => layer.id === targetLayerId);
                 if (!targetLayer) {
                     throw new Error('Target layer not found.');
@@ -45,8 +43,7 @@ export async function openSpatialAnalyzer(ctx) {
                     total: targetLayer.geojson.features.length,
                     features: matchedFeatures,
                     stats,
-                    targetLayerName: targetLayer.name,
-                    provider: 'javascript'
+                    targetLayerName: targetLayer.name
                 };
             },
             onAddResults: (result) => {
@@ -60,7 +57,6 @@ export async function openSpatialAnalyzer(ctx) {
                     { type: 'FeatureCollection', features: result.features },
                     {
                         format: 'derived',
-                        nativeOutputPath: result.nativeOutputPath,
                         fullFeatureCount: result.matched
                     }
                 );

@@ -64,7 +64,7 @@ export function HeaderBar({
                         </span>
                         <span>Pipeline</span>
                     </button>
-                    <div className="header-pipeline-dual dual-screen-desktop-only">
+                    <div className="header-pipeline-dual dual-screen-wide-only">
                         <div className="header-sep dual-screen-header-sep" aria-hidden="true"></div>
                         <button className="btn btn-secondary btn-sm" id="btn-dual-screen" title="Open map in a second window (Dual Screen)">
                             <span className="btn-icon-text">🖥️</span><span className="btn-label">Dual Screen</span>

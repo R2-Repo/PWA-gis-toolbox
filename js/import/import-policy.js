@@ -17,19 +17,13 @@ export function exceedsBrowserImportStrongLimit(file, options = {}) {
 }
 
 /**
- * Partition files for openImportForFiles / handleFileImport.
+ * Normalize files for openImportForFiles / handleFileImport.
  * @param {File[]} files
- * @returns {{
- *   memoryFiles: File[],
- *   pathFiles: Array<{ file: File, path: string }>,
- *   blockedLargeNoPath: File[]
- * }}
+ * @returns {{ memoryFiles: File[] }}
  */
 export function classifyImportFiles(files) {
     return {
-        memoryFiles: Array.from(files || []),
-        pathFiles: [],
-        blockedLargeNoPath: []
+        memoryFiles: Array.from(files || [])
     };
 }
 

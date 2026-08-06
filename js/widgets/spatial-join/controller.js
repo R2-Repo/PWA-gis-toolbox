@@ -12,8 +12,6 @@ export async function openSpatialJoin(ctx) {
         getProps: (close) => ({
             layers: getSpatialLayerOptions(ctx, { includeFields: true }),
             predicateOptions: PREDICATE_OPTIONS,
-            pythonAvailable: false,
-            accelThreshold: null,
             onCancel: close,
             onLayerFocus: (layerId) => {
                 if (!layerId) return;
@@ -44,7 +42,7 @@ export async function openSpatialJoin(ctx) {
                 ctx.mapService.addLayer(result, ctx.getLayers().indexOf(result), { fit: true });
                 ctx.refreshUI();
                 ctx.showToast(`Spatial join complete — "${result.name}"`, 'success');
-                return { provider: 'javascript', featureCount: result.geojson?.features?.length || 0 };
+                return { featureCount: result.geojson?.features?.length || 0 };
             }
         })
     });

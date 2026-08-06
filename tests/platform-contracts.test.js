@@ -19,16 +19,14 @@ function filterVisible(platform, widgets) {
 }
 
 describe('platform contracts', () => {
-    it('reports web capabilities as unavailable by default', () => {
+    it('reports the browser web platform with no optional capabilities', () => {
         const { platform } = createWebPlatform();
         expect(platform.runtime).toBe('web');
         expect(platform.os).toBe('browser');
-        expect(hasCapability(platform, 'pythonCompute')).toBe(false);
-        expect(hasCapability(platform, 'localSqlite')).toBe(false);
-        expect(hasCapability(platform, 'icmpPing')).toBe(false);
+        expect(hasCapability(platform, 'unknown-capability')).toBe(false);
         expect(hasRequiredCapabilities(platform, [])).toBe(true);
-        expect(hasRequiredCapabilities(platform, ['pythonCompute'])).toBe(false);
-        expect(listAvailableOptionalCapabilities(platform, ['pythonCompute', 'gpuCompute'])).toEqual([]);
+        expect(hasRequiredCapabilities(platform, ['unknown-capability'])).toBe(false);
+        expect(listAvailableOptionalCapabilities(platform, ['unknown-a', 'unknown-b'])).toEqual([]);
     });
 
     it('createPlatform defaults to the web provider in Node/test', () => {
@@ -52,8 +50,8 @@ describe('platform contracts', () => {
             { type: 'spatial-analyzer', requiredCapabilities: [] },
             { type: 'sheet-cutting', requiredCapabilities: [] },
             {
-                type: 'point-cloud-classifier',
-                requiredCapabilities: ['pythonCompute', 'localPdal']
+                type: 'future-native-only',
+                requiredCapabilities: ['unavailable-capability']
             }
         ];
         const visible = filterVisible(platform, widgets);

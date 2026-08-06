@@ -12,7 +12,6 @@ export function ReprojectDialog({
     displayReady = false,
     crsWarning = '',
     sourceCrsError = '',
-    pythonAvailable = false,
     onCancel,
     onApply
 }) {
@@ -43,12 +42,6 @@ export function ReprojectDialog({
                     display correctly on the map. Reprojecting creates a new copy in {MAP_TARGET_LABEL}.
                 </p>
             )}
-
-            {pythonAvailable ? (
-                <p className="text-xs text-muted mb-8">
-                    Windows: large or library-backed layers use the Python sidecar when available.
-                </p>
-            ) : null}
 
             {crsWarning && !displayReady ? (
                 <p className="text-xs text-muted mb-8">{crsWarning}</p>

@@ -44,8 +44,7 @@ export function UgrcKeySettingsDialog({
                 <strong>UDOT state routes and interstates</strong>, not city streets.
             </p>
             <p className="text-xs text-muted" style={{ marginBottom: 12, lineHeight: 1.45 }}>
-                The public PWA uses an app-owned browser key. Desktop (and overrides) can paste a personal
-                key from{' '}
+                The public PWA uses an app-owned browser key. You can paste a personal key from{' '}
                 <a href={UGRC_DEVELOPER_URL} target="_blank" rel="noopener noreferrer">
                     developer.mapserv.utah.gov
                 </a>
