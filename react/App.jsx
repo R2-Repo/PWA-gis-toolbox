@@ -284,7 +284,6 @@ function AppShell() {
                     onPresentationLink={openPresentationLinkBuilderWidget}
                     getActiveLayer={getActiveLayer}
                     getSelectionCount={(layerId) => mapService.getSelectionCount(layerId)}
-                    onDeleteSelected={deleteSelectedFeatures}
                     canUndo={toolbar.canUndo}
                     canRedo={toolbar.canRedo}
                     showMerge={toolbar.showMerge}

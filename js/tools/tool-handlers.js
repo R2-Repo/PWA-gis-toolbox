@@ -75,7 +75,7 @@ import { findFirstLineStringFeature, listLineStringFeatures } from './line-geojs
 
 import drawManager from '../map/draw-manager.js';
 import { initSelectionShortcuts } from '../map/selection-shortcuts.js';
-import { buildSelectionActionItems, createSelectionActionHandlers } from './selection-actions.js';
+import { buildSelectionActionItems, createSelectionActionHandlers, attributeFieldsFromSelection } from './selection-actions.js';
 import sessionStore from '../core/session-store.js';
 import { buildDatasetFromSavedLayer, buildDatasetFromWorkspaceRef, prepareLayersFromKitSection } from '../core/layer-restore.js';
 import {
@@ -2804,12 +2804,16 @@ export function buildSelectionActionMenuItems(payload = {}) {
         bbox: payload.bbox || mapService.getLastSelectionBbox?.(),
         formats: handlers.getExportFormats(layer),
         targetLayers: getLayers().filter((l) => l.type === 'spatial'),
+        attributeFields: layer
+            ? attributeFieldsFromSelection(layer, mapService.getSelectedIndices(layer.id) || [])
+            : [],
         onInvert: () => handlers.invert(),
         onDelete: () => { void handlers.delete(); },
         onNewLayer: () => handlers.newLayerFromSelected(),
         onClip: () => { void handlers.clipSelectedToBox(); },
         onBulkEdit: () => handlers.bulkEdit(),
         onExport: (format) => { void handlers.exportSelected(format); },
+        onCopyAttribute: (fieldName) => { void handlers.copyAttributeToClipboard(fieldName); },
         onCopyToLayer: (id) => handlers.copyToLayer(id),
         onMoveToLayer: (id) => handlers.moveToLayer(id),
         onClear: () => handlers.clear()

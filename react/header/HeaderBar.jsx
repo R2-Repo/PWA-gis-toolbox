@@ -22,7 +22,6 @@ export function HeaderBar({
     onPopupModeChange,
     getActiveLayer,
     getSelectionCount,
-    onDeleteSelected,
     canUndo = false,
     canRedo = false,
     showMerge = false,
@@ -50,11 +49,6 @@ export function HeaderBar({
                 <div className="header-tool-actions">
                 <button className="btn btn-ghost btn-sm" id="btn-undo" disabled={!canUndo} title="Undo" onClick={() => onUndo?.()}>↩</button>
                 <button className="btn btn-ghost btn-sm" id="btn-redo" disabled={!canRedo} title="Redo" onClick={() => onRedo?.()}>↪</button>
-                <SelectionBar
-                    getActiveLayer={getActiveLayer}
-                    getSelectionCount={getSelectionCount}
-                    onDeleteSelected={onDeleteSelected}
-                />
                 <button className={`btn btn-secondary btn-sm${showMerge ? '' : ' hidden'}`} id="btn-merge" onClick={() => onMergeLayers?.()}>Merge Layers</button>
                 <div className="header-sep"></div>
                 <div className="header-pipeline-cluster">
@@ -71,6 +65,10 @@ export function HeaderBar({
                         </button>
                     </div>
                 </div>
+                <SelectionBar
+                    getActiveLayer={getActiveLayer}
+                    getSelectionCount={getSelectionCount}
+                />
                 </div>
             </div>
             <div className="header-right">

@@ -71,6 +71,8 @@ function _tagFeaturesForMap(dataset) {
 }
 import {
     bboxDiagonalMeetsMinDragPx,
+    featureIntersectsGeographicBbox,
+    geographicBboxToClientRect,
     isBoxSelectClickMove,
     markMapInteractionHandled,
     shouldStartBoxSelectDrag,
@@ -202,6 +204,7 @@ class MapManager {
         this._presentationMultiSelect = false;
         this._rectSelectCleanup = null;
         this._lastSelectionBbox = null;
+        this._suppressMapClickClear = false;
 
         // 3D
         this._3dEnabled = false;
@@ -362,6 +365,8 @@ class MapManager {
             this.map.dragRotate.disable();
             this.map.touchZoomRotate.disableRotation();
         }
+        // Native MapLibre boxZoom is Shift+drag → zoom-to-area; conflicts with our Shift+drag box-select
+        this.map.boxZoom.disable();
 
         // Scroll zoom: MapLibre uses setWheelZoomRate for mouse wheels and setZoomRate
         // for trackpads / small deltas — setting only the wheel rate leaves laptops unchanged.
@@ -382,6 +387,11 @@ class MapManager {
         // Click on empty map — clear highlight, popup, and selection
         this.map.on('click', (e) => {
             if (e._drawHandled) return;
+            // Shift+drag box-select ends with a synthetic click; don't wipe the new selection
+            if (this._suppressMapClickClear) {
+                this._suppressMapClickClear = false;
+                return;
+            }
             const hitLayers = this._getInteractiveLayerIds();
             const features = this._queryFeaturesAtPoint(e.point, hitLayers);
             if (features.length === 0) {
@@ -4417,6 +4427,22 @@ class MapManager {
         return this._lastSelectionBbox ? [...this._lastSelectionBbox] : null;
     }
 
+    /** Clear the box-select outline (drawing or completed). */
+    _clearSelectionRect() {
+        const src = this.map?.getSource('selection-rect');
+        if (src) src.setData({ type: 'FeatureCollection', features: [] });
+    }
+
+    /**
+     * Clear the completed/drawing selection box outline and notify UI (actions menu).
+     * Does not clear feature selection highlights.
+     */
+    clearSelectionBoxOutline() {
+        this._lastSelectionBbox = null;
+        this._clearSelectionRect();
+        bus.emit('selection:boxCleared');
+    }
+
     _setupRectangleSelect() {
         let press = null;
         let dragging = false;
@@ -4425,19 +4451,65 @@ class MapManager {
         let cornerBanner = null;
         let ignoreNextClick = false;
         const rectId = 'selection-rect';
+        const fillLayerId = `${rectId}-fill`;
+        const lineLayerId = `${rectId}-line`;
         const container = this.map.getContainer();
 
         if (!this.map.getSource(rectId)) {
             this.map.addSource(rectId, { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
-            this.map.addLayer({ id: rectId + '-fill', type: 'fill', source: rectId, paint: { 'fill-color': '#00e5ff', 'fill-opacity': 0.1 } });
-            this.map.addLayer({ id: rectId + '-line', type: 'line', source: rectId, paint: { 'line-color': '#00e5ff', 'line-width': 2, 'line-dasharray': [6, 4] } });
         }
+        if (!this.map.getLayer(fillLayerId)) {
+            this.map.addLayer({
+                id: fillLayerId,
+                type: 'fill',
+                source: rectId,
+                paint: {
+                    'fill-color': '#00e5ff',
+                    // drawing → light aqua; done → fully transparent (border remains)
+                    'fill-opacity': ['match', ['get', 'mode'], 'drawing', 0.1, 0]
+                }
+            });
+        } else {
+            try {
+                this.map.setPaintProperty(fillLayerId, 'fill-opacity', [
+                    'match', ['get', 'mode'], 'drawing', 0.1, 0
+                ]);
+            } catch { /* noop */ }
+        }
+        if (!this.map.getLayer(lineLayerId)) {
+            this.map.addLayer({
+                id: lineLayerId,
+                type: 'line',
+                source: rectId,
+                paint: { 'line-color': '#00e5ff', 'line-width': 2, 'line-dasharray': [6, 4] }
+            });
+        }
+
+        const setRectData = (start, end, mode) => {
+            const w = Math.min(start.lng, end.lng);
+            const s = Math.min(start.lat, end.lat);
+            const east = Math.max(start.lng, end.lng);
+            const n = Math.max(start.lat, end.lat);
+            this.map.getSource(rectId)?.setData({
+                type: 'Feature',
+                properties: { mode },
+                geometry: {
+                    type: 'Polygon',
+                    coordinates: [[[w, s], [east, s], [east, n], [w, n], [w, s]]]
+                }
+            });
+        };
 
         const clearRectPreview = () => {
             this.map.getSource(rectId)?.setData({ type: 'FeatureCollection', features: [] });
         };
 
-        const clearCornerA = () => {
+        const showCompletedRect = (bbox) => {
+            const [w, s, east, n] = bbox;
+            setRectData({ lng: w, lat: s }, { lng: east, lat: n }, 'done');
+        };
+
+        const clearCornerA = ({ clearRect = true } = {}) => {
             cornerA = null;
             if (cornerMarker) {
                 cornerMarker.remove();
@@ -4447,7 +4519,7 @@ class MapManager {
                 cornerBanner.remove();
                 cornerBanner = null;
             }
-            clearRectPreview();
+            if (clearRect) clearRectPreview();
         };
 
         const setCornerA = (lngLat) => {
@@ -4467,6 +4539,8 @@ class MapManager {
             clientY: e?.originalEvent?.clientY ?? e?.clientY ?? 0
         });
 
+        const copyLngLat = (ll) => ({ lng: ll.lng, lat: ll.lat });
+
         const finishBox = (start, end, addToExisting, clientPoint) => {
             const w = Math.min(start.lng, end.lng);
             const s = Math.min(start.lat, end.lat);
@@ -4481,12 +4555,16 @@ class MapManager {
             this._selectFeaturesInBounds(bbox, addToExisting);
             const layerId = this._activeLayerId;
             const count = layerId ? this.getSelectionCount(layerId) : 0;
-            setTimeout(clearRectPreview, 400);
+            // Keep outline; fill goes transparent via mode:'done'
+            showCompletedRect(bbox);
+            // Prevent the trailing click (after Shift+drag) from clearing selection
+            this._suppressMapClickClear = true;
             if (count > 0) {
                 bus.emit('selection:boxComplete', {
                     layerId,
                     count,
                     bbox,
+                    screenBbox: geographicBboxToClientRect(this.map, bbox),
                     clientX: clientPoint?.clientX ?? 0,
                     clientY: clientPoint?.clientY ?? 0
                 });
@@ -4500,14 +4578,22 @@ class MapManager {
             if (!shouldStartBoxSelectDrag(e.originalEvent)) return;
             if (this._queryFeaturesAtPoint(e.point).length > 0) return;
             if (cornerA) clearCornerA();
-            press = { lngLat: e.lngLat, point: { x: e.point.x, y: e.point.y } };
+            // New box → drop previous completed-box UI (actions menu)
+            if (this._lastSelectionBbox) {
+                this._lastSelectionBbox = null;
+                bus.emit('selection:boxCleared');
+            }
+            press = {
+                lngLat: copyLngLat(e.lngLat),
+                point: { x: e.point.x, y: e.point.y }
+            };
             dragging = false;
             this.map.dragPan.disable();
         };
 
         const onMouseMove = (e) => {
             if (cornerA && !press) {
-                this._updateRectGeoJSON(rectId, cornerA, e.lngLat);
+                setRectData(cornerA, e.lngLat, 'drawing');
                 return;
             }
             if (!press) return;
@@ -4515,7 +4601,7 @@ class MapManager {
                 dragging = true;
             }
             if (dragging) {
-                this._updateRectGeoJSON(rectId, press.lngLat, e.lngLat);
+                setRectData(press.lngLat, e.lngLat, 'drawing');
             }
         };
 
@@ -4529,7 +4615,9 @@ class MapManager {
             const client = clientPointFromEvent(e);
 
             if (wasDragging) {
-                finishBox(start, e.lngLat, !!e.originalEvent?.shiftKey, client);
+                ignoreNextClick = true;
+                markMapInteractionHandled(e);
+                finishBox(start, copyLngLat(e.lngLat), !!e.originalEvent?.shiftKey, client);
                 return;
             }
 
@@ -4548,8 +4636,8 @@ class MapManager {
             if (!cornerA || !this._canSelect() || !this._activeLayerId) return;
             markMapInteractionHandled(e);
             const start = cornerA;
-            clearCornerA();
-            finishBox(start, e.lngLat, false, clientPointFromEvent(e));
+            clearCornerA({ clearRect: false });
+            finishBox(start, copyLngLat(e.lngLat), false, clientPointFromEvent(e));
         };
 
         const onKeyDown = (e) => {
@@ -4566,8 +4654,12 @@ class MapManager {
             if (this._queryFeaturesAtPoint(point).length > 0) return;
             e.preventDefault();
             if (cornerA) clearCornerA();
+            if (this._lastSelectionBbox) {
+                this._lastSelectionBbox = null;
+                bus.emit('selection:boxCleared');
+            }
             const ll = this._touchClientToLngLat(e.touches[0].clientX, e.touches[0].clientY);
-            press = { lngLat: ll, point };
+            press = { lngLat: copyLngLat(ll), point };
             dragging = false;
             this.map.dragPan.disable();
         };
@@ -4577,7 +4669,7 @@ class MapManager {
             const point = this._touchClientToPoint(e.touches[0].clientX, e.touches[0].clientY);
             const ll = this._touchClientToLngLat(e.touches[0].clientX, e.touches[0].clientY);
             if (!dragging && !isBoxSelectClickMove(press.point, point)) dragging = true;
-            if (dragging) this._updateRectGeoJSON(rectId, press.lngLat, ll);
+            if (dragging) setRectData(press.lngLat, ll, 'drawing');
         };
         const onTouchEnd = (e) => {
             if (!press) return;
@@ -4593,7 +4685,8 @@ class MapManager {
             dragging = false;
             this.map.dragPan.enable();
             if (wasDragging) {
-                finishBox(start, ll, false, client);
+                ignoreNextClick = true;
+                finishBox(start, copyLngLat(ll), false, client);
             } else {
                 setCornerA(start);
             }
@@ -4618,8 +4711,8 @@ class MapManager {
             container.removeEventListener('touchmove', onTouchMove);
             container.removeEventListener('touchend', onTouchEnd);
             clearCornerA();
-            if (this.map.getLayer(rectId + '-fill')) this.map.removeLayer(rectId + '-fill');
-            if (this.map.getLayer(rectId + '-line')) this.map.removeLayer(rectId + '-line');
+            if (this.map.getLayer(fillLayerId)) this.map.removeLayer(fillLayerId);
+            if (this.map.getLayer(lineLayerId)) this.map.removeLayer(lineLayerId);
             if (this.map.getSource(rectId)) this.map.removeSource(rectId);
             this.map.dragPan.enable();
         };
@@ -4646,22 +4739,14 @@ class MapManager {
         }
         const sel = this._selections.get(layerId);
 
-        const [west, south, east, north] = bbox;
-        const bboxPoly = turf.bboxPolygon([west, south, east, north]);
-
-        for (const f of info.geojson.features) {
+        // Geographic coordinates only — ignore rendered circle size at the current zoom
+        const turfLib = typeof turf !== 'undefined' ? turf : globalThis.turf;
+        for (const f of info.geojson?.features || []) {
             if (!f.geometry) continue;
             if (f.properties?._featureIndex === undefined) continue;
             const idx = Number(f.properties._featureIndex);
             if (!Number.isFinite(idx)) continue;
-            try {
-                if (turf.booleanIntersects(f, bboxPoly)) sel.add(idx);
-            } catch {
-                try {
-                    const c = turf.centroid(f);
-                    if (turf.booleanPointInPolygon(c, bboxPoly)) sel.add(idx);
-                } catch { /* skip */ }
-            }
+            if (featureIntersectsGeographicBbox(f, bbox, turfLib)) sel.add(idx);
         }
         this._renderSelectionHighlights(layerId);
 
@@ -4725,6 +4810,11 @@ class MapManager {
                 if (this.map?.getSource(ss)) this.map.removeSource(ss);
             }
             this._selections.clear();
+        }
+        if (this.getTotalSelectionCount() === 0) {
+            this._lastSelectionBbox = null;
+            this._clearSelectionRect();
+            bus.emit('selection:boxCleared');
         }
         bus.emit('selection:changed', { layerId, totalCount: this.getTotalSelectionCount() });
     }

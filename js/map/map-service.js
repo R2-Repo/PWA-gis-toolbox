@@ -245,6 +245,9 @@ export function createMapService({ mapAdapter = mapManager } = {}) {
         getLastSelectionBbox() {
             return mapAdapter.getLastSelectionBbox?.() ?? null;
         },
+        clearSelectionBoxOutline() {
+            return mapAdapter.clearSelectionBoxOutline?.();
+        },
         enterSelectionMode() {
             return mapAdapter.enterSelectionMode();
         },

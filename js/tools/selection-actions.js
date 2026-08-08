@@ -67,6 +67,73 @@ export function layerHasLineGeometry(layer) {
 }
 
 /**
+ * @param {unknown} value
+ * @returns {boolean}
+ */
+export function isCopyableAttributeValue(value) {
+    if (value == null || value === '') return false;
+    if (typeof value === 'object') return false; // skip objects + arrays
+    return true;
+}
+
+/**
+ * Field names available to copy from selected features (schema first, then property union).
+ * @param {object} layer
+ * @param {number[]} [indices]
+ * @returns {string[]}
+ */
+export function attributeFieldsFromSelection(layer, indices = []) {
+    const names = [];
+    const seen = new Set();
+
+    const add = (name) => {
+        if (!name || typeof name !== 'string' || name.startsWith('_') || seen.has(name)) return;
+        seen.add(name);
+        names.push(name);
+    };
+
+    for (const field of layer?.schema?.fields || []) {
+        add(field?.name || field?.outputName);
+    }
+
+    const features = featuresFromSelection(layer, indices);
+    for (const f of features) {
+        for (const key of Object.keys(f.properties || {})) add(key);
+    }
+
+    return names;
+}
+
+/**
+ * Collect scalar attribute values in selection order (skips empty / object / array).
+ * @param {object} layer
+ * @param {number[]} indices
+ * @param {string} fieldName
+ * @returns {string[]}
+ */
+export function attributeValuesFromSelection(layer, indices = [], fieldName) {
+    if (!fieldName) return [];
+    const features = layer?.geojson?.features || [];
+    const byIndex = new Map();
+    features.forEach((f, i) => {
+        const raw = Number(f.properties?._featureIndex);
+        const key = Number.isFinite(raw) ? raw : i;
+        byIndex.set(key, f);
+    });
+
+    const values = [];
+    for (const raw of indices) {
+        const idx = Number(raw);
+        if (!Number.isFinite(idx)) continue;
+        const feature = byIndex.get(idx) ?? features[idx];
+        const value = feature?.properties?.[fieldName];
+        if (!isCopyableAttributeValue(value)) continue;
+        values.push(String(value));
+    }
+    return values;
+}
+
+/**
  * @param {object[]} deps
  */
 export function buildSelectionActionItems(deps) {
@@ -76,18 +143,20 @@ export function buildSelectionActionItems(deps) {
         bbox,
         formats = [],
         targetLayers = [],
+        attributeFields = null,
         onInvert,
         onDelete,
         onNewLayer,
         onClip,
         onBulkEdit,
         onExport,
+        onCopyAttribute,
         onCopyToLayer,
         onMoveToLayer,
         onClear
     } = deps;
 
-    if (!layer || count <= 0) return { items: [], layerName: layer?.name || null };
+    if (!layer || count <= 0) return { items: [], layerName: layer?.name || null, count: 0 };
 
     const items = [
         {
@@ -121,6 +190,22 @@ export function buildSelectionActionItems(deps) {
         icon: '✎',
         action: () => onBulkEdit?.()
     });
+
+    const fields = Array.isArray(attributeFields)
+        ? attributeFields
+        : attributeFieldsFromSelection(layer);
+    if (fields.length && onCopyAttribute) {
+        items.push({
+            label: 'Copy attribute to clipboard',
+            icon: '📋',
+            title: 'Copy one field from selected features as a newline-separated list',
+            children: fields.map((fieldName) => ({
+                label: fieldName,
+                icon: '📄',
+                action: () => onCopyAttribute?.(fieldName)
+            }))
+        });
+    }
 
     if (formats.length) {
         items.push({
@@ -164,10 +249,11 @@ export function buildSelectionActionItems(deps) {
         icon: '✕',
         title: 'Esc also clears',
         hint: 'Esc also clears',
+        closeMenu: true,
         action: () => onClear?.()
     });
 
-    return { items, layerName: `${layer.name} · ${count} selected` };
+    return { items, layerName: layer.name, count };
 }
 
 /**
@@ -193,6 +279,31 @@ export function createSelectionActionHandlers(ctx) {
             const layer = ctx.getActiveLayer?.();
             if (!layer?.geojson) return;
             ctx.mapService.invertSelection(layer.id, layer.geojson);
+        },
+
+        async copyAttributeToClipboard(fieldName) {
+            const sel = requireSelection();
+            if (!sel) return;
+            const values = attributeValuesFromSelection(sel.layer, sel.indices, fieldName);
+            if (!values.length) {
+                ctx.showToast?.(`No copyable values in "${fieldName}"`, 'warning');
+                return;
+            }
+            const text = values.join('\n');
+            try {
+                if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+                    await navigator.clipboard.writeText(text);
+                } else {
+                    throw new Error('clipboard unavailable');
+                }
+                ctx.showToast?.(
+                    `Copied ${values.length} value${values.length === 1 ? '' : 's'} from "${fieldName}"`,
+                    'success'
+                );
+            } catch (err) {
+                if (ctx.showErrorToast) ctx.showErrorToast(err);
+                else ctx.showToast?.(text, 'info');
+            }
         },
 
         async delete() {
