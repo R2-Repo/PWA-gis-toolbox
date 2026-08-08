@@ -52,6 +52,7 @@ import {
     exportProjectKit,
     exportMapView,
     buildMapContextMenuItems,
+    buildSelectionActionMenuItems,
     setPanelCollapsed,
     openPresentationLinkBuilderWidget,
     bootstrapAppFromUrl
@@ -64,6 +65,7 @@ import { MobileGate } from './shell/MobileGate.jsx';
 import { HeaderBar } from './header/HeaderBar.jsx';
 import { MapView } from './map/MapView.jsx';
 import { MapContextMenu } from './map/MapContextMenu.jsx';
+import { SelectionActionsMenu } from './map/SelectionActionsMenu.jsx';
 import { LayerListPanel, FieldListPanel, DataPrepToolsPanel } from './panels/LeftPanel.jsx';
 import { GisToolsPanel } from './panels/GisToolsPanel.jsx';
 import { RightPanel } from './panels/RightPanel.jsx';
@@ -431,6 +433,7 @@ function AppShell() {
             </div>
 
             <MapContextMenu buildItems={buildMapContextMenuItems} />
+            <SelectionActionsMenu buildItems={buildSelectionActionMenuItems} />
         </>
     );
 }

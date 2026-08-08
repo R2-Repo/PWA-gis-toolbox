@@ -5,6 +5,20 @@
 /** Matches box-select epsilon in map-manager `_setupRectangleSelect` (screen px, bbox diagonal). */
 export const RECT_DRAG_MIN_DIAGONAL_PX = 10;
 
+/** Screen-px move threshold: below this, Shift+press is a corner click (two-click box), not a drag. */
+export const BOX_SELECT_CLICK_MAX_MOVE_PX = 6;
+
+/**
+ * @param {{ x: number, y: number }} a
+ * @param {{ x: number, y: number }} b
+ * @param {number} [maxPx]
+ * @returns {boolean} true when movement stays within click tolerance
+ */
+export function isBoxSelectClickMove(a, b, maxPx = BOX_SELECT_CLICK_MAX_MOVE_PX) {
+    if (!a || !b) return false;
+    return Math.hypot((b.x ?? 0) - (a.x ?? 0), (b.y ?? 0) - (a.y ?? 0)) < maxPx;
+}
+
 /**
  * MapLibre exposes disable/enable on doubleClickZoom; Mapbox had enabled()/isEnabled().
  * @param {import('maplibregl').Map | null | undefined} map

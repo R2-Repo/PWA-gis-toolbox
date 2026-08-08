@@ -75,6 +75,7 @@ import { findFirstLineStringFeature, listLineStringFeatures } from './line-geojs
 
 import drawManager from '../map/draw-manager.js';
 import { initSelectionShortcuts } from '../map/selection-shortcuts.js';
+import { buildSelectionActionItems, createSelectionActionHandlers } from './selection-actions.js';
 import sessionStore from '../core/session-store.js';
 import { buildDatasetFromSavedLayer, buildDatasetFromWorkspaceRef, prepareLayersFromKitSection } from '../core/layer-restore.js';
 import {
@@ -1622,6 +1623,10 @@ export function setupAppWiring() {
         isDrawToolActive: () => !!drawManager.activeTool
     });
 
+    bus.on('selection:boxEmpty', () => {
+        showToast('No features in selection box', 'info');
+    });
+
     bus.on('coord-search:add-new', _coordSearchAddNew);
     bus.on('coord-search:add-existing', _coordSearchAddToExisting);
     bus.on('coord-search:clear', _coordSearchClear);
@@ -2765,6 +2770,50 @@ export function selectAllFeatures() {
     const layer = getActiveLayer();
     if (!layer || !isAnalyzableLayer(layer) || !layer.geojson) return;
     mapService.selectAll(layer.id, layer.geojson);
+}
+
+/**
+ * Menu items for the post box-select actions popup.
+ * @param {{ layerId?: string, count?: number, bbox?: number[] }} payload
+ */
+export function buildSelectionActionMenuItems(payload = {}) {
+    const layerId = payload.layerId || getActiveLayer()?.id;
+    const layer = layerId ? getLayers().find((l) => l.id === layerId) : getActiveLayer();
+    const count = layer ? (mapService.getSelectionCount(layer.id) || payload.count || 0) : 0;
+    const handlers = createSelectionActionHandlers({
+        getActiveLayer,
+        getLayers,
+        addLayer,
+        mapService,
+        refreshUI,
+        showToast,
+        showErrorToast: (err) => showErrorToast(handleError(err, 'Selection', 'action')),
+        confirm,
+        clearSelection,
+        deleteSelectedFeatures,
+        invokeAppAction,
+        pickExportCrsModal: async (opts) => {
+            const { pickExportCrsModal } = await import('../../react/tools/mountExportCrsDialog.jsx');
+            return pickExportCrsModal(opts);
+        }
+    });
+
+    return buildSelectionActionItems({
+        layer,
+        count,
+        bbox: payload.bbox || mapService.getLastSelectionBbox?.(),
+        formats: handlers.getExportFormats(layer),
+        targetLayers: getLayers().filter((l) => l.type === 'spatial'),
+        onInvert: () => handlers.invert(),
+        onDelete: () => { void handlers.delete(); },
+        onNewLayer: () => handlers.newLayerFromSelected(),
+        onClip: () => { void handlers.clipSelectedToBox(); },
+        onBulkEdit: () => handlers.bulkEdit(),
+        onExport: (format) => { void handlers.exportSelected(format); },
+        onCopyToLayer: (id) => handlers.copyToLayer(id),
+        onMoveToLayer: (id) => handlers.moveToLayer(id),
+        onClear: () => handlers.clear()
+    });
 }
 
 export function invertSelection() {

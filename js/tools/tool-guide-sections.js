@@ -31,7 +31,7 @@ export const TOOL_GUIDE_SECTIONS = [
             ['Layers Panel', 'View, select, toggle visibility, zoom to, rename, or remove imported layers.'],
             ['Fields Panel', 'View, search, select/deselect, rename, or add new fields on the active layer.'],
             ['Field Types', 'Text, Number, Boolean, Date, and Attach Photo. Photo fields let you attach images to individual features with inline previews. Photos are embedded when exported as KML/KMZ only.'],
-            ['Feature Selection', 'Pick a layer, then click features to select (cyan highlight). Shift+click to add/remove. Shift+drag on empty map to box-select. Open a tool and choose Entire layer or Selected features. Esc clears selection.'],
+            ['Feature Selection', 'Pick a layer, then click features to select (cyan highlight). Shift+click to add/remove. Shift+drag on empty map to box-select, or Shift+click two corners (pan/zoom between clicks) for a precise box. After a box select, an actions menu opens (invert, delete, new layer, clip lines, bulk edit, export, copy/move, clear). Esc clears selection.'],
             ['Merge Layers', 'Select which layers to combine into a single layer. A source_file field is added so you can tell which features came from which original layer. Useful for exporting multiple layers into one KML or KMZ with folders.'],
             ['Data Table', 'View the raw attribute table for the active layer.']
         ]

@@ -644,6 +644,15 @@ html, body {
 }
 .map-context-menu .ctx-submenu .ctx-item { white-space: nowrap; }
 .map-context-menu .ctx-sep { height: 1px; background: var(--border); margin: 4px 0; }
+.map-context-menu .ctx-item .ctx-hint {
+    display: block;
+    font-size: 10px;
+    color: var(--text-muted);
+    margin-top: 1px;
+}
+.map-context-menu.selection-actions-menu {
+    min-width: 220px;
+}
 
 /* Dark MapLibre control overrides */
 .maplibregl-ctrl-group {

@@ -69,7 +69,14 @@ function _tagFeaturesForMap(dataset) {
     }
     return taggedFeatures;
 }
-import { bboxDiagonalMeetsMinDragPx, markMapInteractionHandled, shouldStartBoxSelectDrag, stopMapCamera, suspendDoubleClickZoom } from './map-interaction-utils.js';
+import {
+    bboxDiagonalMeetsMinDragPx,
+    isBoxSelectClickMove,
+    markMapInteractionHandled,
+    shouldStartBoxSelectDrag,
+    stopMapCamera,
+    suspendDoubleClickZoom
+} from './map-interaction-utils.js';
 
 const PROGRAMMATIC_FIT_OPTIONS = { padding: 30, maxZoom: 16, duration: 0 };
 const SCHEDULE_FIT_DEBOUNCE_MS = 80;
@@ -194,6 +201,7 @@ class MapManager {
         this._activeLayerId = null;
         this._presentationMultiSelect = false;
         this._rectSelectCleanup = null;
+        this._lastSelectionBbox = null;
 
         // 3D
         this._3dEnabled = false;
@@ -4405,9 +4413,17 @@ class MapManager {
         void this._refreshPresentationAnchorFromSelection(layerId);
     }
 
+    getLastSelectionBbox() {
+        return this._lastSelectionBbox ? [...this._lastSelectionBbox] : null;
+    }
+
     _setupRectangleSelect() {
-        let startLngLat = null;
+        let press = null;
         let dragging = false;
+        let cornerA = null;
+        let cornerMarker = null;
+        let cornerBanner = null;
+        let ignoreNextClick = false;
         const rectId = 'selection-rect';
         const container = this.map.getContainer();
 
@@ -4421,7 +4437,37 @@ class MapManager {
             this.map.getSource(rectId)?.setData({ type: 'FeatureCollection', features: [] });
         };
 
-        const finishBox = (start, end, shiftKey) => {
+        const clearCornerA = () => {
+            cornerA = null;
+            if (cornerMarker) {
+                cornerMarker.remove();
+                cornerMarker = null;
+            }
+            if (cornerBanner) {
+                cornerBanner.remove();
+                cornerBanner = null;
+            }
+            clearRectPreview();
+        };
+
+        const setCornerA = (lngLat) => {
+            clearCornerA();
+            cornerA = { lng: lngLat.lng, lat: lngLat.lat };
+            const el = document.createElement('div');
+            el.style.cssText = 'width:12px;height:12px;background:#00e5ff;border:2px solid #fff;border-radius:50%;box-shadow:0 0 0 1px rgba(0,0,0,0.35);';
+            cornerMarker = new maplibregl.Marker({ element: el }).setLngLat([cornerA.lng, cornerA.lat]).addTo(this.map);
+            cornerBanner = this._showInteractionBanner(
+                'Click opposite corner to finish box select (Esc cancels). Pan/zoom freely.',
+                () => clearCornerA()
+            );
+        };
+
+        const clientPointFromEvent = (e) => ({
+            clientX: e?.originalEvent?.clientX ?? e?.clientX ?? 0,
+            clientY: e?.originalEvent?.clientY ?? e?.clientY ?? 0
+        });
+
+        const finishBox = (start, end, addToExisting, clientPoint) => {
             const w = Math.min(start.lng, end.lng);
             const s = Math.min(start.lat, end.lat);
             const east = Math.max(start.lng, end.lng);
@@ -4430,29 +4476,87 @@ class MapManager {
                 clearRectPreview();
                 return;
             }
-            this._selectFeaturesInBounds([w, s, east, n], shiftKey);
+            const bbox = [w, s, east, n];
+            this._lastSelectionBbox = bbox;
+            this._selectFeaturesInBounds(bbox, addToExisting);
+            const layerId = this._activeLayerId;
+            const count = layerId ? this.getSelectionCount(layerId) : 0;
             setTimeout(clearRectPreview, 400);
+            if (count > 0) {
+                bus.emit('selection:boxComplete', {
+                    layerId,
+                    count,
+                    bbox,
+                    clientX: clientPoint?.clientX ?? 0,
+                    clientY: clientPoint?.clientY ?? 0
+                });
+            } else {
+                bus.emit('selection:boxEmpty', { layerId, bbox });
+            }
         };
 
         const onMouseDown = (e) => {
             if (!this._canSelect() || !this._activeLayerId) return;
             if (!shouldStartBoxSelectDrag(e.originalEvent)) return;
             if (this._queryFeaturesAtPoint(e.point).length > 0) return;
-            startLngLat = e.lngLat;
-            dragging = true;
+            if (cornerA) clearCornerA();
+            press = { lngLat: e.lngLat, point: { x: e.point.x, y: e.point.y } };
+            dragging = false;
             this.map.dragPan.disable();
         };
+
         const onMouseMove = (e) => {
-            if (!dragging || !startLngLat) return;
-            this._updateRectGeoJSON(rectId, startLngLat, e.lngLat);
+            if (cornerA && !press) {
+                this._updateRectGeoJSON(rectId, cornerA, e.lngLat);
+                return;
+            }
+            if (!press) return;
+            if (!dragging && !isBoxSelectClickMove(press.point, e.point)) {
+                dragging = true;
+            }
+            if (dragging) {
+                this._updateRectGeoJSON(rectId, press.lngLat, e.lngLat);
+            }
         };
+
         const onMouseUp = (e) => {
-            if (!dragging || !startLngLat) return;
+            if (!press) return;
             this.map.dragPan.enable();
+            const start = press.lngLat;
+            const wasDragging = dragging;
+            press = null;
             dragging = false;
-            const start = startLngLat;
-            startLngLat = null;
-            finishBox(start, e.lngLat, e.originalEvent?.shiftKey);
+            const client = clientPointFromEvent(e);
+
+            if (wasDragging) {
+                finishBox(start, e.lngLat, !!e.originalEvent?.shiftKey, client);
+                return;
+            }
+
+            // Shift+click corner (two-click box select)
+            ignoreNextClick = true;
+            markMapInteractionHandled(e);
+            setCornerA(start);
+        };
+
+        const onClick = (e) => {
+            if (ignoreNextClick) {
+                ignoreNextClick = false;
+                markMapInteractionHandled(e);
+                return;
+            }
+            if (!cornerA || !this._canSelect() || !this._activeLayerId) return;
+            markMapInteractionHandled(e);
+            const start = cornerA;
+            clearCornerA();
+            finishBox(start, e.lngLat, false, clientPointFromEvent(e));
+        };
+
+        const onKeyDown = (e) => {
+            if (e.key === 'Escape' && cornerA) {
+                e.preventDefault?.();
+                clearCornerA();
+            }
         };
 
         const onTouchStart = (e) => {
@@ -4461,30 +4565,45 @@ class MapManager {
             const point = this._touchClientToPoint(e.touches[0].clientX, e.touches[0].clientY);
             if (this._queryFeaturesAtPoint(point).length > 0) return;
             e.preventDefault();
-            startLngLat = this._touchClientToLngLat(e.touches[0].clientX, e.touches[0].clientY);
-            dragging = true;
+            if (cornerA) clearCornerA();
+            const ll = this._touchClientToLngLat(e.touches[0].clientX, e.touches[0].clientY);
+            press = { lngLat: ll, point };
+            dragging = false;
             this.map.dragPan.disable();
         };
         const onTouchMove = (e) => {
-            if (!dragging || !startLngLat || e.touches.length !== 1) return;
+            if (!press || e.touches.length !== 1) return;
             e.preventDefault();
+            const point = this._touchClientToPoint(e.touches[0].clientX, e.touches[0].clientY);
             const ll = this._touchClientToLngLat(e.touches[0].clientX, e.touches[0].clientY);
-            this._updateRectGeoJSON(rectId, startLngLat, ll);
+            if (!dragging && !isBoxSelectClickMove(press.point, point)) dragging = true;
+            if (dragging) this._updateRectGeoJSON(rectId, press.lngLat, ll);
         };
         const onTouchEnd = (e) => {
-            if (!dragging || !startLngLat) return;
+            if (!press) return;
             e.preventDefault();
             const ll = this._touchClientToLngLat(e.changedTouches[0].clientX, e.changedTouches[0].clientY);
-            const start = startLngLat;
-            startLngLat = null;
+            const start = press.lngLat;
+            const wasDragging = dragging;
+            const client = {
+                clientX: e.changedTouches[0].clientX,
+                clientY: e.changedTouches[0].clientY
+            };
+            press = null;
             dragging = false;
             this.map.dragPan.enable();
-            finishBox(start, ll, false);
+            if (wasDragging) {
+                finishBox(start, ll, false, client);
+            } else {
+                setCornerA(start);
+            }
         };
 
         this.map.on('mousedown', onMouseDown);
         this.map.on('mousemove', onMouseMove);
         this.map.on('mouseup', onMouseUp);
+        this.map.on('click', onClick);
+        document.addEventListener('keydown', onKeyDown);
         container.addEventListener('touchstart', onTouchStart, { passive: false });
         container.addEventListener('touchmove', onTouchMove, { passive: false });
         container.addEventListener('touchend', onTouchEnd, { passive: false });
@@ -4493,9 +4612,12 @@ class MapManager {
             this.map.off('mousedown', onMouseDown);
             this.map.off('mousemove', onMouseMove);
             this.map.off('mouseup', onMouseUp);
+            this.map.off('click', onClick);
+            document.removeEventListener('keydown', onKeyDown);
             container.removeEventListener('touchstart', onTouchStart);
             container.removeEventListener('touchmove', onTouchMove);
             container.removeEventListener('touchend', onTouchEnd);
+            clearCornerA();
             if (this.map.getLayer(rectId + '-fill')) this.map.removeLayer(rectId + '-fill');
             if (this.map.getLayer(rectId + '-line')) this.map.removeLayer(rectId + '-line');
             if (this.map.getSource(rectId)) this.map.removeSource(rectId);

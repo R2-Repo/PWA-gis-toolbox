@@ -242,6 +242,9 @@ export function createMapService({ mapAdapter = mapManager } = {}) {
         getSelectionCount(layerId) {
             return mapAdapter.getSelectionCount(layerId);
         },
+        getLastSelectionBbox() {
+            return mapAdapter.getLastSelectionBbox?.() ?? null;
+        },
         enterSelectionMode() {
             return mapAdapter.enterSelectionMode();
         },

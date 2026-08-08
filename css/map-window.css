@@ -236,6 +236,15 @@
 }
 .map-context-menu .ctx-submenu .ctx-item { white-space: nowrap; }
 .map-context-menu .ctx-sep { height: 1px; background: #3d3d42; margin: 4px 0; }
+.map-context-menu .ctx-item .ctx-hint {
+    display: block;
+    font-size: 10px;
+    color: #9aa0a6;
+    margin-top: 1px;
+}
+.map-context-menu.selection-actions-menu {
+    min-width: 220px;
+}
 
 /* Draw toolbar */
 .draw-toolbar {
