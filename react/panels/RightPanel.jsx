@@ -1,4 +1,6 @@
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { isSpatialLayer } from '../../js/core/data-model.js';
+import { normalizeStyle } from '../../js/map/style-engine.js';
 import { SmartStylePanel } from './SmartStylePanel.jsx';
 import { LabelsSection } from './LabelsSection.jsx';
 import { VisibilityRangeSection } from './VisibilityRangeSection.jsx';
@@ -77,11 +79,42 @@ export function RightPanel({
     const mapZoom = snapshot?.mapZoom ?? 7;
     const mapLatitude = snapshot?.mapLatitude ?? 0;
 
+    // Shared draft style so Layer Style + Labels never overwrite each other with stale copies.
+    const [draftStyle, setDraftStyle] = useState(() => (
+        layer ? normalizeStyle(layerStyle, styleDefaultColor) : null
+    ));
+    const layerIdRef = useRef(layer?.id);
+    const styleDebounceRef = useRef(null);
+
+    useEffect(() => {
+        if (!layer) {
+            layerIdRef.current = null;
+            setDraftStyle(null);
+            return;
+        }
+        if (layer.id !== layerIdRef.current) {
+            layerIdRef.current = layer.id;
+            setDraftStyle(normalizeStyle(layerStyle, styleDefaultColor));
+        }
+    }, [layer, layerStyle, styleDefaultColor]);
+
+    useEffect(() => () => {
+        if (styleDebounceRef.current) clearTimeout(styleDebounceRef.current);
+    }, []);
+
+    const handleSharedStyleChange = useCallback((next) => {
+        setDraftStyle(next);
+        if (styleDebounceRef.current) clearTimeout(styleDebounceRef.current);
+        styleDebounceRef.current = setTimeout(() => onStyleChange?.(next), 200);
+    }, [onStyleChange]);
+
     if (!layer) {
         return (
             <div className="empty-state"><p>No layer selected</p></div>
         );
     }
+
+    const sharedStyle = draftStyle || normalizeStyle(layerStyle, styleDefaultColor);
 
     return (
         <>
@@ -109,16 +142,16 @@ export function RightPanel({
                     <SmartStylePanel
                         key={layer.id}
                         layer={layer}
-                        style={layerStyle}
+                        style={sharedStyle}
                         defaultColor={styleDefaultColor}
-                        onStyleChange={onStyleChange}
+                        onStyleChange={handleSharedStyleChange}
                     />
                     <LabelsSection
                         key={`${layer.id}-labels`}
                         layer={layer}
-                        style={layerStyle}
+                        style={sharedStyle}
                         defaultColor={styleDefaultColor}
-                        onStyleChange={onStyleChange}
+                        onStyleChange={handleSharedStyleChange}
                     />
                 </>
             ) : null}
