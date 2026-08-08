@@ -486,26 +486,23 @@ function SmartStyleSection({ layer, style, onChange, onConvertEmbedded }) {
 
 export function SmartStylePanel({ layer, style: externalStyle, defaultColor = '#2563eb', onStyleChange }) {
     const geomTypes = useMemo(() => detectGeomTypes(layer), [layer]);
-    const [tab, setTab] = useState(() => (externalStyle?.mode === 'smart' ? 'smart' : 'simple'));
-    const [style, setStyle] = useState(() => normalizeStyle(externalStyle, defaultColor));
-    const debounceRef = useRef(null);
+    const style = useMemo(
+        () => normalizeStyle(externalStyle, defaultColor),
+        [externalStyle, defaultColor]
+    );
+    const [tab, setTab] = useState(() => (style?.mode === 'smart' ? 'smart' : 'simple'));
     const layerIdRef = useRef(layer?.id);
 
     useEffect(() => {
         if (layer?.id !== layerIdRef.current) {
             layerIdRef.current = layer?.id;
-            setStyle(normalizeStyle(externalStyle, defaultColor));
-            setTab(externalStyle?.mode === 'smart' ? 'smart' : 'simple');
+            setTab(style?.mode === 'smart' ? 'smart' : 'simple');
         }
-    }, [layer?.id, externalStyle, defaultColor]);
+    }, [layer?.id, style?.mode]);
 
     const pushStyle = useCallback((next) => {
-        setStyle(next);
-        if (debounceRef.current) clearTimeout(debounceRef.current);
-        debounceRef.current = setTimeout(() => onStyleChange?.(next), 200);
+        onStyleChange?.(next);
     }, [onStyleChange]);
-
-    useEffect(() => () => { if (debounceRef.current) clearTimeout(debounceRef.current); }, []);
 
     const handleTab = (nextTab) => {
         setTab(nextTab);
@@ -532,7 +529,7 @@ export function SmartStylePanel({ layer, style: externalStyle, defaultColor = '#
 
     const handleConvertEmbedded = () => {
         import('../../js/map/style-import.js').then(({ convertLayerSimpleStyleToSmart }) => {
-            const converted = convertLayerSimpleStyleToSmart(layer, defaultColor);
+            const converted = convertLayerSimpleStyleToSmart(layer, defaultColor, style);
             if (converted) {
                 setTab('smart');
                 pushStyle(converted);

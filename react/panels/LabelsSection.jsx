@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo } from 'react';
 import { normalizeStyle } from '../../js/map/style-engine.js';
 import {
     DEFAULT_LAYER_LABELS,
@@ -36,32 +36,18 @@ export function LabelsSection({ layer, style: externalStyle, defaultColor = '#25
         [layer?.schema?.fields]
     );
 
-    const [style, setStyle] = useState(() => normalizeStyle(externalStyle, defaultColor));
-    const debounceRef = useRef(null);
-    const layerIdRef = useRef(layer?.id);
-
-    useEffect(() => {
-        if (layer?.id !== layerIdRef.current) {
-            layerIdRef.current = layer?.id;
-            setStyle(normalizeStyle(externalStyle, defaultColor));
-        }
-    }, [layer?.id, externalStyle, defaultColor]);
+    const style = useMemo(
+        () => normalizeStyle(externalStyle, defaultColor),
+        [externalStyle, defaultColor]
+    );
 
     const labels = useMemo(
         () => normalizeLayerLabels(style.labels),
         [style.labels]
     );
 
-    const pushStyle = useCallback((next) => {
-        setStyle(next);
-        if (debounceRef.current) clearTimeout(debounceRef.current);
-        debounceRef.current = setTimeout(() => onStyleChange?.(next), 200);
-    }, [onStyleChange]);
-
-    useEffect(() => () => { if (debounceRef.current) clearTimeout(debounceRef.current); }, []);
-
     const setLabels = (patch) => {
-        pushStyle({ ...style, labels: { ...labels, ...patch } });
+        onStyleChange?.({ ...style, labels: { ...labels, ...patch } });
     };
 
     const handleEnable = (enabled) => {

@@ -144,6 +144,9 @@ export function resolveLayerLabels(style, dataset) {
             const { enabled, ...rest } = fromStyle;
             return normalizeMapLabels(rest);
         }
+        // Explicit labels block present but incomplete (e.g. enabled without field).
+        // Do not fall through to legacy _mapLabels — that fights the Labels UI.
+        if (Object.prototype.hasOwnProperty.call(fromStyle, 'enabled')) return null;
     }
     if (dataset?._mapLabels?.field) {
         return normalizeMapLabels(dataset._mapLabels);
@@ -152,15 +155,15 @@ export function resolveLayerLabels(style, dataset) {
 }
 
 /**
- * Copy legacy dataset._mapLabels into style.labels when style has no active labels block.
- * Keeps map output, right-panel Labels section, and zoom-range application in sync.
+ * Copy legacy dataset._mapLabels into style.labels when style has no labels block yet.
+ * Respects an explicit style.labels object, including enabled:false (user turned labels off).
  * @param {object|null|undefined} style
  * @param {object|null|undefined} dataset
  * @returns {object}
  */
 export function mergeDatasetLabelsIntoStyle(style, dataset) {
     const base = style && typeof style === 'object' ? { ...style } : {};
-    if (base.labels?.enabled && base.labels?.field) return base;
+    if (base.labels != null) return base;
     if (!dataset?._mapLabels?.field) return base;
     return {
         ...base,

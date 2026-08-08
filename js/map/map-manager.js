@@ -742,7 +742,9 @@ class MapManager {
         const stored = this._layerStyles.get(dataset.id);
         let layerStyle = normalizeStyle(stored, defaultColor);
         layerStyle = mergeDatasetLabelsIntoStyle(layerStyle, dataset);
-        if (!stored || (dataset?._mapLabels?.field && !stored.labels?.enabled)) {
+        // Persist only when first creating a style, or when migrating legacy _mapLabels
+        // into a style that had no labels block yet. Never re-enable after an explicit off.
+        if (!stored || (stored.labels == null && layerStyle.labels != null)) {
             this._layerStyles.set(dataset.id, { ...layerStyle });
         }
 

@@ -33,8 +33,9 @@ export function detectEmbeddedSimpleStyle(features) {
  * @param {object[]} features
  * @param {string} property
  * @param {string} [defaultColor]
+ * @param {object|null} [existingStyle] optional current layer style (preserves labels)
  */
-export function convertSimpleStyleToSmart(features, property = 'stroke', defaultColor = '#2563eb') {
+export function convertSimpleStyleToSmart(features, property = 'stroke', defaultColor = '#2563eb', existingStyle = null) {
     const counts = new Map();
     for (const f of features) {
         const v = f.properties?.[property];
@@ -65,19 +66,24 @@ export function convertSimpleStyleToSmart(features, property = 'stroke', default
         }],
         filterRules: []
     };
+    if (existingStyle?.labels) {
+        style.labels = { ...existingStyle.labels };
+    }
     return style;
 }
 
 /**
  * @param {object} layer
  * @param {string} defaultColor
+ * @param {object|null} [existingStyle]
  */
-export function convertLayerSimpleStyleToSmart(layer, defaultColor = '#2563eb') {
+export function convertLayerSimpleStyleToSmart(layer, defaultColor = '#2563eb', existingStyle = null) {
     const detection = detectEmbeddedSimpleStyle(layer.geojson?.features || []);
     if (!detection?.hasSimpleStyle || !detection.varyingProperty) return null;
     return convertSimpleStyleToSmart(
         layer.geojson.features,
         detection.varyingProperty,
-        defaultColor
+        defaultColor,
+        existingStyle
     );
 }

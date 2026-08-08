@@ -25,11 +25,12 @@ export function suggestVariableType(field) {
 }
 
 /**
- * Strip mode/smart wrapper; preserve point/line/polygon overrides for defaultStyle.
+ * Strip mode/smart/labels wrapper; preserve point/line/polygon overrides for defaultStyle.
+ * Labels belong on the root style object, not inside smart.defaultStyle.
  * @param {object} style
  */
 export function extractDefaultStyle(style) {
-    const { mode, smart, ...rest } = style;
+    const { mode, smart, labels, ...rest } = style;
     return { ...rest };
 }
 
