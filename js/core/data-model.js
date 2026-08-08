@@ -114,7 +114,9 @@ export function createServiceLayer({
     opacity = 1,
     attribution = '',
     presetId = null,
-    style = null
+    style = null,
+    firewatchPart = null,
+    firewatchSessionKey = null
 }) {
     return {
         id: generateId(),
@@ -131,7 +133,9 @@ export function createServiceLayer({
             refreshMs,
             opacity,
             attribution,
-            ...(style ? { style } : {})
+            ...(style ? { style } : {}),
+            ...(firewatchPart ? { firewatchPart } : {}),
+            ...(firewatchSessionKey ? { firewatchSessionKey } : {})
         },
         source: {
             format: 'live-service',

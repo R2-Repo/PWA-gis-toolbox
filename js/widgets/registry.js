@@ -94,6 +94,22 @@ export const GIS_WIDGETS = [
         open: openLayerMatchAssistant
     },
     {
+        type: 'sheet-cutting',
+        action: 'openSheetCutting',
+        label: 'Sheet Cutter',
+        icon: '✂️',
+        tip: 'Cut a project route into numbered plan sheet extents with matchlines and export.',
+        badge: 'Beta',
+        open: openSheetCutting
+    }
+];
+
+/**
+ * Implemented but not shown in the UI. Move entries back into GIS_WIDGETS to re-enable.
+ * @type {typeof GIS_WIDGETS}
+ */
+export const GIS_WIDGETS_HIDDEN = [
+    {
         type: 'fiber-procurement-design',
         action: 'openFiberProcurementDesign',
         label: 'Fiber Procurement Design',
@@ -110,14 +126,6 @@ export const GIS_WIDGETS = [
         open: openPlanSetCallouts
     },
     {
-        type: 'sheet-cutting',
-        action: 'openSheetCutting',
-        label: 'Sheet Cutter',
-        icon: '✂️',
-        tip: 'Cut a project route into numbered plan sheet extents with matchlines and export.',
-        open: openSheetCutting
-    },
-    {
         type: 'layer-summary',
         action: 'openLayerSummary',
         label: 'Layer Summary',
@@ -125,14 +133,7 @@ export const GIS_WIDGETS = [
         tip: 'Summarize feature counts, geometry types, and fields for a map layer.',
         requiredCapabilities: [],
         open: openLayerSummary
-    }
-];
-
-/**
- * Implemented but not shown in the UI. See docs/CRS_MANAGER.md.
- * @type {typeof GIS_WIDGETS}
- */
-export const GIS_WIDGETS_HIDDEN = [
+    },
     {
         type: 'query',
         action: 'openQuery',

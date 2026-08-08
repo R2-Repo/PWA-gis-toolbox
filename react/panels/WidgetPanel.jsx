@@ -10,6 +10,9 @@ export function WidgetPanel() {
                 <span key={widget.type} className="geo-tool-btn">
                     <button type="button" className="btn btn-sm btn-secondary" data-app-action={widget.action}>
                         {widget.icon} {widget.label}
+                        {widget.badge ? (
+                            <span className="badge badge-warning geo-tool-badge">{widget.badge}</span>
+                        ) : null}
                     </button>
                     <span className="geo-tip">{widget.tip}</span>
                 </span>

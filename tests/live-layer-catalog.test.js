@@ -3,10 +3,10 @@ import {
     inferServiceKind,
     validateCatalog,
     resolveLiveLayer,
+    expandCatalogEntry,
     listCatalogLiveLayers
 } from '../js/live-layers/catalog-schema.js';
-import { compilePaint } from '../js/map/style-engine.js';
-import { FIREWATCH_STYLE, resolveServiceLayerStyle } from '../js/live-layers/live-layer-styles.js';
+import { FIREWATCH_KIND } from '../js/live-layers/firewatch/constants.js';
 
 describe('live-layer catalog', () => {
     it('infers ArcGIS and GeoJSON kinds from URLs', () => {
@@ -23,21 +23,23 @@ describe('live-layer catalog', () => {
         const layers = listCatalogLiveLayers();
         expect(layers.some((entry) => entry.id === 'firewatch')).toBe(true);
         expect(layers.find((entry) => entry.id === 'firewatch')?.name).toBe('Firewatch');
+        expect(layers.find((entry) => entry.id === 'firewatch')?.subLayerCount).toBe(5);
+        expect(layers.some((entry) => entry.id === 'udot-fiber-network')).toBe(false);
     });
 
-    it('resolves firewatch layer with smart style', () => {
+    it('resolves firewatch as Utah composite with five firewatch parts', () => {
         const layer = resolveLiveLayer('firewatch');
         expect(layer?.name).toBe('Firewatch');
-        expect(layer?.kind).toBe('arcgis-featureserver');
-        expect(layer?.style?.mode).toBe('smart');
-    });
-
-    it('compiles firewatch style to data-driven point paint', () => {
-        const style = resolveServiceLayerStyle({ presetId: 'firewatch' });
-        const paint = compilePaint(style, 'point');
-        expect(paint.hasDataDriven).toBe(true);
-        expect(Array.isArray(paint.circleRadius)).toBe(true);
-        expect(Array.isArray(paint.fillColor)).toBe(true);
-        expect(FIREWATCH_STYLE.smart.visualVariables).toHaveLength(2);
+        expect(layer?.region).toBe('utah');
+        const services = expandCatalogEntry(layer);
+        expect(services).toHaveLength(5);
+        expect(services.every((s) => s.kind === FIREWATCH_KIND)).toBe(true);
+        expect(services.map((s) => s.firewatchPart)).toEqual([
+            'incidents',
+            'perimeters',
+            'viirs',
+            'modis',
+            'noaa'
+        ]);
     });
 });

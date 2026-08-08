@@ -207,7 +207,8 @@ html, body {
 }
 
 .header-print-item {
-    display: block;
+    display: flex;
+    align-items: center;
     width: 100%;
     text-align: left;
     background: none;
@@ -2335,6 +2336,12 @@ textarea { resize: vertical; min-height: 60px; }
 /* ===================== */
 .geo-tool-btn {
     position: relative;
+}
+.geo-tool-btn .geo-tool-badge {
+    margin-left: 6px;
+    padding: 1px 6px;
+    font-size: 10px;
+    vertical-align: middle;
 }
 /* Hidden inline — the text is read by JS and shown in the floating portal */
 .geo-tool-btn .geo-tip {

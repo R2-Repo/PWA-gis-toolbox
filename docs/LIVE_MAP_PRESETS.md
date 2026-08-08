@@ -71,6 +71,20 @@ Styles are **developer-authored in the catalog** (not the layer style panel).
 - Raster kinds (`arcgis-mapserver`, `wms`) remain visual overlays only (not analyzable as features).
 - Optional: **Materialize viewport** creates a permanent `type: 'spatial'` snapshot for offline/export workflows.
 
+### Firewatch (Utah composite)
+
+**Firewatch** is a special composite live layer (`kind: 'firewatch'`):
+
+- Queries **five** public ArcGIS FeatureServers and adds **five** toggleable layers:
+  1. NIFC perimeters
+  2. NIFC incidents
+  3. VIIRS hotspots
+  4. MODIS hotspots
+  5. NOAA hotspots
+- Clips to **Utah ± 0.8°** (fixed AOI — not map viewport)
+- Paints MapLibre layers per part (perimeter glow/fill/outline; heatmap+core per hotspot feed; flame icon + labels for incidents)
+- Implementation: [`js/live-layers/firewatch/`](../js/live-layers/firewatch/)
+
 ## Validation
 
-Run `npm test` — `tests/live-layer-catalog.test.js` and `tests/live-layer-viewport.test.js` cover catalog validation, tagging, and analyzability.
+Run `npm test` — `tests/live-layer-catalog.test.js`, `tests/live-layer-viewport.test.js`, and `tests/firewatch-normalize.test.js` cover catalog validation, tagging, and Firewatch normalization.

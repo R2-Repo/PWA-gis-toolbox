@@ -2,12 +2,21 @@ import { addLayer, getLayers, setActiveLayer } from '../core/state.js';
 import { createServiceLayer, isServiceLayer } from '../core/data-model.js';
 import { assignLayersToGroup, createLayerGroup } from '../core/layer-groups.js';
 import { expandCatalogEntry, resolveLiveLayer } from './catalog-schema.js';
+import { FIREWATCH_CATALOG_ID } from './firewatch/constants.js';
+import {
+    fitUtahEnvelope,
+    flushFirewatchSession,
+    getUtahFitBounds,
+    orderFirewatchLayersForSession
+} from './firewatch/runtime.js';
+import logger from '../core/logger.js';
 
 /**
  * @param {import('./catalog-schema.js').LiveLayerServiceConfig} serviceConfig
  * @param {string} catalogId
+ * @param {string} [sessionKey]
  */
-function createServiceLayerFromConfig(serviceConfig, catalogId) {
+function createServiceLayerFromConfig(serviceConfig, catalogId, sessionKey = null) {
     return createServiceLayer({
         name: serviceConfig.name,
         kind: serviceConfig.kind,
@@ -16,7 +25,9 @@ function createServiceLayerFromConfig(serviceConfig, catalogId) {
         opacity: serviceConfig.opacity,
         attribution: serviceConfig.attribution,
         presetId: serviceConfig.id || catalogId,
-        style: serviceConfig.style
+        style: serviceConfig.style,
+        firewatchPart: serviceConfig.firewatchPart || null,
+        firewatchSessionKey: sessionKey
     });
 }
 
@@ -37,7 +48,14 @@ export async function addCatalogLayerToMap(ctx, layerId, { fit = true } = {}) {
         throw new Error(`Live layer ${layerId} has no services`);
     }
 
-    const datasets = serviceConfigs.map((config) => createServiceLayerFromConfig(config, catalogEntry.id));
+    const isFirewatch = catalogEntry.id === FIREWATCH_CATALOG_ID;
+    const sessionKey = isFirewatch ? `firewatch-${Date.now()}` : null;
+
+    const datasets = serviceConfigs.map((config) => createServiceLayerFromConfig(
+        config,
+        catalogEntry.id,
+        sessionKey
+    ));
 
     for (const dataset of datasets) {
         addLayer(dataset, { activate: false });
@@ -49,7 +67,14 @@ export async function addCatalogLayerToMap(ctx, layerId, { fit = true } = {}) {
             datasets.map((ds) => ds.id),
             { collapsed: false, source: 'import' }
         );
-        if (group) assignLayersToGroup(group.id, datasets);
+        if (group) {
+            assignLayersToGroup(group.id, datasets);
+            if (sessionKey) {
+                for (const dataset of datasets) {
+                    if (dataset.service) dataset.service.firewatchSessionKey = sessionKey;
+                }
+            }
+        }
     }
 
     for (let i = 0; i < datasets.length; i++) {
@@ -58,12 +83,33 @@ export async function addCatalogLayerToMap(ctx, layerId, { fit = true } = {}) {
         await ctx.mapService.addServiceLayer(dataset, layerIdx, { fit: false });
     }
 
+    if (isFirewatch && sessionKey) {
+        try {
+            await flushFirewatchSession(sessionKey);
+        } catch (error) {
+            logger.warn('Firewatch', 'Initial fetch failed', { error: error?.message || String(error) });
+            ctx.showToast?.(`Firewatch data load failed: ${error?.message || error}`, 'error');
+        }
+    }
+
     if (fit) {
-        fitDatasets(ctx, datasets);
+        if (isFirewatch) {
+            const map = ctx.mapService.getMap?.();
+            if (map) fitUtahEnvelope(map);
+            else {
+                const bounds = getUtahFitBounds();
+                ctx.mapService.fitBounds?.(bounds, { padding: 40, duration: 0 });
+            }
+        } else {
+            fitDatasets(ctx, datasets);
+        }
     }
 
     setActiveLayer(datasets[0].id);
     ctx.mapService.syncLayerOrder?.(getLayers().map((l) => l.id));
+    if (isFirewatch && sessionKey) {
+        orderFirewatchLayersForSession(sessionKey);
+    }
 
     const label = datasets.length > 1
         ? `Added ${catalogEntry.name} (${datasets.length} layers)`

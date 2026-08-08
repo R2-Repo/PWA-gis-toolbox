@@ -3,9 +3,9 @@ export const TOOL_GUIDE_SECTIONS = [
     {
         title: 'How To',
         tools: [
-            ['1️⃣ Import', '➕ Add most Geospatial files types ➡️'],
-            ['2️⃣ Interact', '👁️ View, edit, or manipulate ➡️'],
-            ['3️⃣ Export', '💾 Same file type or convert ➡️']
+            ['1️⃣ Import', 'Add most Geospatial files types'],
+            ['2️⃣ Interact', 'View, edit, or manipulate'],
+            ['3️⃣ Export', 'Same file type or convert']
         ]
     },
     {
@@ -14,8 +14,7 @@ export const TOOL_GUIDE_SECTIONS = [
             ['GIS Toolbox', 'A modern web app for working with geospatial data.'],
             ['How it Works', 'Client-side, no backend server processing. All work is done in the browser, no need to download/ install any software.'],
             ['Tools', 'Most tools use Turf.js, a modular geospatial engine written in JavaScript'],
-            ['Limitations', 'Large datasets may cause browser performance issues. Try using the "Import Fence" tool to load a smaller area.'],
-            ['UGRC route & milepost', 'Right-click the map → Get route & milepost. Uses the Utah UGRC API near UDOT state routes/interstates only (not city streets). Optional: set a personal API key via the button below (otherwise the deployed app key is used).']
+            ['Limitations', 'Large datasets may cause browser performance issues. Try using the "Import Fence" tool to load a smaller area.']
         ]
     },
     {

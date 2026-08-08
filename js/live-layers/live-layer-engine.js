@@ -19,6 +19,14 @@ import {
 } from '../symbology/udot-fiber/glyphs.js';
 import { matchUdotFiberLayerUrl } from '../symbology/udot-fiber/constants.js';
 import logger from '../core/logger.js';
+import {
+    addFirewatchPart,
+    isFirewatchDataset,
+    refreshFirewatchPart,
+    removeFirewatchPart,
+    toggleFirewatchPart
+} from './firewatch/runtime.js';
+import { FIREWATCH_KIND } from './firewatch/constants.js';
 
 export {
     VECTOR_SERVICE_KINDS,
@@ -110,6 +118,18 @@ export async function addServiceLayer(mapManager, dataset, colorIndex = 0, optio
 
     const service = dataset.service || {};
     const kind = service.kind || inferServiceKind(service.url);
+
+    if (kind === FIREWATCH_KIND || isFirewatchDataset(dataset)) {
+        const runtime = await addFirewatchPart(mapManager, dataset, colorIndex, {
+            fit: options.fit,
+            registerRuntime: (layerId, fwRuntime) => {
+                getRuntimeMap(mapManager).set(layerId, fwRuntime);
+            }
+        });
+        logger.info('LiveLayer', 'Service layer added', { id: dataset.id, kind: FIREWATCH_KIND });
+        return runtime;
+    }
+
     const sourceId = `svc-src-${dataset.id}`;
     const runtime = /** @type {ServiceRuntime} */ ({
         layerId: dataset.id,
@@ -367,6 +387,11 @@ export async function refreshServiceLayer(mapManager, layerId) {
     const runtime = getRuntimeMap(mapManager).get(layerId);
     if (!map || !runtime) return;
 
+    if (runtime.kind === FIREWATCH_KIND) {
+        await refreshFirewatchPart(mapManager, layerId);
+        return;
+    }
+
     if (runtime.kind === 'arcgis-mapserver' || runtime.kind === 'wms') {
         const source = map.getSource(runtime.sourceId);
         if (source && 'reload' in source) source.reload();
@@ -549,6 +574,18 @@ export function removeServiceLayer(mapManager, layerId) {
     const map = mapManager.map;
     const runtime = getRuntimeMap(mapManager).get(layerId);
 
+    if (runtime?.kind === FIREWATCH_KIND) {
+        removeFirewatchPart(mapManager, layerId);
+        getRuntimeMap(mapManager).delete(layerId);
+        return;
+    }
+
+    // Orphaned firewatch part (runtime map already cleared)
+    if (removeFirewatchPart(mapManager, layerId)) {
+        getRuntimeMap(mapManager).delete(layerId);
+        return;
+    }
+
     if (runtime?.refreshTimer) window.clearInterval(runtime.refreshTimer);
 
     if (runtime && map) {
@@ -570,6 +607,8 @@ export function removeServiceLayer(mapManager, layerId) {
  */
 export function refreshAllVectorServiceLayers(mapManager) {
     for (const [layerId, runtime] of getRuntimeMap(mapManager)) {
+        // Firewatch uses a fixed Utah AOI + its own timer — skip moveend refreshes.
+        if (runtime.kind === FIREWATCH_KIND) continue;
         if (isVectorServiceKind(runtime.kind)) {
             void refreshServiceLayer(mapManager, layerId);
         }
@@ -638,6 +677,10 @@ export function toggleServiceLayer(mapManager, layerId, visible) {
     const map = mapManager.map;
     const runtime = getRuntimeMap(mapManager).get(layerId);
     if (!map || !runtime) return;
+    if (runtime.kind === FIREWATCH_KIND) {
+        toggleFirewatchPart(mapManager, layerId, visible);
+        return;
+    }
     const visibility = visible ? 'visible' : 'none';
     for (const id of runtime.mapLayerIds) {
         if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', visibility);

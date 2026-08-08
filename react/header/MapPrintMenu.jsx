@@ -66,6 +66,7 @@ export function MapPrintMenu({ onExportMapView, onPresentationLink, disabled = f
                     }}
                 >
                     Presentation Link
+                    <span className="badge badge-warning geo-tool-badge">Beta</span>
                 </button>
             </div>
         </div>

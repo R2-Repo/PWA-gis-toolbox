@@ -1,7 +1,7 @@
 import { LIVE_LAYERS } from './catalog.js';
 
 /**
- * @typedef {'wms' | 'arcgis-mapserver' | 'arcgis-mapserver-vector' | 'arcgis-featureserver' | 'wfs' | 'geojson-feed'} ServiceKind
+ * @typedef {'wms' | 'arcgis-mapserver' | 'arcgis-mapserver-vector' | 'arcgis-featureserver' | 'wfs' | 'geojson-feed' | 'firewatch'} ServiceKind
  */
 
 /**
@@ -16,6 +16,7 @@ import { LIVE_LAYERS } from './catalog.js';
  * @property {number} [opacity]
  * @property {string} [attribution]
  * @property {object} [style]
+ * @property {'perimeters' | 'incidents' | 'viirs' | 'modis' | 'noaa'} [firewatchPart]
  */
 
 /**
@@ -34,6 +35,7 @@ import { LIVE_LAYERS } from './catalog.js';
  * @property {number} [opacity]
  * @property {string} [attribution]
  * @property {object} [style]
+ * @property {boolean} [hidden] - omit from Import → Live Layers UI when true
  * @property {LiveLayerServiceConfig[]} [subLayers] - composite catalog entries
  */
 
@@ -81,7 +83,8 @@ export function expandCatalogEntry(entry) {
             refreshMs: sub.refreshMs ?? entry.refreshMs,
             opacity: sub.opacity ?? entry.opacity,
             attribution: sub.attribution ?? entry.attribution,
-            style: sub.style
+            style: sub.style,
+            ...(sub.firewatchPart ? { firewatchPart: sub.firewatchPart } : {})
         }));
     }
     if (!entry.url || !entry.kind) return [];
@@ -139,18 +142,20 @@ export function validateCatalog() {
 }
 
 /**
- * Import UI list — curated live layers from catalog.
+ * Import UI list — curated live layers from catalog (excludes hidden entries).
  */
 export function listCatalogLiveLayers() {
-    return LIVE_LAYERS.map(({ id, name, description, category, region, icon, subLayers }) => ({
-        id,
-        name,
-        description,
-        category,
-        region,
-        icon,
-        subLayerCount: Array.isArray(subLayers) ? subLayers.length : 1
-    }));
+    return LIVE_LAYERS
+        .filter((entry) => !entry.hidden)
+        .map(({ id, name, description, category, region, icon, subLayers }) => ({
+            id,
+            name,
+            description,
+            category,
+            region,
+            icon,
+            subLayerCount: Array.isArray(subLayers) ? subLayers.length : 1
+        }));
 }
 
 export function listLiveLayers() {

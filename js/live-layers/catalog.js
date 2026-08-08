@@ -1,7 +1,6 @@
 /**
  * Live layer catalog — data-only entries for Import → Live Layers.
  */
-import { FIREWATCH_STYLE } from './live-layer-styles.js';
 import {
     UDOT_FIBER_STYLE,
     UDOT_CONDUIT_STYLE,
@@ -11,30 +10,78 @@ import {
     UDOT_BUILDING_STYLE
 } from '../symbology/udot-fiber/styles.js';
 import { layerUrl, UDOT_FIBER_CATALOG_ID } from '../symbology/udot-fiber/constants.js';
+import {
+    FIREWATCH_CATALOG_ID,
+    FIREWATCH_KIND,
+    FIREWATCH_REFRESH_MS,
+    PART_ATTRIBUTION,
+    PART_URLS
+} from './firewatch/constants.js';
 
 /** @type {import('./catalog-schema.js').LiveLayerEntry[]} */
 export const LIVE_LAYERS = [
     {
-        id: 'firewatch',
+        id: FIREWATCH_CATALOG_ID,
         name: 'Firewatch',
-        description: 'NOAA satellite fire detections sized and colored by fire intensity (FRP).',
+        description: 'Utah wildfire perimeters, incidents, and satellite hotspots (NIFC, NASA FIRMS, NOAA).',
         icon: '🔥',
         category: 'Wildfire',
-        region: 'us',
-        kind: 'arcgis-featureserver',
-        url: 'https://services2.arcgis.com/C8EMgrsFcRFL6LrL/ArcGIS/rest/services/NOAA_Satellite_Fire_Detections_(v1)/FeatureServer/0',
-        refreshMs: 300000,
+        region: 'utah',
+        refreshMs: FIREWATCH_REFRESH_MS,
         opacity: 1,
-        attribution: 'NOAA',
-        style: FIREWATCH_STYLE
+        subLayers: [
+            {
+                id: 'firewatch-incidents',
+                name: 'Firewatch Incidents',
+                kind: FIREWATCH_KIND,
+                url: PART_URLS.incidents,
+                firewatchPart: 'incidents',
+                attribution: PART_ATTRIBUTION.incidents
+            },
+            {
+                id: 'firewatch-perimeters',
+                name: 'Firewatch Perimeters',
+                kind: FIREWATCH_KIND,
+                url: PART_URLS.perimeters,
+                firewatchPart: 'perimeters',
+                attribution: PART_ATTRIBUTION.perimeters
+            },
+            {
+                id: 'firewatch-viirs',
+                name: 'VIIRS Hotspots',
+                kind: FIREWATCH_KIND,
+                url: PART_URLS.viirs,
+                firewatchPart: 'viirs',
+                attribution: PART_ATTRIBUTION.viirs
+            },
+            {
+                id: 'firewatch-modis',
+                name: 'MODIS Hotspots',
+                kind: FIREWATCH_KIND,
+                url: PART_URLS.modis,
+                firewatchPart: 'modis',
+                attribution: PART_ATTRIBUTION.modis
+            },
+            {
+                id: 'firewatch-noaa',
+                name: 'NOAA Hotspots',
+                kind: FIREWATCH_KIND,
+                url: PART_URLS.noaa,
+                firewatchPart: 'noaa',
+                attribution: PART_ATTRIBUTION.noaa
+            }
+        ]
     },
     {
+        // Temporarily hidden from Import → Live Layers until fiber map is ready to publish.
+        // Set hidden: false (or remove) to re-enable in the UI. Catalog/tests still resolve by id.
         id: UDOT_FIBER_CATALOG_ID,
         name: 'UDOT Fiber Network',
         description: 'UDOT Fiber Network MapServer with ArcGIS/Bentley style pack (vector query).',
         icon: '🧵',
         category: 'Utilities',
         region: 'utah',
+        hidden: true,
         refreshMs: 300000,
         opacity: 1,
         attribution: 'UDOT',
