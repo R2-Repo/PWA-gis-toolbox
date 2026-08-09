@@ -19,6 +19,61 @@ function getDropIndex(clientY, itemElements) {
     return Math.max(0, itemElements.length - 1);
 }
 
+function LayerOverflowMenu({ label = 'Layer actions', items = [] }) {
+    const [open, setOpen] = useState(false);
+    const wrapperRef = useRef(null);
+
+    useEffect(() => {
+        if (!open) return undefined;
+        const closeMenu = (e) => {
+            if (!wrapperRef.current?.contains(e.target)) {
+                setOpen(false);
+            }
+        };
+        document.addEventListener('click', closeMenu);
+        return () => document.removeEventListener('click', closeMenu);
+    }, [open]);
+
+    return (
+        <div className="layer-overflow-menu" ref={wrapperRef}>
+            <button
+                type="button"
+                className="btn-icon layer-overflow-btn"
+                title={label}
+                aria-label={label}
+                aria-expanded={open}
+                aria-haspopup="menu"
+                onClick={(e) => {
+                    e.stopPropagation();
+                    setOpen((value) => !value);
+                }}
+            >
+                ⋯
+            </button>
+            {open ? (
+                <div className="layer-overflow-dropdown" role="menu">
+                    {items.map((item) => (
+                        <button
+                            key={item.id}
+                            type="button"
+                            className="layer-overflow-item"
+                            role="menuitem"
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                setOpen(false);
+                                item.onClick?.();
+                            }}
+                        >
+                            {item.icon ? <span className="layer-overflow-item-icon" aria-hidden>{item.icon}</span> : null}
+                            <span>{item.label}</span>
+                        </button>
+                    ))}
+                </div>
+            ) : null}
+        </div>
+    );
+}
+
 function LayerItemRow({
     layer,
     idx,
@@ -71,27 +126,6 @@ function LayerItemRow({
             data-flat-index={idx}
             onClick={() => actions.setActiveLayer(layer.id)}
         >
-            <button
-                type="button"
-                className="layer-drag-handle"
-                title="Drag to reorder"
-                aria-label="Drag to reorder layer"
-                onPointerDown={(e) => onDragPointerDown(e, layer.id, idx)}
-                onPointerMove={onDragPointerMove}
-                onPointerUp={(e) => onFinishDrag(e, layer.id)}
-                onPointerCancel={(e) => onFinishDrag(e, layer.id)}
-            >
-                <span aria-hidden>⋮⋮</span>
-            </button>
-            <input
-                type="checkbox"
-                className="layer-select-cb"
-                checked={isSelected}
-                aria-label={`Select ${layer.name}`}
-                onClick={(e) => e.stopPropagation()}
-                onChange={(e) => onToggleSelected(layer.id, e.target.checked)}
-            />
-            <span className="layer-icon">{icon}</span>
             <div className="layer-main">
                 <div className="layer-name-row">
                     <div
@@ -104,116 +138,130 @@ function LayerItemRow({
                     >
                         {layer.name}
                     </div>
-                    {layer._activeFilter ? (
-                        <span
-                            className="layer-filter-badge"
-                            title="Filter active – click to edit"
-                            onClick={(e) => {
-                                e.stopPropagation();
-                                actions.openFilterBuilder(layer.id);
-                            }}
-                        >
-                            FILTERED
-                        </span>
-                    ) : null}
-                    {layer.scaleRangeEnabled ? (
-                        <span
-                            className="layer-filter-badge layer-scale-badge"
-                            title={outOfScale ? 'Outside visible scale range at current zoom' : 'Scale range active'}
-                        >
-                            SCALE
-                        </span>
-                    ) : null}
-                    {crsWarning ? (
-                        <span
-                            className="layer-filter-badge layer-crs-badge"
-                            title={crsWarning}
-                        >
-                            CRS
-                        </span>
-                    ) : null}
-                    {layer._displayMode ? (
-                        <button
-                            type="button"
-                            className={[
-                                'layer-filter-badge',
-                                'layer-display-mode-badge',
-                                layer._displayMode.mode === 'tiled'
-                                    ? 'layer-display-mode-tiled'
-                                    : 'layer-display-mode-viewport'
-                            ].join(' ')}
-                            title={`${layer._displayMode.shortLabel} — click for details`}
-                            aria-label={`${layer._displayMode.shortLabel}. More information about how this layer is drawn on the map.`}
-                            onClick={(e) => {
-                                e.stopPropagation();
-                                actions.openLayerDisplayModeInfo?.(layer.id);
-                            }}
-                        >
-                            {layer._displayMode.badge}
-                            <span className="layer-display-mode-info" aria-hidden="true">i</span>
-                        </button>
-                    ) : null}
-                    <button
-                        type="button"
-                        className={['btn-icon', 'layer-lock-btn', isLocked ? 'layer-lock-btn-active' : ''].filter(Boolean).join(' ')}
-                        title={isLocked ? 'Unlock layer (enable map interaction)' : 'Lock layer (reference only — no selection or popups)'}
-                        onClick={(e) => {
-                            e.stopPropagation();
-                            actions.toggleLock(layer.id);
-                        }}
-                    >
-                        {isLocked ? '🔒' : '🔓'}
-                    </button>
-                    <button
-                        type="button"
-                        className="btn-icon layer-visibility-btn"
-                        title={isVisible ? 'Hide layer' : 'Show layer'}
-                        onClick={(e) => {
-                            e.stopPropagation();
-                            actions.toggleVisibility(layer.id);
-                        }}
-                    >
-                        {isVisible ? '👁️' : '👁️‍🗨️'}
-                    </button>
                 </div>
                 <div className="layer-bottom-row">
+                    <button
+                        type="button"
+                        className="layer-drag-handle"
+                        title="Drag to reorder"
+                        aria-label="Drag to reorder layer"
+                        onPointerDown={(e) => onDragPointerDown(e, layer.id, idx)}
+                        onPointerMove={onDragPointerMove}
+                        onPointerUp={(e) => onFinishDrag(e, layer.id)}
+                        onPointerCancel={(e) => onFinishDrag(e, layer.id)}
+                    >
+                        <span aria-hidden>⋮⋮</span>
+                    </button>
+                    <input
+                        type="checkbox"
+                        className="layer-select-cb"
+                        checked={isSelected}
+                        aria-label={`Select ${layer.name}`}
+                        onClick={(e) => e.stopPropagation()}
+                        onChange={(e) => onToggleSelected(layer.id, e.target.checked)}
+                    />
+                    <span className="layer-icon" aria-hidden>{icon}</span>
                     <div className="layer-meta">
-                        {count} · {fieldCount} fields {geomType ? <span className="badge badge-info">{geomType}</span> : null}
+                        <span className="layer-meta-text">
+                            {count} · {fieldCount} fields
+                        </span>
+                        {geomType ? <span className="badge badge-info">{geomType}</span> : null}
+                        {layer._activeFilter ? (
+                            <span
+                                className="layer-filter-badge"
+                                title="Filter active – click to edit"
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    actions.openFilterBuilder(layer.id);
+                                }}
+                            >
+                                FILTERED
+                            </span>
+                        ) : null}
+                        {layer.scaleRangeEnabled ? (
+                            <span
+                                className="layer-filter-badge layer-scale-badge"
+                                title={outOfScale ? 'Outside visible scale range at current zoom' : 'Scale range active'}
+                            >
+                                SCALE
+                            </span>
+                        ) : null}
+                        {crsWarning ? (
+                            <span
+                                className="layer-filter-badge layer-crs-badge"
+                                title={crsWarning}
+                            >
+                                CRS
+                            </span>
+                        ) : null}
+                        {layer._displayMode ? (
+                            <button
+                                type="button"
+                                className={[
+                                    'layer-filter-badge',
+                                    'layer-display-mode-badge',
+                                    layer._displayMode.mode === 'tiled'
+                                        ? 'layer-display-mode-tiled'
+                                        : 'layer-display-mode-viewport'
+                                ].join(' ')}
+                                title={`${layer._displayMode.shortLabel} — click for details`}
+                                aria-label={`${layer._displayMode.shortLabel}. More information about how this layer is drawn on the map.`}
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    actions.openLayerDisplayModeInfo?.(layer.id);
+                                }}
+                            >
+                                {layer._displayMode.badge}
+                                <span className="layer-display-mode-info" aria-hidden="true">i</span>
+                            </button>
+                        ) : null}
                     </div>
-                    <div className="layer-actions">
+                    <div className="layer-controls">
                         <button
                             type="button"
-                            className="btn-icon"
-                            title="Rename"
+                            className={['btn-icon', 'layer-lock-btn', isLocked ? 'layer-lock-btn-active' : ''].filter(Boolean).join(' ')}
+                            title={isLocked ? 'Unlock layer (enable map interaction)' : 'Lock layer (reference only — no selection or popups)'}
                             onClick={(e) => {
                                 e.stopPropagation();
-                                actions.renameLayer(layer.id);
+                                actions.toggleLock(layer.id);
                             }}
                         >
-                            ✏️
+                            {isLocked ? '🔒' : '🔓'}
                         </button>
                         <button
                             type="button"
-                            className="btn-icon"
-                            title="Zoom to layer"
+                            className="btn-icon layer-visibility-btn"
+                            title={isVisible ? 'Hide layer' : 'Show layer'}
                             onClick={(e) => {
                                 e.stopPropagation();
-                                actions.zoomToLayer(layer.id);
+                                actions.toggleVisibility(layer.id);
                             }}
                         >
-                            🔍
+                            {isVisible ? '👁️' : '👁️‍🗨️'}
                         </button>
-                        <button
-                            type="button"
-                            className="btn-icon"
-                            title="Remove"
-                            onClick={(e) => {
-                                e.stopPropagation();
-                                actions.removeLayer(layer.id);
-                            }}
-                        >
-                            🗑️
-                        </button>
+                        <LayerOverflowMenu
+                            label={`Actions for ${layer.name}`}
+                            items={[
+                                {
+                                    id: 'rename',
+                                    icon: '✏️',
+                                    label: 'Rename',
+                                    onClick: () => actions.renameLayer(layer.id)
+                                },
+                                {
+                                    id: 'zoom',
+                                    icon: '🔍',
+                                    label: 'Zoom to layer',
+                                    onClick: () => actions.zoomToLayer(layer.id)
+                                },
+                                {
+                                    id: 'remove',
+                                    icon: '🗑️',
+                                    label: 'Remove',
+                                    onClick: () => actions.removeLayer(layer.id)
+                                }
+                            ]}
+                        />
                     </div>
                 </div>
             </div>
@@ -404,31 +452,6 @@ export function LayerListPanel({
                                 data-group-id={group.id}
                                 data-flat-index={startIndex}
                             >
-                                <button
-                                    type="button"
-                                    className="layer-drag-handle"
-                                    title="Drag to reorder group"
-                                    aria-label="Drag to reorder group"
-                                    onPointerDown={(e) => handleGroupDragPointerDown(e, group.id, startIndex)}
-                                    onPointerMove={handleDragPointerMove}
-                                    onPointerUp={finishDrag}
-                                    onPointerCancel={finishDrag}
-                                >
-                                    <span aria-hidden>⋮⋮</span>
-                                </button>
-                                <button
-                                    type="button"
-                                    className={['layer-group-toggle', group.collapsed ? 'collapsed' : ''].filter(Boolean).join(' ')}
-                                    title={group.collapsed ? 'Expand group' : 'Collapse group'}
-                                    aria-expanded={!group.collapsed}
-                                    onClick={(e) => {
-                                        e.stopPropagation();
-                                        actions.toggleGroupCollapsed(group.id);
-                                    }}
-                                >
-                                    ▼
-                                </button>
-                                <span className="layer-group-icon" aria-hidden>📁</span>
                                 <div className="layer-group-main">
                                     <div className="layer-name-row">
                                         <div
@@ -441,66 +464,78 @@ export function LayerListPanel({
                                         >
                                             {group.name}
                                         </div>
-                                        <span className="layer-group-count badge badge-info">
-                                            {children.length} layers
-                                        </span>
-                                        <button
-                                            type="button"
-                                            className="btn-icon layer-visibility-btn"
-                                            title={groupVisible ? 'Hide all layers in group' : 'Show all layers in group'}
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                actions.toggleGroupVisibility(group.id);
-                                            }}
-                                        >
-                                            {groupVisible ? '👁️' : groupPartial ? '👁️‍🗨️' : '👁️‍🗨️'}
-                                        </button>
                                     </div>
                                     <div className="layer-bottom-row">
+                                        <button
+                                            type="button"
+                                            className="layer-drag-handle"
+                                            title="Drag to reorder group"
+                                            aria-label="Drag to reorder group"
+                                            onPointerDown={(e) => handleGroupDragPointerDown(e, group.id, startIndex)}
+                                            onPointerMove={handleDragPointerMove}
+                                            onPointerUp={finishDrag}
+                                            onPointerCancel={finishDrag}
+                                        >
+                                            <span aria-hidden>⋮⋮</span>
+                                        </button>
+                                        <button
+                                            type="button"
+                                            className={['layer-group-toggle', group.collapsed ? 'collapsed' : ''].filter(Boolean).join(' ')}
+                                            title={group.collapsed ? 'Expand group' : 'Collapse group'}
+                                            aria-expanded={!group.collapsed}
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                actions.toggleGroupCollapsed(group.id);
+                                            }}
+                                        >
+                                            ▼
+                                        </button>
+                                        <span className="layer-group-icon" aria-hidden>📁</span>
                                         <div className="layer-meta layer-group-meta">
-                                            {group.source === 'import' ? 'Imported together' : 'Layer group'}
+                                            <span className="layer-meta-text">
+                                                {group.source === 'import' ? 'Imported together' : 'Layer group'}
+                                            </span>
+                                            <span className="layer-group-count badge badge-info">
+                                                {children.length} layers
+                                            </span>
                                         </div>
-                                        <div className="layer-actions">
+                                        <div className="layer-controls">
                                             <button
                                                 type="button"
-                                                className="btn-icon"
-                                                title="Export group as KMZ"
+                                                className="btn-icon layer-visibility-btn"
+                                                title={groupVisible ? 'Hide all layers in group' : 'Show all layers in group'}
                                                 onClick={(e) => {
                                                     e.stopPropagation();
-                                                    actions.exportLayerGroup(group.id, 'kmz');
+                                                    actions.toggleGroupVisibility(group.id);
                                                 }}
                                             >
-                                                📤
+                                                {groupVisible ? '👁️' : groupPartial ? '👁️‍🗨️' : '👁️‍🗨️'}
                                             </button>
-                                            <button
-                                                type="button"
-                                                className="btn-icon"
-                                                title="Ungroup"
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    actions.dissolveLayerGroup(group.id);
-                                                }}
-                                            >
-                                                📂
-                                            </button>
-                                            <button
-                                                type="button"
-                                                className={[
-                                                    'btn-icon',
-                                                    group.source === 'import' ? 'layer-group-delete-btn' : ''
-                                                ].filter(Boolean).join(' ')}
-                                                title={
-                                                    group.source === 'import'
-                                                        ? 'Delete import and all layers'
-                                                        : 'Remove group and all layers'
-                                                }
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    actions.removeLayerGroup(group.id);
-                                                }}
-                                            >
-                                                🗑️
-                                            </button>
+                                            <LayerOverflowMenu
+                                                label={`Actions for ${group.name}`}
+                                                items={[
+                                                    {
+                                                        id: 'export',
+                                                        icon: '📤',
+                                                        label: 'Export as KMZ',
+                                                        onClick: () => actions.exportLayerGroup(group.id, 'kmz')
+                                                    },
+                                                    {
+                                                        id: 'ungroup',
+                                                        icon: '📂',
+                                                        label: 'Ungroup',
+                                                        onClick: () => actions.dissolveLayerGroup(group.id)
+                                                    },
+                                                    {
+                                                        id: 'remove',
+                                                        icon: '🗑️',
+                                                        label: group.source === 'import'
+                                                            ? 'Delete import and all layers'
+                                                            : 'Remove group and all layers',
+                                                        onClick: () => actions.removeLayerGroup(group.id)
+                                                    }
+                                                ]}
+                                            />
                                         </div>
                                     </div>
                                 </div>

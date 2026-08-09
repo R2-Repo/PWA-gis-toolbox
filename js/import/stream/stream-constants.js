@@ -2,8 +2,12 @@
  * Streaming import tuning constants — dependency-free (shared by worker + main thread).
  */
 
-/** Hard per-file ceiling for streaming imports. */
-export const STREAM_MAX_BYTES = 512 * 1024 * 1024;
+/**
+ * Hard per-file ceiling for streaming imports.
+ * Source is read incrementally (never whole-file in RAM); filters reduce what is
+ * stored. 2 GB covers statewide road centerlines and similar large GeoJSON/CSV.
+ */
+export const STREAM_MAX_BYTES = 2 * 1024 * 1024 * 1024;
 
 /** Hard per-file feature ceiling for streaming imports. */
 export const STREAM_MAX_FEATURES = 1_000_000;

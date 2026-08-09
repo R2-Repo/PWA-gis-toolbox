@@ -81,6 +81,13 @@ describe('stream-policy', () => {
         expect(res.message).toMatch(/high-capacity import limit/);
     });
 
+    it('streams statewide-scale GeoJSON under the 2 GB ceiling', async () => {
+        // Previously capped at 512 MB — filters reduce stored features, source is streamed.
+        const res = await assessStreamEligibility(fakeFile('utah-roads.geojson', 900 * 1024 * 1024));
+        expect(res.stream).toBe(true);
+        expect(res.reject).toBe(false);
+    });
+
     it('streams large .json only when it sniffs as a FeatureCollection', async () => {
         const fcJson = realJsonFile(
             'big.json',

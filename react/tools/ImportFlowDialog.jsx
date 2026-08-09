@@ -397,6 +397,8 @@ export function ImportFlowDialog({
                 const partition = await partitionStreamingFiles(files);
                 if (partition.rejectedFiles.length) {
                     setError(partition.rejectedFiles.map((r) => r.message).join(' '));
+                    // Avoid stacking the standard 6 MB text-reject under the stream ceiling message.
+                    setPreflight(null);
                     return;
                 }
                 if (partition.streamFiles.length) {
@@ -656,8 +658,8 @@ export function ImportFlowDialog({
                 <div className="info-box text-xs mb-8">
 
                     {streamFiles.length === 1
-                        ? `"${streamFiles[0].name}" is a large file — it will import with high-capacity streaming: data is stored locally and drawn by viewport, so the app stays fast.`
-                        : `${streamFiles.length} large files will import with high-capacity streaming: data is stored locally and drawn by viewport, so the app stays fast.`}
+                        ? `"${streamFiles[0].name}" is a large file — it will import with high-capacity streaming: data is stored locally and drawn by viewport, so the app stays fast. Use attribute filters and field selection below to store only the features and columns you need.`
+                        : `${streamFiles.length} large files will import with high-capacity streaming: data is stored locally and drawn by viewport, so the app stays fast. Use attribute filters and field selection below to store only the features and columns you need.`}
 
                     {streamFiles.some((f) => /\.(kml|kmz)$/i.test(f.name))
                         ? ' KML/KMZ imports as a simplified GIS layer (presentation content is not kept).'

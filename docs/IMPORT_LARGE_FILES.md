@@ -79,7 +79,7 @@ dialog, watch one progress bar, get a layer. No new dialogs.
 | Limit | Value | Where |
 |---|---|---|
 | Streaming trigger | text ≥ 4 MB (standard reject point) | `stream-policy.js` |
-| Max streamed file | 512 MB | `STREAM_MAX_BYTES` |
+| Max streamed file | **2 GB** | `STREAM_MAX_BYTES` |
 | Max streamed features | 1,000,000 | `STREAM_MAX_FEATURES` |
 | Tiled rendering trigger | ≥ 50,000 features | `tile-constants.js` |
 | Max single feature | 24 MB JSON | `geojson-stream-parser.js` |
@@ -292,6 +292,11 @@ addition to attribute deselection and Import Fence:
 
 Out of scope: preview map of matches, spatial predicates beyond fence, Excel
 value lists.
+
+**Note:** Filters reduce what is **stored** (IndexedDB / map). The source file
+is still streamed from disk, so it must stay under `STREAM_MAX_BYTES` (2 GB).
+An 800+ MB statewide roads GeoJSON is supported; multi‑GB exports still need
+an external split or subset.
 
 ## Governing rules (unchanged from master plan)
 
