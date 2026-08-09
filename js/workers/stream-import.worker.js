@@ -6,7 +6,6 @@
  * for an "ack" from the main thread (backpressure), so memory stays flat on
  * both sides no matter how large the file is.
  */
-import './xml-worker-globals.js';
 import Papa from 'papaparse';
 import { DOMParser } from '@xmldom/xmldom';
 import toGeoJSON from '@mapbox/togeojson';
