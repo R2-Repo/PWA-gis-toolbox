@@ -486,6 +486,8 @@ async function runCSV(msg) {
         }
     };
 
+    let failed = false;
+
     await new Promise((resolve, reject) => {
         Papa.parse(file, {
             header: true,
@@ -531,6 +533,7 @@ async function runCSV(msg) {
                 })()
                     .then(() => {
                         if (cancelled) {
+                            failed = true;
                             parser.abort();
                             reject(_cancelError());
                             return;
@@ -538,6 +541,9 @@ async function runCSV(msg) {
                         parser.resume();
                     })
                     .catch((err) => {
+                        // Papa still fires complete() after abort — flag the
+                        // failure so complete() cannot post a stale "done".
+                        failed = true;
                         try {
                             parser.abort();
                         } catch { /* ignore */ }
@@ -545,6 +551,7 @@ async function runCSV(msg) {
                     });
             },
             complete: () => {
+                if (failed || cancelled) return;
                 (async () => {
                     // Small files may finish before the 20-row head buffer filled.
                     if (!coordChecked) {

@@ -75,16 +75,20 @@ export async function runStreamingImportFlow(files, options = {}) {
     const fileList = Array.from(files || []);
     if (!fileList.length) return;
 
-    const progress = showProgressModal('Importing Large Files');
+    let progress = null;
     let cancelCurrent = null;
     let userCancelled = false;
 
-    progress.onCancel(() => {
-        userCancelled = true;
-        cancelCurrent?.();
-        progress.close();
-        showToast('Import cancelled', 'warning');
-    });
+    const openProgress = () => {
+        progress = showProgressModal('Importing Large Files');
+        progress.onCancel(() => {
+            userCancelled = true;
+            cancelCurrent?.();
+            progress.close();
+            showToast('Import cancelled', 'warning');
+        });
+    };
+    openProgress();
 
     const addedDatasets = [];
     const errors = [];
@@ -128,10 +132,14 @@ export async function runStreamingImportFlow(files, options = {}) {
                     result = await job.promise;
                 } catch (e) {
                     // Projected CSV — ask for the source CRS, then retry with
-                    // in-worker reprojection.
+                    // in-worker reprojection. The progress modal closes first
+                    // so it cannot block the CRS dialog.
                     if (e?.code !== 'PROJECTED_CSV_NEEDS_CRS' || userCancelled) throw e;
+                    progress.close();
                     const sourceCrs = await _promptCsvSourceCrs(file);
+                    if (userCancelled) throw Object.assign(new Error('Import cancelled'), { cancelled: true });
                     if (!sourceCrs) throw e;
+                    openProgress();
                     job = startJob({ sourceCrs });
                     cancelCurrent = job.cancel;
                     result = await job.promise;
