@@ -2,6 +2,7 @@
  * Read-only layer summary rows for the Data Preview panel.
  */
 import { getLayerFeatureCount, isSpatialLayer, isWorkspaceLayer, isServiceLayer, isLiveVectorLayer } from './data-model.js';
+import { resolveLayerDisplayMode } from '../map/layer-display-mode.js';
 import { getLayerCrs, isLayerDisplayReady, layerCrsWarning } from '../crs/layer-crs.js';
 import { crsLabel } from '../crs/registry.js';
 import { formatBytes } from '../import/import-preflight.js';
@@ -163,6 +164,18 @@ export function getLayerInfoSummary(layer) {
             label: 'Storage',
             value: isWorkspaceLayer(layer) ? 'Workspace (IndexedDB)' : 'In memory'
         });
+    }
+
+    if (!service && isWorkspaceLayer(layer)) {
+        const display = resolveLayerDisplayMode(layer, null);
+        if (display) {
+            rows.push({
+                id: 'displayMode',
+                label: 'Map display',
+                value: display.shortLabel,
+                warning: display.summary
+            });
+        }
     }
 
     return rows;
