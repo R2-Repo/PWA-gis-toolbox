@@ -39,8 +39,9 @@ export function resolveLayerDisplayMode(layer, mapEntry = null) {
             summary: 'The full layer is stored on this device. The map draws it with local vector tiles so the whole layer stays visible without loading every feature into memory.',
             details: [
                 `About ${featureCount.toLocaleString()} features are stored in workspace (IndexedDB).`,
-                'Nothing was left out during import — display thinning can hide some lines at far zoom so the map stays fast.',
-                'Zoom in to see denser detail. Export still includes the full layer.',
+                'Nothing was left out during import — at far zoom, dense tiles may thin some features so the map stays fast.',
+                'Zoom in for denser local detail; tiles prefer geometry that actually falls in the current view.',
+                'Export still includes the full layer.',
                 'Click or identify still works; selection highlights on tiled layers are limited.'
             ],
             featureCount
