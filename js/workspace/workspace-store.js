@@ -127,6 +127,27 @@ export async function createWorkspaceLayer(meta) {
 }
 
 /**
+ * Patch a workspace layer record (e.g. final schema/name after a streaming import).
+ * @param {string} layerId
+ * @param {object} patch
+ */
+export async function updateWorkspaceLayerMeta(layerId, patch) {
+    const idb = await openDB();
+    const tx = idb.transaction(STORE_LAYERS, 'readwrite');
+    const store = tx.objectStore(STORE_LAYERS);
+    const req = store.get(layerId);
+    await new Promise((resolve, reject) => {
+        req.onsuccess = () => {
+            const layer = req.result;
+            if (layer) store.put({ ...layer, ...patch });
+        };
+        req.onerror = () => reject(req.error);
+        tx.oncomplete = resolve;
+        tx.onerror = () => reject(tx.error);
+    });
+}
+
+/**
  * @param {string} layerId
  * @param {import('geojson').Feature[]} features
  * @param {number} startIndex
@@ -323,15 +344,10 @@ export async function removeWorkspaceLayer(layerId) {
         tx.objectStore(STORE_CHUNKS).delete(chunkId);
     }
 
+    // Attribute ids are `${layerId}:f:${index}` — delete by key range so large
+    // layers never require loading every attribute record into memory.
     const attrStore = tx.objectStore(STORE_ATTRIBUTES);
-    const allAttrs = await new Promise((resolve, reject) => {
-        const r = attrStore.getAll();
-        r.onsuccess = () => resolve(r.result || []);
-        r.onerror = () => reject(r.error);
-    });
-    for (const rec of allAttrs) {
-        if (rec.layerId === layerId) attrStore.delete(rec.id);
-    }
+    attrStore.delete(IDBKeyRange.bound(`${layerId}:f:`, `${layerId}:f:\uffff`));
 
     await new Promise((resolve, reject) => {
         tx.oncomplete = resolve;
@@ -395,6 +411,9 @@ export async function getWorkspaceLayerAttributes(layerId) {
     return all.filter((rec) => rec.layerId === layerId);
 }
 
+/** Kit bundles above this are skipped — too large to assemble in memory. */
+export const MAX_BUNDLE_FEATURES = 250_000;
+
 /**
  * Export full workspace layer payload for Toolbox Kit bundles.
  * @param {string} layerId
@@ -402,6 +421,10 @@ export async function getWorkspaceLayerAttributes(layerId) {
 export async function exportWorkspaceLayerBundle(layerId) {
     const meta = await getWorkspaceLayer(layerId);
     if (!meta) return null;
+    if ((meta.featureCount || 0) > MAX_BUNDLE_FEATURES) {
+        console.warn(`[Workspace] Layer ${layerId} has ${meta.featureCount} features — too large for a kit bundle, skipped`);
+        return null;
+    }
     const chunks = await loadWorkspaceChunks(meta.chunkIds || []);
     const attributes = await getWorkspaceLayerAttributes(layerId);
     return { meta, chunks, attributes };
@@ -476,6 +499,7 @@ export default {
     WORKSPACE_FEATURE_THRESHOLD,
     WORKSPACE_CHUNK_SIZE,
     createWorkspaceLayer,
+    updateWorkspaceLayerMeta,
     appendWorkspaceBatch,
     queryWorkspaceChunks,
     loadWorkspaceChunks,

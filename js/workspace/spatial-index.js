@@ -77,11 +77,9 @@ export class GridSpatialIndex {
         for (const [id, rec] of this.chunks) {
             if (rec.layerId === layerId) this.chunks.delete(id);
         }
+        // Keep cell entries whose chunk still exists (i.e. belongs to another layer).
         for (const [key, ids] of this.cells) {
-            this.cells.set(key, ids.filter((id) => {
-                const rec = this.chunks.get(id);
-                return rec && rec.layerId === layerId;
-            }));
+            this.cells.set(key, ids.filter((id) => this.chunks.has(id)));
         }
     }
 

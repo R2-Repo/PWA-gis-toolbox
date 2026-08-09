@@ -68,6 +68,8 @@ export function ImportFlowDialog({
 
     onOptimizeImport,
 
+    onStreamImport = null,
+
     hasActiveFence = false,
 
     initialFiles = null,
@@ -341,6 +343,21 @@ export function ImportFlowDialog({
         const files = runPreflight(fileList);
 
         if (files.length === 0) return;
+
+        // Large streamable files (GeoJSON/CSV) bypass the standard dialog flow
+        // and use the high-capacity streaming import instead.
+        if (onStreamImport) {
+            try {
+                const { partitionStreamingFiles } = await import('../../js/import/stream/stream-policy.js');
+                const { streamFiles } = await partitionStreamingFiles(files);
+                if (streamFiles.length) {
+                    onStreamImport(files);
+                    return;
+                }
+            } catch {
+                /* fall through to the standard flow */
+            }
+        }
 
         const check = preflightFiles(files);
 
