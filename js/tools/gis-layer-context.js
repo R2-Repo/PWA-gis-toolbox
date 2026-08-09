@@ -8,7 +8,16 @@ import {
     isAnalyzableLayer,
     getLayerFeatureCount
 } from '../core/data-model.js';
+import { AppError, ErrorCategory } from '../core/error-handler.js';
+import { MAX_IMPORT_FEATURES } from '../import/import-preflight.js';
 import { loadAllWorkspaceFeatures } from '../workspace/workspace-store.js';
+
+/**
+ * Workspace layers above this cannot be fully loaded into memory for GIS
+ * tools/export — streamed high-capacity layers can exceed what the in-memory
+ * pipeline supports.
+ */
+export const MAX_MATERIALIZE_FEATURES = MAX_IMPORT_FEATURES;
 
 /**
  * @param {object|null|undefined} layer
@@ -34,6 +43,15 @@ export async function materializeSpatialLayer(layer) {
 
     if (!isSpatialLayer(layer)) return null;
     if (!isWorkspaceLayer(layer)) return layer;
+
+    const featureCount = getLayerFeatureCount(layer);
+    if (featureCount > MAX_MATERIALIZE_FEATURES) {
+        throw new AppError(
+            `"${layer.name}" has ${featureCount.toLocaleString()} features — too many to load into memory for this operation (limit ${MAX_MATERIALIZE_FEATURES.toLocaleString()}). Work with a selection or a smaller subset instead.`,
+            ErrorCategory.OUT_OF_MEMORY,
+            { layerId: layer.id, featureCount }
+        );
+    }
 
     const features = await loadAllWorkspaceFeatures(layer.workspaceLayerId || layer.id);
     return {

@@ -287,10 +287,13 @@ export function checkExistingLayerMemory(getLayers) {
     const layers = getLayers() || [];
     let featureCount = 0;
     for (const layer of layers) {
+        if (layer.type === 'spatial-chunked' || layer.storage === 'workspace') {
+            // Disk-backed workspace layers render viewport packets only — they
+            // don't hold decoded features in memory, so they don't count here.
+            continue;
+        }
         if (layer.type === 'spatial') {
             featureCount += layer.geojson?.features?.length || 0;
-        } else if (layer.type === 'spatial-chunked' || layer.storage === 'workspace') {
-            featureCount += layer.schema?.featureCount || 0;
         } else if (layer.type === 'table') {
             featureCount += layer.rows?.length || 0;
         }

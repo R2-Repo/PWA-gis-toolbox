@@ -21,6 +21,7 @@ import {
     getWorkingDatasetFromLayer
 } from './gis-layer-context.js';
 import { removeWorkspaceLayer } from '../workspace/workspace-store.js';
+import { removeSourceFileIfUnreferenced } from '../workspace/source-file-store.js';
 import {
     finalizeImportedDatasets,
     applyImportLayerStyles,
@@ -269,14 +270,19 @@ function _collectWorkflowNodeCache(engine) {
 
 async function _clearLayersForKitReplace() {
     const ids = [...getLayers().map((layer) => layer.id)];
+    const opfsKeys = new Set();
     for (const id of ids) {
         const layer = getLayers().find((entry) => entry.id === id);
         if (layer) revokeKmzBlobUrls(layer);
+        if (layer?.source?.opfsKey) opfsKeys.add(layer.source.opfsKey);
         if (isWorkspaceLayer(layer)) {
             await removeWorkspaceLayer(layer.workspaceLayerId || id);
         }
         mapService.removeLayer(id);
         removeLayer(id);
+    }
+    for (const key of opfsKeys) {
+        await removeSourceFileIfUnreferenced(key, getLayers());
     }
     clearAllLayerGroups();
 }
@@ -1252,6 +1258,10 @@ function _openImportFlowModal(flowProps = {}) {
                     close();
                     _openImportOptimizerModal(files);
                 },
+                onStreamImport: (files) => {
+                    close();
+                    void openImportForFiles(files, _fenceBbox);
+                },
                 onOpenArcGIS: () => {
                     close();
                     openArcGISImporter();
@@ -1313,8 +1323,35 @@ export async function openImportForFiles(files, fenceBbox = null) {
 
     const { platform, services } = getPlatformBundle({ showToast });
 
+    // High-capacity path: large GeoJSON/CSV the standard pipeline would reject
+    // stream through a worker into IndexedDB instead (see stream-policy).
+    let partition = null;
     try {
-        await guardFilesBeforeImport(dataFiles, {
+        const { partitionStreamingFiles } = await import('../import/stream/stream-policy.js');
+        partition = await partitionStreamingFiles(dataFiles);
+    } catch (e) {
+        logger.warn('Import', 'Streaming partition failed — using standard path', { error: e?.message });
+        partition = null;
+    }
+
+    if (partition) {
+        for (const { message } of partition.rejectedFiles) {
+            showToast(message, 'error');
+        }
+        if (partition.streamFiles.length) {
+            const { runStreamingImportFlow } = await import('./stream-import-flow.js');
+            await runStreamingImportFlow(partition.streamFiles, {
+                fenceBbox: fenceBbox ?? _fenceBbox,
+                refreshUI
+            });
+        }
+    }
+
+    const standardFiles = partition ? partition.standardFiles : dataFiles;
+    if (!standardFiles.length) return;
+
+    try {
+        await guardFilesBeforeImport(standardFiles, {
             source: 'openImportForFiles',
             getLayers,
             platform
@@ -1327,7 +1364,7 @@ export async function openImportForFiles(files, fenceBbox = null) {
 
     try {
     const { classifyImportFiles } = await import('../import/import-policy.js');
-    const { memoryFiles } = classifyImportFiles(dataFiles, platform);
+    const { memoryFiles } = classifyImportFiles(standardFiles, platform);
 
     if (!memoryFiles.length) return;
 
@@ -1945,10 +1982,12 @@ export async function removeLayers(ids) {
     const uniqueIds = [...new Set(ids)].filter(Boolean);
     const expandedIds = expandLayerIdsForRemoval(uniqueIds, layers);
     if (!expandedIds.length) return false;
+    const opfsKeys = new Set();
     for (const id of expandedIds) {
         const layer = layers.find((l) => l.id === id);
         if (layer) {
             revokeKmzBlobUrls(layer);
+            if (layer.source?.opfsKey) opfsKeys.add(layer.source.opfsKey);
             if (isWorkspaceLayer(layer)) {
                 await removeWorkspaceLayer(layer.workspaceLayerId || id);
             }
@@ -1956,6 +1995,9 @@ export async function removeLayers(ids) {
         mapService.removeLayer(id);
         removeLayer(id);
         onLayerRemoved(id, getLayers());
+    }
+    for (const key of opfsKeys) {
+        await removeSourceFileIfUnreferenced(key, getLayers());
     }
     refreshUI();
     return true;
@@ -2720,7 +2762,13 @@ async function requireSpatialLayer(geomTypes = null) {
         return null;
     }
 
-    const layer = await materializeSpatialLayer(raw);
+    let layer;
+    try {
+        layer = await materializeSpatialLayer(raw);
+    } catch (e) {
+        showErrorToast(handleError(e, 'GISTools', 'Load layer'));
+        return null;
+    }
     if (!layer) {
         showToast('Need a spatial layer', 'warning');
         return null;

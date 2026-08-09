@@ -305,6 +305,37 @@ export async function analyzeSchemaAsync(geojson, task = null) {
     return _buildSchemaFromFieldMap(fieldMap, geomTypes, features.length);
 }
 
+/**
+ * Incremental schema builder for streaming imports — feed features one at a
+ * time (worker batches), then build the same schema shape analyzeSchema returns.
+ * @param {{ crs?: string, crsWkt?: string }} [opts]
+ */
+export function createSchemaAccumulator(opts = {}) {
+    const fieldMap = new Map();
+    const geomTypes = new Set();
+    let featureCount = 0;
+
+    return {
+        addFeature(feature) {
+            featureCount++;
+            if (feature?.geometry?.type) geomTypes.add(feature.geometry.type);
+            const props = feature?.properties || {};
+            for (const [key, val] of Object.entries(props)) {
+                if (!fieldMap.has(key)) {
+                    fieldMap.set(key, _newFieldAccumulator());
+                }
+                _accumulateFieldValue(fieldMap.get(key), val);
+            }
+        },
+        get featureCount() {
+            return featureCount;
+        },
+        build() {
+            return _buildSchemaFromFieldMap(fieldMap, geomTypes, featureCount, opts);
+        }
+    };
+}
+
 function _newFieldAccumulator() {
     return {
         values: [],
@@ -579,7 +610,8 @@ export default {
     createSpatialDataset, createTableDataset, createChunkedSpatialDataset,
     isWorkspaceLayer, isSpatialLayer, getLayerFeatureCount,
     tableToSpatial, spatialToTable,
-    analyzeSchema, analyzeSchemaAsync, analyzeTableSchema, getSelectedFields, applyFieldSelection,
+    analyzeSchema, analyzeSchemaAsync, analyzeTableSchema, createSchemaAccumulator,
+    getSelectedFields, applyFieldSelection,
     mergeDatasets, splitByGeometryType, flattenFeatureGeometryCollections,
     explodeGeometryCollectionsInFeatureCollection,
     explodeGeometryCollectionsInFeatureCollectionAsync
