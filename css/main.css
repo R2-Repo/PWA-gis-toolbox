@@ -1197,6 +1197,31 @@ textarea { resize: vertical; min-height: 60px; }
 }
 .layer-filter-badge:hover { filter: brightness(1.2); }
 .layer-scale-badge { background: var(--primary); color: #fff; }
+.layer-display-mode-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    border: none;
+    font: inherit;
+    font-size: 9px;
+    font-weight: 700;
+    line-height: 1.4;
+}
+.layer-display-mode-viewport { background: #3d7ea6; color: #fff; }
+.layer-display-mode-tiled { background: #2f9d6a; color: #fff; }
+.layer-display-mode-info {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 11px;
+    height: 11px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.28);
+    font-size: 8px;
+    font-weight: 800;
+    font-style: italic;
+    line-height: 1;
+}
 .layer-item-scale-hidden { opacity: 0.55; }
 .layer-item-scale-hidden .layer-name { font-style: italic; }
 

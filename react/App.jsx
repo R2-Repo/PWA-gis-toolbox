@@ -43,6 +43,7 @@ import {
     renameLayer,
     renameField,
     openFilterBuilder,
+    openLayerDisplayModeInfo,
     doExport,
     fixAGOL,
     showDataTable,
@@ -61,6 +62,7 @@ import {
 import { getAppUrlConfig } from '../js/url/app-url-detector.js';
 import { getActiveLayer } from '../js/core/state.js';
 import { isLayerVisibleAtScale } from '../js/map/scale-range.js';
+import { resolveLayerDisplayMode } from '../js/map/layer-display-mode.js';
 import { AppStoreProvider, createAppStore, useAppStore } from './providers/AppStore.jsx';
 import { MobileGate } from './shell/MobileGate.jsx';
 import { HeaderBar } from './header/HeaderBar.jsx';
@@ -191,6 +193,7 @@ function AppShell() {
         groupSelectedLayers,
         exportLayerGroup,
         openFilterBuilder: (id) => openFilterBuilder(id),
+        openLayerDisplayModeInfo,
         toggleField,
         selectAllFields,
         addField,
@@ -206,12 +209,16 @@ function AppShell() {
         const map = mapService.getMap();
         const zoom = map?.getZoom?.() ?? 7;
         const lat = map?.getCenter?.()?.lat ?? 0;
-        return layers.map((layer) => ({
-            ...layer,
-            _outOfScaleRange: layer.visible !== false
-                && layer.scaleRangeEnabled
-                && !isLayerVisibleAtScale(layer, zoom, lat)
-        }));
+        return layers.map((layer) => {
+            const mapEntry = mapService.getLayerRecord?.(layer.id) || null;
+            return {
+                ...layer,
+                _displayMode: resolveLayerDisplayMode(layer, mapEntry),
+                _outOfScaleRange: layer.visible !== false
+                    && layer.scaleRangeEnabled
+                    && !isLayerVisibleAtScale(layer, zoom, lat)
+            };
+        });
     }, [layers, refreshTick]);
 
     const onBasemapChange = useCallback((value) => {

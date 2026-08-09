@@ -132,6 +132,27 @@ function LayerItemRow({
                             CRS
                         </span>
                     ) : null}
+                    {layer._displayMode ? (
+                        <button
+                            type="button"
+                            className={[
+                                'layer-filter-badge',
+                                'layer-display-mode-badge',
+                                layer._displayMode.mode === 'tiled'
+                                    ? 'layer-display-mode-tiled'
+                                    : 'layer-display-mode-viewport'
+                            ].join(' ')}
+                            title={`${layer._displayMode.shortLabel} — click for details`}
+                            aria-label={`${layer._displayMode.shortLabel}. More information about how this layer is drawn on the map.`}
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                actions.openLayerDisplayModeInfo?.(layer.id);
+                            }}
+                        >
+                            {layer._displayMode.badge}
+                            <span className="layer-display-mode-info" aria-hidden="true">i</span>
+                        </button>
+                    ) : null}
                     <button
                         type="button"
                         className={['btn-icon', 'layer-lock-btn', isLocked ? 'layer-lock-btn-active' : ''].filter(Boolean).join(' ')}

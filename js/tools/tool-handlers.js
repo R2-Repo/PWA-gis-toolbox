@@ -48,6 +48,7 @@ import {
     clearQuickDrawLayerFlag
 } from './quick-draw.js';
 import mapService, { formatElevationLabel } from '../map/map-service.js';
+import { resolveLayerDisplayMode } from '../map/layer-display-mode.js';
 import { syncBasemapToggleActive } from '../map/basemap-catalog.js';
 import { isSmartStyleActive } from '../map/style-engine.js';
 import dualScreenCoordinator from '../dual-screen/coordinator.js';
@@ -1656,6 +1657,7 @@ export function setupAppWiring() {
     bus.on('layer-groups:changed', () => sessionStore.scheduleSave(getLayers(), mapService.getLayerStylesRecord(), getLayerGroups()));
     bus.on('layer:active', (layer) => {
         mapService.setActiveLayerId?.(layer?.id ?? getActiveLayer()?.id ?? null);
+        notifyActiveLayerDisplayMode(layer);
         refreshUI();
     });
     bus.on('map:ready', () => {
@@ -1971,6 +1973,53 @@ export async function exportLayerGroup(groupId, format = 'kmz') {
 export function setActiveLayerAndRefresh(id) {
     setActiveLayer(id);
     refreshUI();
+}
+
+let _lastDisplayModeToastLayerId = null;
+
+/**
+ * Toast once per active-layer change when the layer uses workspace display modes.
+ * Persistent TILED / VIEWPORT badge on the layer row holds the deep explanation.
+ */
+function notifyActiveLayerDisplayMode(layer) {
+    if (!layer?.id) {
+        _lastDisplayModeToastLayerId = null;
+        return;
+    }
+    if (_lastDisplayModeToastLayerId === layer.id) return;
+    _lastDisplayModeToastLayerId = layer.id;
+    const mapEntry = mapService.getLayerRecord?.(layer.id) || null;
+    const display = resolveLayerDisplayMode(layer, mapEntry);
+    if (!display) return;
+    showToast(display.toastMessage, 'info');
+}
+
+function escapeDisplayModeHtml(value) {
+    return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+}
+
+/** Expandable details for the layer-list TILED / VIEWPORT badge. */
+export function openLayerDisplayModeInfo(layerId) {
+    const layer = getLayers().find((item) => item.id === layerId);
+    if (!layer) return;
+    const mapEntry = mapService.getLayerRecord?.(layerId) || null;
+    const display = resolveLayerDisplayMode(layer, mapEntry);
+    if (!display) return;
+    const details = (display.details || [])
+        .map((line) => `<li>${escapeDisplayModeHtml(line)}</li>`)
+        .join('');
+    showModal(
+        display.title,
+        `<p>${escapeDisplayModeHtml(display.summary)}</p>`
+        + (details
+            ? `<ul style="margin:12px 0 0;padding-left:1.2em;line-height:1.45;">${details}</ul>`
+            : ''),
+        { width: '480px' }
+    );
 }
 
 export function toggleLayerVisibilityAndRender(id) {
@@ -5412,6 +5461,7 @@ const APP_ACTIONS = {
     openReplaceClean,
     openTypeConvert,
     openFilterBuilder,
+    openLayerDisplayModeInfo,
     openDeduplicate,
     openJoinTool,
     openValidation,
