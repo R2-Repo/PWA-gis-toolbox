@@ -104,6 +104,8 @@ export function ImportFlowDialog({
 
     const [routeAssessment, setRouteAssessment] = useState(null);
 
+    const [streamFiles, setStreamFiles] = useState([]);
+
     const [readyToImport, setReadyToImport] = useState(false);
 
     const [importing, setImporting] = useState(false);
@@ -125,6 +127,8 @@ export function ImportFlowDialog({
         setImportScans([]);
 
         setRouteAssessment(null);
+
+        setStreamFiles([]);
 
         setScanning(false);
 
@@ -194,21 +198,31 @@ export function ImportFlowDialog({
 
         if (!files?.length) return;
 
-        const check = preflightFiles(files);
-
-        if (check.reject) {
-
-            setError(check.messages.join(' '));
-
-            return;
-
-        }
-
         const fields = importOptions.selectedFields ?? selectedFields;
 
         if (fieldNames.length > 0 && (!fields || fields.length === 0)) {
 
             setError('Select at least one field to import.');
+
+            return;
+
+        }
+
+        // High-capacity streaming path — delegate to the parent flow. Only pass
+        // a field filter when the user deselected something: head-sniffed field
+        // lists can miss fields that appear later in very large files.
+        if (streamFiles.length > 0 && onStreamImport) {
+            setError('');
+            const useFieldFilter = fieldNames.length > 0 && fields.length < fieldNames.length;
+            onStreamImport(files, { selectedFields: useFieldFilter ? fields : null });
+            return;
+        }
+
+        const check = preflightFiles(files);
+
+        if (check.reject) {
+
+            setError(check.messages.join(' '));
 
             return;
 
@@ -344,14 +358,34 @@ export function ImportFlowDialog({
 
         if (files.length === 0) return;
 
-        // Large streamable files (GeoJSON/CSV) bypass the standard dialog flow
-        // and use the high-capacity streaming import instead.
+        // Large streamable files (GeoJSON/CSV/KML/KMZ) use the high-capacity
+        // streaming import — show a notice + field pick instead of a size error.
         if (onStreamImport) {
             try {
                 const { partitionStreamingFiles } = await import('../../js/import/stream/stream-policy.js');
-                const { streamFiles } = await partitionStreamingFiles(files);
-                if (streamFiles.length) {
-                    onStreamImport(files);
+                const partition = await partitionStreamingFiles(files);
+                if (partition.rejectedFiles.length) {
+                    setError(partition.rejectedFiles.map((r) => r.message).join(' '));
+                    return;
+                }
+                if (partition.streamFiles.length) {
+                    setStreamFiles(partition.streamFiles);
+                    // Only surface preflight warnings for the non-streamed files.
+                    setPreflight(partition.standardFiles.length ? preflightFiles(partition.standardFiles) : null);
+                    setScanning(true);
+                    let scans = [];
+                    try {
+                        scans = await scanFilesForImport(files);
+                    } catch {
+                        /* head-only sniffing failed — import all fields */
+                    }
+                    setScanning(false);
+                    setImportScans(scans);
+                    const names = mergeScanFieldNames(scans);
+                    setFieldNames(names);
+                    setSelectedFields(names);
+                    setRouteAssessment(null);
+                    setReadyToImport(true);
                     return;
                 }
             } catch {
@@ -576,6 +610,22 @@ export function ImportFlowDialog({
                         <div key={msg}>{msg}</div>
 
                     ))}
+
+                </div>
+
+            ) : null}
+
+            {streamFiles.length > 0 ? (
+
+                <div className="info-box text-xs mb-8">
+
+                    {streamFiles.length === 1
+                        ? `"${streamFiles[0].name}" is a large file — it will import with high-capacity streaming: data is stored locally and drawn by viewport, so the app stays fast.`
+                        : `${streamFiles.length} large files will import with high-capacity streaming: data is stored locally and drawn by viewport, so the app stays fast.`}
+
+                    {streamFiles.some((f) => /\.(kml|kmz)$/i.test(f.name))
+                        ? ' KML/KMZ imports as a simplified GIS layer (presentation content is not kept).'
+                        : ''}
 
                 </div>
 

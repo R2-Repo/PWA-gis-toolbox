@@ -35,7 +35,7 @@ function _generateId(prefix = 'ds') {
 }
 
 function _baseName(fileName) {
-    return String(fileName || 'Import').replace(/\.(geojson|json|csv|tsv|txt)$/i, '');
+    return String(fileName || 'Import').replace(/\.(geojson|json|csv|tsv|txt|kml|kmz|xml|zip)$/i, '');
 }
 
 /**
@@ -46,12 +46,21 @@ function _baseName(fileName) {
  *   format: string,
  *   fenceBbox?: [number,number,number,number]|null,
  *   onProgress?: (percent: number, step: string) => void,
- *   preserveSource?: boolean
+ *   preserveSource?: boolean,
+ *   selectedFields?: string[]|null,
+ *   importMode?: 'gis'|'preserve'
  * }} options
  * @returns {{ promise: Promise<{ datasets: object[], stats: object }>, cancel: () => void }}
  */
 export function streamImportFile(file, options = {}) {
-    const { format, fenceBbox = null, onProgress, preserveSource = true } = options;
+    const {
+        format,
+        fenceBbox = null,
+        onProgress,
+        preserveSource = true,
+        selectedFields = null,
+        importMode
+    } = options;
     const baseName = _baseName(file.name);
 
     /** @type {Map<string, { layerId: string, count: number, geomTypes: Set<string>, buffer: object[] }>} */
@@ -268,6 +277,8 @@ export function streamImportFile(file, options = {}) {
                                 format,
                                 fileSize: file.size,
                                 importMethod: 'stream',
+                                ...(importMode ? { importMode } : {}),
+                                ...(selectedFields?.length ? { importSelectedFields: selectedFields } : {}),
                                 ...(opfsKey ? { opfsKey, sourcePreserved: true } : {})
                             });
                             datasets.push(dataset);
@@ -282,7 +293,8 @@ export function streamImportFile(file, options = {}) {
                             stats: {
                                 featureCount: total,
                                 noGeometryCount: msg.stats?.noGeometryCount || 0,
-                                fenceFiltered: msg.stats?.fenceFiltered || 0
+                                fenceFiltered: msg.stats?.fenceFiltered || 0,
+                                warnings: msg.warnings || []
                             }
                         });
                     })().catch((e) => void fail(e));
@@ -303,7 +315,9 @@ export function streamImportFile(file, options = {}) {
                 format,
                 options: {
                     fenceBbox,
-                    maxFeatures: STREAM_MAX_FEATURES
+                    maxFeatures: STREAM_MAX_FEATURES,
+                    ...(selectedFields?.length ? { selectedFields } : {}),
+                    ...(importMode ? { importMode } : {})
                 }
             });
         })().catch((e) => void fail(e));
