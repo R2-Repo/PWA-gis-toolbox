@@ -8,7 +8,7 @@
  */
 import { GridSpatialIndex } from '../workspace/spatial-index.js';
 import { tileToBBox, padBBox } from '../map/tiles/tile-math.js';
-import { selectTileFeatures, sampleChunksForTile } from '../map/tiles/tile-feature-select.js';
+import { selectTileFeatures, selectChunksForTile } from '../map/tiles/tile-feature-select.js';
 import { buildTileFromFeatures } from '../map/tiles/tile-builder.js';
 import {
     TILE_BUFFER,
@@ -98,21 +98,28 @@ async function buildTile(layerId, z, x, y) {
     const chunkIds = index.query(tileBbox, layerId);
     if (!chunkIds.length) return null;
 
-    const totalEstimate = chunkIds.reduce(
-        (sum, id) => sum + (index.chunks.get(id)?.featureCount || 0),
-        0
-    );
-    const { chunkIds: selectedIds } = sampleChunksForTile(chunkIds, totalEstimate, {
+    // Rank by overlap with this tile so huge long-line chunk bboxes do not
+    // consume the load budget before local geometry is considered.
+    const chunkRecords = chunkIds.map((chunkId) => {
+        const rec = index.chunks.get(chunkId);
+        return {
+            chunkId,
+            bbox: rec?.bbox,
+            featureCount: rec?.featureCount || 0
+        };
+    });
+    const { chunkIds: selectedIds } = selectChunksForTile(chunkRecords, tileBbox, {
         maxFeatures: MAX_TILE_FEATURES,
         maxChunks: MAX_CHUNKS_PER_TILE
     });
 
-    const chunks = [];
+    // selectedIds are already ranked by tile overlap (local chunks first).
+    const loaded = [];
     for (const chunkId of selectedIds) {
-        chunks.push({ features: await loadChunkFeatures(chunkId) });
+        loaded.push({ features: await loadChunkFeatures(chunkId) });
     }
 
-    const { features } = selectTileFeatures(chunks, tileBbox, z);
+    const { features } = selectTileFeatures(loaded, tileBbox, z);
     return buildTileFromFeatures(features, z, x, y);
 }
 

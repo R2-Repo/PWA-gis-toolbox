@@ -2,7 +2,12 @@ import { describe, expect, it } from 'vitest';
 import Protobuf from 'pbf';
 import { VectorTile } from '@mapbox/vector-tile';
 import { tileToBBox, padBBox, bboxIntersects, featureBBox, degreesPerPixel } from '../js/map/tiles/tile-math.js';
-import { selectTileFeatures, sampleChunksForTile } from '../js/map/tiles/tile-feature-select.js';
+import {
+    selectTileFeatures,
+    sampleChunksForTile,
+    bboxOverlapRatio,
+    selectChunksForTile
+} from '../js/map/tiles/tile-feature-select.js';
 import { buildTileFromFeatures, TILE_SOURCE_LAYER } from '../js/map/tiles/tile-builder.js';
 
 function decodeTile(bytes) {
@@ -121,6 +126,56 @@ describe('sampleChunksForTile', () => {
         expect(chunkIds[0]).toBe('c0');
         // Spread across the whole range, not just the head.
         expect(Number(chunkIds[chunkIds.length - 1].slice(1))).toBeGreaterThan(900);
+    });
+});
+
+describe('selectChunksForTile (overlap ranking)', () => {
+    const tileBbox = [-111.1, 40.0, -111.0, 40.1];
+
+    it('scores local chunks far above statewide long-line chunks', () => {
+        const local = bboxOverlapRatio([-111.08, 40.02, -111.02, 40.08], tileBbox);
+        const statewide = bboxOverlapRatio([-120, 36, -108, 42], tileBbox);
+        expect(local).toBeGreaterThan(0.2);
+        expect(statewide).toBeLessThan(0.01);
+        expect(local).toBeGreaterThan(statewide * 20);
+    });
+
+    it('prefers local chunks over huge long-line chunk bboxes when the budget is tight', () => {
+        const records = [];
+        // Many statewide chunks listed first (old insertion/query order).
+        for (let i = 0; i < 40; i++) {
+            records.push({
+                chunkId: `wide-${i}`,
+                bbox: [-120, 36, -108, 42],
+                featureCount: 1000
+            });
+        }
+        records.push({
+            chunkId: 'local-streets',
+            bbox: [-111.08, 40.02, -111.02, 40.08],
+            featureCount: 800
+        });
+
+        const { chunkIds, sampled } = selectChunksForTile(records, tileBbox, {
+            maxFeatures: 20_000,
+            maxChunks: 8
+        });
+        expect(sampled).toBe(true);
+        expect(chunkIds[0]).toBe('local-streets');
+        expect(chunkIds).toContain('local-streets');
+    });
+
+    it('keeps a line that crosses the tile even when endpoints are outside', () => {
+        const line = {
+            type: 'Feature',
+            properties: { id: 'cross' },
+            geometry: {
+                type: 'LineString',
+                coordinates: [[-112, 40.05], [-110, 40.05]]
+            }
+        };
+        const { features } = selectTileFeatures([{ features: [line] }], tileBbox, 14);
+        expect(features.map((f) => f.properties.id)).toEqual(['cross']);
     });
 });
 

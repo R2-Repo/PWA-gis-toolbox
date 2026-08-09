@@ -2,11 +2,118 @@
  * Select the features that belong in one tile, with bounded output:
  * bbox intersection, sub-pixel dropping at low zooms, and stride sampling
  * when candidates exceed the per-tile cap. Pure module.
+ *
+ * Chunk selection ranks by overlap with the tile so huge long-line chunk
+ * bboxes do not starve chunks that actually contain local geometry.
  */
 import { bboxIntersects, featureBBox, degreesPerPixel } from './tile-math.js';
-import { MAX_TILE_FEATURES, MIN_FEATURE_PIXELS } from './tile-constants.js';
+import { MAX_TILE_FEATURES, MIN_FEATURE_PIXELS, MAX_CHUNKS_PER_TILE } from './tile-constants.js';
 
 const POINTY = new Set(['Point', 'MultiPoint']);
+
+/**
+ * Intersection-area / chunk-area. Statewide long-line chunks score near 0 for
+ * a small tile; local street chunks score near 1.
+ * @param {[number,number,number,number]} chunkBbox
+ * @param {[number,number,number,number]} tileBbox
+ * @returns {number}
+ */
+export function bboxOverlapRatio(chunkBbox, tileBbox) {
+    if (!chunkBbox || !tileBbox) return 0;
+    const [cw, cs, ce, cn] = chunkBbox;
+    const [tw, ts, te, tn] = tileBbox;
+    const iw = Math.max(0, Math.min(ce, te) - Math.max(cw, tw));
+    const ih = Math.max(0, Math.min(cn, tn) - Math.max(cs, ts));
+    const inter = iw * ih;
+    if (inter <= 0) return 0;
+    const chunkArea = Math.max(1e-18, (ce - cw) * (cn - cs));
+    return inter / chunkArea;
+}
+
+/**
+ * @param {Array<{ chunkId: string, bbox: number[], featureCount?: number }>} chunkRecords
+ * @param {[number,number,number,number]} tileBbox
+ * @returns {Array<{ chunkId: string, bbox: number[], featureCount: number, score: number }>}
+ */
+export function rankChunksByOverlap(chunkRecords, tileBbox) {
+    return (chunkRecords || [])
+        .map((rec) => ({
+            chunkId: rec.chunkId,
+            bbox: rec.bbox,
+            featureCount: rec.featureCount || 0,
+            score: bboxOverlapRatio(rec.bbox, tileBbox)
+        }))
+        .filter((rec) => rec.score > 0 && rec.chunkId)
+        .sort((a, b) => b.score - a.score || String(a.chunkId).localeCompare(String(b.chunkId)));
+}
+
+/**
+ * Decide which chunks to load for a tile. Prefers high tile-overlap chunks and
+ * stops once enough feature mass is queued for the per-tile cap.
+ *
+ * @param {Array<{ chunkId: string, bbox: number[], featureCount?: number }>} chunkRecords
+ * @param {[number,number,number,number]} tileBbox
+ * @param {{ maxFeatures?: number, maxChunks?: number }} [opts]
+ * @returns {{ chunkIds: string[], sampled: boolean, rankedCount: number }}
+ */
+export function selectChunksForTile(chunkRecords, tileBbox, opts = {}) {
+    const maxFeatures = opts.maxFeatures ?? MAX_TILE_FEATURES;
+    const maxChunks = opts.maxChunks ?? MAX_CHUNKS_PER_TILE;
+    const ranked = rankChunksByOverlap(chunkRecords, tileBbox);
+    if (!ranked.length) {
+        return { chunkIds: [], sampled: false, rankedCount: 0 };
+    }
+
+    const totalEstimate = ranked.reduce((sum, rec) => sum + rec.featureCount, 0);
+    if (totalEstimate <= maxFeatures && ranked.length <= maxChunks) {
+        return {
+            chunkIds: ranked.map((rec) => rec.chunkId),
+            sampled: false,
+            rankedCount: ranked.length
+        };
+    }
+
+    const selected = [];
+    let estimate = 0;
+    const targetMass = maxFeatures * 2;
+    for (const rec of ranked) {
+        if (selected.length >= maxChunks) break;
+        if (estimate >= targetMass && selected.length > 0) break;
+        selected.push(rec.chunkId);
+        estimate += rec.featureCount;
+    }
+
+    // Long-line layers: every chunk can score similarly low. Still take the
+    // top-ranked maxChunks so crossing lines have a chance to appear.
+    if (!selected.length) {
+        selected.push(...ranked.slice(0, Math.min(maxChunks, ranked.length)).map((r) => r.chunkId));
+    }
+
+    return {
+        chunkIds: selected,
+        sampled: selected.length < ranked.length,
+        rankedCount: ranked.length
+    };
+}
+
+/**
+ * @param {object} feature
+ * @param {[number,number,number,number]} tileBbox
+ * @param {number} z
+ * @param {number} minSpanDeg
+ * @returns {boolean}
+ */
+export function featureBelongsInTile(feature, tileBbox, z, minSpanDeg = null) {
+    const bbox = featureBBox(feature);
+    if (!bbox) return false;
+    if (!bboxIntersects(bbox, tileBbox)) return false;
+    const spanMin = minSpanDeg ?? (degreesPerPixel(z) * MIN_FEATURE_PIXELS);
+    if (!POINTY.has(feature.geometry?.type)) {
+        const span = Math.max(bbox[2] - bbox[0], bbox[3] - bbox[1]);
+        if (span < spanMin) return false;
+    }
+    return true;
+}
 
 /**
  * @param {Array<{ features: object[] }>} chunks parsed workspace chunks
@@ -22,14 +129,7 @@ export function selectTileFeatures(chunks, tileBbox, z, opts = {}) {
     const candidates = [];
     for (const chunk of chunks) {
         for (const feature of chunk.features || []) {
-            const bbox = featureBBox(feature);
-            if (!bbox) continue;
-            if (!bboxIntersects(bbox, tileBbox)) continue;
-            if (!POINTY.has(feature.geometry.type)) {
-                // Sub-pixel line/polygon at this zoom — invisible, skip.
-                const span = Math.max(bbox[2] - bbox[0], bbox[3] - bbox[1]);
-                if (span < minSpanDeg) continue;
-            }
+            if (!featureBelongsInTile(feature, tileBbox, z, minSpanDeg)) continue;
             candidates.push(feature);
         }
     }
@@ -48,26 +148,23 @@ export function selectTileFeatures(chunks, tileBbox, z, opts = {}) {
 }
 
 /**
- * Chunk-level sampling for overview tiles: when the tile intersects far more
- * data than one tile can show, load an evenly-strided subset of chunks.
- * @param {string[]} chunkIds spatially ordered chunk ids
+ * Legacy even-stride chunk sampler (kept for tests / callers). Prefer
+ * {@link selectChunksForTile} which ranks by spatial overlap.
+ * @param {string[]} chunkIds
  * @param {number} totalFeatureEstimate
- * @param {{ maxFeatures?: number, maxChunks?: number, avgChunkSize?: number }} [opts]
- * @returns {{ chunkIds: string[], sampled: boolean }}
+ * @param {{ maxFeatures?: number, maxChunks?: number }} [opts]
  */
 export function sampleChunksForTile(chunkIds, totalFeatureEstimate, opts = {}) {
     const maxFeatures = opts.maxFeatures ?? MAX_TILE_FEATURES;
-    const maxChunks = opts.maxChunks ?? 64;
+    const maxChunks = opts.maxChunks ?? MAX_CHUNKS_PER_TILE;
 
     let ids = chunkIds;
     let sampled = false;
 
-    // Everything fits in the tile budget — load all chunks (no data loss).
     if (totalFeatureEstimate <= maxFeatures) {
         return { chunkIds: ids, sampled };
     }
 
-    // Load roughly 2× the feature cap so stride sampling has healthy input.
     if (totalFeatureEstimate > maxFeatures * 2 && chunkIds.length > 1) {
         const keepRatio = (maxFeatures * 2) / totalFeatureEstimate;
         const keepCount = Math.max(1, Math.round(chunkIds.length * keepRatio));
@@ -94,4 +191,11 @@ export function sampleChunksForTile(chunkIds, totalFeatureEstimate, opts = {}) {
     return { chunkIds: ids, sampled };
 }
 
-export default { selectTileFeatures, sampleChunksForTile };
+export default {
+    bboxOverlapRatio,
+    rankChunksByOverlap,
+    selectChunksForTile,
+    featureBelongsInTile,
+    selectTileFeatures,
+    sampleChunksForTile
+};
