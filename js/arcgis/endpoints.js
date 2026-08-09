@@ -10,30 +10,6 @@
  */
 const ARCGIS_ENDPOINTS = [
     {
-        name: 'UDOT Fiber Network — Fiber',
-        url: 'https://central.udot.utah.gov/server/rest/services/Fiber/UDOT_Fiber_Network/MapServer/6'
-    },
-    {
-        name: 'UDOT Fiber Network — Conduit',
-        url: 'https://central.udot.utah.gov/server/rest/services/Fiber/UDOT_Fiber_Network/MapServer/7'
-    },
-    {
-        name: 'UDOT Fiber Network — Cabinets',
-        url: 'https://central.udot.utah.gov/server/rest/services/Fiber/UDOT_Fiber_Network/MapServer/0'
-    },
-    {
-        name: 'UDOT Fiber Network — Boxes',
-        url: 'https://central.udot.utah.gov/server/rest/services/Fiber/UDOT_Fiber_Network/MapServer/4'
-    },
-    {
-        name: 'UDOT Fiber Network — Splices',
-        url: 'https://central.udot.utah.gov/server/rest/services/Fiber/UDOT_Fiber_Network/MapServer/2'
-    },
-    {
-        name: 'UDOT Fiber Network — Building',
-        url: 'https://central.udot.utah.gov/server/rest/services/Fiber/UDOT_Fiber_Network/MapServer/8'
-    },
-    {
         name: 'UDOT Routes ALRS',
         url: 'https://services.arcgis.com/pA2nEVnB6tquxgOW/ArcGIS/rest/services/UDOT_Routes_ALRS/FeatureServer/0'
     },
