@@ -785,6 +785,7 @@ export function ImportFlowDialog({
                                     scanProgress={valueScan.scanProgress}
                                     scanMessage={valueScan.scanMessage}
                                     onCancelScan={valueScan.cancelScan}
+                                    onRetryScan={valueScan.retryScan}
                                     featureFilter={featureFilter}
                                     onChange={setFeatureFilter}
                                 />

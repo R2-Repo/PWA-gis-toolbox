@@ -48,7 +48,7 @@ export function scanImportFieldValues(file, options = {}) {
         };
 
         void (async () => {
-            const format = formatHint || detectFormat(file.name);
+            const format = formatHint || detectFormat(file);
             let streamFormat = format;
             if (format === 'json') {
                 const ok = await sniffJsonIsFeatureCollection(file);

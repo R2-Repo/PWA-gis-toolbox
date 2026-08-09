@@ -181,6 +181,7 @@ export function ImportOptimizerDialog({ files = [], onCancel, onConfirm }) {
                             scanProgress={valueScan.scanProgress}
                             scanMessage={valueScan.scanMessage}
                             onCancelScan={valueScan.cancelScan}
+                            onRetryScan={valueScan.retryScan}
                             featureFilter={featureFilter}
                             onChange={setFeatureFilter}
                         />

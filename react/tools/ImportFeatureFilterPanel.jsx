@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import {
     IMPORT_FILTER_OPERATORS,
     IMPORT_VALUE_SCAN_CAP,
@@ -13,6 +13,21 @@ function emptyRule(fields = []) {
     };
 }
 
+function isListOperator(operator) {
+    return operator === 'equals'
+        || operator === 'not_equals'
+        || operator === 'in'
+        || operator === 'not_in';
+}
+
+function selectedValuesFromRule(rule) {
+    if (Array.isArray(rule.value)) return rule.value.map(String);
+    return String(rule.value || '')
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean);
+}
+
 /**
  * Pre-import geometry-type toggles + attribute filter rules with value pickers.
  */
@@ -23,6 +38,7 @@ export function ImportFeatureFilterPanel({
     scanProgress = null,
     scanMessage = null,
     onCancelScan = null,
+    onRetryScan = null,
     featureFilter = null,
     onChange
 }) {
@@ -35,7 +51,7 @@ export function ImportFeatureFilterPanel({
         /** @type {Map<string, { values: string[], truncated: boolean, uniqueCount: number }>} */
         const map = new Map();
         for (const entry of valueCatalog?.fields || []) {
-            map.set(entry.name, entry);
+            if (entry?.name) map.set(entry.name, entry);
         }
         return map;
     }, [valueCatalog]);
@@ -64,6 +80,7 @@ export function ImportFeatureFilterPanel({
 
     const scanning = scanState === 'scanning';
     const scanFailed = scanState === 'unsupported' || scanState === 'error';
+    const scanReady = scanState === 'ready';
 
     return (
         <div className="mb-8">
@@ -93,9 +110,9 @@ export function ImportFeatureFilterPanel({
                 ))}
             </div>
 
-            <div className="text-xs mb-4" style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+            <div className="text-xs mb-4" style={{ display: 'flex', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
                 <strong>Attribute value filters</strong>
-                {valueCatalog?.rowCount != null ? (
+                {valueCatalog?.rowCount != null && scanReady ? (
                     <span className="text-muted">
                         {valueCatalog.rowCount.toLocaleString()} rows scanned
                         {valueCatalog.fields?.length
@@ -107,11 +124,14 @@ export function ImportFeatureFilterPanel({
 
             {scanning ? (
                 <div className="info-box text-xs mb-8">
-                    <div>{scanProgress?.step || 'Reading attribute values…'}</div>
+                    <div><strong>Reading attribute values from the file…</strong></div>
                     <div className="text-muted" style={{ marginTop: 4 }}>
                         {typeof scanProgress?.percent === 'number'
-                            ? `${scanProgress.percent}%`
-                            : 'Working…'}
+                            ? `${scanProgress.percent}% — large files can take a few minutes.`
+                            : 'Working… large files can take a few minutes.'}
+                    </div>
+                    <div className="text-muted" style={{ marginTop: 4 }}>
+                        Wait for this to finish — then each filter field gets a dropdown of values found in the file.
                     </div>
                     {onCancelScan ? (
                         <button
@@ -126,29 +146,46 @@ export function ImportFeatureFilterPanel({
                 </div>
             ) : null}
 
-            {scanFailed && scanMessage ? (
-                <div className="info-box text-xs mb-8">{scanMessage}</div>
+            {scanFailed ? (
+                <div className="info-box text-xs mb-8">
+                    <div>{scanMessage || 'Could not build value lists from this file.'}</div>
+                    <div className="text-muted" style={{ marginTop: 4 }}>
+                        You can still type values manually, or retry the scan.
+                    </div>
+                    {onRetryScan ? (
+                        <button
+                            type="button"
+                            className="btn btn-secondary btn-sm"
+                            style={{ marginTop: 8 }}
+                            onClick={() => onRetryScan()}
+                        >
+                            Retry value scan
+                        </button>
+                    ) : null}
+                </div>
             ) : null}
 
-            {!scanning && scanState === 'ready' ? (
+            {scanReady ? (
                 <p className="text-xs text-muted mb-8">
-                    Pick values from the scanned lists (up to {IMPORT_VALUE_SCAN_CAP.toLocaleString()}
-                    {' '}per field). Truncated fields still accept typed values.
+                    Choose a field, then pick values from the list (up to{' '}
+                    {IMPORT_VALUE_SCAN_CAP.toLocaleString()} distinct values per field).
+                    Use checkboxes to keep several values at once.
+                </p>
+            ) : null}
+
+            {!scanning && scanState === 'idle' ? (
+                <p className="text-xs text-muted mb-8">
+                    Value lists appear after the file is scanned for distinct attribute values.
                 </p>
             ) : null}
 
             {rules.map((rule, index) => {
                 const catalog = valuesByField.get(rule.field);
-                const useChecklist = catalog?.values?.length
-                    && !catalog.truncated
-                    && (rule.operator === 'equals' || rule.operator === 'not_equals'
-                        || rule.operator === 'in' || rule.operator === 'not_in');
-                const selectedValues = Array.isArray(rule.value)
-                    ? rule.value
-                    : String(rule.value || '')
-                        .split(',')
-                        .map((s) => s.trim())
-                        .filter(Boolean);
+                const values = catalog?.values || [];
+                const hasValues = values.length > 0;
+                const listOps = isListOperator(rule.operator);
+                const showValuePicker = listOps && hasValues;
+                const selectedValues = selectedValuesFromRule(rule);
 
                 return (
                     <div key={index} className="mb-8" style={{ borderBottom: '1px solid var(--border, #ddd)', paddingBottom: 8 }}>
@@ -167,21 +204,52 @@ export function ImportFeatureFilterPanel({
                                 className="rule-op"
                                 style={{ flex: 1, minWidth: 120 }}
                                 value={rule.operator}
-                                onChange={(e) => updateRule(index, { operator: e.target.value })}
+                                onChange={(e) => updateRule(index, { operator: e.target.value, value: '' })}
                             >
                                 {IMPORT_FILTER_OPERATORS.map((o) => (
                                     <option key={o.value} value={o.value}>{o.label}</option>
                                 ))}
                             </select>
-                            {rule.operator !== 'is_null' && rule.operator !== 'is_not_null' && !useChecklist ? (
+                            {rule.operator !== 'is_null' && rule.operator !== 'is_not_null' && !showValuePicker ? (
                                 <input
                                     type="text"
                                     className="rule-val"
-                                    placeholder={catalog?.truncated ? 'Type a value' : 'value'}
+                                    placeholder={scanning ? 'Waiting for value scan…' : 'Type a value'}
                                     style={{ flex: 1, minWidth: 120 }}
                                     value={Array.isArray(rule.value) ? rule.value.join(', ') : (rule.value ?? '')}
                                     onChange={(e) => updateRule(index, { value: e.target.value })}
-                                    list={catalog?.values?.length ? `import-filter-values-${index}` : undefined}
+                                    disabled={scanning}
+                                />
+                            ) : null}
+                            {showValuePicker ? (
+                                <select
+                                    className="rule-val"
+                                    style={{ flex: 1, minWidth: 140 }}
+                                    value={selectedValues[0] || ''}
+                                    onChange={(e) => {
+                                        const v = e.target.value;
+                                        updateRule(index, {
+                                            value: v ? [v] : [],
+                                            operator: rule.operator === 'not_equals' || rule.operator === 'not_in'
+                                                ? 'not_equals'
+                                                : 'equals'
+                                        });
+                                    }}
+                                >
+                                    <option value="">Select a value…</option>
+                                    {values.map((v) => (
+                                        <option key={v} value={v}>{v}</option>
+                                    ))}
+                                </select>
+                            ) : null}
+                            {showValuePicker && catalog?.truncated ? (
+                                <input
+                                    type="text"
+                                    className="rule-val"
+                                    placeholder="Or type exact value"
+                                    style={{ flex: 1, minWidth: 120 }}
+                                    value={Array.isArray(rule.value) ? rule.value.join(', ') : (rule.value ?? '')}
+                                    onChange={(e) => updateRule(index, { value: e.target.value })}
                                 />
                             ) : null}
                             <button
@@ -194,61 +262,64 @@ export function ImportFeatureFilterPanel({
                             </button>
                         </div>
 
-                        {catalog?.truncated ? (
+                        {listOps && !hasValues && scanReady ? (
                             <div className="text-xs text-muted mb-4">
-                                Showing first {catalog.values.length.toLocaleString()} of many distinct values
-                                — type the exact value if it is not listed.
+                                No values found for “{rule.field}” in the scan (all null/empty, or field missing from sampled features).
+                                Type a value above if you know it.
                             </div>
                         ) : null}
 
-                        {catalog?.values?.length && !useChecklist && rule.operator !== 'is_null'
-                            && rule.operator !== 'is_not_null' ? (
-                            <datalist id={`import-filter-values-${index}`}>
-                                {catalog.values.map((v) => (
-                                    <option key={v} value={v} />
-                                ))}
-                            </datalist>
+                        {catalog?.truncated ? (
+                            <div className="text-xs text-muted mb-4">
+                                Showing first {values.length.toLocaleString()} distinct values
+                                — type the exact value above if yours is not listed.
+                            </div>
                         ) : null}
 
-                        {useChecklist ? (
-                            <div
-                                className="text-xs"
-                                style={{
-                                    maxHeight: 160,
-                                    overflow: 'auto',
-                                    border: '1px solid var(--border, #ddd)',
-                                    borderRadius: 4,
-                                    padding: 8
-                                }}
-                            >
-                                {catalog.values.map((v) => {
-                                    const checked = selectedValues.includes(v);
-                                    return (
-                                        <label
-                                            key={v}
-                                            style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 4 }}
-                                        >
-                                            <input
-                                                type="checkbox"
-                                                checked={checked}
-                                                onChange={(e) => {
-                                                    const next = e.target.checked
-                                                        ? [...selectedValues, v]
-                                                        : selectedValues.filter((x) => x !== v);
-                                                    const op = next.length > 1
-                                                        ? (rule.operator === 'not_equals' || rule.operator === 'not_in'
-                                                            ? 'not_in'
-                                                            : 'in')
-                                                        : (rule.operator === 'not_equals' || rule.operator === 'not_in'
-                                                            ? 'not_equals'
-                                                            : 'equals');
-                                                    updateRule(index, { value: next, operator: op });
-                                                }}
-                                            />
-                                            <span style={{ wordBreak: 'break-word' }}>{v}</span>
-                                        </label>
-                                    );
-                                })}
+                        {showValuePicker ? (
+                            <div>
+                                <div className="text-xs text-muted mb-4">
+                                    Or check multiple values to keep (uses “In” / “Not in”):
+                                </div>
+                                <div
+                                    className="text-xs"
+                                    style={{
+                                        maxHeight: 180,
+                                        overflow: 'auto',
+                                        border: '1px solid var(--border, #ddd)',
+                                        borderRadius: 4,
+                                        padding: 8
+                                    }}
+                                >
+                                    {values.map((v) => {
+                                        const checked = selectedValues.includes(v);
+                                        return (
+                                            <label
+                                                key={v}
+                                                style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 4 }}
+                                            >
+                                                <input
+                                                    type="checkbox"
+                                                    checked={checked}
+                                                    onChange={(e) => {
+                                                        const next = e.target.checked
+                                                            ? [...selectedValues, v]
+                                                            : selectedValues.filter((x) => x !== v);
+                                                        const op = next.length > 1
+                                                            ? (rule.operator === 'not_equals' || rule.operator === 'not_in'
+                                                                ? 'not_in'
+                                                                : 'in')
+                                                            : (rule.operator === 'not_equals' || rule.operator === 'not_in'
+                                                                ? 'not_equals'
+                                                                : 'equals');
+                                                        updateRule(index, { value: next, operator: op });
+                                                    }}
+                                                />
+                                                <span style={{ wordBreak: 'break-word' }}>{v}</span>
+                                            </label>
+                                        );
+                                    })}
+                                </div>
                             </div>
                         ) : null}
                     </div>
@@ -261,6 +332,7 @@ export function ImportFeatureFilterPanel({
                     className="btn btn-secondary btn-sm"
                     onClick={addRule}
                     disabled={!fieldNames.length || scanning}
+                    title={scanning ? 'Wait for the value scan to finish' : undefined}
                 >
                     Add attribute filter
                 </button>

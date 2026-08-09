@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { scanImportFieldValues } from '../../js/import/import-value-scan.js';
 import { createEmptyFeatureFilter } from '../../js/import/import-feature-filter.js';
 
@@ -11,13 +11,14 @@ export function useImportValueScan({ files = [], fieldNames = [], enabled = true
     const [scanProgress, setScanProgress] = useState(null);
     const [valueCatalog, setValueCatalog] = useState(null);
     const [scanMessage, setScanMessage] = useState(null);
+    const [retryToken, setRetryToken] = useState(0);
     const cancelRef = useRef(null);
 
     const scanKey = useMemo(() => {
         const fileKey = (files || []).map((f) => `${f.name}:${f.size}:${f.lastModified}`).join('|');
         const fieldKey = (fieldNames || []).join('\0');
-        return `${fileKey}::${fieldKey}`;
-    }, [files, fieldNames]);
+        return `${fileKey}::${fieldKey}::${retryToken}`;
+    }, [files, fieldNames, retryToken]);
 
     useEffect(() => {
         if (!enabled || !files?.length || !fieldNames?.length) {
@@ -70,12 +71,17 @@ export function useImportValueScan({ files = [], fieldNames = [], enabled = true
         };
     }, [enabled, scanKey, files, fieldNames]);
 
+    const retryScan = useCallback(() => {
+        setRetryToken((n) => n + 1);
+    }, []);
+
     return {
         scanState,
         scanProgress,
         valueCatalog,
         scanMessage,
-        cancelScan: () => cancelRef.current?.()
+        cancelScan: () => cancelRef.current?.(),
+        retryScan
     };
 }
 
