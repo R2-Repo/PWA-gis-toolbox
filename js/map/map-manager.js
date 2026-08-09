@@ -1605,6 +1605,9 @@ class MapManager {
                 const props = e.features?.[0]?.properties;
                 if (!props || props._featureIndex === undefined) return;
                 const featureIndex = Number(props._featureIndex);
+                // e.features is only valid synchronously; MapLibre's lazy geometry
+                // getter must be materialized before any await.
+                const clickedGeometry = e.features?.[0]?.geometry ?? null;
                 const resolveFeature = async () => {
                     const features = dataset.geojson?.features || [];
                     let feature = features.find(
@@ -1615,8 +1618,8 @@ class MapManager {
                         const attrs = await getWorkspaceFeatureAttributes(wsId, featureIndex);
                         if (feature && attrs) {
                             feature = { ...feature, properties: { ...attrs } };
-                        } else if (attrs) {
-                            feature = { type: 'Feature', geometry: e.features[0].geometry, properties: attrs };
+                        } else if (attrs && clickedGeometry) {
+                            feature = { type: 'Feature', geometry: clickedGeometry, properties: attrs };
                         }
                     }
                     return feature;
