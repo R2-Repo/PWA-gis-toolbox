@@ -332,6 +332,9 @@ export function createMapService({ mapAdapter = mapManager } = {}) {
         fitToFeatureIndices(layerId, indices, options) {
             return mapAdapter.fitToFeatureIndices?.(layerId, indices, options);
         },
+        focusFeatures(features, options) {
+            return mapAdapter.focusFeatures?.(features, options);
+        },
         showRouteMilepostPreview(geojson, duration) {
             return mapAdapter.showRouteMilepostPreview?.(geojson, duration);
         },

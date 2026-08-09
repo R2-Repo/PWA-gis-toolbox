@@ -5082,8 +5082,13 @@ export function showDataTable() {
     if (displayRows.length === 0) return showToast('No data to show', 'warning');
 
     const firstProps = isSpatial ? (displayRows[0]?.properties || {}) : (displayRows[0] || {});
-    const fields = Object.keys(firstProps).filter((k) => !k.startsWith('_'));
-    const tableRows = displayRows.map((item) => (isSpatial ? (item.properties || {}) : item));
+    const fields = Object.keys(firstProps).filter((k) => !k.startsWith('_') && k !== '__lgid');
+    const tableRows = displayRows.map((item, index) => {
+        if (!isSpatial) return item;
+        const props = { ...(item.properties || {}) };
+        if (props._featureIndex == null) props._featureIndex = index;
+        return props;
+    });
 
     const rootId = `data-table-react-${Date.now()}`;
     showModal(`Data: ${layer.name}`, `<div id="${rootId}"></div>`, {
@@ -5097,9 +5102,36 @@ export function showDataTable() {
                 fields,
                 rows: tableRows,
                 totalCount,
+                filterFields: fields,
                 isSpatial,
-                onCellEdit: (rowIndex, field, coerced, isFirstEdit) => {
-                    const target = isSpatial ? features[rowIndex]?.properties : (layer.rows || [])[rowIndex];
+                onFocusRow: isSpatial
+                    ? async ({ featureIndex }) => {
+                        mapService.setActiveLayerId?.(layer.id);
+                        setActiveLayerAndRefresh(layer.id);
+                        const feature = features.find(
+                            (f) => Number(f.properties?._featureIndex) === Number(featureIndex)
+                        ) || features[featureIndex];
+                        if (!feature?.geometry) {
+                            throw new Error('Feature geometry not available in memory.');
+                        }
+                        mapService.focusFeatures?.([feature], { layerId: layer.id, fit: true });
+                        if (!mapService.focusFeatures) {
+                            mapService.highlightFeature?.(layer.id, featureIndex);
+                            mapService.fitToFeatureIndices?.(layer.id, [featureIndex], { mode: 'first' });
+                        }
+                    }
+                    : null,
+                onCellEdit: (rowIndex, field, coerced, isFirstEdit, row) => {
+                    let target = null;
+                    if (isSpatial) {
+                        const idx = Number(row?._featureIndex);
+                        const feature = Number.isFinite(idx)
+                            ? features.find((f) => Number(f.properties?._featureIndex) === idx)
+                            : features[rowIndex];
+                        target = feature?.properties || null;
+                    } else {
+                        target = (layer.rows || [])[rowIndex];
+                    }
                     if (!target) return;
                     if (isFirstEdit && isSpatial) saveSnapshot(layer.id, 'Edit field data', layer.geojson);
                     target[field] = coerced;
@@ -5133,8 +5165,29 @@ async function showWorkspaceDataTable(layer) {
         return;
     }
 
-    const { ATTRIBUTE_TABLE_PAGE_SIZE } = await import('../workspace/attribute-table.js');
-    const { loadWorkspaceAttributePage } = await import('../workspace/workspace-store.js');
+    const {
+        ATTRIBUTE_TABLE_PAGE_SIZE,
+        resolveAttributeTableFields
+    } = await import('../workspace/attribute-table.js');
+    const {
+        loadWorkspaceAttributeTablePage,
+        scanWorkspaceAttributeMatches,
+        getWorkspaceFeaturesByIndices
+    } = await import('../workspace/workspace-store.js');
+
+    const schemaFieldNames = (layer.schema?.fields || [])
+        .map((f) => f?.name)
+        .filter(Boolean);
+    const withSchemaFields = (page) => {
+        if (!schemaFieldNames.length || !page) return page;
+        page.fields = resolveAttributeTableFields({
+            schemaFieldNames,
+            coldFields: page.coldFields,
+            sampleRows: page.rows,
+            includeIdentity: true
+        });
+        return page;
+    };
 
     const rootId = `data-table-react-${Date.now()}`;
     showModal(`Data: ${layer.name}`, `<div id="${rootId}"></div>`, {
@@ -5149,31 +5202,64 @@ async function showWorkspaceDataTable(layer) {
                 readOnly: true,
                 includeColdDefault: true,
                 pageSize: ATTRIBUTE_TABLE_PAGE_SIZE,
-                statusNote: 'Stored workspace attributes — includes features not currently drawn on the map. Toggle cold fields to inspect detach-for-export values.',
-                onLoadPage: async ({ offset, limit, includeCold }) => {
-                    const page = await loadWorkspaceAttributePage(
-                        workspaceLayerId,
+                filterFields: schemaFieldNames,
+                statusNote: 'Stored workspace attributes — includes features not currently drawn on the map. Search scans IndexedDB; Zoom loads geometry even when the feature is not currently drawn.',
+                onLoadPage: async ({
+                    offset,
+                    limit,
+                    includeCold,
+                    matchIndices,
+                    sortField,
+                    sortDir
+                }) => {
+                    const page = await loadWorkspaceAttributeTablePage(workspaceLayerId, {
                         offset,
-                        limit ?? ATTRIBUTE_TABLE_PAGE_SIZE,
-                        { includeCold }
-                    );
-                    if (!page.totalCount) {
+                        limit: limit ?? ATTRIBUTE_TABLE_PAGE_SIZE,
+                        includeCold,
+                        matchIndices,
+                        sortField,
+                        sortDir
+                    });
+                    if (!page.totalCount && !matchIndices) {
                         showToast('No data to show', 'warning');
                     }
-                    // Prefer live schema field order from the app layer handle when present.
-                    const schemaFieldNames = (layer.schema?.fields || [])
-                        .map((f) => f?.name)
-                        .filter(Boolean);
-                    if (schemaFieldNames.length) {
-                        const { resolveAttributeTableFields } = await import('../workspace/attribute-table.js');
-                        page.fields = resolveAttributeTableFields({
-                            schemaFieldNames,
-                            coldFields: page.coldFields,
-                            sampleRows: page.rows,
-                            includeIdentity: true
-                        });
+                    return withSchemaFields(page);
+                },
+                onScanMatches: async ({
+                    text,
+                    field,
+                    fieldValue,
+                    fieldOp,
+                    includeCold,
+                    signal,
+                    onProgress
+                }) => scanWorkspaceAttributeMatches(workspaceLayerId, {
+                    text,
+                    field,
+                    fieldValue,
+                    fieldOp
+                }, {
+                    includeCold,
+                    signal,
+                    onProgress
+                }),
+                onFocusRow: async ({ featureIndex }) => {
+                    mapService.setActiveLayerId?.(layer.id);
+                    setActiveLayerAndRefresh(layer.id);
+                    const features = await getWorkspaceFeaturesByIndices(
+                        workspaceLayerId,
+                        [featureIndex],
+                        { includeCold: true }
+                    );
+                    if (!features.length) {
+                        throw new Error('Could not load feature geometry from workspace storage.');
                     }
-                    return page;
+                    if (typeof mapService.focusFeatures === 'function') {
+                        mapService.focusFeatures(features, { layerId: layer.id, fit: true });
+                    } else {
+                        mapService.showQueryResults?.(layer.id, [featureIndex]);
+                        mapService.fitToFeatureIndices?.(layer.id, [featureIndex], { mode: 'first' });
+                    }
                 },
                 onClose: () => {}
             });
