@@ -1376,9 +1376,23 @@ export async function openImportForFiles(files, fenceBbox = null, options = {}) 
             showToast(message, 'error');
         }
         if (partition.streamFiles.length) {
+            const activeFence = fenceBbox ?? _fenceBbox;
+            const { hasActiveFeatureFilter } = await import('../import/import-feature-filter.js');
+            const hasFieldReduction = Array.isArray(options.selectedFields) && options.selectedFields.length > 0;
+            const hasFeatureReduction = hasActiveFeatureFilter(options.featureFilter);
+            const hasFenceReduction = Array.isArray(activeFence) && activeFence.length === 4;
+            // Never auto-import an oversized file unchanged — open the filter UI first
+            // (drag-drop / file picker used to bypass the dialog and stream everything).
+            if (!hasFieldReduction && !hasFeatureReduction && !hasFenceReduction) {
+                _openImportFlowModal({
+                    initialFiles: dataFiles,
+                    startAtFieldPick: true
+                });
+                return;
+            }
             const { runStreamingImportFlow } = await import('./stream-import-flow.js');
             await runStreamingImportFlow(partition.streamFiles, {
-                fenceBbox: fenceBbox ?? _fenceBbox,
+                fenceBbox: activeFence,
                 refreshUI,
                 selectedFields: options.selectedFields || null,
                 featureFilter: options.featureFilter || null

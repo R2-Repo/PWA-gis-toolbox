@@ -14,6 +14,7 @@ import { showModal, showProgressModal } from '../ui/modals.js';
 import { detectFormat } from '../import/importer.js';
 import { applyImportLayerStyles } from '../import/post-import.js';
 import { streamImportFile } from '../import/stream/stream-import-service.js';
+import { hasActiveFeatureFilter } from '../import/import-feature-filter.js';
 import { removeWorkspaceLayer } from '../workspace/workspace-store.js';
 import { removeSourceFileIfUnreferenced } from '../workspace/source-file-store.js';
 
@@ -75,6 +76,17 @@ export async function runStreamingImportFlow(files, options = {}) {
     const { fenceBbox = null, refreshUI, selectedFields = null, featureFilter = null } = options;
     const fileList = Array.from(files || []);
     if (!fileList.length) return;
+
+    const hasFieldReduction = Array.isArray(selectedFields) && selectedFields.length > 0;
+    const hasFeatureReduction = hasActiveFeatureFilter(featureFilter);
+    const hasFenceReduction = Array.isArray(fenceBbox) && fenceBbox.length === 4;
+    if (!hasFieldReduction && !hasFeatureReduction && !hasFenceReduction) {
+        showToast(
+            'Large files cannot be imported unchanged. Open Import, then uncheck attributes and/or set a feature filter first.',
+            'error'
+        );
+        return;
+    }
 
     let progress = null;
     let cancelCurrent = null;

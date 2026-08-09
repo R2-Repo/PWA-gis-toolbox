@@ -47,6 +47,7 @@ import { ImportFeatureFilterPanel } from './ImportFeatureFilterPanel.jsx';
 import { useFeatureFilterState, useImportValueScan } from './useImportValueScan.js';
 
 import { hasActiveFeatureFilter, validateFeatureFilter } from '../../js/import/import-feature-filter.js';
+import { STREAM_MAX_BYTES } from '../../js/import/stream/stream-constants.js';
 
 
 
@@ -129,6 +130,17 @@ export function ImportFlowDialog({
         fieldNames,
         enabled: readyToImport && fieldNames.length > 0 && !importing
     });
+
+    /** High-capacity stream path: require field, feature, or fence reduction before Import. */
+    const streamHasFieldReduction = fieldNames.length > 0
+        && selectedFields.length > 0
+        && selectedFields.length < fieldNames.length;
+    const streamHasFeatureReduction = hasActiveFeatureFilter(featureFilter);
+    const streamHasFenceReduction = hasActiveFence === true;
+    const streamReductionReady = streamFiles.length === 0
+        || streamHasFieldReduction
+        || streamHasFeatureReduction
+        || streamHasFenceReduction;
 
     const resetImportStep = () => {
 
@@ -238,6 +250,16 @@ export function ImportFlowDialog({
         // a field filter when the user deselected something: head-sniffed field
         // lists can miss fields that appear later in very large files.
         if (streamFiles.length > 0 && onStreamImport) {
+            const fieldsReduced = fieldNames.length > 0
+                && fields?.length > 0
+                && fields.length < fieldNames.length;
+            if (!fieldsReduced && !activeFeatureFilter && !hasActiveFence) {
+                setError(
+                    'This file is too large to import in full. Uncheck attributes you do not need and/or set a feature filter (geometry or attribute) before importing.'
+                );
+                return;
+            }
+
             setError('');
             const useFieldFilter = fieldNames.length > 0 && fields.length < fieldNames.length;
             onStreamImport(files, {
@@ -655,17 +677,23 @@ export function ImportFlowDialog({
 
             {streamFiles.length > 0 ? (
 
-                <div className="info-box text-xs mb-8">
+                <div
+                    className="info-box text-xs mb-8"
+                    style={{ color: streamReductionReady ? 'var(--warning, orange)' : 'var(--danger)' }}
+                >
 
                     {streamFiles.length === 1
-                        ? `"${streamFiles[0].name}" is a large file — it will import with high-capacity streaming: data is stored locally and drawn by viewport, so the app stays fast. Use attribute filters and field selection below to store only the features and columns you need.`
-                        : `${streamFiles.length} large files will import with high-capacity streaming: data is stored locally and drawn by viewport, so the app stays fast. Use attribute filters and field selection below to store only the features and columns you need.`}
-
+                        ? `"${streamFiles[0].name}" exceeds the standard import size and uses high-capacity streaming (hard ceiling ${formatBytes(STREAM_MAX_BYTES)}).`
+                        : `${streamFiles.length} files exceed the standard import size and use high-capacity streaming (hard ceiling ${formatBytes(STREAM_MAX_BYTES)}).`}
+                    {' '}
+                    Import is blocked until you reduce what is stored: uncheck attributes you do not need, set a feature filter, or import inside an active fence.
                     {streamFiles.some((f) => /\.(kml|kmz)$/i.test(f.name))
                         ? ' KML/KMZ imports as a simplified GIS layer (presentation content is not kept).'
                         : ''}
-
                     {streamEstimate ? ` Roughly ${streamEstimate.toLocaleString()} features estimated.` : ''}
+                    {!streamReductionReady
+                        ? ' Select a subset below, then Import selected will unlock.'
+                        : ' Reduction selected — you can import.'}
 
                 </div>
 
@@ -777,7 +805,7 @@ export function ImportFlowDialog({
 
                             />
 
-                            {fieldNames.length > 0 ? (
+                            {fieldNames.length > 0 || streamFiles.length > 0 ? (
                                 <ImportFeatureFilterPanel
                                     fieldNames={fieldNames}
                                     valueCatalog={valueScan.valueCatalog}
@@ -791,9 +819,21 @@ export function ImportFlowDialog({
                                 />
                             ) : null}
 
+                            {!streamReductionReady ? (
+                                <p className="text-xs mt-8" style={{ color: 'var(--danger)' }}>
+                                    Uncheck unused attributes and/or add a feature filter to unlock import for this large file.
+                                </p>
+                            ) : null}
+
                             <button
 
                                 className="btn btn-primary btn-sm mt-8"
+
+                                disabled={!streamReductionReady}
+
+                                title={!streamReductionReady
+                                    ? 'Reduce attributes or set a filter first'
+                                    : undefined}
 
                                 onClick={() => void startImport(pendingFiles, { selectedFields })}
 

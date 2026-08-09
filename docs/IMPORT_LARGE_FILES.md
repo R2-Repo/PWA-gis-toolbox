@@ -295,8 +295,11 @@ value lists.
 
 **Note:** Filters reduce what is **stored** (IndexedDB / map). The source file
 is still streamed from disk, so it must stay under `STREAM_MAX_BYTES` (2 GB).
-An 800+ MB statewide roads GeoJSON is supported; multi‑GB exports still need
-an external split or subset.
+An 800+ MB statewide roads GeoJSON is eligible for streaming, but **Import is
+blocked until the user reduces attributes, sets a feature filter, or uses an
+import fence** — full unfiltered import of that size is not allowed. Drag-drop
+and the file picker open the same filter UI instead of streaming unchanged.
+Multi‑GB exports still need an external split or subset.
 
 ## Governing rules (unchanged from master plan)
 
