@@ -13,6 +13,12 @@ import {
     detachFieldsFromHot,
     mergeColdFieldNames
 } from './cold-attributes.js';
+import {
+    ATTRIBUTE_TABLE_PAGE_SIZE,
+    recordsToAttributeRows,
+    resolveAttributeTableFields,
+    clampAttributePageOffset
+} from './attribute-table.js';
 
 const DB_NAME = 'gis-toolbox-workspace';
 const DB_VERSION = 2;
@@ -677,6 +683,84 @@ export async function getWorkspaceLayerAttributes(layerId) {
 }
 
 /**
+ * Attributes-only page for the data table (no geometries).
+ * Includes features that may not currently be drawn on the map.
+ *
+ * @param {string} layerId
+ * @param {number} [offset]
+ * @param {number} [limit]
+ * @param {{ includeCold?: boolean }} [options]
+ * @returns {Promise<{
+ *   rows: object[],
+ *   fields: string[],
+ *   coldFields: string[],
+ *   totalCount: number,
+ *   offset: number,
+ *   limit: number,
+ *   includeCold: boolean
+ * }>}
+ */
+export async function loadWorkspaceAttributePage(
+    layerId,
+    offset = 0,
+    limit = ATTRIBUTE_TABLE_PAGE_SIZE,
+    options = {}
+) {
+    const includeCold = options.includeCold !== false;
+    const layer = await getWorkspaceLayer(layerId);
+    const totalCount = layer?.featureCount ?? 0;
+    const coldFields = [
+        ...(layer?.schema?.coldFields || layer?.coldFields || layer?.detachedFields || [])
+    ];
+    const schemaFieldNames = (layer?.schema?.fields || [])
+        .map((f) => (typeof f === 'string' ? f : f?.name))
+        .filter(Boolean);
+
+    if (!totalCount) {
+        return {
+            rows: [],
+            fields: resolveAttributeTableFields({ schemaFieldNames, coldFields, includeIdentity: true }),
+            coldFields,
+            totalCount: 0,
+            offset: 0,
+            limit,
+            includeCold
+        };
+    }
+
+    const pageOffset = clampAttributePageOffset(offset, totalCount, limit);
+    const count = Math.min(limit, totalCount - pageOffset);
+    const attrByIndex = await _loadAttributeRecordsRange(layerId, pageOffset, count);
+    let coldByLgid = null;
+    if (includeCold) {
+        const lgids = [...attrByIndex.values()].map((r) => r.lgid).filter(Boolean);
+        coldByLgid = await _loadColdPropertiesByLgids(layerId, lgids);
+    }
+
+    const rows = recordsToAttributeRows(attrByIndex, coldByLgid, {
+        includeCold,
+        startIndex: pageOffset,
+        count
+    });
+    const fields = resolveAttributeTableFields({
+        schemaFieldNames,
+        coldFields,
+        sampleRows: rows,
+        includeIdentity: true
+    });
+
+    return {
+        rows,
+        fields,
+        coldFields,
+        totalCount,
+        offset: pageOffset,
+        limit,
+        includeCold
+    };
+}
+
+/**
  * Legacy in-memory kit path threshold. Layers above this use streamed kit
  * packing (`writeWorkspaceLayerToKitZip`) instead of assembling a full bundle.
  */
@@ -967,6 +1051,7 @@ export default {
     getWorkspaceLayer,
     getWorkspaceLayerBounds,
     getWorkspaceLayerAttributes,
+    loadWorkspaceAttributePage,
     exportWorkspaceLayerBundle,
     writeWorkspaceLayerToKitZip,
     importWorkspaceLayerFromParts,
