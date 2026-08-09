@@ -48,7 +48,8 @@ function _baseName(fileName) {
  *   onProgress?: (percent: number, step: string) => void,
  *   preserveSource?: boolean,
  *   selectedFields?: string[]|null,
- *   importMode?: 'gis'|'preserve'
+ *   importMode?: 'gis'|'preserve',
+ *   sourceCrs?: { code: string, def: string }|null
  * }} options
  * @returns {{ promise: Promise<{ datasets: object[], stats: object }>, cancel: () => void }}
  */
@@ -59,7 +60,8 @@ export function streamImportFile(file, options = {}) {
         onProgress,
         preserveSource = true,
         selectedFields = null,
-        importMode
+        importMode,
+        sourceCrs = null
     } = options;
     const baseName = _baseName(file.name);
 
@@ -279,7 +281,8 @@ export function streamImportFile(file, options = {}) {
                                 importMethod: 'stream',
                                 ...(importMode ? { importMode } : {}),
                                 ...(selectedFields?.length ? { importSelectedFields: selectedFields } : {}),
-                                ...(opfsKey ? { opfsKey, sourcePreserved: true } : {})
+                                ...(opfsKey ? { opfsKey, sourcePreserved: true } : {}),
+                                ...(msg.sourceMeta || {})
                             });
                             datasets.push(dataset);
                         }
@@ -317,7 +320,8 @@ export function streamImportFile(file, options = {}) {
                     fenceBbox,
                     maxFeatures: STREAM_MAX_FEATURES,
                     ...(selectedFields?.length ? { selectedFields } : {}),
-                    ...(importMode ? { importMode } : {})
+                    ...(importMode ? { importMode } : {}),
+                    ...(sourceCrs ? { sourceCrs } : {})
                 }
             });
         })().catch((e) => void fail(e));

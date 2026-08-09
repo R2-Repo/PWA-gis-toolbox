@@ -16,6 +16,7 @@ import {
 import {
     readZipEntries,
     chooseMainKmlZipEntry,
+    isRealZipEntry,
     supportsZipStreaming
 } from './zip-central-directory.js';
 
@@ -77,10 +78,36 @@ async function _assessArchiveStreamEligibility(file, opts = {}) {
         return { stream: false, reject: false };
     }
 
-    const hasShapefile = entries.some((e) => !e.isDir && e.name.toLowerCase().endsWith('.shp'));
-    if (hasShapefile) {
-        // Zipped shapefiles keep the standard path (streaming SHP is planned).
-        return { stream: false, reject: false };
+    const shpEntries = entries.filter(
+        (e) => isRealZipEntry(e) && e.name.toLowerCase().endsWith('.shp')
+    );
+    if (shpEntries.length) {
+        if (shpEntries.length > 1) {
+            // Multi-shapefile archives keep the standard path (shpjs handles
+            // small ones; oversized ones get the standard size message).
+            return { stream: false, reject: false };
+        }
+        const shp = shpEntries[0];
+        const base = shp.name.replace(/\\/g, '/').replace(/^\/+/, '').toLowerCase().replace(/\.shp$/, '');
+        const dbf = entries.find(
+            (e) => isRealZipEntry(e) && e.name.replace(/\\/g, '/').replace(/^\/+/, '').toLowerCase() === `${base}.dbf`
+        );
+        const needsInflate = shp.method !== 0 || (dbf && dbf.method !== 0);
+        if (needsInflate && !supportsZipStreaming()) {
+            return { stream: false, reject: false };
+        }
+        const totalUncompressed = (shp.uncompressedSize || 0) + (dbf?.uncompressedSize || 0);
+        if (totalUncompressed > STREAM_MAX_BYTES) {
+            return {
+                stream: false,
+                reject: true,
+                message: `"${file.name}" expands to ${formatBytes(totalUncompressed)} of shapefile data — exceeds the ${formatBytes(STREAM_MAX_BYTES)} high-capacity import limit. Split the file externally before importing.`
+            };
+        }
+        if (opts.requireLargeEntry && totalUncompressed < ARCHIVE_LARGE_ENTRY_BYTES) {
+            return { stream: false, reject: false };
+        }
+        return { stream: true, reject: false };
     }
 
     const main = chooseMainKmlZipEntry(entries);

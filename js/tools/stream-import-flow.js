@@ -32,7 +32,35 @@ async function _rollbackStreamedLayers(datasets) {
     }
 }
 
+/** gis importMode applies to the KML pipeline (zip may be a KMZ in disguise). */
 const KML_FAMILY = new Set(['kml', 'kmz', 'xml', 'zip']);
+
+/**
+ * Ask the user for the source CRS of a projected CSV and resolve a proj4
+ * definition the worker can use.
+ * @param {File} file
+ * @returns {Promise<{ code: string, def: string }|null>}
+ */
+async function _promptCsvSourceCrs(file) {
+    const { pickCrsConfirmModal } = await import('../../react/tools/mountCrsConfirmDialog.jsx');
+    const { resolveCrs, getCrsWkt, normalizeCrsCode } = await import('../crs/registry.js');
+
+    const picked = await pickCrsConfirmModal({
+        layerName: file.name,
+        message: `"${file.name}" uses projected easting/northing coordinates. Choose the source coordinate system so features can be converted to WGS84 while importing.`,
+        defaultCrs: 'EPSG:6337'
+    });
+    if (!picked) return null;
+
+    const code = normalizeCrsCode(picked);
+    const def = await resolveCrs(code);
+    const workerDef = def && def.startsWith('+') ? def : getCrsWkt(code);
+    if (!workerDef) {
+        showToast(`No projection definition available for ${code}.`, 'error');
+        return null;
+    }
+    return { code, def: workerDef };
+}
 
 /**
  * @param {File[]} files streaming-eligible files (see stream-policy)
@@ -73,7 +101,7 @@ export async function runStreamingImportFlow(files, options = {}) {
             const prefix = fileList.length > 1 ? `File ${i + 1}/${fileList.length}: ` : '';
             const format = detectFormat(file);
 
-            const job = streamImportFile(file, {
+            const startJob = (extraOptions = {}) => streamImportFile(file, {
                 format,
                 fenceBbox,
                 selectedFields,
@@ -87,12 +115,28 @@ export async function runStreamingImportFlow(files, options = {}) {
                         fileIndex: i,
                         fileCount: fileList.length
                     });
-                }
+                },
+                ...extraOptions
             });
+
+            let job = startJob();
             cancelCurrent = job.cancel;
 
             try {
-                const { datasets, stats } = await job.promise;
+                let result;
+                try {
+                    result = await job.promise;
+                } catch (e) {
+                    // Projected CSV — ask for the source CRS, then retry with
+                    // in-worker reprojection.
+                    if (e?.code !== 'PROJECTED_CSV_NEEDS_CRS' || userCancelled) throw e;
+                    const sourceCrs = await _promptCsvSourceCrs(file);
+                    if (!sourceCrs) throw e;
+                    job = startJob({ sourceCrs });
+                    cancelCurrent = job.cancel;
+                    result = await job.promise;
+                }
+                const { datasets, stats } = result;
                 cancelCurrent = null;
 
                 if (datasets.length >= 2) {
