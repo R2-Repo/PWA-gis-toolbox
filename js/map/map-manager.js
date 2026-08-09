@@ -7,10 +7,12 @@ import bus from '../core/event-bus.js';
 import { getActiveLayer, setActiveLayer, isLayerLocked, getMapLayerOrderIds, getLayers } from '../core/state.js';
 import {
     flattenFeatureGeometryCollections,
+    getLayerFeatureCount,
     isWorkspaceLayer,
     isServiceLayer,
     isPmTilesLayer
 } from '../core/data-model.js';
+import { TILED_RENDER_THRESHOLD, TILE_SOURCE_MAX_ZOOM, TILE_SOURCE_LAYER } from './tiles/tile-constants.js';
 import { getCoverageRasters, isCoverageRasterLayer } from '../core/coverage-raster-layer.js';
 import { MAP_CHUNK_BATCH_SIZE, RENDER_LIMITS } from './render-limits.js';
 import { buildViewportGeoJSON } from '../workspace/viewport-loader.js';
@@ -1081,6 +1083,14 @@ class MapManager {
         const layerStyle = normalizeStyle(stored, defaultColor);
         if (!stored) this._layerStyles.set(dataset.id, { ...layerStyle });
 
+        // Heavy layers render as locally generated vector tiles — the whole
+        // layer stays visible at every zoom instead of a viewport packet.
+        if (getLayerFeatureCount(dataset) >= TILED_RENDER_THRESHOLD) {
+            const installed = await this._installTiledWorkspaceLayer(dataset, colorIndex, layerStyle, { fit });
+            if (installed) return;
+            logger.warn('Map', 'Tiled rendering unavailable — using viewport rendering', { id: dataset.id });
+        }
+
         const bounds = this.map.getBounds();
         const west = bounds.getWest();
         const south = bounds.getSouth();
@@ -1127,6 +1137,177 @@ class MapManager {
         bus.emit('map:layerAdded', { id: dataset.id, name: dataset.name });
     }
 
+    /**
+     * Render a heavy workspace layer through the gis-tiles:// protocol —
+     * tiles are generated in a worker from IndexedDB chunks, so the full
+     * layer draws at every zoom with flat memory.
+     * @returns {Promise<boolean>} false when tiles are unavailable (caller falls back)
+     */
+    async _installTiledWorkspaceLayer(dataset, colorIndex, layerStyle, { fit = false } = {}) {
+        const sourceId = `src-${dataset.id}`;
+        try {
+            const tiles = await import('./tiles/tile-protocol.js');
+            if (!tiles.ensureGisTileProtocol()) return false;
+
+            const wsId = dataset.workspaceLayerId || dataset.id;
+            tiles.invalidateGisTiles(wsId);
+            const layerBounds = await getWorkspaceLayerBounds(wsId);
+
+            this.map.addSource(sourceId, {
+                type: 'vector',
+                tiles: [tiles.gisTileUrlTemplate(wsId)],
+                minzoom: 0,
+                maxzoom: TILE_SOURCE_MAX_ZOOM,
+                ...(layerBounds ? { bounds: layerBounds } : {})
+            });
+
+            const layerIds = this._installVectorTileLayerSet(dataset, sourceId, layerStyle);
+
+            this.dataLayers.set(dataset.id, {
+                sourceId,
+                layerIds,
+                chunkSources: [{ sourceId, layerIds }],
+                colorIndex,
+                workspace: true,
+                tiled: true,
+                geojson: { type: 'FeatureCollection', features: [] },
+                scaleRange: normalizeScaleRange(dataset)
+            });
+            this._storeLayerScaleRange(dataset);
+            this._layerNames.set(dataset.id, dataset.name);
+
+            if (fit && layerBounds && isFinite(layerBounds[0])) {
+                this.scheduleMapFit({
+                    bounds: [[layerBounds[0], layerBounds[1]], [layerBounds[2], layerBounds[3]]]
+                });
+            }
+
+            this._applyDatasetVisibility(dataset);
+            this._applyDatasetLock(dataset);
+            bus.emit('map:layerAdded', { id: dataset.id, name: dataset.name });
+            logger.info('Map', 'Tiled workspace layer installed', {
+                id: dataset.id,
+                features: getLayerFeatureCount(dataset)
+            });
+            return true;
+        } catch (e) {
+            logger.warn('Map', 'Tiled workspace layer failed', { id: dataset.id, error: e?.message });
+            // Clean partial install so the viewport fallback starts fresh.
+            try {
+                const entry = this.dataLayers.get(dataset.id);
+                for (const lid of entry?.layerIds || []) {
+                    if (this.map.getLayer(lid)) this.map.removeLayer(lid);
+                }
+                this.dataLayers.delete(dataset.id);
+                if (this.map.getSource(sourceId)) this.map.removeSource(sourceId);
+            } catch { /* best effort */ }
+            return false;
+        }
+    }
+
+    /** Mirror of _installGeoJsonChunk's layer set for a vector-tile source. */
+    _installVectorTileLayerSet(dataset, sourceId, layerStyle) {
+        const geomType = dataset.schema?.geometryType || 'Mixed';
+        const hasPolygons = geomType === 'Mixed' || /Polygon/.test(geomType);
+        const hasLines = geomType === 'Mixed' || /LineString/.test(geomType);
+        const hasPoints = geomType === 'Mixed' || /Point/.test(geomType);
+
+        const styPoly = compilePaint(layerStyle, 'polygon');
+        const styLine = compilePaint(layerStyle, 'line');
+        const styPoint = compilePaint(layerStyle, 'point');
+        const flat = getBaseFlatStyle(layerStyle, 'polygon');
+
+        const layerIds = [];
+        const idBase = dataset.id;
+
+        if (hasPolygons) {
+            const fillId = `${idBase}-fill`;
+            if (!this.map.getLayer(fillId)) {
+                this.map.addLayer({
+                    id: fillId, type: 'fill', source: sourceId, 'source-layer': TILE_SOURCE_LAYER,
+                    filter: _geomTypesFilter(['Polygon', 'MultiPolygon']),
+                    paint: { 'fill-color': styPoly.fillColor, 'fill-opacity': styPoly.fillOpacity }
+                });
+            }
+            layerIds.push(fillId);
+
+            const outlineId = `${idBase}-outline`;
+            if (!this.map.getLayer(outlineId)) {
+                this.map.addLayer({
+                    id: outlineId, type: 'line', source: sourceId, 'source-layer': TILE_SOURCE_LAYER,
+                    filter: _geomTypesFilter(['Polygon', 'MultiPolygon']),
+                    paint: {
+                        'line-color': styPoly.strokeColor,
+                        'line-width': styPoly.strokeWidth,
+                        'line-opacity': styPoly.strokeOpacity
+                    }
+                });
+            }
+            layerIds.push(outlineId);
+            layerIds.push(this._ensureLineHitLayer(
+                sourceId, outlineId, _geomTypesFilter(['Polygon', 'MultiPolygon']), styPoly.strokeWidth,
+                { sourceLayer: TILE_SOURCE_LAYER }
+            ));
+        }
+
+        if (hasLines) {
+            const lineFilter = excludeAnnotationsFilter(_geomTypesFilter(['LineString', 'MultiLineString']));
+            const lineId = `${idBase}-line`;
+            if (!this.map.getLayer(lineId)) {
+                this.map.addLayer({
+                    id: lineId, type: 'line', source: sourceId, 'source-layer': TILE_SOURCE_LAYER,
+                    filter: lineFilter,
+                    paint: {
+                        'line-color': styLine.strokeColor,
+                        'line-width': styLine.strokeWidth,
+                        'line-opacity': styLine.strokeOpacity
+                    }
+                });
+            }
+            layerIds.push(lineId);
+            layerIds.push(this._ensureLineHitLayer(
+                sourceId, lineId, lineFilter, styLine.strokeWidth,
+                { sourceLayer: TILE_SOURCE_LAYER }
+            ));
+        }
+
+        if (hasPoints) {
+            const fo = Math.min(1, (typeof styPoint.fillOpacity === 'number' ? styPoint.fillOpacity : 0.3) + 0.3);
+            const pointGeomFilter = excludeAnnotationsFilter(_geomTypesFilter(['Point', 'MultiPoint']));
+            const ptId = `${idBase}-point`;
+            if (!this.map.getLayer(ptId)) {
+                this.map.addLayer({
+                    id: ptId, type: 'circle', source: sourceId, 'source-layer': TILE_SOURCE_LAYER,
+                    filter: pointGeomFilter,
+                    paint: {
+                        'circle-radius': styPoint.circleRadius,
+                        'circle-color': styPoint.fillColor,
+                        'circle-stroke-color': styPoint.strokeColor,
+                        'circle-stroke-width': styPoint.strokeWidth,
+                        'circle-opacity': fo
+                    }
+                });
+            }
+            layerIds.push(ptId);
+        }
+
+        const mapLabels = resolveLayerLabels(layerStyle, dataset);
+        if (mapLabels?.field) {
+            const labelSpec = buildMapLabelLayerSpec(idBase, sourceId, mapLabels, false);
+            const isLineLabels = mapLabels.placement === 'line';
+            if (labelSpec && ((isLineLabels && hasLines) || (!isLineLabels && hasPoints))) {
+                if (this.map.getLayer(labelSpec.id)) this.map.removeLayer(labelSpec.id);
+                this.map.addLayer({ ...labelSpec, 'source-layer': TILE_SOURCE_LAYER });
+                layerIds.push(labelSpec.id);
+            }
+        }
+
+        this._bindLayerClickHandlers(dataset, layerIds, flat);
+        const zoomRange = this._getLayerZoomRange(dataset);
+        this._applyZoomRangeToLayerIds(layerIds, zoomRange, this._resolveLabelsConfigForZoom(dataset));
+        return layerIds;
+    }
+
     async _refreshAllWorkspaceLayers() {
         if (!this._workspaceDatasets?.size || !this.map) return;
         for (const [id] of this._workspaceDatasets) {
@@ -1138,6 +1319,7 @@ class MapManager {
         const dataset = this._workspaceDatasets?.get(layerId);
         const entry = this.dataLayers.get(layerId);
         if (!dataset || !entry || !this.map) return;
+        if (entry.tiled) return; // vector tiles refresh themselves per tile
 
         const bounds = this.map.getBounds();
         const viewportFc = await buildViewportGeoJSON(
@@ -1392,13 +1574,14 @@ class MapManager {
         layerIds.push(labelSpec.id);
     }
 
-    _ensureLineHitLayer(sourceId, visibleLayerId, filter, strokeWidthPaint) {
+    _ensureLineHitLayer(sourceId, visibleLayerId, filter, strokeWidthPaint, { sourceLayer = null } = {}) {
         const hitId = lineHitLayerId(visibleLayerId);
         if (!this.map.getLayer(hitId)) {
             this.map.addLayer({
                 id: hitId,
                 type: 'line',
                 source: sourceId,
+                ...(sourceLayer ? { 'source-layer': sourceLayer } : {}),
                 filter,
                 paint: {
                     'line-color': '#000000',
@@ -1664,6 +1847,12 @@ class MapManager {
             }
             removeAnnotationSources(this.map, id);
             this._annotationOverlay?.unregister(id);
+            if (info.tiled) {
+                const wsId = this._workspaceDatasets?.get(id)?.workspaceLayerId || id;
+                void import('./tiles/tile-protocol.js')
+                    .then((tiles) => tiles.invalidateGisTiles(wsId))
+                    .catch(() => { /* worker not started */ });
+            }
             this.dataLayers.delete(id);
         }
         this._workspaceDatasets?.delete(id);
@@ -1743,6 +1932,17 @@ class MapManager {
         if (!entry) return;
         const source = this.map?.getSource(entry.sourceId);
         if (!source) return;
+
+        if (entry.tiled) {
+            // Vector-tile source — drop worker caches and force a tile reload.
+            void import('./tiles/tile-protocol.js').then((tiles) => {
+                tiles.invalidateGisTiles(dataset.workspaceLayerId || dataset.id);
+                if (typeof source.setTiles === 'function' && source.tiles) {
+                    source.setTiles([...source.tiles]);
+                }
+            });
+            return;
+        }
 
         const taggedFeatures = _tagFeaturesForMap(dataset);
         const geojson = { type: 'FeatureCollection', features: taggedFeatures };

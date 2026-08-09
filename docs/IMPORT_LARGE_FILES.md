@@ -160,22 +160,50 @@ layers excluded from the in-memory import budget, and materialization guards.
 - The Import dialog's high-capacity notice shows the head-sniffed feature
   estimate.
 
+## Build 4 (shipped): local vector tiles for heavy layers
+
+The Re:Earth pattern — query by tile bounds locally, generate MVT on the fly,
+serve through a custom MapLibre protocol — applied to the app's own workspace
+store:
+
+```
+MapLibre requests gis-tiles://<layerId>/{z}/{x}/{y}.pbf
+  → tile-protocol (main thread) forwards to the tile worker
+  → worker: grid spatial index snapshot → chunk ids for the tile bbox
+  → IndexedDB chunk reads (LRU cache) → feature selection with budgets
+    (bbox intersect, sub-pixel drop at low zoom, stride sampling above the
+     20k/tile cap, chunk-level sampling for overview tiles)
+  → geojson-vt (clip + simplify) → vt-pbf (MVT encode) → tile bytes
+```
+
+- Workspace layers with **≥ 50,000 features** (`TILED_RENDER_THRESHOLD`)
+  render as vector tiles: the whole layer is visible at every zoom instead of
+  a 10k-feature viewport packet, with flat memory and no `setData` churn.
+  Layers below the threshold keep the existing viewport path unchanged, and
+  any tile-path failure falls back to viewport rendering automatically.
+- Feature identity (`_featureIndex`/`_datasetId`) rides in tile properties, so
+  the existing click/popup path (attributes fetched from IndexedDB) works
+  unchanged.
+- Files: `js/map/tiles/` (`tile-constants.js`, `tile-math.js`,
+  `tile-feature-select.js`, `tile-builder.js`, `tile-protocol.js`) and
+  `js/workers/tile-render.worker.js`; map integration in
+  `_installTiledWorkspaceLayer` / `_installVectorTileLayerSet`.
+- Known limits: selection highlight overlays are not drawn for tiled layers
+  (popups and identify work); overview tiles above the per-tile cap show an
+  evenly-sampled subset by design.
+
+**DuckDB-WASM note:** the original plan named DuckDB as the tile query engine.
+The workspace store + grid index already answer "features by tile bbox"
+locally, so tiles ship without the ~10 MB WASM dependency, its network-fetched
+spatial extension, and a duplicate copy of every dataset. The protocol/worker
+architecture is engine-agnostic — a DuckDB/Parquet-backed source can slot
+behind the same `gis-tiles://` protocol later if SQL analytics or Parquet
+import justify it.
+
 ## Roadmap (subsequent builds)
 
 Notes: streaming Excel remains impractical (whole-workbook format) —
 convert-to-CSV guidance stands.
-
-### Build 4 — DuckDB-WASM + local MVT tiles (the Re:Earth pattern)
-
-- `js/data/duckdb/` internal infrastructure: lazy-loaded DuckDB-WASM manager
-  (workers + OPFS-backed database), importer, spatial queries.
-- Custom MapLibre protocol (`duckdb://`) → tile bbox SQL → MVT encode in
-  worker → tile bytes to MapLibre. Isolated proof of concept first, behind a
-  hidden flag, compared against the workspace/viewport path for memory and
-  interaction quality before it becomes a default for very large layers.
-- This replaces the 10k-feature viewport cap as the display path for heavy
-  layers; the workspace store stays the source of truth (or migrates to
-  Parquet in OPFS where beneficial).
 
 ### Build 5 — Identity, cold attributes, streamed export
 
