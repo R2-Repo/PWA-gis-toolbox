@@ -1,6 +1,7 @@
 /**
  * Web Worker — offload heavy import parsing from the main thread.
  */
+import './xml-worker-globals.js';
 import { DOMParser } from '@xmldom/xmldom';
 import toGeoJSON from '@mapbox/togeojson';
 import JSZip from 'jszip';

@@ -1,11 +1,27 @@
 import { describe, expect, it } from 'vitest';
+import JSZip from 'jszip';
 import {
     assessStreamEligibility,
     partitionStreamingFiles,
     sniffJsonIsFeatureCollection,
     STREAM_MAX_BYTES
 } from '../js/import/stream/stream-policy.js';
-import { TEXT_STRONG_BYTES, TEXT_SOFT_BYTES } from '../js/import/import-preflight.js';
+import { TEXT_STRONG_BYTES, TEXT_SOFT_BYTES, BINARY_STRONG_BYTES } from '../js/import/import-preflight.js';
+
+function randomBytes(n) {
+    const out = new Uint8Array(n);
+    for (let i = 0; i < n; i++) out[i] = (Math.random() * 256) | 0;
+    return out;
+}
+
+async function makeArchive(name, entries) {
+    const zip = new JSZip();
+    for (const [path, content] of Object.entries(entries)) {
+        zip.file(path, content);
+    }
+    const bytes = await zip.generateAsync({ type: 'uint8array', compression: 'DEFLATE' });
+    return new File([bytes], name, { type: 'application/zip' });
+}
 
 function fakeFile(name, size) {
     // Real bytes are only needed for .json sniffing — plain object elsewhere.
@@ -39,10 +55,23 @@ describe('stream-policy', () => {
         expect(res.stream).toBe(true);
     });
 
-    it('does not stream unsupported formats (kml stays rejected by the guard)', async () => {
+    it('streams large kml', async () => {
         const res = await assessStreamEligibility(fakeFile('big.kml', 50 * 1024 * 1024));
+        expect(res.stream).toBe(true);
+    });
+
+    it('does not stream unsupported formats (xlsx stays rejected by the guard)', async () => {
+        const res = await assessStreamEligibility(fakeFile('big.xlsx', 50 * 1024 * 1024));
         expect(res.stream).toBe(false);
         expect(res.reject).toBe(false);
+    });
+
+    it('streams large .xml only when it sniffs as KML', async () => {
+        const pad = ' '.repeat(TEXT_STRONG_BYTES + 10);
+        const kmlXml = new File([`<?xml version="1.0"?><kml xmlns="http://www.opengis.net/kml/2.2">${pad}`], 'big.xml');
+        const plainXml = new File([`<?xml version="1.0"?><root><data/></root>${pad}`], 'big.xml');
+        expect((await assessStreamEligibility(kmlXml)).stream).toBe(true);
+        expect((await assessStreamEligibility(plainXml)).stream).toBe(false);
     });
 
     it('rejects streamable files above the streaming ceiling with a clear message', async () => {
@@ -69,16 +98,66 @@ describe('stream-policy', () => {
         expect(await sniffJsonIsFeatureCollection(file)).toBe(true);
     });
 
+    it('streams large kmz after central-directory inspection (no extraction)', async () => {
+        // Random payload keeps the compressed archive above the binary reject cap.
+        const kmz = await makeArchive('big.kmz', {
+            'doc.kml': randomBytes(BINARY_STRONG_BYTES + 1024 * 1024)
+        });
+        expect(kmz.size).toBeGreaterThan(BINARY_STRONG_BYTES);
+        const res = await assessStreamEligibility(kmz);
+        expect(res.stream).toBe(true);
+    });
+
+    it('keeps large zipped shapefiles on the standard path', async () => {
+        const zip = await makeArchive('parcels.zip', {
+            'parcels.shp': randomBytes(BINARY_STRONG_BYTES + 1024 * 1024),
+            'parcels.dbf': 'attrs'
+        });
+        const res = await assessStreamEligibility(zip);
+        expect(res.stream).toBe(false);
+        expect(res.reject).toBe(false);
+    });
+
+    it('streams a large zip that is a KMZ in disguise', async () => {
+        const zip = await makeArchive('export.zip', {
+            'layers/main.kml': randomBytes(BINARY_STRONG_BYTES + 1024 * 1024)
+        });
+        const res = await assessStreamEligibility(zip);
+        expect(res.stream).toBe(true);
+    });
+
+    it('streams a small compressed kmz whose KML expands past the text cap', async () => {
+        // Repetitive KML compresses 20-40x — the archive passes the binary cap
+        // but the entry would blow the in-memory parser.
+        const bigRepetitiveKml = '<kml><Document>'
+            + '<Placemark><name>p</name><Point><coordinates>-111.9,40.7</coordinates></Point></Placemark>'.repeat(80000)
+            + '</Document></kml>';
+        const kmz = await makeArchive('compact.kmz', { 'doc.kml': bigRepetitiveKml });
+        expect(kmz.size).toBeLessThan(BINARY_STRONG_BYTES);
+        const res = await assessStreamEligibility(kmz);
+        expect(res.stream).toBe(true);
+    });
+
+    it('keeps a genuinely small kmz on the standard path', async () => {
+        const smallKml = '<kml><Document>'
+            + '<Placemark><name>p</name><Point><coordinates>-111.9,40.7</coordinates></Point></Placemark>'.repeat(2000)
+            + '</Document></kml>';
+        const kmz = await makeArchive('small.kmz', { 'doc.kml': smallKml });
+        const res = await assessStreamEligibility(kmz);
+        expect(res.stream).toBe(false);
+        expect(res.reject).toBe(false);
+    });
+
     it('partitions mixed batches into stream/standard/rejected buckets', async () => {
         const files = [
             fakeFile('small.geojson', 1024),
             fakeFile('big.geojson', TEXT_STRONG_BYTES + 1),
-            fakeFile('big.kml', 20 * 1024 * 1024),
+            fakeFile('big.xlsx', 20 * 1024 * 1024),
             fakeFile('huge.csv', STREAM_MAX_BYTES + 1)
         ];
         const { streamFiles, standardFiles, rejectedFiles } = await partitionStreamingFiles(files);
         expect(streamFiles.map((f) => f.name)).toEqual(['big.geojson']);
-        expect(standardFiles.map((f) => f.name)).toEqual(['small.geojson', 'big.kml']);
+        expect(standardFiles.map((f) => f.name)).toEqual(['small.geojson', 'big.xlsx']);
         expect(rejectedFiles.map((r) => r.file.name)).toEqual(['huge.csv']);
     });
 });

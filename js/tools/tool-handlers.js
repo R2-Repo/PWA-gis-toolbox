@@ -1258,9 +1258,11 @@ function _openImportFlowModal(flowProps = {}) {
                     close();
                     _openImportOptimizerModal(files);
                 },
-                onStreamImport: (files) => {
+                onStreamImport: (files, streamOpts = {}) => {
                     close();
-                    void openImportForFiles(files, _fenceBbox);
+                    void openImportForFiles(files, _fenceBbox, {
+                        selectedFields: streamOpts.selectedFields || null
+                    });
                 },
                 onOpenArcGIS: () => {
                     close();
@@ -1309,8 +1311,9 @@ function _openImportFlowModal(flowProps = {}) {
  * Shared entry for drag-drop, toolbar, and routed imports — guard + route before parse.
  * @param {File[]} files
  * @param {Array|null} [fenceBbox]
+ * @param {{ selectedFields?: string[]|null }} [options] applies to streamed + standard paths
  */
-export async function openImportForFiles(files, fenceBbox = null) {
+export async function openImportForFiles(files, fenceBbox = null, options = {}) {
     if (!files?.length) return;
 
     const kitFiles = files.filter(isProjectKitFile);
@@ -1342,7 +1345,8 @@ export async function openImportForFiles(files, fenceBbox = null) {
             const { runStreamingImportFlow } = await import('./stream-import-flow.js');
             await runStreamingImportFlow(partition.streamFiles, {
                 fenceBbox: fenceBbox ?? _fenceBbox,
-                refreshUI
+                refreshUI,
+                selectedFields: options.selectedFields || null
             });
         }
     }
@@ -1389,7 +1393,8 @@ export async function openImportForFiles(files, fenceBbox = null) {
     // Standard route: import as-is (in-memory). Field picking stays in the Import Files dialog.
     await handleFileImport(memoryFiles, fenceBbox ?? _fenceBbox, {
         preflightConfirmed: true,
-        platform
+        platform,
+        ...(options.selectedFields?.length ? { selectedFields: options.selectedFields } : {})
     });
     } catch (e) {
         const classified = handleError(e, 'Import', 'openImportForFiles');
