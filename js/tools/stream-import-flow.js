@@ -67,11 +67,12 @@ async function _promptCsvSourceCrs(file) {
  * @param {{
  *   fenceBbox?: [number,number,number,number]|null,
  *   refreshUI?: () => void,
- *   selectedFields?: string[]|null
+ *   selectedFields?: string[]|null,
+ *   featureFilter?: object|null
  * }} [options]
  */
 export async function runStreamingImportFlow(files, options = {}) {
-    const { fenceBbox = null, refreshUI, selectedFields = null } = options;
+    const { fenceBbox = null, refreshUI, selectedFields = null, featureFilter = null } = options;
     const fileList = Array.from(files || []);
     if (!fileList.length) return;
 
@@ -96,6 +97,7 @@ export async function runStreamingImportFlow(files, options = {}) {
     let totalFeatures = 0;
     let totalNoGeometry = 0;
     let totalFenceFiltered = 0;
+    let totalFeatureFiltered = 0;
 
     sessionStore.pauseSessionSave();
     try {
@@ -109,6 +111,7 @@ export async function runStreamingImportFlow(files, options = {}) {
                 format,
                 fenceBbox,
                 selectedFields,
+                featureFilter,
                 // Large KML/KMZ import as simplified GIS layers (presentation
                 // bloat stripped) — matches the Import Optimizer recommendation.
                 importMode: KML_FAMILY.has(format) ? 'gis' : undefined,
@@ -161,6 +164,7 @@ export async function runStreamingImportFlow(files, options = {}) {
                 totalFeatures += stats.featureCount || 0;
                 totalNoGeometry += stats.noGeometryCount || 0;
                 totalFenceFiltered += stats.fenceFiltered || 0;
+                totalFeatureFiltered += stats.featureFiltered || 0;
                 if (stats.warnings?.length) {
                     importWarnings.push(...stats.warnings.map((w) => `${file.name}: ${w}`));
                 }
@@ -194,8 +198,11 @@ export async function runStreamingImportFlow(files, options = {}) {
             const fenceNote = fenceBbox && totalFenceFiltered > 0
                 ? ` (${totalFenceFiltered.toLocaleString()} features outside fence excluded)`
                 : '';
+            const filterNote = totalFeatureFiltered > 0
+                ? ` (${totalFeatureFiltered.toLocaleString()} features excluded by filter)`
+                : '';
             showToast(
-                `Imported ${totalFeatures.toLocaleString()} features into ${addedDatasets.length} ${layerWord}${fenceNote}`,
+                `Imported ${totalFeatures.toLocaleString()} features into ${addedDatasets.length} ${layerWord}${fenceNote}${filterNote}`,
                 'success'
             );
             if (totalNoGeometry > 0) {

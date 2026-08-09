@@ -76,7 +76,9 @@ import {
     featureIntersectsGeographicBbox,
     geographicBboxToClientRect,
     isBoxSelectClickMove,
+    isCameraAlreadyFittingBounds,
     markMapInteractionHandled,
+    resizeMapIfNeeded,
     shouldStartBoxSelectDrag,
     stopMapCamera,
     suspendDoubleClickZoom
@@ -240,6 +242,7 @@ class MapManager {
 
         this._scheduleFitTimer = null;
         this._pendingFitRequest = null;
+        this._fitGeneration = 0;
     }
 
     _layerAddSpec(baseSpec, zoomRange) {
@@ -467,6 +470,7 @@ class MapManager {
         this.clearSelection?.();
         window.clearTimeout(this._scheduleFitTimer);
         this._scheduleFitTimer = null;
+        this._fitGeneration += 1;
         if (this._pendingFitRequest?.resolve) {
             this._pendingFitRequest.resolve();
         }
@@ -2495,8 +2499,8 @@ class MapManager {
     }
 
     /**
-     * Debounced programmatic fit — stops in-flight camera moves, waits for layout idle,
-     * then applies an instant fitBounds (duration: 0).
+     * Debounced programmatic fit — cancels superseded runs, resizes only when needed,
+     * then applies an instant fitBounds (duration: 0) when the camera is not already there.
      * @param {{ layerIds?: string[], bounds?: [[number, number], [number, number]], options?: object }} [request]
      */
     scheduleMapFit({ layerIds = null, bounds = null, options = {} } = {}) {
@@ -2504,6 +2508,8 @@ class MapManager {
             if (this._pendingFitRequest?.resolve) {
                 this._pendingFitRequest.resolve();
             }
+            // Invalidate any in-flight _runScheduledFit so a late fitBounds cannot blink the view.
+            this._fitGeneration += 1;
             this._pendingFitRequest = { layerIds, bounds, options, resolve };
             window.clearTimeout(this._scheduleFitTimer);
             this._scheduleFitTimer = window.setTimeout(() => {
@@ -2511,7 +2517,8 @@ class MapManager {
                 const pending = this._pendingFitRequest;
                 this._pendingFitRequest = null;
                 if (!pending) return;
-                void this._runScheduledFit(pending);
+                const generation = this._fitGeneration;
+                void this._runScheduledFit(pending, generation);
             }, SCHEDULE_FIT_DEBOUNCE_MS);
         });
     }
@@ -2575,42 +2582,38 @@ class MapManager {
         return [[west, south], [east, north]];
     }
 
-    async _runScheduledFit({ layerIds, bounds, options, resolve }) {
+    async _runScheduledFit({ layerIds, bounds, options, resolve }, generation) {
+        const isStale = () => !this.map || generation !== this._fitGeneration;
         try {
-            if (!this.map) return;
+            if (isStale()) return;
 
-            stopMapCamera(this.map);
-            await new Promise((r) => requestAnimationFrame(r));
-            this.map.resize();
-
-            await new Promise((r) => {
-                let settled = false;
-                const finish = () => {
-                    if (settled) return;
-                    settled = true;
-                    this.map.off('idle', finish);
-                    this.map.off('moveend', finish);
-                    this.map.off('load', finish);
-                    clearTimeout(timer);
-                    r();
-                };
-                if (typeof this.map.loaded === 'function' && !this.map.loaded()) {
-                    this.map.once('load', finish);
-                } else if (typeof this.map.isMoving === 'function' && this.map.isMoving()) {
-                    this.map.once('moveend', finish);
-                } else {
-                    this.map.once('idle', finish);
-                }
-                const timer = window.setTimeout(finish, 250);
-            });
-
+            // Resolve bounds before touching the camera so slow workspace lookups
+            // cannot leave a resize flash on screen for seconds.
             let fitBounds = bounds;
             if (!fitBounds && layerIds?.length) {
                 fitBounds = await this._computeLayersBounds(layerIds);
             }
-            if (!fitBounds) return;
+            if (isStale() || !fitBounds) return;
 
             const fitOpts = { ...PROGRAMMATIC_FIT_OPTIONS, ...options };
+            if (isCameraAlreadyFittingBounds(this.map, fitBounds, fitOpts)) {
+                return;
+            }
+
+            stopMapCamera(this.map);
+            await new Promise((r) => requestAnimationFrame(r));
+            if (isStale()) return;
+
+            const didResize = resizeMapIfNeeded(this.map);
+            if (didResize) {
+                await new Promise((r) => requestAnimationFrame(r));
+                if (isStale()) return;
+            }
+
+            if (isCameraAlreadyFittingBounds(this.map, fitBounds, fitOpts)) {
+                return;
+            }
+
             this.map.fitBounds(fitBounds, fitOpts);
         } catch (e) {
             logger.warn('Map', 'Scheduled fit failed', { error: e.message });
@@ -2639,7 +2642,7 @@ class MapManager {
 
     /** Resize map — replaces Leaflet's invalidateSize */
     resize() {
-        this.map?.resize();
+        resizeMapIfNeeded(this.map);
     }
 
     // ==========================================

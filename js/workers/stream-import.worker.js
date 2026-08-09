@@ -28,6 +28,17 @@ import {
 } from '../import/stream/stream-constants.js';
 import { createSchemaAccumulator, flattenFeatureGeometryCollections } from '../core/data-model.js';
 import { filterProperties, shouldFilterFields } from '../import/import-field-filter.js';
+import {
+    featureMatchesImportFilters,
+    hasActiveFeatureFilter,
+    IMPORT_VALUE_SCAN_CAP
+} from '../import/import-feature-filter.js';
+import {
+    createValueAccumulator,
+    extractKmlPlacemarkProperties
+} from '../import/import-value-accumulator.js';
+import { createByteReader } from '../import/stream/byte-reader.js';
+import { iterateDbfRecords, decoderFromCpg } from '../import/stream/dbf-stream-parser.js';
 import { detectAnyCoordinateColumns, parseCoordValue } from '../import/coord-detect.js';
 
 const PROGRESS_INTERVAL_MS = 200;
@@ -40,6 +51,8 @@ self.onmessage = (event) => {
     const msg = event.data || {};
     if (msg.type === 'start') {
         void runImport(msg);
+    } else if (msg.type === 'scan-values') {
+        void runValueScan(msg);
     } else if (msg.type === 'ack') {
         const resolve = ackResolve;
         ackResolve = null;
@@ -101,6 +114,9 @@ function createImportContext(msg, overrides = {}) {
     const fence = Array.isArray(options.fenceBbox) && options.fenceBbox.length === 4
         ? options.fenceBbox
         : null;
+    const featureFilter = hasActiveFeatureFilter(options.featureFilter)
+        ? options.featureFilter
+        : null;
 
     const schema = createSchemaAccumulator();
     let features = [];
@@ -108,6 +124,7 @@ function createImportContext(msg, overrides = {}) {
     let emitted = 0;
     let noGeometryCount = 0;
     let fenceFiltered = 0;
+    let featureFiltered = 0;
     let lastProgressAt = 0;
 
     const flush = async (bytesProcessed) => {
@@ -146,6 +163,10 @@ function createImportContext(msg, overrides = {}) {
                     fenceFiltered++;
                     continue;
                 }
+                if (featureFilter && !featureMatchesImportFilters(part, featureFilter)) {
+                    featureFiltered++;
+                    continue;
+                }
                 if (selectedFields) {
                     part = { ...part, properties: filterProperties(part.properties, selectedFields) };
                 }
@@ -176,6 +197,7 @@ function createImportContext(msg, overrides = {}) {
                     featureCount: emitted,
                     noGeometryCount,
                     fenceFiltered,
+                    featureFiltered,
                     bytesProcessed
                 },
                 ...extra
@@ -578,3 +600,237 @@ async function runCSV(msg) {
     activeCsvParser = null;
     void id;
 }
+
+// ---------------------------------------------------------------------------
+// Pre-import distinct-value scan (properties only)
+// ---------------------------------------------------------------------------
+
+function _postScanProgress(id, bytesProcessed, totalBytes) {
+    self.postMessage({ id, type: 'progress', bytesProcessed, totalBytes });
+}
+
+async function runValueScan(msg) {
+    const { id, format } = msg;
+    cancelled = false;
+    try {
+        if (format === 'geojson' || format === 'json') {
+            await scanGeoJSONValues(msg);
+        } else if (format === 'csv') {
+            await scanCsvValues(msg);
+        } else if (format === 'kml' || format === 'xml' || format === 'kmz') {
+            await scanKmlValues(msg);
+        } else if (format === 'zip') {
+            await scanZipValues(msg);
+        } else {
+            throw new Error(`Attribute value scan does not support format: ${format}`);
+        }
+    } catch (error) {
+        if (error?.cancelled) return;
+        self.postMessage({
+            id,
+            type: 'error',
+            message: error?.message || String(error),
+            code: error?.code || null
+        });
+    }
+}
+
+function _createScanState(msg) {
+    const { id, file, options = {} } = msg;
+    const fieldNames = Array.isArray(options.fieldNames) ? options.fieldNames.filter(Boolean) : [];
+    const valueCap = options.valueCap ?? IMPORT_VALUE_SCAN_CAP;
+    const acc = createValueAccumulator(valueCap);
+    if (fieldNames.length) acc.ensureFields(fieldNames);
+    let lastProgressAt = 0;
+    return {
+        id,
+        file,
+        fieldNames: fieldNames.length ? fieldNames : null,
+        acc,
+        progress(bytesProcessed, totalBytes) {
+            const now = Date.now();
+            if (now - lastProgressAt < PROGRESS_INTERVAL_MS) return;
+            lastProgressAt = now;
+            _postScanProgress(id, bytesProcessed, totalBytes);
+        },
+        done() {
+            const built = acc.build();
+            self.postMessage({
+                id,
+                type: 'scan-done',
+                fields: built.fields,
+                rowCount: built.rowCount
+            });
+        }
+    };
+}
+
+async function scanGeoJSONValues(msg) {
+    const state = _createScanState(msg);
+    const { file } = msg;
+    const pending = [];
+    const parser = new GeoJSONFeatureStreamParser({
+        onFeature: (feature) => {
+            pending.push(feature?.properties || {});
+        }
+    });
+    const reader = file.stream().getReader();
+    const decoder = new TextDecoder();
+    let bytesProcessed = 0;
+    try {
+        while (true) {
+            if (cancelled) throw _cancelError();
+            const { done, value } = await reader.read();
+            if (done) break;
+            bytesProcessed += value.byteLength;
+            parser.push(decoder.decode(value, { stream: true }));
+            for (const props of pending) {
+                state.acc.addProperties(props, state.fieldNames);
+            }
+            pending.length = 0;
+            state.progress(bytesProcessed, file.size);
+        }
+        const tail = decoder.decode();
+        if (tail) parser.push(tail);
+        parser.finish();
+        for (const props of pending) {
+            state.acc.addProperties(props, state.fieldNames);
+        }
+        state.done();
+    } finally {
+        try {
+            reader.releaseLock();
+        } catch { /* ignore */ }
+    }
+}
+
+async function scanCsvValues(msg) {
+    const state = _createScanState(msg);
+    const { file } = msg;
+    await new Promise((resolve, reject) => {
+        Papa.parse(file, {
+            header: true,
+            dynamicTyping: true,
+            skipEmptyLines: 'greedy',
+            transformHeader: (h) => h.trim(),
+            chunkSize: 4 * 1024 * 1024,
+            chunk: (results, parser) => {
+                activeCsvParser = parser;
+                if (cancelled) {
+                    parser.abort();
+                    return;
+                }
+                const rows = results.data || [];
+                for (let i = 0; i < rows.length; i++) {
+                    state.acc.addProperties(rows[i], state.fieldNames);
+                }
+                const meta = results.meta;
+                const cursor = meta?.cursor ?? 0;
+                state.progress(cursor, file.size);
+            },
+            complete: () => {
+                activeCsvParser = null;
+                if (cancelled) {
+                    reject(_cancelError());
+                    return;
+                }
+                state.done();
+                resolve();
+            },
+            error: (err) => {
+                activeCsvParser = null;
+                reject(new Error('CSV scan failed: ' + (err?.message || String(err))));
+            }
+        });
+    });
+}
+
+async function scanKmlValues(msg) {
+    const state = _createScanState(msg);
+    const { file, format } = msg;
+
+    let byteStream;
+    let totalBytes;
+    if (format === 'kmz' || format === 'zip') {
+        const entries = await readZipEntries(file);
+        const main = chooseMainKmlZipEntry(entries);
+        if (!main) throw new Error(`"${file.name}" contains no KML document.`);
+        byteStream = await openZipEntryStream(file, main.entry);
+        totalBytes = main.entry.uncompressedSize || file.size;
+    } else {
+        byteStream = file.stream();
+        totalBytes = file.size;
+    }
+
+    let bytesProcessed = 0;
+    const parser = new KmlPlacemarkStreamParser({
+        onPlacemark: (text) => {
+            state.acc.addProperties(extractKmlPlacemarkProperties(text), state.fieldNames);
+        }
+    });
+    const reader = byteStream.getReader();
+    const decoder = new TextDecoder();
+    try {
+        while (true) {
+            if (cancelled) throw _cancelError();
+            const { done, value } = await reader.read();
+            if (done) break;
+            bytesProcessed += value.byteLength;
+            parser.push(decoder.decode(value, { stream: true }));
+            state.progress(bytesProcessed, totalBytes);
+        }
+        const tail = decoder.decode();
+        if (tail) parser.push(tail);
+        parser.finish();
+        state.done();
+    } finally {
+        try {
+            reader.releaseLock();
+        } catch { /* ignore */ }
+    }
+}
+
+async function scanZipValues(msg) {
+    const entries = await readZipEntries(msg.file);
+    const shpEntries = entries.filter(
+        (e) => _isRealEntry(e) && _normalZipName(e.name).toLowerCase().endsWith('.shp')
+    );
+    if (shpEntries.length) {
+        await scanShapefileDbfValues(msg, entries, shpEntries);
+        return;
+    }
+    await scanKmlValues({ ...msg, format: 'zip' });
+}
+
+async function scanShapefileDbfValues(msg, entries, shpEntries) {
+    const state = _createScanState(msg);
+    const { file } = msg;
+    if (shpEntries.length > 1) {
+        throw new Error(
+            `"${file.name}" contains ${shpEntries.length} shapefiles — scan one shapefile per archive.`
+        );
+    }
+    const shpEntry = shpEntries[0];
+    const baseName = _normalZipName(shpEntry.name).replace(/\.shp$/i, '').toLowerCase();
+    const dbfEntry = entries.find(
+        (e) => _isRealEntry(e) && _normalZipName(e.name).toLowerCase() === `${baseName}.dbf`
+    );
+    if (!dbfEntry) {
+        state.done();
+        return;
+    }
+    const cpgEntry = entries.find(
+        (e) => _isRealEntry(e) && _normalZipName(e.name).toLowerCase() === `${baseName}.cpg`
+    );
+    const cpgText = cpgEntry ? (await readZipEntryHead(file, cpgEntry, 1024)).trim() : null;
+    const totalBytes = dbfEntry.uncompressedSize || file.size;
+    const dbfStream = await openZipEntryStream(file, dbfEntry);
+    const byteReader = createByteReader(dbfStream);
+    for await (const props of iterateDbfRecords(byteReader, decoderFromCpg(cpgText))) {
+        if (cancelled) throw _cancelError();
+        state.acc.addProperties(props, state.fieldNames);
+        state.progress(byteReader.bytesConsumed, totalBytes);
+    }
+    state.done();
+}
+

@@ -1,6 +1,7 @@
 import bus from '../core/event-bus.js';
 import { getAppUrlConfig } from './app-url-detector.js';
 import { resolveAppUrlMapInit } from './app-url-builder.js';
+import { isCameraAlreadyAt } from '../map/map-interaction-utils.js';
 
 /**
  * @typedef {object} AppUrlBootstrapDeps
@@ -135,6 +136,15 @@ export function applyViewportConfig(map, init) {
         if (init.pitch || init.bearing) {
             map.jumpTo({ pitch: init.pitch, bearing: init.bearing });
         }
+        return;
+    }
+
+    if (isCameraAlreadyAt(map, {
+        center: init.center,
+        zoom: init.zoom,
+        pitch: init.pitch,
+        bearing: init.bearing
+    })) {
         return;
     }
 

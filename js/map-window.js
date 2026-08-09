@@ -154,10 +154,9 @@ function applyLayerAdd(payload) {
     if (!layer) return;
     mapService.removeLayer(layer.id);
     if (style) {
-        applyLayerStyle(layer.id, layer, style);
-    } else {
-        mapService.addLayer(layer, colorIndex ?? 0, { fit: !!fit });
+        mapService.setLayerStyle(layer.id, style);
     }
+    mapService.addLayer(layer, colorIndex ?? 0, { fit: !!fit });
 }
 
 function applyLayerRemove(payload) {

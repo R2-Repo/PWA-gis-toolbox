@@ -48,6 +48,7 @@ function _baseName(fileName) {
  *   onProgress?: (percent: number, step: string) => void,
  *   preserveSource?: boolean,
  *   selectedFields?: string[]|null,
+ *   featureFilter?: object|null,
  *   importMode?: 'gis'|'preserve',
  *   sourceCrs?: { code: string, def: string }|null
  * }} options
@@ -60,6 +61,7 @@ export function streamImportFile(file, options = {}) {
         onProgress,
         preserveSource = true,
         selectedFields = null,
+        featureFilter = null,
         importMode,
         sourceCrs = null
     } = options;
@@ -297,6 +299,7 @@ export function streamImportFile(file, options = {}) {
                                 featureCount: total,
                                 noGeometryCount: msg.stats?.noGeometryCount || 0,
                                 fenceFiltered: msg.stats?.fenceFiltered || 0,
+                                featureFiltered: msg.stats?.featureFiltered || 0,
                                 warnings: msg.warnings || []
                             }
                         });
@@ -320,6 +323,7 @@ export function streamImportFile(file, options = {}) {
                     fenceBbox,
                     maxFeatures: STREAM_MAX_FEATURES,
                     ...(selectedFields?.length ? { selectedFields } : {}),
+                    ...(featureFilter ? { featureFilter } : {}),
                     ...(importMode ? { importMode } : {}),
                     ...(sourceCrs ? { sourceCrs } : {})
                 }

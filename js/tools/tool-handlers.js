@@ -970,7 +970,7 @@ async function _addImportedDatasets(datasets, importOpts = {}) {
         if (isWorkspaceLayer(ds)) {
             await mapService.addWorkspaceLayer(ds, layerIdx, { fit: false });
         } else if (ds.type === 'pmtiles') {
-            await mapService.addLayer(ds, layerIdx, { fit: true });
+            await mapService.addLayer(ds, layerIdx, { fit: false });
         } else if (ds.type === 'spatial') {
             const featureCount = ds.geojson?.features?.length || 0;
             if (featureCount > INCREMENTAL_THRESHOLD) {
@@ -1073,6 +1073,7 @@ export async function handleFileImport(files, fenceBbox = null, options = {}) {
 
         let allExpanded = [];
         let totalFiltered = 0;
+        let totalFeatureFiltered = 0;
         const importGroupsCreated = [];
 
         sessionStore.pauseSessionSave();
@@ -1084,11 +1085,17 @@ export async function handleFileImport(files, fenceBbox = null, options = {}) {
                 throwIfTaskCancelled();
                 if (!result) return;
                 const normalized = normalizeImporterResult(result);
-                const { expanded, totalFiltered: tf } = await finalizeImportedDatasets(normalized, {
+                const {
+                    expanded,
+                    totalFiltered: tf,
+                    featureFiltered: ff
+                } = await finalizeImportedDatasets(normalized, {
                     fenceBbox,
+                    featureFilter: options.featureFilter || null,
                     task: getActiveTask()
                 });
                 totalFiltered += tf;
+                totalFeatureFiltered += ff || 0;
                 const { resolveImportCrsForDatasets } = await import('../import/import-crs-resolve.js');
                 const { pickCrsConfirmModal } = await import('../../react/tools/mountCrsConfirmDialog.jsx');
                 await resolveImportCrsForDatasets(expanded, pickCrsConfirmModal);
@@ -1124,12 +1131,16 @@ export async function handleFileImport(files, fenceBbox = null, options = {}) {
             const summary = buildImportSummary({
                 expanded: allExpanded,
                 totalFiltered,
+                featureFiltered: totalFeatureFiltered,
                 errors,
                 fenceBbox,
                 importGroups: importGroupsCreated
             });
             const fenceNote = fenceBbox && totalFiltered > 0 ? ` (${totalFiltered} features outside fence excluded)` : '';
-            showToast(`${formatImportSummaryToast(summary)}${fenceNote}`, 'success');
+            const filterNote = totalFeatureFiltered > 0
+                ? ` (${totalFeatureFiltered} features excluded by filter)`
+                : '';
+            showToast(`${formatImportSummaryToast(summary)}${fenceNote}${filterNote}`, 'success');
             if (summary.warnings.length > 0 || summary.errors.length > 0) {
                 const body = [
                     ...summary.warnings.map((w) => `<p><strong>${w.layer}:</strong> ${w.message}</p>`),
@@ -1208,6 +1219,7 @@ function _openImportOptimizerModal(files) {
                         importMode: opts.importMode,
                         useWorkspace: opts.useWorkspace,
                         selectedFields: opts.selectedFields,
+                        featureFilter: opts.featureFilter || null,
                         onProgress: ui?.onProgress,
                         onCancelReady: ui?.onCancelReady,
                         onAborted: ui?.onAborted,
@@ -1267,6 +1279,7 @@ function _openImportFlowModal(flowProps = {}) {
                         importMode: importOpts.importMode,
                         useWorkspace: importOpts.useWorkspace,
                         selectedFields: importOpts.selectedFields,
+                        featureFilter: importOpts.featureFilter || null,
                         onProgress: ui.onProgress,
                         onCancelReady: ui.onCancelReady,
                         onAborted: ui.onAborted,
@@ -1281,7 +1294,8 @@ function _openImportFlowModal(flowProps = {}) {
                 onStreamImport: (files, streamOpts = {}) => {
                     close();
                     void openImportForFiles(files, _fenceBbox, {
-                        selectedFields: streamOpts.selectedFields || null
+                        selectedFields: streamOpts.selectedFields || null,
+                        featureFilter: streamOpts.featureFilter || null
                     });
                 },
                 onOpenArcGIS: () => {
@@ -1331,7 +1345,7 @@ function _openImportFlowModal(flowProps = {}) {
  * Shared entry for drag-drop, toolbar, and routed imports — guard + route before parse.
  * @param {File[]} files
  * @param {Array|null} [fenceBbox]
- * @param {{ selectedFields?: string[]|null }} [options] applies to streamed + standard paths
+ * @param {{ selectedFields?: string[]|null, featureFilter?: object|null }} [options] applies to streamed + standard paths
  */
 export async function openImportForFiles(files, fenceBbox = null, options = {}) {
     if (!files?.length) return;
@@ -1366,7 +1380,8 @@ export async function openImportForFiles(files, fenceBbox = null, options = {}) 
             await runStreamingImportFlow(partition.streamFiles, {
                 fenceBbox: fenceBbox ?? _fenceBbox,
                 refreshUI,
-                selectedFields: options.selectedFields || null
+                selectedFields: options.selectedFields || null,
+                featureFilter: options.featureFilter || null
             });
         }
     }
@@ -1414,7 +1429,8 @@ export async function openImportForFiles(files, fenceBbox = null, options = {}) 
     await handleFileImport(memoryFiles, fenceBbox ?? _fenceBbox, {
         preflightConfirmed: true,
         platform,
-        ...(options.selectedFields?.length ? { selectedFields: options.selectedFields } : {})
+        ...(options.selectedFields?.length ? { selectedFields: options.selectedFields } : {}),
+        ...(options.featureFilter ? { featureFilter: options.featureFilter } : {})
     });
     } catch (e) {
         const classified = handleError(e, 'Import', 'openImportForFiles');

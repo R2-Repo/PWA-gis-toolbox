@@ -152,6 +152,118 @@ export function stopMapCamera(map) {
 }
 
 /**
+ * Resize only when the MapLibre canvas size does not match its container.
+ * Avoids a no-op resize() flash that looks like a viewport reset.
+ * @param {import('maplibre-gl').Map | null | undefined} map
+ * @returns {boolean} true when resize() ran
+ */
+export function resizeMapIfNeeded(map) {
+    if (!map || typeof map.resize !== 'function') return false;
+    try {
+        const container = typeof map.getContainer === 'function' ? map.getContainer() : null;
+        const canvas = typeof map.getCanvas === 'function' ? map.getCanvas() : null;
+        if (container && canvas) {
+            const width = container.clientWidth;
+            const height = container.clientHeight;
+            if (
+                width > 0
+                && height > 0
+                && canvas.clientWidth === width
+                && canvas.clientHeight === height
+            ) {
+                return false;
+            }
+        }
+        map.resize();
+        return true;
+    } catch {
+        return false;
+    }
+}
+
+/**
+ * True when the current camera already matches cameraForBounds for the target.
+ * @param {import('maplibre-gl').Map | null | undefined} map
+ * @param {[[number, number], [number, number]]} bounds
+ * @param {{ padding?: number | object, maxZoom?: number }} [options]
+ * @returns {boolean}
+ */
+export function isCameraAlreadyFittingBounds(map, bounds, options = {}) {
+    if (!map || !bounds || typeof map.cameraForBounds !== 'function') return false;
+    try {
+        const cam = map.cameraForBounds(bounds, {
+            padding: options.padding ?? 30,
+            maxZoom: options.maxZoom ?? 16
+        });
+        if (!cam) return false;
+
+        const zoom = typeof map.getZoom === 'function' ? map.getZoom() : null;
+        const center = typeof map.getCenter === 'function' ? map.getCenter() : null;
+        if (zoom == null || !center) return false;
+
+        const targetZoom = cam.zoom;
+        const target = cam.center;
+        const targetLng = typeof target?.lng === 'number' ? target.lng : target?.[0];
+        const targetLat = typeof target?.lat === 'number' ? target.lat : target?.[1];
+        if (!Number.isFinite(targetZoom) || !Number.isFinite(targetLng) || !Number.isFinite(targetLat)) {
+            return false;
+        }
+
+        const zoomSlop = 0.08;
+        const lngSlop = 1e-4;
+        const latSlop = 1e-4;
+        return Math.abs(zoom - targetZoom) <= zoomSlop
+            && Math.abs(center.lng - targetLng) <= lngSlop
+            && Math.abs(center.lat - targetLat) <= latSlop;
+    } catch {
+        return false;
+    }
+}
+
+/**
+ * True when jumpTo/center+zoom would be a no-op for the current camera.
+ * @param {import('maplibre-gl').Map | null | undefined} map
+ * @param {{ center?: [number, number]|{lng:number,lat:number}, zoom?: number, pitch?: number, bearing?: number }} target
+ */
+export function isCameraAlreadyAt(map, target = {}) {
+    if (!map || typeof map.getCenter !== 'function' || typeof map.getZoom !== 'function') {
+        return false;
+    }
+    try {
+        const center = map.getCenter();
+        const zoom = map.getZoom();
+        const pitch = typeof map.getPitch === 'function' ? map.getPitch() : 0;
+        const bearing = typeof map.getBearing === 'function' ? map.getBearing() : 0;
+
+        let targetLng;
+        let targetLat;
+        if (Array.isArray(target.center)) {
+            targetLng = target.center[0];
+            targetLat = target.center[1];
+        } else if (target.center && typeof target.center === 'object') {
+            targetLng = target.center.lng;
+            targetLat = target.center.lat;
+        } else {
+            return false;
+        }
+
+        if (!Number.isFinite(targetLng) || !Number.isFinite(targetLat) || !Number.isFinite(target.zoom)) {
+            return false;
+        }
+
+        const targetPitch = target.pitch ?? 0;
+        const targetBearing = target.bearing ?? 0;
+        return Math.abs(zoom - target.zoom) <= 0.05
+            && Math.abs(center.lng - targetLng) <= 1e-5
+            && Math.abs(center.lat - targetLat) <= 1e-5
+            && Math.abs(pitch - targetPitch) <= 0.5
+            && Math.abs(((bearing - targetBearing + 540) % 360) - 180) <= 0.5;
+    } catch {
+        return false;
+    }
+}
+
+/**
  * Wait until the map camera is idle, or until timeout.
  * @param {import('maplibre-gl').Map | null | undefined} map
  * @param {number} [timeoutMs]

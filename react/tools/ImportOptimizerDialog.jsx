@@ -7,9 +7,15 @@ import {
     buildImportProgressReductionNotice,
     shouldShowImportProgressNotice
 } from '../../js/import/import-size-notices.js';
+import {
+    hasActiveFeatureFilter,
+    validateFeatureFilter
+} from '../../js/import/import-feature-filter.js';
 import { ImportFieldSelector } from './ImportFieldSelector.jsx';
 import { ImportProgressPanel } from './ImportProgressPanel.jsx';
 import { ImportReductionNotice } from './ImportReductionNotice.jsx';
+import { ImportFeatureFilterPanel } from './ImportFeatureFilterPanel.jsx';
+import { useFeatureFilterState, useImportValueScan } from './useImportValueScan.js';
 
 export function ImportOptimizerDialog({ files = [], onCancel, onConfirm }) {
     const cancelImportRef = useRef(null);
@@ -21,6 +27,7 @@ export function ImportOptimizerDialog({ files = [], onCancel, onConfirm }) {
     const [error, setError] = useState('');
     const [selectedFields, setSelectedFields] = useState([]);
     const [importProgress, setImportProgress] = useState({ percent: 0, step: 'Starting import…' });
+    const { featureFilter, setFeatureFilter } = useFeatureFilterState();
 
     const fieldNames = useMemo(() => mergeScanFieldNames(scans), [scans]);
     const reductionNotice = useMemo(() => {
@@ -28,6 +35,12 @@ export function ImportOptimizerDialog({ files = [], onCancel, onConfirm }) {
         return buildNoticeForRoute({ ...routeAssessment, scans });
     }, [routeAssessment, scans]);
     const showProgressNotice = shouldShowImportProgressNotice(routeAssessment);
+
+    const valueScan = useImportValueScan({
+        files,
+        fieldNames,
+        enabled: !loading && !importing && fieldNames.length > 0
+    });
 
     useEffect(() => {
         let cancelled = false;
@@ -59,6 +72,11 @@ export function ImportOptimizerDialog({ files = [], onCancel, onConfirm }) {
             setError('Select at least one field to import.');
             return;
         }
+        const filterError = validateFeatureFilter(featureFilter);
+        if (filterError) {
+            setError(filterError);
+            return;
+        }
         setError('');
         setImporting(true);
         setImportProgress({ percent: 0, step: 'Starting optimized import…' });
@@ -67,7 +85,8 @@ export function ImportOptimizerDialog({ files = [], onCancel, onConfirm }) {
             await onConfirm?.({
                 importMode: hasKml ? importMode : undefined,
                 useWorkspace: routeAssessment?.useWorkspace === true,
-                selectedFields: fieldNames.length ? selectedFields : null
+                selectedFields: fieldNames.length ? selectedFields : null,
+                featureFilter: hasActiveFeatureFilter(featureFilter) ? featureFilter : null
             }, {
                 onProgress: (p) => setImportProgress(p),
                 onCancelReady: (fn) => { cancelImportRef.current = fn; },
@@ -153,6 +172,19 @@ export function ImportOptimizerDialog({ files = [], onCancel, onConfirm }) {
                                 : 'Uncheck fields you do not need — deselected attributes are not stored.'}
                         />
                     </div>
+
+                    {fieldNames.length > 0 ? (
+                        <ImportFeatureFilterPanel
+                            fieldNames={fieldNames}
+                            valueCatalog={valueScan.valueCatalog}
+                            scanState={valueScan.scanState}
+                            scanProgress={valueScan.scanProgress}
+                            scanMessage={valueScan.scanMessage}
+                            onCancelScan={valueScan.cancelScan}
+                            featureFilter={featureFilter}
+                            onChange={setFeatureFilter}
+                        />
+                    ) : null}
                 </>
             )}
 
@@ -160,7 +192,7 @@ export function ImportOptimizerDialog({ files = [], onCancel, onConfirm }) {
                 <button className="btn btn-secondary" onClick={() => onCancel?.()} disabled={loading}>Cancel</button>
                 <button
                     className="btn btn-primary"
-                    disabled={loading}
+                    disabled={loading || valueScan.scanState === 'scanning'}
                     onClick={() => void handleConfirm()}
                 >
                     Import with reduced settings

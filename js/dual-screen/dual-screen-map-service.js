@@ -77,10 +77,8 @@ export function installDualScreenMapServiceDecorator(mapApi, coordinator) {
 
     const relayLayerAdd = (dataset, colorIndex = 0, options = {}) => {
         if (options.style) originals.setLayerStyle?.(dataset.id, options.style);
+        // fit is carried on LAYER_ADD — do not also broadcastFit (that caused a second jump).
         coordinator.broadcastLayerAdd(dataset, colorIndex, options);
-        if (options.fit && dataset?.id) {
-            coordinator.broadcastFit('fitLayers', { layerIds: [dataset.id] });
-        }
     };
 
     ASYNC_MAP_RPC_METHODS.forEach((method) => {

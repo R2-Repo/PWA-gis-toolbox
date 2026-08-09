@@ -42,6 +42,12 @@ import { ImportReductionNotice } from './ImportReductionNotice.jsx';
 
 import { LiveLayerCatalogPicker } from './LiveLayerCatalogPicker.jsx';
 
+import { ImportFeatureFilterPanel } from './ImportFeatureFilterPanel.jsx';
+
+import { useFeatureFilterState, useImportValueScan } from './useImportValueScan.js';
+
+import { hasActiveFeatureFilter, validateFeatureFilter } from '../../js/import/import-feature-filter.js';
+
 
 
 const LOCAL_FILE_ACCEPT = '.geojson,.json,.csv,.tsv,.txt,.xlsx,.xls,.kml,.kmz,.gpx,.zip,.xml,.gis-toolbox,.gtbx,.tif,.tiff,.gpkg,.shp,.parquet';
@@ -116,7 +122,13 @@ export function ImportFlowDialog({
 
     const [importView, setImportView] = useState('chooser');
 
+    const { featureFilter, setFeatureFilter, resetFeatureFilter } = useFeatureFilterState();
 
+    const valueScan = useImportValueScan({
+        files: pendingFiles,
+        fieldNames,
+        enabled: readyToImport && fieldNames.length > 0 && !importing
+    });
 
     const resetImportStep = () => {
 
@@ -141,6 +153,8 @@ export function ImportFlowDialog({
         setImportProgress({ percent: 0, step: 'Starting import…' });
 
         cancelImportRef.current = null;
+
+        resetFeatureFilter();
 
     };
 
@@ -212,13 +226,24 @@ export function ImportFlowDialog({
 
         }
 
+        const filterError = validateFeatureFilter(featureFilter);
+        if (filterError) {
+            setError(filterError);
+            return;
+        }
+
+        const activeFeatureFilter = hasActiveFeatureFilter(featureFilter) ? featureFilter : null;
+
         // High-capacity streaming path — delegate to the parent flow. Only pass
         // a field filter when the user deselected something: head-sniffed field
         // lists can miss fields that appear later in very large files.
         if (streamFiles.length > 0 && onStreamImport) {
             setError('');
             const useFieldFilter = fieldNames.length > 0 && fields.length < fieldNames.length;
-            onStreamImport(files, { selectedFields: useFieldFilter ? fields : null });
+            onStreamImport(files, {
+                selectedFields: useFieldFilter ? fields : null,
+                featureFilter: activeFeatureFilter
+            });
             return;
         }
 
@@ -305,6 +330,8 @@ export function ImportFlowDialog({
                 selectedFields: fieldNames.length ? fields : null,
 
                 useWorkspace: importOptions.useWorkspace ?? routeAssessment?.useWorkspace,
+
+                featureFilter: activeFeatureFilter,
 
                 ...importOptions
 
@@ -747,6 +774,19 @@ export function ImportFlowDialog({
                                     : 'Uncheck fields you do not need — deselected attributes are not stored.'}
 
                             />
+
+                            {fieldNames.length > 0 ? (
+                                <ImportFeatureFilterPanel
+                                    fieldNames={fieldNames}
+                                    valueCatalog={valueScan.valueCatalog}
+                                    scanState={valueScan.scanState}
+                                    scanProgress={valueScan.scanProgress}
+                                    scanMessage={valueScan.scanMessage}
+                                    onCancelScan={valueScan.cancelScan}
+                                    featureFilter={featureFilter}
+                                    onChange={setFeatureFilter}
+                                />
+                            ) : null}
 
                             <button
 

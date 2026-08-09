@@ -3,10 +3,24 @@
  */
 
 /**
- * @param {{ expanded: object[], totalFiltered: number, errors: Array<{ file: string, error: Error }>, fenceBbox?: unknown }} input
+ * @param {{
+ *   expanded: object[],
+ *   totalFiltered?: number,
+ *   featureFiltered?: number,
+ *   errors: Array<{ file: string, error: Error }>,
+ *   fenceBbox?: unknown,
+ *   importGroups?: object[]
+ * }} input
  */
 export function buildImportSummary(input) {
-    const { expanded = [], totalFiltered = 0, errors = [], fenceBbox = null, importGroups = [] } = input;
+    const {
+        expanded = [],
+        totalFiltered = 0,
+        featureFiltered = 0,
+        errors = [],
+        fenceBbox = null,
+        importGroups = []
+    } = input;
     const warnings = expanded
         .filter((ds) => ds._importWarning)
         .map((ds) => ({ layer: ds.name, message: ds._importWarning }));
@@ -32,6 +46,9 @@ export function buildImportSummary(input) {
     }
     if (fenceBbox && totalFiltered > 0) {
         lines.push(`${totalFiltered} feature(s) excluded by import fence.`);
+    }
+    if (featureFiltered > 0) {
+        lines.push(`${featureFiltered} feature(s) excluded by pre-import filter.`);
     }
     if (warnings.length) {
         lines.push(`${warnings.length} layer warning(s).`);

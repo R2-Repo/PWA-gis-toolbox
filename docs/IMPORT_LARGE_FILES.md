@@ -265,6 +265,34 @@ Notes: streaming Excel remains impractical (whole-workbook format) —
 convert-to-CSV guidance stands. Kit bundle materialization cap remains for
 the legacy small-layer path; large layers use the streamed packer.
 
+## Build 7 (shipped): pre-import feature filters
+
+Large-file Import Flow and Import Optimizer now support **row filters** in
+addition to attribute deselection and Import Fence:
+
+1. **Distinct-value scan** — a worker pass (`scan-values`) streams the file and
+   collects up to 2,000 distinct values per field (CSV / DBF-only shapefile /
+   GeoJSON properties / KML ExtendedData). Progress is shown; cancel aborts.
+2. **Geometry type toggles** — Points / Lines / Polygons (all on by default).
+3. **Attribute rules** — same operators as Filter Builder / Query (`equals`,
+   `in`, `not_in`, …) with multi-select checklists from the scan when cardinality
+   is under the cap; otherwise free-text entry.
+4. **Apply at ingest** — stream worker `addFeature` drops non-matching features
+   before IndexedDB write; standard path applies the same matcher in
+   `finalizeImportedDatasets`. Toasts report `featureFiltered` counts.
+
+| File | Role |
+|---|---|
+| `js/import/import-feature-filter.js` | Geometry + rule matcher (`evaluateRule`) |
+| `js/import/import-value-accumulator.js` | Capped distinct-value sets + KML property extract |
+| `js/import/import-value-scan.js` | Main-thread scan orchestration |
+| `js/workers/stream-import.worker.js` | `scan-values` + import-time feature filter |
+| `react/tools/ImportFeatureFilterPanel.jsx` | Filter UI |
+| `react/tools/useImportValueScan.js` | Scan hook for Flow + Optimizer |
+
+Out of scope: preview map of matches, spatial predicates beyond fence, Excel
+value lists.
+
 ## Governing rules (unchanged from master plan)
 
 1. Never require the whole decoded dataset in memory.

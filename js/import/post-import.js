@@ -11,6 +11,10 @@ import { isSmartStyleActive } from '../map/style-engine.js';
 import { getLayerDefaultColor } from '../map/layer-palette.js';
 import { detectEmbeddedSimpleStyle, convertLayerSimpleStyleToSmart } from '../map/style-import.js';
 import { resolveUdotFiberStyleForDataset } from '../symbology/udot-fiber/resolve-style.js';
+import {
+    filterFeaturesByImportFilters,
+    hasActiveFeatureFilter
+} from './import-feature-filter.js';
 
 /**
  * @param {object|object[]|null|undefined} result
@@ -260,13 +264,18 @@ export const prepareSpatialDatasetForMap = applyImportLayerStyles;
 
 /**
  * @param {object[]} datasets
- * @param {{ fenceBbox?: [number,number,number,number]|null, task?: import('../core/task-runner.js').TaskRunner|null }} [options]
- * @returns {Promise<{ expanded: object[], totalFiltered: number }>}
+ * @param {{
+ *   fenceBbox?: [number,number,number,number]|null,
+ *   featureFilter?: object|null,
+ *   task?: import('../core/task-runner.js').TaskRunner|null
+ * }} [options]
+ * @returns {Promise<{ expanded: object[], totalFiltered: number, featureFiltered: number }>}
  */
 export async function finalizeImportedDatasets(datasets, options = {}) {
-    const { fenceBbox, task } = options;
+    const { fenceBbox, featureFilter = null, task } = options;
     const expanded = expandMixedGeometryDatasets(datasets);
     let totalFiltered = 0;
+    let featureFiltered = 0;
 
     for (const ds of expanded) {
         task?.throwIfCancelled?.();
@@ -279,12 +288,22 @@ export async function finalizeImportedDatasets(datasets, options = {}) {
             }
             totalFiltered += before - (ds.geojson?.features?.length || 0);
         }
+        if (hasActiveFeatureFilter(featureFilter) && ds.type === 'spatial' && ds.geojson?.features?.length) {
+            const before = ds.geojson.features.length;
+            const { features, filtered } = filterFeaturesByImportFilters(ds.geojson.features, featureFilter);
+            ds.geojson.features = features;
+            featureFiltered += filtered;
+            if (filtered > 0) {
+                logger.info('ImportFilter', `Filtered ${before} → ${features.length} features (${filtered} excluded by pre-import filter)`);
+                ds.schema = analyzeSchema(ds.geojson);
+            }
+        }
         if (ds.type === 'spatial') {
             ds._geometryExploded = true;
         }
     }
 
-    return { expanded, totalFiltered };
+    return { expanded, totalFiltered, featureFiltered };
 }
 
 export default {
