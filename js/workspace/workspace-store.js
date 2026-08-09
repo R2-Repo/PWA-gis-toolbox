@@ -15,9 +15,14 @@ import {
 } from './cold-attributes.js';
 import {
     ATTRIBUTE_TABLE_PAGE_SIZE,
+    ATTRIBUTE_SCAN_MAX_MATCHES,
+    ATTRIBUTE_SCAN_BATCH_SIZE,
     recordsToAttributeRows,
     resolveAttributeTableFields,
-    clampAttributePageOffset
+    clampAttributePageOffset,
+    normalizeAttributeTableQuery,
+    rowMatchesAttributeQuery,
+    sortAttributeRows
 } from './attribute-table.js';
 
 const DB_NAME = 'gis-toolbox-workspace';
@@ -760,6 +765,303 @@ export async function loadWorkspaceAttributePage(
     };
 }
 
+function _yieldScanTick() {
+    return new Promise((resolve) => {
+        if (typeof setTimeout === 'function') setTimeout(resolve, 0);
+        else resolve();
+    });
+}
+
+/**
+ * Load attribute rows for an explicit list of feature indices (search results).
+ * @param {string} layerId
+ * @param {number[]} indices
+ * @param {{ includeCold?: boolean }} [options]
+ */
+export async function loadWorkspaceAttributeRowsByIndices(layerId, indices = [], options = {}) {
+    const includeCold = options.includeCold !== false;
+    const layer = await getWorkspaceLayer(layerId);
+    const coldFields = [
+        ...(layer?.schema?.coldFields || layer?.coldFields || layer?.detachedFields || [])
+    ];
+    const schemaFieldNames = (layer?.schema?.fields || [])
+        .map((f) => (typeof f === 'string' ? f : f?.name))
+        .filter(Boolean);
+
+    if (!indices.length) {
+        return {
+            rows: [],
+            fields: resolveAttributeTableFields({ schemaFieldNames, coldFields, includeIdentity: true }),
+            coldFields,
+            includeCold
+        };
+    }
+
+    const sorted = [...indices].map(Number).filter(Number.isFinite).sort((a, b) => a - b);
+    const attrByIndex = new Map();
+    // Load contiguous runs for fewer IDB range reads.
+    let runStart = sorted[0];
+    let runEnd = sorted[0];
+    const flushRun = async () => {
+        const count = runEnd - runStart + 1;
+        const batch = await _loadAttributeRecordsRange(layerId, runStart, count);
+        for (const [idx, rec] of batch) attrByIndex.set(idx, rec);
+    };
+    for (let i = 1; i < sorted.length; i++) {
+        const idx = sorted[i];
+        if (idx === runEnd + 1) {
+            runEnd = idx;
+            continue;
+        }
+        await flushRun();
+        runStart = idx;
+        runEnd = idx;
+    }
+    await flushRun();
+
+    let coldByLgid = null;
+    if (includeCold) {
+        const lgids = [...attrByIndex.values()].map((r) => r.lgid).filter(Boolean);
+        coldByLgid = await _loadColdPropertiesByLgids(layerId, lgids);
+    }
+
+    const rows = sorted.map((featureIndex) => {
+        const rec = attrByIndex.get(featureIndex);
+        if (!rec) return { _featureIndex: featureIndex };
+        let props = { ...(rec.properties || {}) };
+        if (rec.lgid) props[LGID_PROP] = rec.lgid;
+        if (includeCold && rec.lgid && coldByLgid?.has(rec.lgid)) {
+            props = joinHotColdProperties(props, coldByLgid.get(rec.lgid));
+            if (rec.lgid) props[LGID_PROP] = rec.lgid;
+        }
+        props._featureIndex = featureIndex;
+        return props;
+    });
+
+    return {
+        rows,
+        fields: resolveAttributeTableFields({
+            schemaFieldNames,
+            coldFields,
+            sampleRows: rows,
+            includeIdentity: true
+        }),
+        coldFields,
+        includeCold
+    };
+}
+
+/**
+ * Cancelable attribute scan for search/filter. Attributes-only (no geometries).
+ *
+ * @param {string} layerId
+ * @param {import('./attribute-table.js').AttributeTableQuery} query
+ * @param {{
+ *   includeCold?: boolean,
+ *   maxMatches?: number,
+ *   signal?: AbortSignal,
+ *   onProgress?: (p: { scanned: number, total: number, matches: number }) => void
+ * }} [options]
+ */
+export async function scanWorkspaceAttributeMatches(layerId, query = {}, options = {}) {
+    const includeCold = options.includeCold !== false;
+    const maxMatches = options.maxMatches ?? ATTRIBUTE_SCAN_MAX_MATCHES;
+    const normalized = normalizeAttributeTableQuery(query);
+    const layer = await getWorkspaceLayer(layerId);
+    const totalCount = layer?.featureCount ?? 0;
+    const matchIndices = [];
+    let scanned = 0;
+    let truncated = false;
+
+    if (!normalized.active || !totalCount) {
+        return {
+            matchIndices,
+            scanned: 0,
+            totalCount,
+            truncated: false,
+            maxMatches
+        };
+    }
+
+    for (let start = 0; start < totalCount; start += ATTRIBUTE_SCAN_BATCH_SIZE) {
+        if (options.signal?.aborted) {
+            const err = new Error('Scan cancelled');
+            err.name = 'AbortError';
+            throw err;
+        }
+        const count = Math.min(ATTRIBUTE_SCAN_BATCH_SIZE, totalCount - start);
+        const attrByIndex = await _loadAttributeRecordsRange(layerId, start, count);
+        let coldByLgid = null;
+        if (includeCold) {
+            const lgids = [...attrByIndex.values()].map((r) => r.lgid).filter(Boolean);
+            coldByLgid = await _loadColdPropertiesByLgids(layerId, lgids);
+        }
+        const rows = recordsToAttributeRows(attrByIndex, coldByLgid, {
+            includeCold,
+            startIndex: start,
+            count
+        });
+        for (const row of rows) {
+            scanned++;
+            if (rowMatchesAttributeQuery(row, normalized)) {
+                matchIndices.push(row._featureIndex);
+                if (matchIndices.length >= maxMatches) {
+                    truncated = true;
+                    options.onProgress?.({ scanned, total: totalCount, matches: matchIndices.length });
+                    return { matchIndices, scanned, totalCount, truncated, maxMatches };
+                }
+            }
+        }
+        options.onProgress?.({ scanned, total: totalCount, matches: matchIndices.length });
+        await _yieldScanTick();
+    }
+
+    return { matchIndices, scanned, totalCount, truncated, maxMatches };
+}
+
+/**
+ * Resolve a workspace feature (geometry + attributes) by feature index.
+ * @param {string} layerId
+ * @param {number} featureIndex
+ * @param {{ includeCold?: boolean }} [options]
+ * @returns {Promise<object|null>} GeoJSON Feature
+ */
+export async function getWorkspaceFeatureByIndex(layerId, featureIndex, options = {}) {
+    const features = await getWorkspaceFeaturesByIndices(layerId, [featureIndex], options);
+    return features[0] || null;
+}
+
+/**
+ * Load geometries (+ attributes) for selected feature indices.
+ * Used by table → map zoom/highlight.
+ *
+ * @param {string} layerId
+ * @param {number[]} indices
+ * @param {{ includeCold?: boolean }} [options]
+ * @returns {Promise<object[]>}
+ */
+export async function getWorkspaceFeaturesByIndices(layerId, indices = [], options = {}) {
+    const includeCold = options.includeCold !== false;
+    const wanted = [...new Set((indices || []).map(Number).filter(Number.isFinite))];
+    if (!wanted.length) return [];
+
+    const layer = await getWorkspaceLayer(layerId);
+    if (!layer?.chunkIds?.length) return [];
+
+    const wantedSet = new Set(wanted);
+    const found = new Map();
+
+    for (const chunkId of layer.chunkIds) {
+        if (found.size >= wanted.length) break;
+        const chunk = await _idbGet(STORE_CHUNKS, chunkId);
+        if (!chunk?.geojson) continue;
+        const startIndex = chunk.startIndex ?? 0;
+        const featureCount = chunk.featureCount ?? 0;
+        if (featureCount > 0) {
+            const endIndex = startIndex + featureCount - 1;
+            const touches = wanted.some((idx) => idx >= startIndex && idx <= endIndex);
+            if (!touches) continue;
+        }
+
+        let fc;
+        try {
+            fc = JSON.parse(chunk.geojson);
+        } catch {
+            continue;
+        }
+        const chunkFeatures = fc?.features || [];
+        if (!chunkFeatures.length) continue;
+
+        const resolvedStart = chunk.startIndex
+            ?? chunkFeatures[0]?.properties?._featureIndex
+            ?? startIndex;
+        const attrByIndex = await _loadAttributeRecordsRange(
+            layerId,
+            resolvedStart,
+            chunkFeatures.length
+        );
+        let coldByLgid = null;
+        if (includeCold) {
+            const lgids = [...attrByIndex.values()].map((r) => r.lgid).filter(Boolean);
+            coldByLgid = await _loadColdPropertiesByLgids(layerId, lgids);
+        }
+
+        for (let i = 0; i < chunkFeatures.length; i++) {
+            const f = chunkFeatures[i];
+            const idx = Number(f.properties?._featureIndex ?? (resolvedStart + i));
+            if (!wantedSet.has(idx) || found.has(idx)) continue;
+            const rec = attrByIndex.get(idx);
+            let props = rec?.properties ? { ...rec.properties } : {};
+            const lgid = rec?.lgid || f.properties?.[LGID_PROP];
+            if (lgid) props[LGID_PROP] = lgid;
+            if (includeCold && lgid && coldByLgid?.has(lgid)) {
+                props = joinHotColdProperties(props, coldByLgid.get(lgid));
+            }
+            props._featureIndex = idx;
+            found.set(idx, {
+                type: 'Feature',
+                geometry: f.geometry,
+                properties: props
+            });
+            if (found.size >= wanted.length) break;
+        }
+    }
+
+    return wanted.map((idx) => found.get(idx)).filter(Boolean);
+}
+
+/**
+ * Page through either sequential indices or a match-index list, with optional sort of the page.
+ * @param {string} layerId
+ * @param {{
+ *   offset?: number,
+ *   limit?: number,
+ *   includeCold?: boolean,
+ *   matchIndices?: number[]|null,
+ *   sortField?: string|null,
+ *   sortDir?: 'asc'|'desc'
+ * }} [options]
+ */
+export async function loadWorkspaceAttributeTablePage(layerId, options = {}) {
+    const limit = options.limit ?? ATTRIBUTE_TABLE_PAGE_SIZE;
+    const includeCold = options.includeCold !== false;
+    const matchIndices = options.matchIndices || null;
+    const sortField = options.sortField || null;
+    const sortDir = options.sortDir === 'desc' ? 'desc' : 'asc';
+
+    if (matchIndices) {
+        const totalCount = matchIndices.length;
+        const pageOffset = clampAttributePageOffset(options.offset || 0, totalCount, limit);
+        const slice = matchIndices.slice(pageOffset, pageOffset + limit);
+        const loaded = await loadWorkspaceAttributeRowsByIndices(layerId, slice, { includeCold });
+        const rows = sortField
+            ? sortAttributeRows(loaded.rows, sortField, sortDir)
+            : loaded.rows;
+        return {
+            ...loaded,
+            rows,
+            totalCount,
+            offset: pageOffset,
+            limit,
+            includeCold,
+            filtered: true,
+            sortField,
+            sortDir
+        };
+    }
+
+    const page = await loadWorkspaceAttributePage(layerId, options.offset || 0, limit, { includeCold });
+    if (sortField) {
+        page.rows = sortAttributeRows(page.rows, sortField, sortDir);
+    }
+    return {
+        ...page,
+        filtered: false,
+        sortField,
+        sortDir
+    };
+}
+
 /**
  * Legacy in-memory kit path threshold. Layers above this use streamed kit
  * packing (`writeWorkspaceLayerToKitZip`) instead of assembling a full bundle.
@@ -1052,6 +1354,11 @@ export default {
     getWorkspaceLayerBounds,
     getWorkspaceLayerAttributes,
     loadWorkspaceAttributePage,
+    loadWorkspaceAttributeRowsByIndices,
+    scanWorkspaceAttributeMatches,
+    getWorkspaceFeatureByIndex,
+    getWorkspaceFeaturesByIndices,
+    loadWorkspaceAttributeTablePage,
     exportWorkspaceLayerBundle,
     writeWorkspaceLayerToKitZip,
     importWorkspaceLayerFromParts,

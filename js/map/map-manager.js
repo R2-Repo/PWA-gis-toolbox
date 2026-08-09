@@ -5088,6 +5088,111 @@ class MapManager {
         });
     }
 
+    /**
+     * Highlight + optional fit using explicit Feature geometries.
+     * Used by the attribute table for workspace rows not present in the current map GeoJSON.
+     * @param {object[]} features
+     * @param {{ fit?: boolean, padding?: number, maxZoom?: number, layerId?: string|null }} [options]
+     */
+    focusFeatures(features = [], options = {}) {
+        if (!this.map || !features?.length) return;
+        const list = features.filter((f) => f?.geometry);
+        if (!list.length) return;
+
+        this.clearHighlight?.();
+        this._stopQueryResultPulse?.();
+        renderQueryResultLayers(this.map, list);
+        this._queryResultLayerId = options.layerId ?? null;
+        this._queryResultIndices = list
+            .map((f) => Number(f.properties?._featureIndex))
+            .filter(Number.isFinite);
+
+        // Also drive the single-feature highlight source for a stronger focus cue.
+        const hlSrcId = 'highlight-source';
+        const first = list[0];
+        this._highlightedInfo = {
+            layerId: options.layerId ?? null,
+            featureIndex: Number(first.properties?._featureIndex)
+        };
+        if (this.map.getSource(hlSrcId)) {
+            this.map.getSource(hlSrcId).setData({ type: 'FeatureCollection', features: [first] });
+        } else {
+            this.map.addSource(hlSrcId, {
+                type: 'geojson',
+                data: { type: 'FeatureCollection', features: [first] }
+            });
+        }
+        // Ensure highlight paint layers exist (reuse highlightFeature path when possible).
+        if (options.layerId != null && Number.isFinite(this._highlightedInfo.featureIndex)) {
+            // If the feature is already in the live map source, prefer the normal highlight path.
+            const info = this.dataLayers.get(options.layerId);
+            const live = info?.geojson?.features?.some(
+                (f) => Number(f.properties?._featureIndex) === this._highlightedInfo.featureIndex
+            );
+            if (live) {
+                this.highlightFeature(options.layerId, this._highlightedInfo.featureIndex);
+            } else {
+                this._ensureHighlightLayersForFeatures([first]);
+            }
+        } else {
+            this._ensureHighlightLayersForFeatures([first]);
+        }
+
+        if (options.fit !== false) {
+            fitMapToFeatures(this.map, list, {
+                padding: options.padding ?? 48,
+                maxZoom: options.maxZoom ?? 16
+            });
+        }
+    }
+
+    _ensureHighlightLayersForFeatures(features = []) {
+        if (!this.map || !features.length) return;
+        const hlSrcId = 'highlight-source';
+        const hasHlPoint = features.some((f) => {
+            const t = f.geometry?.type;
+            return t === 'Point' || t === 'MultiPoint';
+        });
+        const hasHlLine = features.some((f) => {
+            const t = f.geometry?.type;
+            return t === 'LineString' || t === 'MultiLineString';
+        });
+        const hasHlPoly = features.some((f) => {
+            const t = f.geometry?.type;
+            return t === 'Polygon' || t === 'MultiPolygon';
+        });
+        if (hasHlPoint && !this.map.getLayer('highlight-circle')) {
+            this.map.addLayer({
+                id: 'highlight-circle', type: 'circle', source: hlSrcId,
+                filter: _geomTypesFilter(['Point', 'MultiPoint']),
+                paint: { 'circle-radius': 10, 'circle-color': '#fbbf24', 'circle-stroke-color': '#ffffff', 'circle-stroke-width': 3, 'circle-opacity': 1 }
+            });
+        }
+        if (hasHlLine && !this.map.getLayer('highlight-line')) {
+            this.map.addLayer({
+                id: 'highlight-line', type: 'line', source: hlSrcId,
+                filter: _geomTypesFilter(['LineString', 'MultiLineString']),
+                paint: { 'line-color': '#fbbf24', 'line-width': 4, 'line-opacity': 1 }
+            });
+        }
+        if (hasHlPoly) {
+            if (!this.map.getLayer('highlight-fill')) {
+                this.map.addLayer({
+                    id: 'highlight-fill', type: 'fill', source: hlSrcId,
+                    filter: _geomTypesFilter(['Polygon', 'MultiPolygon']),
+                    paint: { 'fill-color': '#fbbf24', 'fill-opacity': 0.35 }
+                });
+            }
+            if (!this.map.getLayer('highlight-outline')) {
+                this.map.addLayer({
+                    id: 'highlight-outline', type: 'line', source: hlSrcId,
+                    filter: _geomTypesFilter(['Polygon', 'MultiPolygon']),
+                    paint: { 'line-color': '#fbbf24', 'line-width': 4, 'line-opacity': 1 }
+                });
+            }
+        }
+    }
+
     // ============================
     // Coordinate Search Control
     // ============================

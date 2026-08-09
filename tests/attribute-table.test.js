@@ -2,8 +2,12 @@ import { describe, expect, it } from 'vitest';
 import {
     ATTRIBUTE_TABLE_PAGE_SIZE,
     clampAttributePageOffset,
+    compareAttributeValues,
+    normalizeAttributeTableQuery,
     recordsToAttributeRows,
-    resolveAttributeTableFields
+    resolveAttributeTableFields,
+    rowMatchesAttributeQuery,
+    sortAttributeRows
 } from '../js/workspace/attribute-table.js';
 import { LGID_PROP } from '../js/workspace/feature-identity.js';
 
@@ -72,5 +76,37 @@ describe('attribute-table helpers', () => {
         expect(clampAttributePageOffset(50, 250, 100)).toBe(50);
         expect(clampAttributePageOffset(999, 250, 100)).toBe(200);
         expect(clampAttributePageOffset(0, 0, 100)).toBe(0);
+    });
+
+    it('matches free-text and field filters', () => {
+        const row = { name: 'Main St', route: 'I-15', notes: '' };
+        expect(rowMatchesAttributeQuery(row, normalizeAttributeTableQuery({ text: 'main' }))).toBe(true);
+        expect(rowMatchesAttributeQuery(row, normalizeAttributeTableQuery({ text: 'missing' }))).toBe(false);
+        expect(rowMatchesAttributeQuery(row, normalizeAttributeTableQuery({
+            field: 'route',
+            fieldOp: 'equals',
+            fieldValue: 'i-15'
+        }))).toBe(true);
+        expect(rowMatchesAttributeQuery(row, normalizeAttributeTableQuery({
+            field: 'notes',
+            fieldOp: 'is_empty'
+        }))).toBe(true);
+        expect(rowMatchesAttributeQuery(row, normalizeAttributeTableQuery({
+            text: 'main',
+            field: 'route',
+            fieldOp: 'contains',
+            fieldValue: '80'
+        }))).toBe(false);
+    });
+
+    it('sorts attribute rows by field', () => {
+        const rows = [
+            { name: 'b', n: 2 },
+            { name: 'a', n: 10 },
+            { name: 'c', n: 1 }
+        ];
+        expect(sortAttributeRows(rows, 'name', 'asc').map((r) => r.name)).toEqual(['a', 'b', 'c']);
+        expect(sortAttributeRows(rows, 'n', 'desc').map((r) => r.n)).toEqual([10, 2, 1]);
+        expect(compareAttributeValues(null, 'x')).toBe(1);
     });
 });
