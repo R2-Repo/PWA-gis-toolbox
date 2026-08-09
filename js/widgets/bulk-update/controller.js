@@ -2,6 +2,9 @@ import bus from '../../core/event-bus.js';
 import { openReactIsland } from '../../ui/open-react-island.js';
 import { getSpatialLayerOptions } from '../widget-context.js';
 import { applyBulkUpdateToLayer } from './engine.js';
+import { isWorkspaceLayer } from '../../core/data-model.js';
+import { commitWorkspaceBulkUpdate } from '../../workspace/edit-session.js';
+
 export async function openBulkUpdate(ctx) {
     await openReactIsland({
         title: 'Bulk Update',
@@ -49,15 +52,18 @@ export async function openBulkUpdate(ctx) {
                     throw new Error('Add at least one field update.');
                 }
 
-                if (!layer?.geojson?.features) throw new Error('Target layer not found.');
-
                 let selectedIndices;
+                let applyToAll = false;
                 if (applyTo === 'selection') {
                     selectedIndices = ctx.mapService.getSelectedIndices(layer.id) || [];
                     if (selectedIndices.length === 0) {
                         throw new Error('Select features on the map first.');
                     }
+                } else if (isWorkspaceLayer(layer)) {
+                    applyToAll = true;
+                    selectedIndices = [];
                 } else {
+                    if (!layer?.geojson?.features) throw new Error('Target layer not found.');
                     selectedIndices = layer.geojson.features
                         .map((f) => f.properties?._featureIndex)
                         .filter((idx) => idx !== undefined);
@@ -66,9 +72,26 @@ export async function openBulkUpdate(ctx) {
                     }
                 }
 
-                const result = applyBulkUpdateToLayer({ layer, selectedIndices, updates });
+                let result;
+                if (isWorkspaceLayer(layer)) {
+                    const wsId = layer.workspaceLayerId || layer.id;
+                    result = await commitWorkspaceBulkUpdate({
+                        layerId: wsId,
+                        selectedIndices,
+                        applyToAll,
+                        updates
+                    });
+                    // Viewport packet may be stale; tiles need invalidation.
+                    if (typeof ctx.mapService.refreshWorkspaceLayerViewport === 'function') {
+                        await ctx.mapService.refreshWorkspaceLayerViewport(layer.id);
+                    }
+                    ctx.mapService.refreshLayerData(layer);
+                } else {
+                    if (!layer?.geojson?.features) throw new Error('Target layer not found.');
+                    result = applyBulkUpdateToLayer({ layer, selectedIndices, updates });
+                    ctx.mapService.refreshLayerData(layer);
+                }
 
-                ctx.mapService.refreshLayerData(layer);
                 ctx.mapService.clearSelection(layer.id);
                 ctx.refreshUI();
 

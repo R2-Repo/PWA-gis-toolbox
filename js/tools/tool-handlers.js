@@ -20,8 +20,9 @@ import {
     getWorkingFeaturesFromLayer,
     getWorkingDatasetFromLayer
 } from './gis-layer-context.js';
-import { removeWorkspaceLayer } from '../workspace/workspace-store.js';
+import { removeWorkspaceLayer, detachFieldsForExport } from '../workspace/workspace-store.js';
 import { removeSourceFileIfUnreferenced } from '../workspace/source-file-store.js';
+import { commitWorkspaceFeatureEdit } from '../workspace/edit-session.js';
 import {
     finalizeImportedDatasets,
     applyImportLayerStyles,
@@ -30,7 +31,7 @@ import {
     normalizeImporterResult
 } from '../import/post-import.js';
 import { getLayerDefaultColor } from '../map/layer-palette.js';
-import { getActiveTask } from '../core/task-runner.js';
+import { getActiveTask, TaskRunner } from '../core/task-runner.js';
 import { buildImportSummary, formatImportSummaryToast } from '../import/import-summary.js';
 import { guardFilesBeforeImport } from '../import/import-guard.js';
 import { assessImportRoute, shouldConvertToWorkspace, arcgisShouldUseWorkspace } from '../import/import-routing.js';
@@ -4763,12 +4764,33 @@ export function handleRedo() {
 // ============================
 // Feature Editor ? edit a single feature's attributes from popup
 // ============================
+function _coerceEditedFieldValue(oldVal, newVal) {
+    if (oldVal === null || oldVal === undefined) {
+        return newVal === '' ? null : newVal;
+    }
+    if (typeof oldVal === 'number') {
+        return newVal === '' ? null : (Number.isNaN(Number(newVal)) ? newVal : Number(newVal));
+    }
+    if (typeof oldVal === 'boolean') {
+        return newVal === 'true' || newVal === '1';
+    }
+    return newVal;
+}
+
 export function openFeatureEditor(layerId, featureIndex) {
     const layers = getLayers();
     const layer = layers.find((l) => l.id === layerId);
-    if (!layer || layer.type !== 'spatial') return showToast('Layer not found', 'warning');
+    if (!layer) return showToast('Layer not found', 'warning');
 
-    const feature = layer.geojson.features[featureIndex];
+    if (isWorkspaceLayer(layer)) {
+        void openWorkspaceFeatureEditor(layer, featureIndex);
+        return;
+    }
+
+    if (layer.type !== 'spatial') return showToast('Layer not found', 'warning');
+
+    const feature = layer.geojson?.features?.[featureIndex]
+        || layer.geojson?.features?.find((f) => Number(f.properties?._featureIndex) === Number(featureIndex));
     if (!feature) return showToast('Feature not found', 'warning');
 
     const props = feature.properties || {};
@@ -4796,16 +4818,7 @@ export function openFeatureEditor(layerId, featureIndex) {
                 onSave: ({ textValues, attachmentUpdates }) => {
                     saveSnapshot(layer.id, 'Edit Feature', layer.geojson);
                     for (const [field, newVal] of Object.entries(textValues || {})) {
-                        const oldVal = props[field];
-                        if (oldVal === null || oldVal === undefined) {
-                            props[field] = newVal === '' ? null : newVal;
-                        } else if (typeof oldVal === 'number') {
-                            props[field] = newVal === '' ? null : (Number.isNaN(Number(newVal)) ? newVal : Number(newVal));
-                        } else if (typeof oldVal === 'boolean') {
-                            props[field] = newVal === 'true' || newVal === '1';
-                        } else {
-                            props[field] = newVal;
-                        }
+                        props[field] = _coerceEditedFieldValue(props[field], newVal);
                     }
                     for (const [field, data] of Object.entries(attachmentUpdates || {})) {
                         props[field] = data;
@@ -4821,6 +4834,109 @@ export function openFeatureEditor(layerId, featureIndex) {
             watchOverlayUnmount(overlay, () => mounted.unmount?.());
         }
     });
+}
+
+async function openWorkspaceFeatureEditor(layer, featureIndex) {
+    const wsId = layer.workspaceLayerId || layer.id;
+    const { getWorkspaceFeatureAttributes } = await import('../workspace/workspace-store.js');
+    const props = await getWorkspaceFeatureAttributes(wsId, featureIndex);
+    if (!props) return showToast('Feature not found', 'warning');
+
+    const fields = Object.keys(props).filter((k) => !k.startsWith('_'));
+    const schemaFields = layer.schema?.fields || [];
+    const getFieldType = (name) => schemaFields.find((f) => f.name === name)?.type || 'string';
+    const geomType = layer.schema?.geometryType || 'Unknown';
+    const idx = Number(featureIndex);
+
+    const rootId = `feature-editor-react-${Date.now()}`;
+    showModal('Edit Feature', `<div id="${rootId}"></div>`, {
+        width: '420px',
+        onMount: async (overlay, close) => {
+            const root = overlay.querySelector(`#${rootId}`);
+            if (!root) return;
+            const { mountFeatureEditorDialog } = await import('../../react/tools/mountFeatureEditorDialog.jsx');
+            const mounted = mountFeatureEditorDialog(root, {
+                layerName: layer.name,
+                featureIndex: idx,
+                geomType,
+                fields,
+                getFieldType,
+                getFieldValue: (name) => props[name],
+                onError: (msg) => showToast(msg, 'warning'),
+                onCancel: () => close(),
+                onSave: async ({ textValues, attachmentUpdates }) => {
+                    try {
+                        const next = { ...props };
+                        for (const [field, newVal] of Object.entries(textValues || {})) {
+                            next[field] = _coerceEditedFieldValue(next[field], newVal);
+                        }
+                        for (const [field, data] of Object.entries(attachmentUpdates || {})) {
+                            next[field] = data;
+                        }
+                        await commitWorkspaceFeatureEdit(wsId, idx, next);
+                        if (typeof mapService.refreshWorkspaceLayerViewport === 'function') {
+                            await mapService.refreshWorkspaceLayerViewport(layer.id);
+                        }
+                        mapService.refreshLayerData(layer);
+                        bus.emit('layer:updated', layer);
+                        bus.emit('layers:changed', getLayers());
+                        refreshUI();
+                        showToast('Feature updated', 'success');
+                        close();
+                    } catch (e) {
+                        showErrorToast(handleError(e, 'Edit Feature', 'workspace'));
+                    }
+                }
+            });
+            watchOverlayUnmount(overlay, () => mounted.unmount?.());
+        }
+    });
+}
+
+/**
+ * Move unchecked schema fields from hot → cold storage for a workspace layer.
+ * Export still joins cold fields; map/identify keep the slim hot set.
+ */
+export async function detachUnselectedFieldsForExport() {
+    const layer = getActiveLayer();
+    if (!layer || !isWorkspaceLayer(layer)) {
+        return showToast('Detach for export is only available on workspace layers', 'warning');
+    }
+    const fields = (layer.schema?.fields || [])
+        .filter((f) => f.selected === false && !f.cold)
+        .map((f) => f.name);
+    if (!fields.length) {
+        return showToast('Uncheck fields you want to detach, then try again', 'info');
+    }
+
+    const wsId = layer.workspaceLayerId || layer.id;
+    const task = new TaskRunner('Detach for export', 'Workspace');
+    try {
+        const result = await task.run(async (t) => {
+            t.updateProgress(5, `Detaching ${fields.length} field(s)…`);
+            return detachFieldsForExport(wsId, fields, {
+                onProgress: (done, total) => {
+                    const pct = total ? Math.round((done / total) * 90) : 50;
+                    t.updateProgress(5 + pct, `Detaching… ${done.toLocaleString()}/${total.toLocaleString()}`);
+                }
+            });
+        });
+        const { getWorkspaceLayer } = await import('../workspace/workspace-store.js');
+        const meta = await getWorkspaceLayer(wsId);
+        if (meta?.schema) {
+            layer.schema = meta.schema;
+            layer.coldFields = meta.coldFields || meta.schema.coldFields;
+        }
+        bus.emit('layer:updated', layer);
+        bus.emit('layers:changed', getLayers());
+        refreshUI();
+        showToast(
+            `Detached ${result.movedFields.length} field(s) for export (${result.featureCount.toLocaleString()} features)`,
+            'success'
+        );
+    } catch (e) {
+        showErrorToast(handleError(e, 'Detach for export', wsId));
+    }
 }
 
 export function showDataTable() {
@@ -5201,6 +5317,7 @@ const APP_ACTIONS = {
     toggleField, selectAllFields, filterFields,
     renameLayer, renameField,
     addField,
+    detachUnselectedFieldsForExport,
     doExport,
     exportProjectKit,
     importProjectKit,

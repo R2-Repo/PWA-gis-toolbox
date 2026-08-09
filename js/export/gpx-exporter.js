@@ -3,8 +3,9 @@
  * GPX is lossy: styling is dropped and polygons may become track outlines.
  */
 import { loadToGpx } from '../core/libs.js';
-import { isWorkspaceLayer } from '../core/data-model.js';
+import { isWorkspaceLayer, getLayerFeatureCount } from '../core/data-model.js';
 import { iterateWorkspaceFeatures } from '../workspace/workspace-store.js';
+import { MAX_MATERIALIZE_FEATURES } from '../tools/gis-layer-context.js';
 
 const EXPORT_BATCH_SIZE = 500;
 
@@ -52,6 +53,12 @@ async function _collectFeatureCollection(dataset, task) {
 }
 
 export async function exportGPX(dataset, options = {}, task) {
+    if (isWorkspaceLayer(dataset) && getLayerFeatureCount(dataset) > MAX_MATERIALIZE_FEATURES) {
+        throw new Error(
+            `GPX export is limited to ${MAX_MATERIALIZE_FEATURES.toLocaleString()} features. `
+            + 'Use GeoJSON or CSV for larger workspace layers.'
+        );
+    }
     task?.updateProgress(20, 'Preparing features...');
     const geojson = await _collectFeatureCollection(dataset, task);
 

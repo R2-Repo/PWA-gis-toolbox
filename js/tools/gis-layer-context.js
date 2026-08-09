@@ -14,8 +14,9 @@ import { loadAllWorkspaceFeatures } from '../workspace/workspace-store.js';
 
 /**
  * Workspace layers above this cannot be fully loaded into memory for GIS
- * tools/export — streamed high-capacity layers can exceed what the in-memory
- * pipeline supports.
+ * tools — streamed high-capacity layers can exceed what the in-memory
+ * pipeline supports. GeoJSON/CSV export uses the streamed path instead and
+ * is not bound by this cap.
  */
 export const MAX_MATERIALIZE_FEATURES = MAX_IMPORT_FEATURES;
 

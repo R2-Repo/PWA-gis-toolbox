@@ -3,8 +3,15 @@
  * Supports lat/lon columns for points, optional WKT column
  */
 import { loadPapaParse } from '../core/libs.js';
+import { isWorkspaceLayer } from '../core/data-model.js';
 
 export async function exportCSV(dataset, options = {}, task) {
+    // Workspace layers are routed through stream-export-service by exporter.js.
+    if (isWorkspaceLayer(dataset)) {
+        const { exportWorkspaceLayerStreamed } = await import('./stream-export-service.js');
+        return exportWorkspaceLayerStreamed(dataset, 'csv', options, task);
+    }
+
     const rows = getRowsForCSV(dataset, options);
     const papa = await loadPapaParse().catch(() => null);
     if (!papa?.unparse) {
