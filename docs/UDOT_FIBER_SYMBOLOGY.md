@@ -4,7 +4,7 @@ Shared ArcGIS/Bentley style pack for the [UDOT Fiber Network MapServer](https://
 
 ## Adding layers (PWA)
 
-Import → Live Layers → **UDOT Fiber Network** (vector viewport query) or ArcGIS REST import presets. Features are session / viewport only in the browser.
+Import → Live Layers → **UDOT Fiber Network** (vector viewport query). Features are session / viewport only in the browser.
 
 Styles live in `js/symbology/udot-fiber/`.
 
