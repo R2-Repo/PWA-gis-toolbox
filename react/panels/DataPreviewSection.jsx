@@ -22,7 +22,7 @@ export function DataPreviewSection({ layer, onShowDataTable }) {
             </div>
             <hr className="layer-info-divider" />
             <button className="btn btn-sm btn-secondary w-full" onClick={onShowDataTable}>
-                Show Data Table
+                Browse attribute table
             </button>
         </CollapsibleSection>
     );

@@ -5067,8 +5067,13 @@ export function showDataTable() {
     const layer = getActiveLayer();
     if (!layer) return;
 
+    if (isWorkspaceLayer(layer)) {
+        void showWorkspaceDataTable(layer);
+        return;
+    }
+
     const isSpatial = layer.type === 'spatial';
-    const features = isSpatial ? layer.geojson.features : [];
+    const features = isSpatial ? (layer.geojson?.features || []) : [];
     const totalCount = isSpatial ? features.length : (layer.rows || []).length;
     const displayRows = isSpatial
         ? features.slice(0, 500)
@@ -5108,6 +5113,69 @@ export function showDataTable() {
                         refreshUI();
                     }
                 }
+            });
+            watchOverlayUnmount(overlay, () => mounted.unmount?.());
+        }
+    });
+}
+
+/**
+ * Paged, attributes-only browser for IndexedDB workspace layers.
+ * Shows stored rows (incl. cold/detached fields) even when map display is thinned.
+ */
+async function showWorkspaceDataTable(layer) {
+    const workspaceLayerId = layer.workspaceLayerId || layer.id;
+    const totalHint = layer.schema?.featureCount
+        ?? layer.source?.fullFeatureCount
+        ?? null;
+    if (totalHint === 0) {
+        showToast('No data to show', 'warning');
+        return;
+    }
+
+    const { ATTRIBUTE_TABLE_PAGE_SIZE } = await import('../workspace/attribute-table.js');
+    const { loadWorkspaceAttributePage } = await import('../workspace/workspace-store.js');
+
+    const rootId = `data-table-react-${Date.now()}`;
+    showModal(`Data: ${layer.name}`, `<div id="${rootId}"></div>`, {
+        width: '90vw',
+        onMount: async (overlay) => {
+            const root = overlay.querySelector(`#${rootId}`);
+            if (!root) return;
+            const { mountDataTableDialog } = await import('../../react/tools/mountDataTableDialog.jsx');
+            const mounted = mountDataTableDialog(root, {
+                layerName: layer.name,
+                isSpatial: true,
+                readOnly: true,
+                includeColdDefault: true,
+                pageSize: ATTRIBUTE_TABLE_PAGE_SIZE,
+                statusNote: 'Stored workspace attributes — includes features not currently drawn on the map. Toggle cold fields to inspect detach-for-export values.',
+                onLoadPage: async ({ offset, limit, includeCold }) => {
+                    const page = await loadWorkspaceAttributePage(
+                        workspaceLayerId,
+                        offset,
+                        limit ?? ATTRIBUTE_TABLE_PAGE_SIZE,
+                        { includeCold }
+                    );
+                    if (!page.totalCount) {
+                        showToast('No data to show', 'warning');
+                    }
+                    // Prefer live schema field order from the app layer handle when present.
+                    const schemaFieldNames = (layer.schema?.fields || [])
+                        .map((f) => f?.name)
+                        .filter(Boolean);
+                    if (schemaFieldNames.length) {
+                        const { resolveAttributeTableFields } = await import('../workspace/attribute-table.js');
+                        page.fields = resolveAttributeTableFields({
+                            schemaFieldNames,
+                            coldFields: page.coldFields,
+                            sampleRows: page.rows,
+                            includeIdentity: true
+                        });
+                    }
+                    return page;
+                },
+                onClose: () => {}
             });
             watchOverlayUnmount(overlay, () => mounted.unmount?.());
         }

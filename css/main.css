@@ -1300,6 +1300,51 @@ textarea { resize: vertical; min-height: 60px; }
     text-overflow: ellipsis;
 }
 .data-table tr:hover td { background: rgba(255,255,255,0.03); }
+.data-table-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+.data-table-cold-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--text-muted);
+    cursor: pointer;
+    user-select: none;
+}
+.data-table-pager {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+.data-table-page-label { min-width: 5.5em; text-align: center; }
+.data-table-note {
+    padding: 6px 8px;
+    border-radius: var(--radius-sm);
+    background: rgba(61, 126, 166, 0.12);
+    border: 1px solid rgba(61, 126, 166, 0.28);
+    line-height: 1.4;
+}
+.data-table-cold-col { color: #c9a227; }
+.data-table-cold-tag {
+    font-size: 9px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+    opacity: 0.85;
+}
+.data-table-cold-cell { background: rgba(201, 162, 39, 0.08); }
+.data-table-identity-col,
+.data-table-identity-cell {
+    color: var(--text-muted);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 10px;
+}
 
 /* ========== Modal / Drawer ========== */
 .modal-overlay {
