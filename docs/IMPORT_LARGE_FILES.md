@@ -234,19 +234,36 @@ Stable feature identity and write/export paths for workspace layers:
 | `js/export/stream-export-service.js` | Streamed GeoJSON/CSV orchestration |
 | `js/workspace/workspace-store.js` | DB v2, lgid write, cold detach, attr updates |
 
-## Roadmap (subsequent builds)
+## Build 6 (shipped): workspace packaging & cleanup
+
+- **Toolbox Kit v2** — workspace layers above the 250k in-memory bundle
+  threshold pack via `writeWorkspaceLayerToKitZip` (chunk-at-a-time + sharded
+  `attributes/part-*.json` + `cold/` parts). OPFS originals ride along under
+  `sources/{opfsKey}/`. v1 kits still import. Deferred workspace folders
+  restore through `importDeferredWorkspaceFromZip` without assembling a full
+  bundle in RAM.
+- **Large Dataset Cleanup** GIS Widget — select a workspace layer, review
+  footprint (features, hot/cold fields, source size, quota), detach fields,
+  remove layer, optionally delete the preserved source.
+- **Storage Manager** — Guide → **Storage…** (also linked from the cleanup
+  wizard). Lists preserved OPFS sources with layer refs, quota bar, remove /
+  remove-unreferenced.
+
+### Files (Build 6)
+
+| File | Role |
+|---|---|
+| `js/workspace/workspace-store.js` | `writeWorkspaceLayerToKitZip`, `importWorkspaceLayerFromParts` |
+| `js/core/project-kit.js` | Kit format v2, deferred workspace pack/parse, sources |
+| `js/core/layer-restore.js` | Deferred workspace + OPFS source restore on kit import |
+| `js/workspace/storage-summary.js` | Quota + source inventory helpers |
+| `js/widgets/large-dataset-cleanup/` | Cleanup wizard engine + controller |
+| `react/widgets/LargeDatasetCleanupDialog.jsx` | Cleanup wizard UI |
+| `react/tools/StorageManagerDialog.jsx` | Storage manager UI |
 
 Notes: streaming Excel remains impractical (whole-workbook format) —
-convert-to-CSV guidance stands.
-
-### Build 6 — Workspace packaging & cleanup wizard
-
-- Large Dataset Cleanup Wizard as a GIS Widget (per `docs/WIDGET_AGENT_PLAYBOOK.md`)
-  once Builds 2–4 provide the primitives it needs.
-- `.gis-toolbox` kit: reference OPFS sources + chunked layers without
-  materializing bundles (lifts the 250k kit cap).
-- Storage manager UI: list/remove preserved sources (`listSourceFiles()`),
-  quota display.
+convert-to-CSV guidance stands. Kit bundle materialization cap remains for
+the legacy small-layer path; large layers use the streamed packer.
 
 ## Governing rules (unchanged from master plan)
 

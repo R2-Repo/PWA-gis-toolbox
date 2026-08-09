@@ -28,7 +28,12 @@ function HowToList({ tools }) {
     );
 }
 
-export function ToolGuideDialog({ isMobile = false, showTitle = true, onOpenUgrcSettings }) {
+export function ToolGuideDialog({
+    isMobile = false,
+    showTitle = true,
+    onOpenUgrcSettings,
+    onOpenStorageManager
+}) {
     return (
         <div>
             {showTitle ? <ToolGuideTitle isMobile={isMobile} /> : null}
@@ -53,15 +58,26 @@ export function ToolGuideDialog({ isMobile = false, showTitle = true, onOpenUgrc
                         </details>
                     );
                 })}
-                {typeof onOpenUgrcSettings === 'function' ? (
-                    <div style={{ marginTop: 8, paddingTop: 12, borderTop: '1px solid var(--border)' }}>
-                        <button
-                            type="button"
-                            className="btn btn-secondary btn-sm"
-                            onClick={() => onOpenUgrcSettings()}
-                        >
-                            UGRC API key…
-                        </button>
+                {(typeof onOpenUgrcSettings === 'function' || typeof onOpenStorageManager === 'function') ? (
+                    <div style={{ marginTop: 8, paddingTop: 12, borderTop: '1px solid var(--border)', display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                        {typeof onOpenStorageManager === 'function' ? (
+                            <button
+                                type="button"
+                                className="btn btn-secondary btn-sm"
+                                onClick={() => onOpenStorageManager()}
+                            >
+                                Storage…
+                            </button>
+                        ) : null}
+                        {typeof onOpenUgrcSettings === 'function' ? (
+                            <button
+                                type="button"
+                                className="btn btn-secondary btn-sm"
+                                onClick={() => onOpenUgrcSettings()}
+                            >
+                                UGRC API key…
+                            </button>
+                        ) : null}
                     </div>
                 ) : null}
             </div>

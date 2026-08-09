@@ -2,9 +2,13 @@
  * Shared layer reconstruction for session restore and Toolbox Kit import.
  */
 import { analyzeSchema, analyzeTableSchema } from './data-model.js';
-import { resolveLayerIdConflict } from './project-kit.js';
-import { importWorkspaceLayerBundle } from '../workspace/workspace-store.js';
+import { resolveLayerIdConflict, importDeferredWorkspaceFromZip } from './project-kit.js';
+import {
+    importWorkspaceLayerBundle,
+    importWorkspaceLayerFromParts
+} from '../workspace/workspace-store.js';
 import { isCoverageRasterLayer, rehydrateCoverageRasters } from './coverage-raster-layer.js';
+import { saveSourceFile } from '../workspace/source-file-store.js';
 
 /**
  * Build a live dataset object from a persisted layer record.
@@ -15,6 +19,8 @@ import { isCoverageRasterLayer, rehydrateCoverageRasters } from './coverage-rast
  *   workspaceBundle?: object,
  *   rasterSidecar?: { manifest: object[], pngBlobsByFile: Record<string, Blob> },
  *   importWorkspaceLayerBundle?: typeof importWorkspaceLayerBundle,
+ *   kitZip?: object,
+ *   folderKey?: string,
  *   newLayerId?: string
  * }} [payload]
  */
@@ -23,9 +29,22 @@ export async function buildDatasetFromSavedLayer(saved, payload = {}) {
 
     if (saved.type === 'spatial-chunked' || saved.storage === 'workspace') {
         const bundle = payload.workspaceBundle;
-        if (!bundle) return null;
-        const importFn = payload.importWorkspaceLayerBundle || importWorkspaceLayerBundle;
-        const meta = await importFn(bundle, { newLayerId: layerId });
+        let meta = null;
+        if (bundle?.deferred && payload.kitZip) {
+            meta = await importDeferredWorkspaceFromZip(payload.kitZip, payload.folderKey || saved.id, {
+                newLayerId: layerId,
+                importWorkspaceLayerFromParts
+            });
+        } else if (bundle && !bundle.deferred) {
+            const importFn = payload.importWorkspaceLayerBundle || importWorkspaceLayerBundle;
+            meta = await importFn(bundle, { newLayerId: layerId });
+        } else if (payload.kitZip && payload.folderKey) {
+            meta = await importDeferredWorkspaceFromZip(payload.kitZip, payload.folderKey, {
+                newLayerId: layerId,
+                importWorkspaceLayerFromParts
+            });
+        }
+        if (!meta) return null;
         return {
             id: layerId,
             name: saved.name || meta.name,
@@ -166,7 +185,8 @@ export async function prepareLayersFromKitSection(options) {
         layersSection,
         mode = 'replace',
         existingLayerIds = new Set(),
-        importWorkspaceLayerBundle: importWorkspace = importWorkspaceLayerBundle
+        importWorkspaceLayerBundle: importWorkspace = importWorkspaceLayerBundle,
+        kitZip = null
     } = options;
 
     const idMap = new Map();
@@ -174,6 +194,21 @@ export async function prepareLayersFromKitSection(options) {
     const datasets = [];
     const styles = { ...(layersSection.styles || {}) };
     const remappedStyles = {};
+
+    // Restore OPFS source sidecars before layers attach (so opfsKey resolves).
+    if (kitZip && layersSection.sources) {
+        for (const [key, entries] of Object.entries(layersSection.sources)) {
+            const entry = (entries || [])[0];
+            if (!entry?.path) continue;
+            const zipEntry = kitZip.file(entry.path);
+            if (!zipEntry) continue;
+            const buf = await zipEntry.async('arraybuffer');
+            const file = new File([buf], entry.fileName || 'source', {
+                type: 'application/octet-stream'
+            });
+            await saveSourceFile(key, file);
+        }
+    }
 
     for (const saved of layersSection.index || []) {
         let targetId = saved.id;
@@ -183,13 +218,18 @@ export async function prepareLayersFromKitSection(options) {
         usedIds.add(targetId);
         if (targetId !== saved.id) idMap.set(saved.id, targetId);
 
+        const wsBundle = layersSection.workspace?.[saved.id];
+        const deferredInfo = layersSection.workspaceDeferred?.[saved.id];
+
         const dataset = await buildDatasetFromSavedLayer(saved, {
             newLayerId: targetId,
             spatial: layersSection.spatial?.[saved.id],
             tableRows: layersSection.tables?.[saved.id],
-            workspaceBundle: layersSection.workspace?.[saved.id],
+            workspaceBundle: wsBundle,
             rasterSidecar: layersSection.rasters?.[saved.id],
-            importWorkspaceLayerBundle: importWorkspace
+            importWorkspaceLayerBundle: importWorkspace,
+            kitZip: (wsBundle?.deferred || deferredInfo) ? kitZip : null,
+            folderKey: deferredInfo?.folderKey || saved.id
         });
 
         if (!dataset) continue;
