@@ -136,10 +136,22 @@ export function preflightFiles(files) {
     };
 }
 
+/**
+ * Human-readable size with both KB and MB (binary, 1024-based).
+ * Example: 204800 KB / 200.0 MB
+ * @param {number} bytes
+ * @returns {string}
+ */
 export function formatBytes(bytes) {
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+    const n = Number(bytes);
+    if (!Number.isFinite(n) || n < 0) return '0 B';
+    if (n < 1024) return `${Math.round(n)} B`;
+
+    const kb = n / 1024;
+    const mb = n / (1024 * 1024);
+    const kbLabel = kb >= 100 ? kb.toFixed(0) : kb.toFixed(1);
+    const mbLabel = mb >= 1 ? mb.toFixed(1) : mb >= 0.1 ? mb.toFixed(2) : mb.toFixed(3);
+    return `${kbLabel} KB / ${mbLabel} MB`;
 }
 
 export default {

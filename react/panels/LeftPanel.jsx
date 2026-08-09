@@ -95,7 +95,6 @@ function LayerItemRow({
     const isSpatial = isSpatialLayer(layer);
     const isLive = isLiveVectorLayer(layer);
     const isService = isServiceLayer(layer);
-    const icon = isLive ? '🛰️' : isSpatial ? '🗺️' : isService ? '📡' : '📊';
     const count = isLive
         ? `${getLayerFeatureCount(layer).toLocaleString()} in view`
         : isSpatial
@@ -139,32 +138,8 @@ function LayerItemRow({
                         {layer.name}
                     </div>
                 </div>
-                <div className="layer-bottom-row">
-                    <button
-                        type="button"
-                        className="layer-drag-handle"
-                        title="Drag to reorder"
-                        aria-label="Drag to reorder layer"
-                        onPointerDown={(e) => onDragPointerDown(e, layer.id, idx)}
-                        onPointerMove={onDragPointerMove}
-                        onPointerUp={(e) => onFinishDrag(e, layer.id)}
-                        onPointerCancel={(e) => onFinishDrag(e, layer.id)}
-                    >
-                        <span aria-hidden>⋮⋮</span>
-                    </button>
-                    <input
-                        type="checkbox"
-                        className="layer-select-cb"
-                        checked={isSelected}
-                        aria-label={`Select ${layer.name}`}
-                        onClick={(e) => e.stopPropagation()}
-                        onChange={(e) => onToggleSelected(layer.id, e.target.checked)}
-                    />
-                    <span className="layer-icon" aria-hidden>{icon}</span>
-                    <div className="layer-meta">
-                        <span className="layer-meta-text">
-                            {count} · {fieldCount} fields
-                        </span>
+                <div className="layer-status-row">
+                    <div className="layer-badges">
                         {geomType ? <span className="badge badge-info">{geomType}</span> : null}
                         {layer._activeFilter ? (
                             <span
@@ -262,6 +237,35 @@ function LayerItemRow({
                                 }
                             ]}
                         />
+                    </div>
+                </div>
+                <div className="layer-footer-row">
+                    <div className="layer-select-stack">
+                        <button
+                            type="button"
+                            className="layer-drag-handle"
+                            title="Drag to reorder"
+                            aria-label="Drag to reorder layer"
+                            onPointerDown={(e) => onDragPointerDown(e, layer.id, idx)}
+                            onPointerMove={onDragPointerMove}
+                            onPointerUp={(e) => onFinishDrag(e, layer.id)}
+                            onPointerCancel={(e) => onFinishDrag(e, layer.id)}
+                        >
+                            <span aria-hidden>⋮⋮</span>
+                        </button>
+                        <input
+                            type="checkbox"
+                            className="layer-select-cb"
+                            checked={isSelected}
+                            aria-label={`Select ${layer.name}`}
+                            onClick={(e) => e.stopPropagation()}
+                            onChange={(e) => onToggleSelected(layer.id, e.target.checked)}
+                        />
+                    </div>
+                    <div className="layer-meta">
+                        <span className="layer-meta-text">
+                            {count} · {fieldCount} fields
+                        </span>
                     </div>
                 </div>
             </div>
@@ -465,36 +469,8 @@ export function LayerListPanel({
                                             {group.name}
                                         </div>
                                     </div>
-                                    <div className="layer-bottom-row">
-                                        <button
-                                            type="button"
-                                            className="layer-drag-handle"
-                                            title="Drag to reorder group"
-                                            aria-label="Drag to reorder group"
-                                            onPointerDown={(e) => handleGroupDragPointerDown(e, group.id, startIndex)}
-                                            onPointerMove={handleDragPointerMove}
-                                            onPointerUp={finishDrag}
-                                            onPointerCancel={finishDrag}
-                                        >
-                                            <span aria-hidden>⋮⋮</span>
-                                        </button>
-                                        <button
-                                            type="button"
-                                            className={['layer-group-toggle', group.collapsed ? 'collapsed' : ''].filter(Boolean).join(' ')}
-                                            title={group.collapsed ? 'Expand group' : 'Collapse group'}
-                                            aria-expanded={!group.collapsed}
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                actions.toggleGroupCollapsed(group.id);
-                                            }}
-                                        >
-                                            ▼
-                                        </button>
-                                        <span className="layer-group-icon" aria-hidden>📁</span>
-                                        <div className="layer-meta layer-group-meta">
-                                            <span className="layer-meta-text">
-                                                {group.source === 'import' ? 'Imported together' : 'Layer group'}
-                                            </span>
+                                    <div className="layer-status-row">
+                                        <div className="layer-badges">
                                             <span className="layer-group-count badge badge-info">
                                                 {children.length} layers
                                             </span>
@@ -536,6 +512,39 @@ export function LayerListPanel({
                                                     }
                                                 ]}
                                             />
+                                        </div>
+                                    </div>
+                                    <div className="layer-footer-row">
+                                        <div className="layer-select-stack">
+                                            <button
+                                                type="button"
+                                                className="layer-drag-handle"
+                                                title="Drag to reorder group"
+                                                aria-label="Drag to reorder group"
+                                                onPointerDown={(e) => handleGroupDragPointerDown(e, group.id, startIndex)}
+                                                onPointerMove={handleDragPointerMove}
+                                                onPointerUp={finishDrag}
+                                                onPointerCancel={finishDrag}
+                                            >
+                                                <span aria-hidden>⋮⋮</span>
+                                            </button>
+                                            <button
+                                                type="button"
+                                                className={['layer-group-toggle', group.collapsed ? 'collapsed' : ''].filter(Boolean).join(' ')}
+                                                title={group.collapsed ? 'Expand group' : 'Collapse group'}
+                                                aria-expanded={!group.collapsed}
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    actions.toggleGroupCollapsed(group.id);
+                                                }}
+                                            >
+                                                ▼
+                                            </button>
+                                        </div>
+                                        <div className="layer-meta layer-group-meta">
+                                            <span className="layer-meta-text">
+                                                {group.source === 'import' ? 'Imported together' : 'Layer group'}
+                                            </span>
                                         </div>
                                     </div>
                                 </div>
