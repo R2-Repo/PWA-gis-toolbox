@@ -83,6 +83,21 @@ export async function sniffFieldsFromFile(file) {
     if (!format) return [];
 
     if (format === 'zip' || format === 'kmz') {
+        // Preferred: central-directory + streamed head — works for archives of
+        // any size without extracting the whole zip.
+        try {
+            const { readZipEntries, chooseMainKmlZipEntry, readZipEntryHead } =
+                await import('./stream/zip-central-directory.js');
+            const entries = await readZipEntries(file);
+            const main = chooseMainKmlZipEntry(entries);
+            if (main) {
+                const head = await readZipEntryHead(file, main.entry, SAMPLE_BYTES);
+                const kmlFields = sniffKmlFieldNames(head);
+                if (kmlFields.length) return kmlFields;
+            }
+        } catch {
+            /* fall back to JSZip head sniff below */
+        }
         try {
             const buffer = await file.slice(0, Math.min(file.size, 512 * 1024)).arrayBuffer();
             const JSZipLib = await loadJSZip();

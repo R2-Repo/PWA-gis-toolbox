@@ -34,8 +34,9 @@ sequenced below.
 
 ### What it does
 
-Large **GeoJSON / JSON-FeatureCollection / CSV** files that the standard
-pipeline would reject now import through a streaming path:
+Large **GeoJSON / JSON-FeatureCollection / CSV / KML / KMZ / zipped-KML**
+files that the standard pipeline would reject now import through a streaming
+path:
 
 ```
 File (drag-drop or Import dialog)
@@ -43,6 +44,9 @@ File (drag-drop or Import dialog)
   → stream-import.worker  (reads File incrementally, never whole-file)
       GeoJSON: incremental FeatureCollection parser (feature-at-a-time)
       CSV:     PapaParse chunk streaming (rows → point features)
+      KML:     incremental placemark scanner → batched DOM+toGeoJSON convert
+      KMZ/zip: central-directory lookup → DecompressionStream on the main
+               KML entry only (icons/overlays are never extracted)
   → batches of ~1000 features posted to main thread (ack backpressure)
   → appendWorkspaceBatch → IndexedDB chunks + grid spatial index
   → original file preserved in OPFS (import-sources/)
@@ -85,13 +89,20 @@ Streamed layers above the materialization cap are **view/inspect/identify**
 layers: GIS tools and full export refuse with a clear message instead of
 crashing the tab. Streamed export lifts this in a later build.
 
-Known v1 constraints (deliberate scope):
+Known constraints (deliberate scope):
 
 - Large CSV must contain **lat/lon** columns (projected easting/northing and
   pure tables are refused with a clear message — reprojection and table
   storage stream in a later build).
-- Large KML/KMZ/Shapefile/Excel keep the existing caps (streaming XML/SHP
-  parse is Build 2).
+- Large KML/KMZ import as **simplified GIS layers** (`importMode: 'gis'`):
+  descriptions/balloon HTML, styleUrl, and embedded icons/overlays are not
+  kept — matching the Import Optimizer's recommendation for KML. Small/medium
+  KML keeps the existing preserve-mode path.
+- Streaming KMZ requires `DecompressionStream` (all evergreen browsers);
+  otherwise the archive falls back to the standard caps. ZIP64 archives are
+  not supported.
+- Large Shapefile/Excel keep the existing caps (streaming SHP parse is the
+  next build; Excel's whole-workbook format cannot stream).
 - Workflow-editor file-import nodes keep the standard-path caps.
 
 ### Files
@@ -101,8 +112,11 @@ Known v1 constraints (deliberate scope):
 | `js/import/stream/stream-policy.js` | Eligibility + partition (stream / standard / reject) |
 | `js/import/stream/stream-constants.js` | Tuning constants (dependency-free, shared with worker) |
 | `js/import/stream/geojson-stream-parser.js` | Incremental FeatureCollection parser (pure, tested) |
+| `js/import/stream/kml-stream-parser.js` | Incremental KML placemark/style scanner (CDATA/comment safe) |
+| `js/import/stream/kml-stream-convert.js` | Placemark blocks → GeoJSON (batched mini-docs, style context) |
+| `js/import/stream/zip-central-directory.js` | ZIP central-directory reader + per-entry DecompressionStream |
 | `js/import/stream/stream-import-service.js` | Worker orchestration, per-geometry-class workspace writes |
-| `js/workers/stream-import.worker.js` | Streaming parse (GeoJSON + CSV), batch/ack protocol |
+| `js/workers/stream-import.worker.js` | Streaming parse (GeoJSON, CSV, KML, KMZ), batch/ack protocol |
 | `js/tools/stream-import-flow.js` | Progress UI, map wiring, rollback, toasts |
 | `js/workspace/source-file-store.js` | OPFS original-source preservation |
 | `js/core/data-model.js` | `createSchemaAccumulator()` (incremental schema) |
@@ -112,21 +126,36 @@ Also in this build: workspace spatial-index `removeLayer` regression fix
 deletion (layer removal no longer loads every attribute record), workspace
 layers excluded from the in-memory import budget, and materialization guards.
 
+## Build 2 (shipped): streaming KML/KMZ + import choices
+
+- Streaming KML via an incremental placemark scanner (CDATA/comment/quote
+  safe) with batched DOM + toGeoJSON conversion in the worker; shared
+  Style/StyleMap/Schema context preserved for wrapping.
+- Streaming KMZ / zipped KML: the ZIP central directory is read from the file
+  tail, and only the main KML entry is stream-decompressed
+  (`DecompressionStream`) — embedded icons/images are never extracted.
+- Large KML/KMZ import as simplified GIS layers (gis mode strip).
+- Import dialog: stream files now show a high-capacity notice + the standard
+  field-selection step (head-sniffed fields); the filter is applied per
+  feature in the worker. A full-fields import is used when nothing is
+  deselected, so late-appearing fields are never dropped by accident.
+- KMZ field sniffing now uses the central directory, so it also works for
+  archives of any size.
+
 ## Roadmap (subsequent builds)
 
-### Build 2 — Preflight + more streaming formats
+### Build 3 — Streaming shapefile + remaining formats
 
-- Streaming KML/KMZ via SAX-style XML parsing in the worker (placemark at a
-  time); KMZ central-directory inspection without full extraction.
-- Streaming shapefile (fixed-length record format streams naturally).
-- Streaming Excel is not practical (whole-workbook format) — raise caps
-  moderately with worker parse, or convert-to-CSV guidance.
-- Preflight report surfaced in the Import dialog for large files: format,
-  estimated features/coords, field list, recommended mode (the master plan's
-  §7), building on `import-scan.js`.
-- Field selection (Keep / Drop) for streamed imports — apply in worker.
+- Streaming shapefile (fixed-length .shp records + .dbf rows in lockstep,
+  .prj reprojection via proj4) — zipped shapefiles ride the same
+  central-directory streaming as KMZ.
+- Streaming Excel is not practical (whole-workbook format) — convert-to-CSV
+  guidance or moderate cap raise with worker parse.
+- Deeper preflight report in the Import dialog (feature/coordinate estimates,
+  recommended mode) building on `import-scan.js`.
+- Streamed CSV reprojection (projected easting/northing with user-chosen CRS).
 
-### Build 3 — DuckDB-WASM + local MVT tiles (the Re:Earth pattern)
+### Build 4 — DuckDB-WASM + local MVT tiles (the Re:Earth pattern)
 
 - `js/data/duckdb/` internal infrastructure: lazy-loaded DuckDB-WASM manager
   (workers + OPFS-backed database), importer, spatial queries.
@@ -138,7 +167,7 @@ layers excluded from the in-memory import budget, and materialization guards.
   layers; the workspace store stays the source of truth (or migrates to
   Parquet in OPFS where beneficial).
 
-### Build 4 — Identity, cold attributes, streamed export
+### Build 5 — Identity, cold attributes, streamed export
 
 - `__lgid` immutable UID assigned at import, linking workspace records,
   display features, edits, and export restoration (master plan §5).
@@ -149,7 +178,7 @@ layers excluded from the in-memory import budget, and materialization guards.
 - Edit sessions for heavy layers (§23): edit a selection, write back to
   workspace chunks, invalidate affected viewport/tiles.
 
-### Build 5 — Workspace packaging & cleanup wizard
+### Build 6 — Workspace packaging & cleanup wizard
 
 - Large Dataset Cleanup Wizard as a GIS Widget (per `docs/WIDGET_AGENT_PLAYBOOK.md`)
   once Builds 2–4 provide the primitives it needs.
