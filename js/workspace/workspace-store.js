@@ -676,23 +676,226 @@ export async function getWorkspaceLayerAttributes(layerId) {
     return all.filter((rec) => rec.layerId === layerId);
 }
 
-/** Kit bundles above this are skipped — too large to assemble in memory. */
+/**
+ * Legacy in-memory kit path threshold. Layers above this use streamed kit
+ * packing (`writeWorkspaceLayerToKitZip`) instead of assembling a full bundle.
+ */
 export const MAX_BUNDLE_FEATURES = 250_000;
 
+/** Attribute/cold records per kit part file. */
+export const KIT_ATTR_PART_SIZE = 500;
+
 /**
- * Export full workspace layer payload for Toolbox Kit bundles.
+ * Export full workspace layer payload for Toolbox Kit bundles (small layers).
+ * Large layers should use `writeWorkspaceLayerToKitZip` instead.
  * @param {string} layerId
  */
 export async function exportWorkspaceLayerBundle(layerId) {
     const meta = await getWorkspaceLayer(layerId);
     if (!meta) return null;
     if ((meta.featureCount || 0) > MAX_BUNDLE_FEATURES) {
-        console.warn(`[Workspace] Layer ${layerId} has ${meta.featureCount} features — too large for a kit bundle, skipped`);
         return null;
     }
     const chunks = await loadWorkspaceChunks(meta.chunkIds || []);
     const attributes = await getWorkspaceLayerAttributes(layerId);
-    return { meta, chunks, attributes };
+    const cold = await _loadAllColdRecords(layerId);
+    return { meta, chunks, attributes, cold };
+}
+
+/**
+ * @param {string} layerId
+ * @returns {Promise<object[]>}
+ */
+async function _loadAllColdRecords(layerId) {
+    const idb = await openDB();
+    if (!idb.objectStoreNames.contains(STORE_COLD)) return [];
+    const rows = await new Promise((resolve, reject) => {
+        const tx = idb.transaction(STORE_COLD, 'readonly');
+        const r = tx.objectStore(STORE_COLD).getAll(
+            IDBKeyRange.bound(`${layerId}:lgid:`, `${layerId}:lgid:\uffff`)
+        );
+        r.onsuccess = () => resolve(r.result || []);
+        r.onerror = () => reject(r.error);
+    });
+    return rows;
+}
+
+/**
+ * Stream a workspace layer into an open JSZip instance without assembling a
+ * full in-memory bundle (chunks + sharded attributes + cold parts).
+ * @param {object} zip JSZip instance
+ * @param {string} folderKey kit folder id (usually layer.id)
+ * @param {string} layerId workspace layer id
+ * @param {{ onProgress?: (done: number, total: number, label?: string) => void }} [options]
+ * @returns {Promise<{ featureCount: number, attributeParts: number, coldParts: number }|null>}
+ */
+export async function writeWorkspaceLayerToKitZip(zip, folderKey, layerId, options = {}) {
+    const meta = await getWorkspaceLayer(layerId);
+    if (!meta) return null;
+
+    const base = `layers/workspace/${folderKey}`;
+    zip.file(`${base}/meta.json`, JSON.stringify(meta, null, 2));
+
+    const chunkIds = meta.chunkIds || [];
+    const featureCount = meta.featureCount || 0;
+    const attrParts = Math.max(1, Math.ceil(Math.max(featureCount, 1) / KIT_ATTR_PART_SIZE));
+    const totalSteps = chunkIds.length + attrParts + 1;
+    let done = 0;
+
+    for (const chunkId of chunkIds) {
+        const [chunk] = await loadWorkspaceChunks([chunkId]);
+        if (chunk) {
+            zip.file(`${base}/chunks/${chunk.id}.json`, JSON.stringify(chunk));
+        }
+        done++;
+        options.onProgress?.(done, totalSteps, 'chunks');
+        await new Promise((r) => setTimeout(r, 0));
+    }
+
+    let attributeParts = 0;
+    for (let start = 0; start < featureCount; start += KIT_ATTR_PART_SIZE) {
+        const count = Math.min(KIT_ATTR_PART_SIZE, featureCount - start);
+        const byIndex = await _loadAttributeRecordsRange(layerId, start, count);
+        const records = [...byIndex.values()];
+        const partName = `part-${String(attributeParts).padStart(5, '0')}.json`;
+        zip.file(`${base}/attributes/${partName}`, JSON.stringify(records));
+        attributeParts++;
+        done++;
+        options.onProgress?.(done, totalSteps, 'attributes');
+        await new Promise((r) => setTimeout(r, 0));
+    }
+    if (featureCount === 0) {
+        zip.file(`${base}/attributes/part-00000.json`, '[]');
+        attributeParts = 1;
+    }
+
+    let coldParts = 0;
+    const coldRecords = await _loadAllColdRecords(layerId);
+    for (let i = 0; i < coldRecords.length; i += KIT_ATTR_PART_SIZE) {
+        const slice = coldRecords.slice(i, i + KIT_ATTR_PART_SIZE);
+        const partName = `part-${String(coldParts).padStart(5, '0')}.json`;
+        zip.file(`${base}/cold/${partName}`, JSON.stringify(slice));
+        coldParts++;
+    }
+    done++;
+    options.onProgress?.(done, totalSteps, 'cold');
+
+    return { featureCount, attributeParts, coldParts };
+}
+
+/**
+ * Import a workspace layer from kit zip folder contents (meta + chunks +
+ * attribute/cold parts). Writes to IndexedDB incrementally.
+ * @param {{
+ *   meta: object,
+ *   loadChunks: () => AsyncGenerator<object>|Generator<object>|Promise<object[]>,
+ *   loadAttributeParts?: () => AsyncGenerator<object[]>|Generator<object[]>|Promise<object[][]>,
+ *   loadColdParts?: () => AsyncGenerator<object[]>|Generator<object[]>|Promise<object[][]>,
+ * }} parts
+ * @param {{ newLayerId?: string }} [options]
+ */
+export async function importWorkspaceLayerFromParts(parts, options = {}) {
+    const oldId = parts.meta.id;
+    const layerId = options.newLayerId || oldId;
+    const replaceId = (value) => (
+        typeof value === 'string' && oldId !== layerId
+            ? value.split(oldId).join(layerId)
+            : value
+    );
+
+    const existing = await getWorkspaceLayer(layerId);
+    if (existing) await removeWorkspaceLayer(layerId);
+
+    const idb = await openDB();
+    const idx = await _getSpatialIndex();
+    const meta = {
+        ...parts.meta,
+        id: layerId,
+        chunkIds: (parts.meta.chunkIds || []).map(replaceId)
+    };
+
+    {
+        const tx = idb.transaction(STORE_LAYERS, 'readwrite');
+        tx.objectStore(STORE_LAYERS).put(meta);
+        await new Promise((resolve, reject) => {
+            tx.oncomplete = resolve;
+            tx.onerror = () => reject(tx.error);
+        });
+    }
+
+    const chunkIter = await parts.loadChunks();
+    for await (const chunk of _asAsyncIterable(chunkIter)) {
+        const remapped = {
+            ...chunk,
+            id: replaceId(chunk.id),
+            layerId,
+            geojson: replaceId(chunk.geojson)
+        };
+        const tx = idb.transaction(STORE_CHUNKS, 'readwrite');
+        tx.objectStore(STORE_CHUNKS).put(remapped);
+        await new Promise((resolve, reject) => {
+            tx.oncomplete = resolve;
+            tx.onerror = () => reject(tx.error);
+        });
+        idx.insert(remapped.id, layerId, remapped.bbox, remapped.featureCount);
+    }
+
+    if (parts.loadAttributeParts) {
+        const attrIter = await parts.loadAttributeParts();
+        for await (const batch of _asAsyncIterable(attrIter)) {
+            const tx = idb.transaction(STORE_ATTRIBUTES, 'readwrite');
+            const store = tx.objectStore(STORE_ATTRIBUTES);
+            for (const attr of batch || []) {
+                store.put({
+                    ...attr,
+                    id: replaceId(attr.id),
+                    layerId
+                });
+            }
+            await new Promise((resolve, reject) => {
+                tx.oncomplete = resolve;
+                tx.onerror = () => reject(tx.error);
+            });
+        }
+    }
+
+    if (parts.loadColdParts && idb.objectStoreNames.contains(STORE_COLD)) {
+        const coldIter = await parts.loadColdParts();
+        for await (const batch of _asAsyncIterable(coldIter)) {
+            const tx = idb.transaction(STORE_COLD, 'readwrite');
+            const store = tx.objectStore(STORE_COLD);
+            for (const rec of batch || []) {
+                const lgid = rec.lgid;
+                store.put({
+                    ...rec,
+                    id: _coldId(layerId, lgid),
+                    layerId,
+                    lgid
+                });
+            }
+            await new Promise((resolve, reject) => {
+                tx.oncomplete = resolve;
+                tx.onerror = () => reject(tx.error);
+            });
+        }
+    }
+
+    markSpatialIndexDirty();
+    await flushSpatialIndexSave();
+    return meta;
+}
+
+async function* _asAsyncIterable(value) {
+    if (!value) return;
+    if (Array.isArray(value)) {
+        for (const item of value) yield item;
+        return;
+    }
+    if (typeof value[Symbol.asyncIterator] === 'function' || typeof value[Symbol.iterator] === 'function') {
+        yield* value;
+        return;
+    }
+    yield value;
 }
 
 /**
@@ -700,36 +903,18 @@ export async function exportWorkspaceLayerBundle(layerId) {
  * @param {{ newLayerId?: string }} [options]
  */
 export async function importWorkspaceLayerBundle(bundle, options = {}) {
-    const oldId = bundle.meta.id;
-    const layerId = options.newLayerId || oldId;
-    const remapped = oldId === layerId ? bundle : _remapWorkspaceBundle(bundle, layerId);
-
-    const existing = await getWorkspaceLayer(layerId);
-    if (existing) await removeWorkspaceLayer(layerId);
-
-    const idb = await openDB();
-    const idx = await _getSpatialIndex();
-    const meta = { ...remapped.meta, id: layerId };
-
-    const tx = idb.transaction([STORE_LAYERS, STORE_CHUNKS, STORE_ATTRIBUTES], 'readwrite');
-    tx.objectStore(STORE_LAYERS).put(meta);
-    for (const chunk of remapped.chunks) {
-        tx.objectStore(STORE_CHUNKS).put(chunk);
-    }
-    for (const attr of remapped.attributes) {
-        tx.objectStore(STORE_ATTRIBUTES).put(attr);
-    }
-    await new Promise((resolve, reject) => {
-        tx.oncomplete = resolve;
-        tx.onerror = () => reject(tx.error);
-    });
-
-    for (const chunk of remapped.chunks) {
-        idx.insert(chunk.id, layerId, chunk.bbox, chunk.featureCount);
-    }
-    markSpatialIndexDirty();
-    await flushSpatialIndexSave();
-    return meta;
+    return importWorkspaceLayerFromParts({
+        meta: bundle.meta,
+        async *loadChunks() {
+            for (const chunk of bundle.chunks || []) yield chunk;
+        },
+        async *loadAttributeParts() {
+            if (bundle.attributes?.length) yield bundle.attributes;
+        },
+        async *loadColdParts() {
+            if (bundle.cold?.length) yield bundle.cold;
+        }
+    }, options);
 }
 
 function _remapWorkspaceBundle(bundle, newLayerId) {
@@ -764,6 +949,8 @@ export function _resetWorkspaceCache() {
 export default {
     WORKSPACE_FEATURE_THRESHOLD,
     WORKSPACE_CHUNK_SIZE,
+    MAX_BUNDLE_FEATURES,
+    KIT_ATTR_PART_SIZE,
     createWorkspaceLayer,
     updateWorkspaceLayerMeta,
     appendWorkspaceBatch,
@@ -781,6 +968,8 @@ export default {
     getWorkspaceLayerBounds,
     getWorkspaceLayerAttributes,
     exportWorkspaceLayerBundle,
+    writeWorkspaceLayerToKitZip,
+    importWorkspaceLayerFromParts,
     importWorkspaceLayerBundle,
     flushSpatialIndexSave,
     markSpatialIndexDirty,

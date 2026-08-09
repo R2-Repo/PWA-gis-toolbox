@@ -91,7 +91,12 @@ import {
 } from '../core/project-kit.js';
 import { loadJSZip } from '../core/libs.js';
 import { loadPaletteFavorites, savePaletteFavorites } from '../map/palette-store.js';
-import { getWorkspaceLayer, exportWorkspaceLayerBundle } from '../workspace/workspace-store.js';
+import {
+    getWorkspaceLayer,
+    exportWorkspaceLayerBundle,
+    writeWorkspaceLayerToKitZip
+} from '../workspace/workspace-store.js';
+import { getSourceFile } from '../workspace/source-file-store.js';
 import { WorkflowStore } from '../workflow/workflow-store.js';
 import { buildWidgetActions } from '../widgets/registry.js';
 import { shouldSkipSessionRestore } from '../url/app-url-detector.js';
@@ -335,7 +340,8 @@ async function applyProjectKitSnapshot(snapshot, { sections, mode = 'replace' })
             const { datasets, styles, activeLayerId, idMap } = await prepareLayersFromKitSection({
                 layersSection: snapshot.layers,
                 mode,
-                existingLayerIds: new Set(getLayers().map((layer) => layer.id))
+                existingLayerIds: new Set(getLayers().map((layer) => layer.id)),
+                kitZip: snapshot._zip || null
             });
             layerIdMap = idMap;
             await _addRestoredDatasets(datasets, styles, activeLayerId, {
@@ -454,11 +460,23 @@ export async function exportProjectKit(options = {}) {
                 } : null,
                 preferences: { paletteFavorites: loadPaletteFavorites() },
                 widgets: serializeWidgetStore(),
-                exportWorkspaceLayerBundle
+                exportWorkspaceLayerBundle,
+                deferLargeWorkspace: true
             });
-            const blob = await packProjectKit(snapshot, JSZip, t);
+            const blob = await packProjectKit(snapshot, JSZip, t, {
+                writeWorkspaceLayer: (zip, folderKey, workspaceLayerId, helpers) =>
+                    writeWorkspaceLayerToKitZip(zip, folderKey, workspaceLayerId, helpers),
+                getSourceFile
+            });
             downloadProjectKit(blob, dialogResult.projectName || 'toolbox-project');
-            showToast('Toolbox Export saved.', 'success');
+            const deferredCount = Object.keys(snapshot.layers?.workspaceDeferred || {}).length;
+            const sourceCount = snapshot.manifest?.sourceKeys?.length || 0;
+            showToast(
+                deferredCount || sourceCount
+                    ? `Toolbox Export saved${deferredCount ? ` (${deferredCount} streamed workspace layer${deferredCount === 1 ? '' : 's'})` : ''}${sourceCount ? ` + ${sourceCount} source file${sourceCount === 1 ? '' : 's'}` : ''}.`
+                    : 'Toolbox Export saved.',
+                'success'
+            );
         });
     });
 }
@@ -4070,7 +4088,64 @@ export function getWidgetContext() {
         analyzeSchema,
         turf: globalThis.turf,
         platform,
-        services
+        services,
+        removeLayers: removeLayersWithConfirm,
+        openStorageManager
+    });
+}
+
+/**
+ * Browse / remove OPFS preserved import sources and show storage quota.
+ */
+export async function openStorageManager() {
+    const { showModal } = await import('../ui/modals.js');
+    const rootId = `storage-manager-${Date.now()}`;
+    showModal('Storage', `<div id="${rootId}"></div>`, {
+        width: '520px',
+        onMount: async (overlay, close) => {
+            const root = overlay.querySelector(`#${rootId}`);
+            if (!root) return;
+            const { mountStorageManagerDialog } = await import('../../react/tools/mountStorageManagerDialog.jsx');
+            const {
+                getStorageQuotaSummary,
+                listPreservedSourcesWithRefs,
+                removePreservedSource,
+                removeUnreferencedSources,
+                formatBytes
+            } = await import('../workspace/storage-summary.js');
+
+            const mounted = mountStorageManagerDialog(root, {
+                formatBytes,
+                onClose: () => close(),
+                onLoad: async () => ({
+                    quota: await getStorageQuotaSummary(),
+                    sources: await listPreservedSourcesWithRefs(getLayers())
+                }),
+                onRemove: async (key, { referenced } = {}) => {
+                    if (referenced) {
+                        const ok = await confirm(
+                            'Force remove source?',
+                            'One or more layers still reference this file. Remove the OPFS copy anyway? Layers stay on the map.',
+                            { layer: 'deferred' }
+                        );
+                        if (!ok) throw new Error('Cancelled');
+                        const result = await removePreservedSource(key, getLayers(), { force: true });
+                        if (!result.ok) throw new Error(result.reason || 'Remove failed');
+                        return;
+                    }
+                    const result = await removePreservedSource(key, getLayers(), { force: false });
+                    if (!result.ok) throw new Error(result.reason || 'Remove failed');
+                },
+                onRemoveUnreferenced: async () => {
+                    const n = await removeUnreferencedSources(getLayers());
+                    showToast(
+                        n ? `Removed ${n} unreferenced source file${n === 1 ? '' : 's'}` : 'No unreferenced sources',
+                        n ? 'success' : 'info'
+                    );
+                }
+            });
+            watchOverlayUnmount(overlay, () => mounted.unmount?.());
+        }
     });
 }
 
@@ -5277,12 +5352,20 @@ export function showToolInfo() {
     return showModal('Guide', `<div id="${rootId}"></div>`, {
         width: '560px',
         layer: 'splash',
-        onMount: async (overlay) => {
+        onMount: async (overlay, close) => {
             const root = overlay.querySelector(`#${rootId}`);
             if (!root) return;
             const { mountToolGuideDialog } = await import('../../react/tools/mountToolGuideDialog.jsx');
             const mounted = mountToolGuideDialog(root, {
-                showTitle: true
+                showTitle: true,
+                onOpenStorageManager: () => {
+                    close();
+                    void openStorageManager();
+                },
+                onOpenUgrcSettings: () => {
+                    close();
+                    void openUgrcKeySettings();
+                }
             });
             watchOverlayUnmount(overlay, () => mounted.unmount?.());
         }
@@ -5370,6 +5453,7 @@ const APP_ACTIONS = {
     mergeLayers: handleMergeLayers,
     showToolInfo,
     openUgrcKeySettings,
+    openStorageManager,
     // Selection
     toggleSelectionMode,
     clearSelection,

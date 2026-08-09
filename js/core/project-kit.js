@@ -11,7 +11,8 @@ import {
 } from './coverage-raster-layer.js';
 
 export const PROJECT_KIT_FORMAT = 'gis-toolbox-kit';
-export const PROJECT_KIT_FORMAT_VERSION = 1;
+/** v2: streamed workspace packing + OPFS source sidecars (v1 kits still import). */
+export const PROJECT_KIT_FORMAT_VERSION = 2;
 export const PROJECT_KIT_EXTENSION = '.gis-toolbox';
 export const PROJECT_KIT_LEGACY_EXTENSION = '.gtbx';
 export const PROJECT_KIT_DISPLAY_NAME = 'Toolbox Kit';
@@ -103,6 +104,8 @@ export function resolveLayerIdConflict(id, existingIds) {
  *   preferences?: object|null,
  *   widgets?: { activeWidgets?: object[] }|null,
  *   exportWorkspaceLayerBundle?: (layerId: string) => Promise<object|null>,
+ *   deferLargeWorkspace?: boolean,
+ *   maxBundleFeatures?: number,
  *   projectName?: string
  * }} options
  */
@@ -123,8 +126,14 @@ export async function buildProjectKitSnapshot(options) {
             options.activeLayerId,
             options.layerStyles,
             options.exportWorkspaceLayerBundle,
-            options.layerGroups
+            options.layerGroups,
+            {
+                deferLargeWorkspace: options.deferLargeWorkspace !== false,
+                maxBundleFeatures: options.maxBundleFeatures
+            }
         );
+        snapshot.manifest.hasDeferredWorkspace = Object.keys(snapshot.layers.workspaceDeferred || {}).length > 0;
+        snapshot.manifest.sourceKeys = collectSourceKeys(options.layers);
     }
 
     if (sections.includes('map') && options.map) {
@@ -179,12 +188,36 @@ function buildWorkflowConfig(pipeline, nodeCache = {}) {
     };
 }
 
-async function gatherLayerSection(layers, activeLayerId, layerStyles, exportWorkspaceLayerBundle, layerGroups = []) {
+function collectSourceKeys(layers = []) {
+    const keys = [];
+    const seen = new Set();
+    for (const layer of layers || []) {
+        const key = layer?.source?.opfsKey;
+        if (!key || seen.has(key)) continue;
+        seen.add(key);
+        keys.push(key);
+    }
+    return keys;
+}
+
+async function gatherLayerSection(
+    layers,
+    activeLayerId,
+    layerStyles,
+    exportWorkspaceLayerBundle,
+    layerGroups = [],
+    opts = {}
+) {
     const index = [];
     const spatial = {};
     const tables = {};
     const workspace = {};
+    const workspaceDeferred = {};
     const rasters = {};
+    const maxBundle = Number.isFinite(opts.maxBundleFeatures)
+        ? opts.maxBundleFeatures
+        : 250_000;
+    const deferLarge = opts.deferLargeWorkspace !== false;
 
     for (const layer of layers) {
         let saved = serializeLayerForPersistence(layer);
@@ -206,10 +239,24 @@ async function gatherLayerSection(layers, activeLayerId, layerStyles, exportWork
             spatial[layer.id] = layer.geojson;
         } else if (layer.type === 'table' && layer.rows) {
             tables[layer.id] = layer.rows;
-        } else if ((layer.type === 'spatial-chunked' || layer.storage === 'workspace') && exportWorkspaceLayerBundle) {
+        } else if (layer.type === 'spatial-chunked' || layer.storage === 'workspace') {
             const wsId = layer.workspaceLayerId || layer.id;
-            const bundle = await exportWorkspaceLayerBundle(wsId);
-            if (bundle) workspace[layer.id] = bundle;
+            const featureCount = layer.schema?.featureCount
+                ?? layer.source?.fullFeatureCount
+                ?? 0;
+            if (deferLarge && featureCount > maxBundle) {
+                workspaceDeferred[layer.id] = { workspaceLayerId: wsId, featureCount };
+            } else if (exportWorkspaceLayerBundle) {
+                const bundle = await exportWorkspaceLayerBundle(wsId);
+                if (bundle) {
+                    workspace[layer.id] = bundle;
+                } else if (deferLarge) {
+                    // Bundle path refused (oversized / missing) — stream at pack time.
+                    workspaceDeferred[layer.id] = { workspaceLayerId: wsId, featureCount };
+                }
+            } else if (deferLarge) {
+                workspaceDeferred[layer.id] = { workspaceLayerId: wsId, featureCount };
+            }
         }
     }
 
@@ -221,6 +268,7 @@ async function gatherLayerSection(layers, activeLayerId, layerStyles, exportWork
         spatial,
         tables,
         workspace,
+        workspaceDeferred,
         rasters
     };
 }
@@ -234,8 +282,12 @@ function normalizeSections(sections) {
  * @param {object} snapshot
  * @param {object} JSZipLib
  * @param {{ updateProgress?: (n:number,s?:string)=>void }} [task]
+ * @param {{
+ *   writeWorkspaceLayer?: (zip: object, folderKey: string, workspaceLayerId: string, helpers: object) => Promise<any>,
+ *   getSourceFile?: (key: string) => Promise<File|null>,
+ * }} [packOptions]
  */
-export async function packProjectKit(snapshot, JSZipLib, task) {
+export async function packProjectKit(snapshot, JSZipLib, task, packOptions = {}) {
     if (!JSZipLib) throw new AppError('JSZip library not loaded', ErrorCategory.PARSE_FAILED);
     const zip = new JSZipLib();
     task?.updateProgress?.(5, 'Writing manifest…');
@@ -264,7 +316,31 @@ export async function packProjectKit(snapshot, JSZipLib, task) {
             if (bundle.attributes?.length) {
                 zip.file(`layers/workspace/${id}/attributes.json`, JSON.stringify(bundle.attributes));
             }
+            if (bundle.cold?.length) {
+                zip.file(`layers/workspace/${id}/cold.json`, JSON.stringify(bundle.cold));
+            }
         }
+
+        const deferred = Object.entries(snapshot.layers.workspaceDeferred || {});
+        if (deferred.length && typeof packOptions.writeWorkspaceLayer === 'function') {
+            let i = 0;
+            for (const [folderKey, info] of deferred) {
+                i++;
+                task?.updateProgress?.(
+                    20 + Math.round((i / deferred.length) * 35),
+                    `Packing workspace layer ${i}/${deferred.length}…`
+                );
+                await packOptions.writeWorkspaceLayer(zip, folderKey, info.workspaceLayerId, {
+                    onProgress: (done, total, label) => {
+                        task?.updateProgress?.(
+                            20 + Math.round((i / deferred.length) * 35),
+                            `Workspace ${folderKey}: ${label || 'writing'} ${done}/${total}`
+                        );
+                    }
+                });
+            }
+        }
+
         for (const [layerId, coverageRasters] of Object.entries(snapshot.layers.rasters || {})) {
             const manifest = stripCoverageRasterDataUrls(coverageRasters);
             zip.file(`layers/rasters/${layerId}/manifest.json`, JSON.stringify(manifest, null, 2));
@@ -274,6 +350,28 @@ export async function packProjectKit(snapshot, JSZipLib, task) {
                 const file = manifest[index]?.file || `${index}.png`;
                 zip.file(`layers/rasters/${layerId}/${file}`, bytes);
             });
+        }
+
+        if (typeof packOptions.getSourceFile === 'function') {
+            const keys = snapshot.manifest?.sourceKeys || collectSourceKeys(
+                (snapshot.layers.index || []).map((entry) => ({ source: entry.source }))
+            );
+            let n = 0;
+            for (const key of keys) {
+                const file = await packOptions.getSourceFile(key);
+                if (!file) continue;
+                n++;
+                task?.updateProgress?.(58 + Math.min(10, n), `Packing source ${n}…`);
+                const safeName = String(file.name || 'source').replace(/[/\\:*?"<>|]/g, '_').slice(0, 150);
+                const buf = await file.arrayBuffer();
+                zip.file(`sources/${key}/${safeName}`, buf);
+            }
+            if (n > 0) {
+                zip.file('sources/index.json', JSON.stringify({
+                    count: n,
+                    keys: keys.filter(Boolean)
+                }, null, 2));
+            }
         }
     }
 
@@ -329,7 +427,16 @@ export async function parseProjectKit(input, JSZipLib, task) {
     }
 
     const sections = normalizeSections(manifest.sections);
-    const snapshot = { manifest, layers: null, map: null, workflow: null, preferences: null, widgets: null };
+    const snapshot = {
+        manifest,
+        layers: null,
+        map: null,
+        workflow: null,
+        preferences: null,
+        widgets: null,
+        /** Retained for deferred workspace/source import (not serialized). */
+        _zip: zip
+    };
 
     if (sections.includes('layers') && zip.file('layers/index.json')) {
         task?.updateProgress?.(30, 'Loading layers…');
@@ -370,7 +477,9 @@ async function parseLayerSection(zip) {
     const spatial = {};
     const tables = {};
     const workspace = {};
+    const workspaceDeferred = {};
     const rasters = {};
+    const sources = {};
 
     const paths = Object.keys(zip.files);
     for (const path of paths) {
@@ -388,18 +497,36 @@ async function parseLayerSection(zip) {
         if (wsMetaMatch) {
             const layerKey = wsMetaMatch[1];
             const meta = JSON.parse(await zip.file(path).async('string'));
-            const chunks = [];
-            const chunkPrefix = `layers/workspace/${layerKey}/chunks/`;
-            for (const chunkPath of paths) {
-                if (chunkPath.startsWith(chunkPrefix) && chunkPath.endsWith('.json')) {
-                    chunks.push(JSON.parse(await zip.file(chunkPath).async('string')));
+            const featureCount = meta.featureCount || 0;
+            const hasAttrParts = paths.some((p) => p.startsWith(`layers/workspace/${layerKey}/attributes/part-`));
+            const useDeferred = hasAttrParts || featureCount > 250_000;
+
+            if (useDeferred) {
+                workspaceDeferred[layerKey] = {
+                    workspaceLayerId: meta.id || layerKey,
+                    featureCount,
+                    folderKey: layerKey
+                };
+                // Keep meta-only stub so index restore can find the folder.
+                workspace[layerKey] = { meta, deferred: true };
+            } else {
+                const chunks = [];
+                const chunkPrefix = `layers/workspace/${layerKey}/chunks/`;
+                for (const chunkPath of paths) {
+                    if (chunkPath.startsWith(chunkPrefix) && chunkPath.endsWith('.json')) {
+                        chunks.push(JSON.parse(await zip.file(chunkPath).async('string')));
+                    }
                 }
+                const attrPath = `layers/workspace/${layerKey}/attributes.json`;
+                const attributes = zip.file(attrPath)
+                    ? JSON.parse(await zip.file(attrPath).async('string'))
+                    : [];
+                const coldPath = `layers/workspace/${layerKey}/cold.json`;
+                const cold = zip.file(coldPath)
+                    ? JSON.parse(await zip.file(coldPath).async('string'))
+                    : [];
+                workspace[layerKey] = { meta, chunks, attributes, cold };
             }
-            const attrPath = `layers/workspace/${layerKey}/attributes.json`;
-            const attributes = zip.file(attrPath)
-                ? JSON.parse(await zip.file(attrPath).async('string'))
-                : [];
-            workspace[layerKey] = { meta, chunks, attributes };
             continue;
         }
         const rasterManifestMatch = path.match(/^layers\/rasters\/([^/]+)\/manifest\.json$/);
@@ -417,6 +544,14 @@ async function parseLayerSection(zip) {
             }
             rasters[layerKey] = { manifest, pngBlobsByFile };
         }
+        const sourceMatch = path.match(/^sources\/([^/]+)\/(.+)$/);
+        if (sourceMatch && !path.endsWith('/')) {
+            const key = sourceMatch[1];
+            if (key === 'index.json' || path === 'sources/index.json') continue;
+            const fileName = sourceMatch[2];
+            if (!sources[key]) sources[key] = [];
+            sources[key].push({ path, fileName });
+        }
     }
 
     return {
@@ -427,8 +562,63 @@ async function parseLayerSection(zip) {
         spatial,
         tables,
         workspace,
-        rasters
+        workspaceDeferred,
+        rasters,
+        sources
     };
+}
+
+/**
+ * Load a deferred workspace folder from an open kit zip into IndexedDB.
+ * @param {object} zip
+ * @param {string} folderKey
+ * @param {{ newLayerId?: string, importWorkspaceLayerFromParts: Function }} options
+ */
+export async function importDeferredWorkspaceFromZip(zip, folderKey, options) {
+    const base = `layers/workspace/${folderKey}`;
+    const metaRaw = await zip.file(`${base}/meta.json`)?.async('string');
+    if (!metaRaw) return null;
+    const meta = JSON.parse(metaRaw);
+    const paths = Object.keys(zip.files);
+
+    const chunkPaths = paths
+        .filter((p) => p.startsWith(`${base}/chunks/`) && p.endsWith('.json'))
+        .sort();
+    const attrPartPaths = paths
+        .filter((p) => p.startsWith(`${base}/attributes/part-`) && p.endsWith('.json'))
+        .sort();
+    const coldPartPaths = paths
+        .filter((p) => p.startsWith(`${base}/cold/part-`) && p.endsWith('.json'))
+        .sort();
+    const coldMono = zip.file(`${base}/cold.json`);
+
+    return options.importWorkspaceLayerFromParts({
+        meta,
+        async *loadChunks() {
+            for (const chunkPath of chunkPaths) {
+                yield JSON.parse(await zip.file(chunkPath).async('string'));
+            }
+        },
+        async *loadAttributeParts() {
+            if (attrPartPaths.length) {
+                for (const partPath of attrPartPaths) {
+                    yield JSON.parse(await zip.file(partPath).async('string'));
+                }
+                return;
+            }
+            const mono = zip.file(`${base}/attributes.json`);
+            if (mono) yield JSON.parse(await mono.async('string'));
+        },
+        async *loadColdParts() {
+            if (coldPartPaths.length) {
+                for (const partPath of coldPartPaths) {
+                    yield JSON.parse(await zip.file(partPath).async('string'));
+                }
+                return;
+            }
+            if (coldMono) yield JSON.parse(await coldMono.async('string'));
+        }
+    }, { newLayerId: options.newLayerId });
 }
 
 /**
@@ -481,6 +671,7 @@ export default {
     buildProjectKitSnapshot,
     packProjectKit,
     parseProjectKit,
+    importDeferredWorkspaceFromZip,
     downloadProjectKit,
     summarizeProjectKit
 };
