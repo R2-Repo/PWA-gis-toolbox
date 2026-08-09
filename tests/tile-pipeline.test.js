@@ -1,0 +1,182 @@
+import { describe, expect, it } from 'vitest';
+import Protobuf from 'pbf';
+import { VectorTile } from '@mapbox/vector-tile';
+import { tileToBBox, padBBox, bboxIntersects, featureBBox, degreesPerPixel } from '../js/map/tiles/tile-math.js';
+import { selectTileFeatures, sampleChunksForTile } from '../js/map/tiles/tile-feature-select.js';
+import { buildTileFromFeatures, TILE_SOURCE_LAYER } from '../js/map/tiles/tile-builder.js';
+
+function decodeTile(bytes) {
+    const tile = new VectorTile(new Protobuf(bytes));
+    const layer = tile.layers[TILE_SOURCE_LAYER];
+    if (!layer) return [];
+    const out = [];
+    for (let i = 0; i < layer.length; i++) out.push(layer.feature(i));
+    return out;
+}
+
+function pt(lon, lat, props = {}) {
+    return { type: 'Feature', geometry: { type: 'Point', coordinates: [lon, lat] }, properties: props };
+}
+
+describe('tile-math', () => {
+    it('computes the world tile at z0', () => {
+        const [w, s, e, n] = tileToBBox(0, 0, 0);
+        expect(w).toBe(-180);
+        expect(e).toBe(180);
+        expect(n).toBeCloseTo(85.051128, 4);
+        expect(s).toBeCloseTo(-85.051128, 4);
+    });
+
+    it('computes z1 quadrants', () => {
+        const nw = tileToBBox(1, 0, 0);
+        expect(nw[0]).toBe(-180);
+        expect(nw[2]).toBe(0);
+        expect(nw[1]).toBeCloseTo(0, 6);
+        const se = tileToBBox(1, 1, 1);
+        expect(se[0]).toBe(0);
+        expect(se[3]).toBeCloseTo(0, 6);
+    });
+
+    it('locates Salt Lake City in the right z12 tile', () => {
+        // SLC ~ (-111.89, 40.76) → z12 tile x=774, y=1539
+        const bbox = tileToBBox(12, 774, 1539);
+        expect(bboxIntersects(bbox, [-111.9, 40.75, -111.88, 40.77])).toBe(true);
+    });
+
+    it('padBBox expands symmetrically', () => {
+        const padded = padBBox([0, 0, 10, 10], 0.1);
+        expect(padded).toEqual([-1, -1, 11, 11]);
+    });
+
+    it('featureBBox computes and caches', () => {
+        const f = pt(5, 6);
+        expect(featureBBox(f)).toEqual([5, 6, 5, 6]);
+        expect(f.__bbox).toEqual([5, 6, 5, 6]);
+        expect(featureBBox({ type: 'Feature', geometry: null, properties: {} })).toBeNull();
+    });
+
+    it('degreesPerPixel halves per zoom', () => {
+        expect(degreesPerPixel(1)).toBeCloseTo(degreesPerPixel(0) / 2);
+    });
+});
+
+describe('selectTileFeatures', () => {
+    const tileBbox = [-112, 40, -111, 41];
+
+    it('keeps features inside and drops features outside', () => {
+        const chunks = [{ features: [pt(-111.5, 40.5, { id: 1 }), pt(-100, 30, { id: 2 })] }];
+        const { features } = selectTileFeatures(chunks, tileBbox, 12);
+        expect(features.map((f) => f.properties.id)).toEqual([1]);
+    });
+
+    it('drops sub-pixel polygons at low zoom but keeps them at high zoom', () => {
+        const tinyPoly = {
+            type: 'Feature',
+            properties: { id: 'tiny' },
+            geometry: {
+                type: 'Polygon',
+                coordinates: [[[-111.5, 40.5], [-111.4999, 40.5], [-111.4999, 40.5001], [-111.5, 40.5]]]
+            }
+        };
+        const low = selectTileFeatures([{ features: [tinyPoly] }], tileBbox, 4);
+        expect(low.features).toHaveLength(0);
+        const high = selectTileFeatures([{ features: [tinyPoly] }], tileBbox, 16);
+        expect(high.features).toHaveLength(1);
+    });
+
+    it('always keeps points regardless of zoom', () => {
+        const { features } = selectTileFeatures([{ features: [pt(-111.5, 40.5)] }], tileBbox, 0);
+        expect(features).toHaveLength(1);
+    });
+
+    it('stride-samples evenly above the cap', () => {
+        const many = [];
+        for (let i = 0; i < 1000; i++) many.push(pt(-111.5, 40.5, { i }));
+        const { features, sampled, candidateCount } = selectTileFeatures(
+            [{ features: many }], tileBbox, 10, { maxFeatures: 100 }
+        );
+        expect(sampled).toBe(true);
+        expect(candidateCount).toBe(1000);
+        expect(features).toHaveLength(100);
+        // Even spread: first from the head, last from the tail.
+        expect(features[0].properties.i).toBe(0);
+        expect(features[99].properties.i).toBeGreaterThan(950);
+    });
+});
+
+describe('sampleChunksForTile', () => {
+    it('keeps all chunks when the tile budget already fits', () => {
+        const ids = Array.from({ length: 100 }, (_, i) => `c${i}`);
+        const { chunkIds, sampled } = sampleChunksForTile(ids, 10_000, { maxFeatures: 20_000, maxChunks: 64 });
+        expect(chunkIds).toHaveLength(100);
+        expect(sampled).toBe(false);
+    });
+
+    it('strides chunks for massive overview tiles', () => {
+        // 1M features across 1000 chunks (1000 each) — a z0 tile.
+        const ids = Array.from({ length: 1000 }, (_, i) => `c${i}`);
+        const { chunkIds, sampled } = sampleChunksForTile(ids, 1_000_000, { maxFeatures: 20_000, maxChunks: 64 });
+        expect(sampled).toBe(true);
+        expect(chunkIds.length).toBeLessThanOrEqual(64);
+        expect(chunkIds[0]).toBe('c0');
+        // Spread across the whole range, not just the head.
+        expect(Number(chunkIds[chunkIds.length - 1].slice(1))).toBeGreaterThan(900);
+    });
+});
+
+describe('buildTileFromFeatures', () => {
+    it('encodes a point with properties into a decodable MVT', () => {
+        const bytes = buildTileFromFeatures(
+            [pt(-111.89, 40.76, { name: 'SLC', _featureIndex: 7, _datasetId: 'ds_1' })],
+            12, 774, 1539
+        );
+        expect(bytes).toBeInstanceOf(Uint8Array);
+        const features = decodeTile(bytes);
+        expect(features).toHaveLength(1);
+        expect(features[0].properties.name).toBe('SLC');
+        expect(features[0].properties._featureIndex).toBe(7);
+        expect(features[0].properties._datasetId).toBe('ds_1');
+        // Geometry round-trip
+        const geo = features[0].toGeoJSON(774, 1539, 12);
+        expect(geo.geometry.coordinates[0]).toBeCloseTo(-111.89, 2);
+        expect(geo.geometry.coordinates[1]).toBeCloseTo(40.76, 2);
+    });
+
+    it('returns null for empty input and for tiles with no intersecting features', () => {
+        expect(buildTileFromFeatures([], 5, 1, 1)).toBeNull();
+        expect(buildTileFromFeatures([pt(-111.89, 40.76)], 12, 0, 0)).toBeNull();
+    });
+
+    it('clips polygons that straddle the tile edge', () => {
+        // Polygon spanning two z12 tiles — each tile gets a clipped piece.
+        const poly = {
+            type: 'Feature',
+            properties: { id: 'p' },
+            geometry: {
+                type: 'Polygon',
+                coordinates: [[
+                    [-111.95, 40.74], [-111.80, 40.74], [-111.80, 40.78], [-111.95, 40.78], [-111.95, 40.74]
+                ]]
+            }
+        };
+        const a = buildTileFromFeatures([poly], 12, 774, 1539);
+        const b = buildTileFromFeatures([poly], 12, 775, 1539);
+        expect(a).toBeInstanceOf(Uint8Array);
+        expect(b).toBeInstanceOf(Uint8Array);
+        expect(decodeTile(a)[0].properties.id).toBe('p');
+        expect(decodeTile(b)[0].properties.id).toBe('p');
+    });
+
+    it('handles many features quickly', () => {
+        const many = [];
+        for (let i = 0; i < 20_000; i++) {
+            many.push(pt(-112 + (i % 200) * 0.005, 40 + Math.floor(i / 200) * 0.005, { i }));
+        }
+        const start = Date.now();
+        const bytes = buildTileFromFeatures(many, 8, 48, 96);
+        const elapsed = Date.now() - start;
+        expect(bytes).toBeInstanceOf(Uint8Array);
+        expect(decodeTile(bytes).length).toBeGreaterThan(1000);
+        expect(elapsed).toBeLessThan(3000);
+    });
+});
