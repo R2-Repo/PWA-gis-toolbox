@@ -1,16 +1,15 @@
 /**
- * GeoJSON exporter — supports workspace-backed layers via batched read.
+ * GeoJSON exporter — supports workspace-backed layers via streamed path.
  */
 import { withBakedSimpleStyle } from './style-baker.js';
 import { isWorkspaceLayer } from '../core/data-model.js';
-import { iterateWorkspaceFeatures } from '../workspace/workspace-store.js';
-
-const EXPORT_BATCH_SIZE = 500;
 
 function _cleanFeatureProperties(styled, layerStyle) {
     return Object.fromEntries(
         Object.entries(styled.properties || {}).filter(([k]) => {
             if (k === '_thumbnailDataUrl') return true;
+            // Stable workspace identity — kept for export restoration / reimport.
+            if (k === '__lgid') return true;
             return !k.startsWith('_');
         }).map(([k, v]) => [k === '_thumbnailDataUrl' ? 'photo' : k, v])
     );
@@ -24,38 +23,14 @@ function _mapFeatureForExport(f, layerStyle) {
     };
 }
 
-async function _exportWorkspaceGeoJSON(dataset, layerStyle, options, task) {
-    const layerId = dataset.workspaceLayerId || dataset.id;
-    const parts = ['{"type":"FeatureCollection","features":['];
-    let first = true;
-    let offset = 0;
-    let total = 0;
-
-    while (true) {
-        const batch = await iterateWorkspaceFeatures(layerId, offset, EXPORT_BATCH_SIZE);
-        if (!batch.length) break;
-        for (const f of batch) {
-            const out = _mapFeatureForExport(f, layerStyle);
-            parts.push(first ? '' : ',', JSON.stringify(out));
-            first = false;
-            total++;
-        }
-        offset += batch.length;
-        task?.updateProgress(30 + Math.min(55, Math.round((offset / Math.max(offset + 1000, 1)) * 55)), `Exporting… ${total.toLocaleString()} features`);
-        if (batch.length < EXPORT_BATCH_SIZE) break;
-    }
-
-    parts.push(']}');
-    task?.updateProgress(90, 'Done');
-    const text = options.minify ? parts.join('') : parts.join('').replace(/},\{/g, '},\n{');
-    return { text, mimeType: 'application/geo+json' };
-}
-
 export async function exportGeoJSON(dataset, options = {}, task) {
     const layerStyle = options.style || null;
 
+    // Workspace layers are routed through stream-export-service by exporter.js.
+    // Keep a thin fallback for direct callers.
     if (isWorkspaceLayer(dataset)) {
-        return _exportWorkspaceGeoJSON(dataset, layerStyle, options, task);
+        const { exportWorkspaceLayerStreamed } = await import('./stream-export-service.js');
+        return exportWorkspaceLayerStreamed(dataset, 'geojson', { ...options, style: layerStyle }, task);
     }
 
     const source = dataset.geojson || {

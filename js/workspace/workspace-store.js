@@ -3,12 +3,23 @@
  */
 import { GridSpatialIndex, bboxFromFeatures } from './spatial-index.js';
 import { filterProperties } from '../import/import-field-filter.js';
+import {
+    LGID_PROP,
+    ensureFeatureLgid,
+    buildDisplayIdentityProps
+} from './feature-identity.js';
+import {
+    joinHotColdProperties,
+    detachFieldsFromHot,
+    mergeColdFieldNames
+} from './cold-attributes.js';
 
 const DB_NAME = 'gis-toolbox-workspace';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const STORE_LAYERS = 'layers';
 const STORE_CHUNKS = 'chunks';
 const STORE_ATTRIBUTES = 'attributes';
+const STORE_COLD = 'cold_attributes';
 const STORE_INDEX = 'spatial_index';
 
 /** Feature count above which imports use workspace storage. */
@@ -36,6 +47,9 @@ function openDB() {
             }
             if (!idb.objectStoreNames.contains(STORE_ATTRIBUTES)) {
                 idb.createObjectStore(STORE_ATTRIBUTES, { keyPath: 'id' });
+            }
+            if (!idb.objectStoreNames.contains(STORE_COLD)) {
+                idb.createObjectStore(STORE_COLD, { keyPath: 'id' });
             }
             if (!idb.objectStoreNames.contains(STORE_INDEX)) {
                 idb.createObjectStore(STORE_INDEX, { keyPath: 'key' });
@@ -97,6 +111,26 @@ export async function flushSpatialIndexSave() {
 
 function _featureId(layerId, index) {
     return `${layerId}:f:${index}`;
+}
+
+function _coldId(layerId, lgid) {
+    return `${layerId}:lgid:${lgid}`;
+}
+
+async function _idbGet(storeName, key) {
+    const idb = await openDB();
+    return new Promise((resolve, reject) => {
+        const tx = idb.transaction(storeName, 'readonly');
+        const r = tx.objectStore(storeName).get(key);
+        r.onsuccess = () => resolve(r.result);
+        r.onerror = () => reject(r.error);
+    });
+}
+
+async function _getColdProperties(layerId, lgid) {
+    if (!lgid) return null;
+    const rec = await _idbGet(STORE_COLD, _coldId(layerId, lgid));
+    return rec?.properties || null;
 }
 
 /**
@@ -164,23 +198,25 @@ export async function appendWorkspaceBatch(layerId, features, startIndex = 0, se
     const attrRecords = [];
     const mapFeatures = features.map((f, i) => {
         const globalIndex = startIndex + i;
+        const lgid = ensureFeatureLgid(f);
         const fid = _featureId(layerId, globalIndex);
         attrRecords.push({
             id: fid,
             layerId,
             featureIndex: globalIndex,
+            lgid,
             properties: filterProperties(f.properties || {}, selectedFields)
         });
         return {
             type: 'Feature',
             id: globalIndex,
             geometry: f.geometry,
-            properties: {
-                _featureIndex: globalIndex,
-                _datasetId: layerId,
-                _featureId: fid,
-                name: f.properties?.name ?? f.properties?.Name ?? null
-            }
+            properties: buildDisplayIdentityProps({
+                lgid,
+                layerId,
+                featureIndex: globalIndex,
+                properties: f.properties || {}
+            })
         };
     });
 
@@ -250,56 +286,119 @@ export async function loadWorkspaceChunks(chunkIds) {
 /**
  * @param {string} layerId
  * @param {number} featureIndex
+ * @returns {Promise<object|null>}
  */
-export async function getWorkspaceFeatureAttributes(layerId, featureIndex) {
+export async function getWorkspaceFeatureRecord(layerId, featureIndex) {
+    return _idbGet(STORE_ATTRIBUTES, _featureId(layerId, featureIndex));
+}
+
+/**
+ * Hot attributes for identify/edit. Pass `{ includeCold: true }` to join
+ * detach-for-export fields (used by streamed export).
+ * @param {string} layerId
+ * @param {number} featureIndex
+ * @param {{ includeCold?: boolean }} [options]
+ */
+export async function getWorkspaceFeatureAttributes(layerId, featureIndex, options = {}) {
+    const rec = await getWorkspaceFeatureRecord(layerId, featureIndex);
+    if (!rec) return null;
+    const hot = { ...(rec.properties || {}) };
+    if (rec.lgid) hot[LGID_PROP] = rec.lgid;
+    if (!options.includeCold) return hot;
+    const cold = await _getColdProperties(layerId, rec.lgid);
+    return joinHotColdProperties(hot, cold);
+}
+
+/**
+ * Batch-load attribute records for a contiguous feature-index range.
+ * @param {string} layerId
+ * @param {number} startIndex
+ * @param {number} count
+ */
+async function _loadAttributeRecordsRange(layerId, startIndex, count) {
+    if (count <= 0) return new Map();
     const idb = await openDB();
-    const tx = idb.transaction(STORE_ATTRIBUTES, 'readonly');
-    const rec = await new Promise((resolve, reject) => {
-        const r = tx.objectStore(STORE_ATTRIBUTES).get(_featureId(layerId, featureIndex));
-        r.onsuccess = () => resolve(r.result);
+    const lower = _featureId(layerId, startIndex);
+    const upper = _featureId(layerId, startIndex + count - 1);
+    const rows = await new Promise((resolve, reject) => {
+        const tx = idb.transaction(STORE_ATTRIBUTES, 'readonly');
+        const r = tx.objectStore(STORE_ATTRIBUTES).getAll(IDBKeyRange.bound(lower, upper));
+        r.onsuccess = () => resolve(r.result || []);
         r.onerror = () => reject(r.error);
     });
-    return rec?.properties || null;
+    const byIndex = new Map();
+    for (const rec of rows) byIndex.set(rec.featureIndex, rec);
+    return byIndex;
+}
+
+/**
+ * @param {string} layerId
+ * @param {string[]} lgids
+ * @returns {Promise<Map<string, object>>}
+ */
+async function _loadColdPropertiesByLgids(layerId, lgids) {
+    const out = new Map();
+    const unique = [...new Set((lgids || []).filter(Boolean))];
+    if (!unique.length) return out;
+    const idb = await openDB();
+    const tx = idb.transaction(STORE_COLD, 'readonly');
+    const store = tx.objectStore(STORE_COLD);
+    await Promise.all(unique.map((lgid) => new Promise((resolve, reject) => {
+        const r = store.get(_coldId(layerId, lgid));
+        r.onsuccess = () => {
+            if (r.result?.properties) out.set(lgid, r.result.properties);
+            resolve();
+        };
+        r.onerror = () => reject(r.error);
+    })));
+    return out;
 }
 
 /**
  * @param {string} layerId
  * @param {number} offset
  * @param {number} limit
+ * @param {{ includeCold?: boolean }} [options]
  */
-export async function iterateWorkspaceFeatures(layerId, offset = 0, limit = 1000) {
-    const idb = await openDB();
-    const layer = await new Promise((resolve, reject) => {
-        const tx = idb.transaction(STORE_LAYERS, 'readonly');
-        const r = tx.objectStore(STORE_LAYERS).get(layerId);
-        r.onsuccess = () => resolve(r.result);
-        r.onerror = () => reject(r.error);
-    });
+export async function iterateWorkspaceFeatures(layerId, offset = 0, limit = 1000, options = {}) {
+    const layer = await getWorkspaceLayer(layerId);
     if (!layer?.chunkIds?.length) return [];
 
     const features = [];
     let skipped = 0;
     for (const chunkId of layer.chunkIds) {
         if (features.length >= limit) break;
-        const chunk = await new Promise((resolve, reject) => {
-            const tx = idb.transaction(STORE_CHUNKS, 'readonly');
-            const r = tx.objectStore(STORE_CHUNKS).get(chunkId);
-            r.onsuccess = () => resolve(r.result);
-            r.onerror = () => reject(r.error);
-        });
+        const chunk = await _idbGet(STORE_CHUNKS, chunkId);
         if (!chunk?.geojson) continue;
         const fc = JSON.parse(chunk.geojson);
-        for (const f of fc.features || []) {
+        const chunkFeatures = fc.features || [];
+        if (!chunkFeatures.length) continue;
+
+        const startIndex = chunk.startIndex ?? chunkFeatures[0]?.properties?._featureIndex ?? 0;
+        const attrByIndex = await _loadAttributeRecordsRange(layerId, startIndex, chunkFeatures.length);
+        let coldByLgid = null;
+        if (options.includeCold) {
+            const lgids = [...attrByIndex.values()].map((r) => r.lgid).filter(Boolean);
+            coldByLgid = await _loadColdPropertiesByLgids(layerId, lgids);
+        }
+
+        for (const f of chunkFeatures) {
             if (skipped < offset) {
                 skipped++;
                 continue;
             }
-            const idx = f.properties?._featureIndex ?? skipped;
-            const attrs = await getWorkspaceFeatureAttributes(layerId, idx);
+            const idx = f.properties?._featureIndex ?? (startIndex + features.length);
+            const rec = attrByIndex.get(idx);
+            let props = rec?.properties ? { ...rec.properties } : {};
+            const lgid = rec?.lgid || f.properties?.[LGID_PROP];
+            if (lgid) props[LGID_PROP] = lgid;
+            if (options.includeCold && lgid && coldByLgid?.has(lgid)) {
+                props = joinHotColdProperties(props, coldByLgid.get(lgid));
+            }
             features.push({
                 type: 'Feature',
                 geometry: f.geometry,
-                properties: attrs || f.properties || {}
+                properties: props
             });
             if (features.length >= limit) break;
         }
@@ -338,7 +437,9 @@ export async function removeWorkspaceLayer(layerId) {
         r.onerror = () => reject(r.error);
     });
 
-    const tx = idb.transaction([STORE_LAYERS, STORE_CHUNKS, STORE_ATTRIBUTES], 'readwrite');
+    const storeNames = [STORE_LAYERS, STORE_CHUNKS, STORE_ATTRIBUTES];
+    if (idb.objectStoreNames.contains(STORE_COLD)) storeNames.push(STORE_COLD);
+    const tx = idb.transaction(storeNames, 'readwrite');
     tx.objectStore(STORE_LAYERS).delete(layerId);
     for (const chunkId of layer?.chunkIds || []) {
         tx.objectStore(STORE_CHUNKS).delete(chunkId);
@@ -348,6 +449,12 @@ export async function removeWorkspaceLayer(layerId) {
     // layers never require loading every attribute record into memory.
     const attrStore = tx.objectStore(STORE_ATTRIBUTES);
     attrStore.delete(IDBKeyRange.bound(`${layerId}:f:`, `${layerId}:f:\uffff`));
+
+    if (idb.objectStoreNames.contains(STORE_COLD)) {
+        tx.objectStore(STORE_COLD).delete(
+            IDBKeyRange.bound(`${layerId}:lgid:`, `${layerId}:lgid:\uffff`)
+        );
+    }
 
     await new Promise((resolve, reject) => {
         tx.oncomplete = resolve;
@@ -359,6 +466,164 @@ export async function removeWorkspaceLayer(layerId) {
         markSpatialIndexDirty();
         await flushSpatialIndexSave();
     }
+}
+
+/**
+ * Replace hot properties for one feature (keeps lgid). Does not touch cold.
+ * @param {string} layerId
+ * @param {number} featureIndex
+ * @param {object} properties
+ */
+export async function updateWorkspaceFeatureAttributes(layerId, featureIndex, properties) {
+    const idb = await openDB();
+    const fid = _featureId(layerId, featureIndex);
+    const tx = idb.transaction(STORE_ATTRIBUTES, 'readwrite');
+    const store = tx.objectStore(STORE_ATTRIBUTES);
+    const existing = await new Promise((resolve, reject) => {
+        const r = store.get(fid);
+        r.onsuccess = () => resolve(r.result);
+        r.onerror = () => reject(r.error);
+    });
+    if (!existing) {
+        await new Promise((resolve, reject) => {
+            tx.oncomplete = resolve;
+            tx.onerror = () => reject(tx.error);
+        });
+        return false;
+    }
+    const nextProps = { ...(properties || {}) };
+    delete nextProps._featureIndex;
+    delete nextProps._datasetId;
+    delete nextProps._featureId;
+    // lgid stays on the record, not duplicated as a mutable user field
+    delete nextProps[LGID_PROP];
+    store.put({
+        ...existing,
+        properties: nextProps
+    });
+    await new Promise((resolve, reject) => {
+        tx.oncomplete = resolve;
+        tx.onerror = () => reject(tx.error);
+    });
+    return true;
+}
+
+/**
+ * Patch hot properties for many features (merge patch into existing props).
+ * @param {string} layerId
+ * @param {Array<{ featureIndex: number, patch: object }>} edits
+ * @returns {Promise<number>} updated count
+ */
+export async function updateWorkspaceFeatureAttributesBatch(layerId, edits = []) {
+    if (!edits.length) return 0;
+    const idb = await openDB();
+    let updated = 0;
+    const batchSize = 250;
+
+    for (let i = 0; i < edits.length; i += batchSize) {
+        const slice = edits.slice(i, i + batchSize);
+        const records = [];
+        for (const edit of slice) {
+            const rec = await getWorkspaceFeatureRecord(layerId, edit.featureIndex);
+            if (!rec) continue;
+            const props = { ...(rec.properties || {}) };
+            for (const [k, v] of Object.entries(edit.patch || {})) {
+                if (k === LGID_PROP || k.startsWith('_')) continue;
+                props[k] = v;
+            }
+            records.push({ ...rec, properties: props });
+        }
+        if (!records.length) continue;
+        const tx = idb.transaction(STORE_ATTRIBUTES, 'readwrite');
+        const store = tx.objectStore(STORE_ATTRIBUTES);
+        for (const rec of records) store.put(rec);
+        await new Promise((resolve, reject) => {
+            tx.oncomplete = resolve;
+            tx.onerror = () => reject(tx.error);
+        });
+        updated += records.length;
+    }
+
+    return updated;
+}
+
+/**
+ * Move named fields from hot → cold attribute sidecar ("Detach for export").
+ * @param {string} layerId
+ * @param {string[]} fieldNames
+ * @param {{ onProgress?: (done: number, total: number) => void }} [options]
+ * @returns {Promise<{ movedFields: string[], featureCount: number }>}
+ */
+export async function detachFieldsForExport(layerId, fieldNames = [], options = {}) {
+    const fields = [...new Set((fieldNames || []).filter((n) => n && !n.startsWith('_') && n !== LGID_PROP))];
+    if (!fields.length) {
+        return { movedFields: [], featureCount: 0 };
+    }
+
+    const layer = await getWorkspaceLayer(layerId);
+    if (!layer) throw new Error('Workspace layer not found.');
+
+    const featureCount = layer.featureCount || 0;
+    const idb = await openDB();
+    const batchSize = 500;
+    let done = 0;
+
+    for (let start = 0; start < featureCount; start += batchSize) {
+        const count = Math.min(batchSize, featureCount - start);
+        const attrByIndex = await _loadAttributeRecordsRange(layerId, start, count);
+        const lgids = [...attrByIndex.values()].map((r) => r.lgid).filter(Boolean);
+        const coldByLgid = await _loadColdPropertiesByLgids(layerId, lgids);
+
+        const hotPuts = [];
+        const coldPuts = [];
+        for (const rec of attrByIndex.values()) {
+            const lgid = rec.lgid || ensureFeatureLgid({ properties: rec.properties });
+            const { hot, cold } = detachFieldsFromHot(
+                rec.properties || {},
+                coldByLgid.get(lgid) || {},
+                fields
+            );
+            hotPuts.push({ ...rec, lgid, properties: hot });
+            if (Object.keys(cold).length) {
+                coldPuts.push({
+                    id: _coldId(layerId, lgid),
+                    layerId,
+                    lgid,
+                    properties: cold
+                });
+            }
+            done++;
+        }
+
+        const tx = idb.transaction([STORE_ATTRIBUTES, STORE_COLD], 'readwrite');
+        const hotStore = tx.objectStore(STORE_ATTRIBUTES);
+        const coldStore = tx.objectStore(STORE_COLD);
+        for (const rec of hotPuts) hotStore.put(rec);
+        for (const rec of coldPuts) coldStore.put(rec);
+        await new Promise((resolve, reject) => {
+            tx.oncomplete = resolve;
+            tx.onerror = () => reject(tx.error);
+        });
+        options.onProgress?.(done, featureCount);
+    }
+
+    const coldFields = mergeColdFieldNames(layer.schema?.coldFields || layer.coldFields || [], fields);
+    const schema = layer.schema
+        ? {
+            ...layer.schema,
+            coldFields,
+            fields: (layer.schema.fields || []).map((f) => (
+                fields.includes(f.name) ? { ...f, cold: true, selected: f.selected } : f
+            ))
+        }
+        : layer.schema;
+    await updateWorkspaceLayerMeta(layerId, {
+        coldFields,
+        schema,
+        detachedFields: coldFields
+    });
+
+    return { movedFields: fields, featureCount };
 }
 
 export async function getWorkspaceLayer(layerId) {
@@ -490,9 +755,10 @@ function _remapWorkspaceBundle(bundle, newLayerId) {
     };
 }
 
-/** Reset in-memory index (tests). */
+/** Reset in-memory index/connection (tests). */
 export function _resetWorkspaceCache() {
     spatialIndex = null;
+    db = null;
 }
 
 export default {
@@ -503,10 +769,14 @@ export default {
     appendWorkspaceBatch,
     queryWorkspaceChunks,
     loadWorkspaceChunks,
+    getWorkspaceFeatureRecord,
     getWorkspaceFeatureAttributes,
     iterateWorkspaceFeatures,
     loadAllWorkspaceFeatures,
     removeWorkspaceLayer,
+    updateWorkspaceFeatureAttributes,
+    updateWorkspaceFeatureAttributesBatch,
+    detachFieldsForExport,
     getWorkspaceLayer,
     getWorkspaceLayerBounds,
     getWorkspaceLayerAttributes,

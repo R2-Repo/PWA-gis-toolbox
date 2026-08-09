@@ -83,12 +83,14 @@ dialog, watch one progress bar, get a layer. No new dialogs.
 | Max streamed features | 1,000,000 | `STREAM_MAX_FEATURES` |
 | Tiled rendering trigger | ≥ 50,000 features | `tile-constants.js` |
 | Max single feature | 24 MB JSON | `geojson-stream-parser.js` |
-| GIS tools / export materialization | 250,000 features | `gis-layer-context.js` |
+| GIS tools materialization | 250,000 features | `gis-layer-context.js` |
+| Streamed GeoJSON/CSV export | up to stream import cap | `stream-export-service.js` |
 | Toolbox Kit bundle per layer | 250,000 features | `workspace-store.js` |
 
-Streamed layers above the materialization cap are **view/inspect/identify**
-layers: GIS tools and full export refuse with a clear message instead of
-crashing the tab. Streamed export lifts this in a later build.
+Streamed layers above the materialization cap are **view/inspect/identify/
+edit-selection/export-stream** layers: GIS tools that need a full in-memory
+FeatureCollection still refuse with a clear message. GeoJSON and CSV export
+stream from IndexedDB (Build 5) and are not bound by the 250k materialize cap.
 
 Known constraints (deliberate scope):
 
@@ -201,21 +203,41 @@ architecture is engine-agnostic — a DuckDB/Parquet-backed source can slot
 behind the same `gis-tiles://` protocol later if SQL analytics or Parquet
 import justify it.
 
+## Build 5 (shipped): identity, cold attributes, streamed export
+
+Stable feature identity and write/export paths for workspace layers:
+
+- **`__lgid`** — UUID assigned in `appendWorkspaceBatch()` for every import
+  path (streaming, standard→workspace, ArcGIS). Stored on the hot attribute
+  record and in chunk display properties alongside `_featureIndex` /
+  `_datasetId`. Kept on GeoJSON/CSV export for restoration.
+- **Hot/cold attributes** — IndexedDB `cold_attributes` store (DB v2).
+  Fields panel → **Detach for export** moves unchecked fields hot→cold.
+  Identify/edit use the hot set; streamed export joins cold on demand.
+- **Streamed export** — `stream-export-service.js` batch-reads workspace
+  features (with cold join), writes GeoJSON/CSV through OPFS
+  `export-staging/` (Blob-parts fallback). Lifts the practical GeoJSON/CSV
+  export ceiling past the 250k materialize cap. Other formats on oversized
+  workspace layers get a clear refuse message.
+- **Edit sessions** — workspace feature editor + Bulk Update write back via
+  `edit-session.js` / attribute batch updates, then
+  `refreshLayerData` / `refreshWorkspaceLayerViewport` (tiles invalidate).
+
+### Files (Build 5)
+
+| File | Role |
+|---|---|
+| `js/workspace/feature-identity.js` | `__lgid` mint/stamp helpers |
+| `js/workspace/cold-attributes.js` | Pure hot/cold split + join |
+| `js/workspace/export-staging-store.js` | OPFS export staging sessions |
+| `js/workspace/edit-session.js` | Selection load + attribute writeback |
+| `js/export/stream-export-service.js` | Streamed GeoJSON/CSV orchestration |
+| `js/workspace/workspace-store.js` | DB v2, lgid write, cold detach, attr updates |
+
 ## Roadmap (subsequent builds)
 
 Notes: streaming Excel remains impractical (whole-workbook format) —
 convert-to-CSV guidance stands.
-
-### Build 5 — Identity, cold attributes, streamed export
-
-- `__lgid` immutable UID assigned at import, linking workspace records,
-  display features, edits, and export restoration (master plan §5).
-- Hot/cold attribute split with "Detach for export" (§10) — the attributes
-  store already exists; add a cold sidecar store + join-on-demand.
-- Streamed export: batch-read workspace chunks → incremental
-  GeoJSON/CSV writer → OPFS staging file → download. Lifts the 250k export cap.
-- Edit sessions for heavy layers (§23): edit a selection, write back to
-  workspace chunks, invalidate affected viewport/tiles.
 
 ### Build 6 — Workspace packaging & cleanup wizard
 

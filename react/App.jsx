@@ -39,6 +39,7 @@ import {
     toggleField,
     selectAllFields,
     addField,
+    detachUnselectedFieldsForExport,
     renameLayer,
     renameField,
     openFilterBuilder,
@@ -193,6 +194,7 @@ function AppShell() {
         toggleField,
         selectAllFields,
         addField,
+        detachUnselectedFieldsForExport,
         renameField: (name) => renameField(name),
         renameFieldInline: (name, el) => renameField(name, el)
     }), []);

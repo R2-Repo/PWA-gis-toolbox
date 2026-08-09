@@ -2,7 +2,7 @@
  * Export registry — dispatches to format-specific exporters
  */
 import logger from '../core/logger.js';
-import { getSelectedFields, applyFieldSelection, isWorkspaceLayer } from '../core/data-model.js';
+import { getSelectedFields, applyFieldSelection, isWorkspaceLayer, getLayerFeatureCount } from '../core/data-model.js';
 import { isCoverageRasterLayer } from '../core/coverage-raster-layer.js';
 import { TaskRunner } from '../core/task-runner.js';
 import { exportGeoJSON } from './geojson-exporter.js';
@@ -18,6 +18,11 @@ import {
     exportCoverageRasterZip,
     exportMixedCoverageMultiLayerKMZ
 } from './coverage-raster-exporter.js';
+import {
+    shouldUseStreamExport,
+    exportWorkspaceLayerStreamed
+} from './stream-export-service.js';
+import { MAX_MATERIALIZE_FEATURES } from '../tools/gis-layer-context.js';
 
 // Optional map API adapter for style lookup (mapService).
 let _mapApi = null;
@@ -86,6 +91,34 @@ export async function exportDataset(dataset, format, options = {}) {
         if (!options.style && _mapApi) {
             const layerStyle = _mapApi.getLayerStyle(dataset.id);
             if (layerStyle) options.style = layerStyle;
+        }
+
+        // Workspace GeoJSON/CSV: streamed path (joins cold attrs, OPFS staging).
+        if (shouldUseStreamExport(dataset, format)) {
+            t.updateProgress(30, `Generating ${format}...`);
+            const result = await exportWorkspaceLayerStreamed(dataset, format, options, t);
+            logger.info('Exporter', 'Streamed export complete', {
+                format,
+                name: dataset.name,
+                size: result.blob?.size,
+                staged: result.staged
+            });
+            const filename = (options.filename || dataset.name || 'export') + exp.ext;
+            downloadBlob(result.blob, filename);
+            return { filename, size: result.blob?.size || 0 };
+        }
+
+        // Non-streamed formats on oversized workspace layers cannot materialize.
+        if (
+            isWorkspaceLayer(dataset)
+            && getLayerFeatureCount(dataset) > MAX_MATERIALIZE_FEATURES
+            && !['geojson', 'csv'].includes(format)
+        ) {
+            throw new Error(
+                `"${dataset.name}" has ${getLayerFeatureCount(dataset).toLocaleString()} features — `
+                + `export as GeoJSON or CSV (streamed). Other formats are limited to `
+                + `${MAX_MATERIALIZE_FEATURES.toLocaleString()} features.`
+            );
         }
 
         // Apply field selection if not photo export

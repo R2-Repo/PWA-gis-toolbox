@@ -19,7 +19,8 @@ import {
 } from '../map/tiles/tile-constants.js';
 
 const DB_NAME = 'gis-toolbox-workspace';
-const DB_VERSION = 1;
+/** Keep in sync with js/workspace/workspace-store.js (worker never upgrades). */
+const DB_VERSION = 2;
 const STORE_CHUNKS = 'chunks';
 const STORE_INDEX = 'spatial_index';
 

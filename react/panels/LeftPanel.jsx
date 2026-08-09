@@ -3,6 +3,7 @@ import {
     isSpatialLayer,
     isLiveVectorLayer,
     isServiceLayer,
+    isWorkspaceLayer,
     getLayerFeatureCount
 } from '../../js/core/data-model.js';
 import { isLayerDisplayReady, layerCrsWarning } from '../../js/crs/layer-crs.js';
@@ -550,12 +551,25 @@ export function FieldListPanel({
                 <button className="btn btn-sm btn-secondary" onClick={() => actions.selectAllFields(false)}>None</button>
                 <button className="btn btn-sm btn-primary" title="Add new field" onClick={() => actions.addField()}>+ Field</button>
             </div>
+            {isWorkspaceLayer(activeLayer) && typeof actions.detachUnselectedFieldsForExport === 'function' && (
+                <div style={{ marginBottom: 8 }}>
+                    <button
+                        type="button"
+                        className="btn btn-sm btn-secondary"
+                        title="Move unchecked fields to cold storage; export still includes them"
+                        onClick={() => actions.detachUnselectedFieldsForExport()}
+                    >
+                        Detach for export
+                    </button>
+                </div>
+            )}
             <div className="field-list-items">
                 {filteredFields.map((field) => (
                     <div key={field.name} className="field-item" data-field={field.name}>
                         <input
                             type="checkbox"
                             checked={!!field.selected}
+                            disabled={!!field.cold}
                             onChange={(e) => actions.toggleField(field.name, e.target.checked)}
                         />
                         <span
@@ -565,7 +579,7 @@ export function FieldListPanel({
                         >
                             {field.outputName || field.name}
                         </span>
-                        <span className="field-type">{field.type}</span>
+                        <span className="field-type">{field.cold ? 'cold' : field.type}</span>
                         <button
                             className="btn-icon"
                             style={{ fontSize: 10, padding: 2 }}
