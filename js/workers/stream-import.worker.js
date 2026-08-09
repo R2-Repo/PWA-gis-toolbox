@@ -7,23 +7,13 @@
  * both sides no matter how large the file is.
  */
 import Papa from 'papaparse';
-import { DOMParser } from '@xmldom/xmldom';
-import toGeoJSON from '@mapbox/togeojson';
 import { GeoJSONFeatureStreamParser } from '../import/stream/geojson-stream-parser.js';
-import { KmlPlacemarkStreamParser } from '../import/stream/kml-stream-parser.js';
-import { createKmlBlockConverter } from '../import/stream/kml-stream-convert.js';
-import {
-    readZipEntries,
-    openZipEntryStream,
-    chooseMainKmlZipEntry
-} from '../import/stream/zip-central-directory.js';
 import {
     STREAM_BATCH_FEATURES,
     STREAM_BATCH_MAX_BYTES,
     STREAM_MAX_FEATURES
 } from '../import/stream/stream-constants.js';
 import { createSchemaAccumulator, flattenFeatureGeometryCollections } from '../core/data-model.js';
-import { filterProperties, shouldFilterFields } from '../import/import-field-filter.js';
 import { detectAnyCoordinateColumns, parseCoordValue } from '../import/coord-detect.js';
 
 const PROGRESS_INTERVAL_MS = 200;
@@ -85,15 +75,11 @@ function _bboxIntersectsFence(geometry, fence) {
     return !(maxX < west || minX > east || maxY < south || minY > north);
 }
 
-function createImportContext(msg, overrides = {}) {
+function createImportContext(msg) {
     const { id, file, options = {} } = msg;
     const batchFeatures = options.batchFeatures ?? STREAM_BATCH_FEATURES;
     const batchMaxBytes = options.batchMaxBytes ?? STREAM_BATCH_MAX_BYTES;
     const maxFeatures = options.maxFeatures ?? STREAM_MAX_FEATURES;
-    const totalBytes = overrides.totalBytes ?? file.size;
-    const selectedFields = shouldFilterFields(options.selectedFields)
-        ? options.selectedFields
-        : null;
     const fence = Array.isArray(options.fenceBbox) && options.fenceBbox.length === 4
         ? options.fenceBbox
         : null;
@@ -117,7 +103,7 @@ function createImportContext(msg, overrides = {}) {
             type: 'batch',
             features: batch,
             bytesProcessed,
-            totalBytes
+            totalBytes: file.size
         });
         await _waitForAck();
         if (cancelled) throw _cancelError();
@@ -137,13 +123,10 @@ function createImportContext(msg, overrides = {}) {
                 properties: rawFeature.properties || {},
                 ...(rawFeature.id != null ? { id: rawFeature.id } : {})
             });
-            for (let part of parts) {
+            for (const part of parts) {
                 if (fence && part.geometry && !_bboxIntersectsFence(part.geometry, fence)) {
                     fenceFiltered++;
                     continue;
-                }
-                if (selectedFields) {
-                    part = { ...part, properties: filterProperties(part.properties, selectedFields) };
                 }
                 if (!part.geometry) noGeometryCount++;
                 emitted++;
@@ -185,7 +168,7 @@ function createImportContext(msg, overrides = {}) {
                 id,
                 type: 'progress',
                 bytesProcessed,
-                totalBytes
+                totalBytes: file.size
             });
         }
     };
@@ -199,8 +182,6 @@ async function runImport(msg) {
             await runGeoJSON(msg);
         } else if (format === 'csv') {
             await runCSV(msg);
-        } else if (format === 'kml' || format === 'xml' || format === 'kmz' || format === 'zip') {
-            await runKML(msg);
         } else {
             throw new Error(`Streaming import does not support format: ${format}`);
         }
@@ -253,97 +234,6 @@ async function runGeoJSON(msg) {
         parser.finish();
         await drain();
         await ctx.finish(bytesProcessed);
-    } finally {
-        try {
-            reader.releaseLock();
-        } catch { /* ignore */ }
-    }
-}
-
-/** Placemark blocks parsed per synthetic document (amortizes DOMParser cost). */
-const KML_BATCH_BLOCKS = 50;
-/** Flush a placemark batch early when accumulated text passes this. */
-const KML_BATCH_MAX_CHARS = 4 * 1024 * 1024;
-
-async function runKML(msg) {
-    const { file, format, options = {} } = msg;
-    const importMode = options.importMode || 'gis';
-
-    let byteStream;
-    let totalBytes;
-    if (format === 'kmz' || format === 'zip') {
-        const entries = await readZipEntries(file);
-        const main = chooseMainKmlZipEntry(entries);
-        if (!main) {
-            throw new Error(`"${file.name}" contains no KML document.`);
-        }
-        byteStream = await openZipEntryStream(file, main.entry);
-        totalBytes = main.entry.uncompressedSize || 0;
-    } else {
-        byteStream = file.stream();
-        totalBytes = file.size;
-    }
-
-    const ctx = createImportContext(msg, { totalBytes });
-    const converter = createKmlBlockConverter({
-        DOMParserImpl: DOMParser,
-        toGeoJsonLib: toGeoJSON,
-        importMode
-    });
-
-    const pendingBlocks = [];
-    let pendingChars = 0;
-    let failedPlacemarks = 0;
-    const parser = new KmlPlacemarkStreamParser({
-        onPlacemark: (text) => {
-            pendingBlocks.push(text);
-            pendingChars += text.length;
-        },
-        onSharedBlock: (kind, id, text) => converter.addShared(kind, id, text)
-    });
-
-    let bytesProcessed = 0;
-
-    const drain = async (force) => {
-        while (
-            pendingBlocks.length >= KML_BATCH_BLOCKS
-            || pendingChars >= KML_BATCH_MAX_CHARS
-            || (force && pendingBlocks.length)
-        ) {
-            const blocks = pendingBlocks.splice(0, KML_BATCH_BLOCKS);
-            pendingChars = pendingBlocks.reduce((s, b) => s + b.length, 0);
-            converter.setRootTag(parser.rootTag);
-            const { features, failed } = converter.convert(blocks);
-            failedPlacemarks += failed;
-            const totalChars = blocks.reduce((s, b) => s + b.length, 0);
-            const approx = Math.ceil(totalChars / Math.max(features.length, 1));
-            for (const feature of features) {
-                await ctx.addFeature(feature, approx, bytesProcessed);
-            }
-        }
-    };
-
-    const reader = byteStream.getReader();
-    const decoder = new TextDecoder();
-    try {
-        while (true) {
-            if (cancelled) throw _cancelError();
-            const { done, value } = await reader.read();
-            if (done) break;
-            bytesProcessed += value.byteLength;
-            parser.push(decoder.decode(value, { stream: true }));
-            await drain(false);
-            ctx.progress(bytesProcessed);
-        }
-        const tail = decoder.decode();
-        if (tail) parser.push(tail);
-        parser.finish();
-        await drain(true);
-        await ctx.finish(bytesProcessed, {
-            warnings: failedPlacemarks
-                ? [`${failedPlacemarks.toLocaleString()} placemark(s) could not be parsed and were skipped.`]
-                : []
-        });
     } finally {
         try {
             reader.releaseLock();

@@ -32,18 +32,15 @@ async function _rollbackStreamedLayers(datasets) {
     }
 }
 
-const KML_FAMILY = new Set(['kml', 'kmz', 'xml', 'zip']);
-
 /**
  * @param {File[]} files streaming-eligible files (see stream-policy)
  * @param {{
  *   fenceBbox?: [number,number,number,number]|null,
- *   refreshUI?: () => void,
- *   selectedFields?: string[]|null
+ *   refreshUI?: () => void
  * }} [options]
  */
 export async function runStreamingImportFlow(files, options = {}) {
-    const { fenceBbox = null, refreshUI, selectedFields = null } = options;
+    const { fenceBbox = null, refreshUI } = options;
     const fileList = Array.from(files || []);
     if (!fileList.length) return;
 
@@ -60,7 +57,6 @@ export async function runStreamingImportFlow(files, options = {}) {
 
     const addedDatasets = [];
     const errors = [];
-    const importWarnings = [];
     let totalFeatures = 0;
     let totalNoGeometry = 0;
     let totalFenceFiltered = 0;
@@ -76,10 +72,6 @@ export async function runStreamingImportFlow(files, options = {}) {
             const job = streamImportFile(file, {
                 format,
                 fenceBbox,
-                selectedFields,
-                // Large KML/KMZ import as simplified GIS layers (presentation
-                // bloat stripped) — matches the Import Optimizer recommendation.
-                importMode: KML_FAMILY.has(format) ? 'gis' : undefined,
                 onProgress: (percent, step) => {
                     progress.update(percent, `${prefix}${step}`, {
                         fileName: file.name,
@@ -109,9 +101,6 @@ export async function runStreamingImportFlow(files, options = {}) {
                 totalFeatures += stats.featureCount || 0;
                 totalNoGeometry += stats.noGeometryCount || 0;
                 totalFenceFiltered += stats.fenceFiltered || 0;
-                if (stats.warnings?.length) {
-                    importWarnings.push(...stats.warnings.map((w) => `${file.name}: ${w}`));
-                }
                 logger.info('StreamImport', 'File imported', {
                     file: file.name,
                     features: stats.featureCount,
@@ -151,9 +140,6 @@ export async function runStreamingImportFlow(files, options = {}) {
                     `${totalNoGeometry.toLocaleString()} feature(s) have no geometry and will not draw on the map`,
                     'warning'
                 );
-            }
-            for (const warning of importWarnings) {
-                showToast(warning, 'warning');
             }
             refreshUI?.();
         }
