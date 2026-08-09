@@ -81,6 +81,7 @@ dialog, watch one progress bar, get a layer. No new dialogs.
 | Streaming trigger | text ≥ 4 MB (standard reject point) | `stream-policy.js` |
 | Max streamed file | 512 MB | `STREAM_MAX_BYTES` |
 | Max streamed features | 1,000,000 | `STREAM_MAX_FEATURES` |
+| Tiled rendering trigger | ≥ 50,000 features | `tile-constants.js` |
 | Max single feature | 24 MB JSON | `geojson-stream-parser.js` |
 | GIS tools / export materialization | 250,000 features | `gis-layer-context.js` |
 | Toolbox Kit bundle per layer | 250,000 features | `workspace-store.js` |
