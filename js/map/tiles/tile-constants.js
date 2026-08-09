@@ -27,10 +27,26 @@ export const MIN_FEATURE_PIXELS = 0.75;
 export const TILE_SOURCE_LAYER = 'features';
 
 /** Parsed workspace chunks kept in the tile worker's LRU cache. */
-export const TILE_CHUNK_CACHE_SIZE = 48;
+export const TILE_CHUNK_CACHE_SIZE = 128;
 
-/** Max workspace chunks loaded for a single tile (chunk-level sampling above). */
+/** Max workspace chunks loaded for a single tile at overview zooms. */
 export const MAX_CHUNKS_PER_TILE = 64;
+
+/**
+ * At/above this zoom, scan many more chunks and skip feature-mass early-stop.
+ * Close zooms often hit hundreds of statewide long-line chunk bboxes; the few
+ * local lines can sit past the overview budget.
+ */
+export const HIGH_ZOOM_CHUNK_SCAN_ZOOM = 12;
+
+/** Max chunks to load per tile at {@link HIGH_ZOOM_CHUNK_SCAN_ZOOM}+. */
+export const MAX_CHUNKS_PER_TILE_HIGH_ZOOM = 512;
+
+/** geojson-vt simplification tolerance below high-detail zoom. */
+export const TILE_SIMPLIFY_TOLERANCE = 3;
+
+/** geojson-vt tolerance at/above this zoom (keep short segments). */
+export const HIGH_DETAIL_SIMPLIFY_ZOOM = 14;
 
 export default {
     TILED_RENDER_THRESHOLD,
@@ -41,5 +57,9 @@ export default {
     MAX_TILE_FEATURES,
     MIN_FEATURE_PIXELS,
     TILE_CHUNK_CACHE_SIZE,
-    MAX_CHUNKS_PER_TILE
+    MAX_CHUNKS_PER_TILE,
+    HIGH_ZOOM_CHUNK_SCAN_ZOOM,
+    MAX_CHUNKS_PER_TILE_HIGH_ZOOM,
+    TILE_SIMPLIFY_TOLERANCE,
+    HIGH_DETAIL_SIMPLIFY_ZOOM
 };

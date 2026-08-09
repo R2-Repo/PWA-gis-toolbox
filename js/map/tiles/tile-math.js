@@ -71,4 +71,150 @@ export function featureBBox(feature) {
     return feature.__bbox;
 }
 
-export default { tileToBBox, padBBox, bboxIntersects, degreesPerPixel, featureBBox };
+function pointInBBox(lon, lat, bbox) {
+    return lon >= bbox[0] && lon <= bbox[2] && lat >= bbox[1] && lat <= bbox[3];
+}
+
+/** Cross product orientation for segment intersection (colinear counts as 0). */
+function _orient(ax, ay, bx, by, cx, cy) {
+    return (by - ay) * (cx - bx) - (bx - ax) * (cy - by);
+}
+
+function _onSeg(ax, ay, bx, by, cx, cy) {
+    return (
+        Math.min(ax, bx) <= cx && cx <= Math.max(ax, bx)
+        && Math.min(ay, by) <= cy && cy <= Math.max(ay, by)
+    );
+}
+
+function segmentsIntersect(a1x, a1y, a2x, a2y, b1x, b1y, b2x, b2y) {
+    const o1 = _orient(a1x, a1y, a2x, a2y, b1x, b1y);
+    const o2 = _orient(a1x, a1y, a2x, a2y, b2x, b2y);
+    const o3 = _orient(b1x, b1y, b2x, b2y, a1x, a1y);
+    const o4 = _orient(b1x, b1y, b2x, b2y, a2x, a2y);
+    if (o1 === 0 && _onSeg(a1x, a1y, a2x, a2y, b1x, b1y)) return true;
+    if (o2 === 0 && _onSeg(a1x, a1y, a2x, a2y, b2x, b2y)) return true;
+    if (o3 === 0 && _onSeg(b1x, b1y, b2x, b2y, a1x, a1y)) return true;
+    if (o4 === 0 && _onSeg(b1x, b1y, b2x, b2y, a2x, a2y)) return true;
+    return (o1 > 0) !== (o2 > 0) && (o3 > 0) !== (o4 > 0);
+}
+
+/**
+ * True when a line segment intersects an axis-aligned lon/lat bbox
+ * (endpoint inside, or crossing any edge).
+ */
+export function segmentIntersectsBBox(x1, y1, x2, y2, bbox) {
+    const [w, s, e, n] = bbox;
+    if (Math.max(x1, x2) < w || Math.min(x1, x2) > e || Math.max(y1, y2) < s || Math.min(y1, y2) > n) {
+        return false;
+    }
+    if (pointInBBox(x1, y1, bbox) || pointInBBox(x2, y2, bbox)) return true;
+    return (
+        segmentsIntersect(x1, y1, x2, y2, w, s, e, s)
+        || segmentsIntersect(x1, y1, x2, y2, w, n, e, n)
+        || segmentsIntersect(x1, y1, x2, y2, w, s, w, n)
+        || segmentsIntersect(x1, y1, x2, y2, e, s, e, n)
+    );
+}
+
+function lineStringHitsBBox(coords, bbox) {
+    if (!coords?.length) return false;
+    for (let i = 0; i < coords.length; i++) {
+        const p = coords[i];
+        if (pointInBBox(p[0], p[1], bbox)) return true;
+        if (i > 0) {
+            const prev = coords[i - 1];
+            if (segmentIntersectsBBox(prev[0], prev[1], p[0], p[1], bbox)) return true;
+        }
+    }
+    return false;
+}
+
+function ringHitsBBox(ring, bbox) {
+    return lineStringHitsBBox(ring, bbox);
+}
+
+/** Ray-cast point-in-ring (lon/lat treated as planar for tile tests). */
+function pointInRing(lon, lat, ring) {
+    if (!ring || ring.length < 3) return false;
+    let inside = false;
+    for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+        const xi = ring[i][0];
+        const yi = ring[i][1];
+        const xj = ring[j][0];
+        const yj = ring[j][1];
+        const denom = yj - yi;
+        if (denom === 0) continue;
+        const intersect = ((yi > lat) !== (yj > lat))
+            && (lon < ((xj - xi) * (lat - yi)) / denom + xi);
+        if (intersect) inside = !inside;
+    }
+    return inside;
+}
+
+function polygonHitsBBox(rings, bbox) {
+    if (!rings?.length) return false;
+    for (let i = 0; i < rings.length; i++) {
+        if (ringHitsBBox(rings[i], bbox)) return true;
+    }
+    // Tile fully inside the outer ring (no edge contact).
+    const cx = (bbox[0] + bbox[2]) / 2;
+    const cy = (bbox[1] + bbox[3]) / 2;
+    return pointInRing(cx, cy, rings[0]);
+}
+
+/**
+ * Geometry vs tile bbox — stricter than feature-bbox intersection.
+ * Long LineStrings whose envelope covers a tile but miss it geometrically
+ * return false (those previously produced empty MVTs after geojson-vt clip).
+ *
+ * @param {object|null} geometry GeoJSON geometry
+ * @param {[number,number,number,number]} bbox
+ * @returns {boolean}
+ */
+export function geometryIntersectsBBox(geometry, bbox) {
+    if (!geometry || !bbox) return false;
+    const { type, coordinates: coords } = geometry;
+    if (!type || coords == null) return false;
+
+    switch (type) {
+        case 'Point':
+            return pointInBBox(coords[0], coords[1], bbox);
+        case 'MultiPoint':
+            for (let i = 0; i < coords.length; i++) {
+                if (pointInBBox(coords[i][0], coords[i][1], bbox)) return true;
+            }
+            return false;
+        case 'LineString':
+            return lineStringHitsBBox(coords, bbox);
+        case 'MultiLineString':
+            for (let i = 0; i < coords.length; i++) {
+                if (lineStringHitsBBox(coords[i], bbox)) return true;
+            }
+            return false;
+        case 'Polygon':
+            return polygonHitsBBox(coords, bbox);
+        case 'MultiPolygon':
+            for (let i = 0; i < coords.length; i++) {
+                if (polygonHitsBBox(coords[i], bbox)) return true;
+            }
+            return false;
+        case 'GeometryCollection':
+            for (const g of geometry.geometries || []) {
+                if (geometryIntersectsBBox(g, bbox)) return true;
+            }
+            return false;
+        default:
+            return false;
+    }
+}
+
+export default {
+    tileToBBox,
+    padBBox,
+    bboxIntersects,
+    degreesPerPixel,
+    featureBBox,
+    segmentIntersectsBBox,
+    geometryIntersectsBBox
+};
