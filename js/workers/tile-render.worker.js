@@ -8,13 +8,17 @@
  */
 import { GridSpatialIndex } from '../workspace/spatial-index.js';
 import { tileToBBox, padBBox } from '../map/tiles/tile-math.js';
-import { selectTileFeatures, selectChunksForTile } from '../map/tiles/tile-feature-select.js';
-import { buildTileFromFeatures } from '../map/tiles/tile-builder.js';
+import {
+    selectTileFeatures,
+    rankChunksByOverlap,
+    chunkLoadBudgetForZoom,
+    featureBelongsInTile
+} from '../map/tiles/tile-feature-select.js';
+import { buildTileFromFeatures, simplifyToleranceForZoom } from '../map/tiles/tile-builder.js';
 import {
     TILE_BUFFER,
     TILE_EXTENT,
     TILE_CHUNK_CACHE_SIZE,
-    MAX_CHUNKS_PER_TILE,
     MAX_TILE_FEATURES
 } from '../map/tiles/tile-constants.js';
 
@@ -92,14 +96,17 @@ function invalidate(layerId) {
     }
 }
 
+/**
+ * Progressive chunk load: at close zoom keep scanning ranked chunks until
+ * real in-tile geometry is found (or the high-zoom budget is exhausted).
+ * Overview zooms still stop early on feature-mass estimates.
+ */
 async function buildTile(layerId, z, x, y) {
     const index = await getSpatialIndex();
     const tileBbox = padBBox(tileToBBox(z, x, y), TILE_BUFFER / TILE_EXTENT);
     const chunkIds = index.query(tileBbox, layerId);
     if (!chunkIds.length) return null;
 
-    // Rank by overlap with this tile so huge long-line chunk bboxes do not
-    // consume the load budget before local geometry is considered.
     const chunkRecords = chunkIds.map((chunkId) => {
         const rec = index.chunks.get(chunkId);
         return {
@@ -108,19 +115,41 @@ async function buildTile(layerId, z, x, y) {
             featureCount: rec?.featureCount || 0
         };
     });
-    const { chunkIds: selectedIds } = selectChunksForTile(chunkRecords, tileBbox, {
-        maxFeatures: MAX_TILE_FEATURES,
-        maxChunks: MAX_CHUNKS_PER_TILE
-    });
+    const ranked = rankChunksByOverlap(chunkRecords, tileBbox);
+    if (!ranked.length) return null;
 
-    // selectedIds are already ranked by tile overlap (local chunks first).
+    const { highZoom, maxChunks, useMassBudget } = chunkLoadBudgetForZoom(z, ranked.length);
+    const targetMass = MAX_TILE_FEATURES * 2;
     const loaded = [];
-    for (const chunkId of selectedIds) {
-        loaded.push({ features: await loadChunkFeatures(chunkId) });
+    let estimate = 0;
+    const candidates = [];
+
+    for (const rec of ranked) {
+        if (loaded.length >= maxChunks) break;
+        if (useMassBudget && estimate >= targetMass && loaded.length > 0) break;
+        if (highZoom && candidates.length >= MAX_TILE_FEATURES) break;
+
+        const features = await loadChunkFeatures(rec.chunkId);
+        loaded.push({ features });
+        estimate += rec.featureCount || features.length;
+
+        if (highZoom) {
+            for (let i = 0; i < features.length; i++) {
+                const feature = features[i];
+                if (!featureBelongsInTile(feature, tileBbox, z)) continue;
+                candidates.push(feature);
+                if (candidates.length >= MAX_TILE_FEATURES) break;
+            }
+        }
     }
 
-    const { features } = selectTileFeatures(loaded, tileBbox, z);
-    return buildTileFromFeatures(features, z, x, y);
+    const features = highZoom
+        ? candidates
+        : selectTileFeatures(loaded, tileBbox, z).features;
+
+    return buildTileFromFeatures(features, z, x, y, {
+        tolerance: simplifyToleranceForZoom(z)
+    });
 }
 
 self.onmessage = (event) => {

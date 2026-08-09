@@ -1,14 +1,29 @@
 import { describe, expect, it } from 'vitest';
 import Protobuf from 'pbf';
 import { VectorTile } from '@mapbox/vector-tile';
-import { tileToBBox, padBBox, bboxIntersects, featureBBox, degreesPerPixel } from '../js/map/tiles/tile-math.js';
+import {
+    tileToBBox,
+    padBBox,
+    bboxIntersects,
+    featureBBox,
+    degreesPerPixel,
+    geometryIntersectsBBox,
+    segmentIntersectsBBox
+} from '../js/map/tiles/tile-math.js';
 import {
     selectTileFeatures,
     sampleChunksForTile,
     bboxOverlapRatio,
-    selectChunksForTile
+    selectChunksForTile,
+    chunkLoadBudgetForZoom,
+    preferLocalFeatures,
+    featureBelongsInTile
 } from '../js/map/tiles/tile-feature-select.js';
-import { buildTileFromFeatures, TILE_SOURCE_LAYER } from '../js/map/tiles/tile-builder.js';
+import {
+    buildTileFromFeatures,
+    TILE_SOURCE_LAYER,
+    simplifyToleranceForZoom
+} from '../js/map/tiles/tile-builder.js';
 
 function decodeTile(bytes) {
     const tile = new VectorTile(new Protobuf(bytes));
@@ -176,6 +191,121 @@ describe('selectChunksForTile (overlap ranking)', () => {
         };
         const { features } = selectTileFeatures([{ features: [line] }], tileBbox, 14);
         expect(features.map((f) => f.properties.id)).toEqual(['cross']);
+    });
+
+    it('drops long lines whose envelope covers the tile but miss it geometrically', () => {
+        // Envelope overlaps the tile; the diagonal segment itself stays west/south.
+        const miss = {
+            type: 'Feature',
+            properties: { id: 'miss' },
+            geometry: {
+                type: 'LineString',
+                coordinates: [[-112, 40.05], [-110, 39.5]]
+            }
+        };
+        expect(bboxIntersects(featureBBox(miss), tileBbox)).toBe(true);
+        expect(geometryIntersectsBBox(miss.geometry, tileBbox)).toBe(false);
+        expect(featureBelongsInTile(miss, tileBbox, 14)).toBe(false);
+        const { features } = selectTileFeatures([{ features: [miss] }], tileBbox, 14);
+        expect(features).toHaveLength(0);
+    });
+
+    it('disables mass early-stop and raises chunk cap at close zoom', () => {
+        const low = chunkLoadBudgetForZoom(8, 400);
+        expect(low.highZoom).toBe(false);
+        expect(low.useMassBudget).toBe(true);
+        expect(low.maxChunks).toBe(64);
+
+        const high = chunkLoadBudgetForZoom(14, 400);
+        expect(high.highZoom).toBe(true);
+        expect(high.useMassBudget).toBe(false);
+        expect(high.maxChunks).toBe(400);
+
+        const capped = chunkLoadBudgetForZoom(16, 2000);
+        expect(capped.maxChunks).toBe(512);
+    });
+
+    it('selectChunksForTile can ignore mass budget so late local chunks are reached', () => {
+        const records = [];
+        for (let i = 0; i < 80; i++) {
+            records.push({
+                chunkId: `wide-${String(i).padStart(3, '0')}`,
+                bbox: [-120, 36, -108, 42],
+                featureCount: 1000
+            });
+        }
+        // Same overlap score as the statewide chunks; sorts after wide-* by id.
+        records.push({
+            chunkId: 'wide-zzz-needle',
+            bbox: [-120, 36, -108, 42],
+            featureCount: 5
+        });
+
+        const withMass = selectChunksForTile(records, tileBbox, {
+            maxFeatures: 20_000,
+            maxChunks: 64,
+            useMassBudget: true
+        });
+        // 40 chunks × 1000 features hits the mass stop before the needle.
+        expect(withMass.chunkIds).not.toContain('wide-zzz-needle');
+
+        const noMass = selectChunksForTile(records, tileBbox, {
+            maxFeatures: 20_000,
+            maxChunks: 512,
+            useMassBudget: false
+        });
+        expect(noMass.chunkIds).toContain('wide-zzz-needle');
+    });
+
+    it('prefers compact local features when the candidate set is over the cap', () => {
+        const local = {
+            type: 'Feature',
+            properties: { id: 'local' },
+            geometry: {
+                type: 'LineString',
+                coordinates: [[-111.05, 40.05], [-111.04, 40.05]]
+            }
+        };
+        const wide = [];
+        for (let i = 0; i < 50; i++) {
+            wide.push({
+                type: 'Feature',
+                properties: { id: `wide-${i}` },
+                geometry: {
+                    type: 'LineString',
+                    coordinates: [[-112, 40.05], [-110, 40.05]]
+                }
+            });
+        }
+        const picked = preferLocalFeatures([...wide, local], 5);
+        expect(picked.some((f) => f.properties.id === 'local')).toBe(true);
+    });
+});
+
+describe('geometryIntersectsBBox', () => {
+    const tileBbox = [-111.1, 40.0, -111.0, 40.1];
+
+    it('detects segment crossings of the tile edge', () => {
+        expect(segmentIntersectsBBox(-111.2, 40.05, -110.9, 40.05, tileBbox)).toBe(true);
+        expect(segmentIntersectsBBox(-111.2, 39.0, -110.9, 39.0, tileBbox)).toBe(false);
+    });
+
+    it('keeps polygons that fully contain the tile', () => {
+        const poly = {
+            type: 'Polygon',
+            coordinates: [[
+                [-112, 39], [-110, 39], [-110, 41], [-112, 41], [-112, 39]
+            ]]
+        };
+        expect(geometryIntersectsBBox(poly, tileBbox)).toBe(true);
+    });
+});
+
+describe('simplifyToleranceForZoom', () => {
+    it('disables simplification at high detail zooms', () => {
+        expect(simplifyToleranceForZoom(10)).toBe(3);
+        expect(simplifyToleranceForZoom(14)).toBe(0);
+        expect(simplifyToleranceForZoom(16)).toBe(0);
     });
 });
 

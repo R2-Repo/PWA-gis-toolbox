@@ -5,9 +5,17 @@
  *
  * Chunk selection ranks by overlap with the tile so huge long-line chunk
  * bboxes do not starve chunks that actually contain local geometry.
+ * Feature membership uses geometry∩tile (not just envelope) so long lines
+ * whose bbox covers a tile but miss it do not crowd out real hits.
  */
-import { bboxIntersects, featureBBox, degreesPerPixel } from './tile-math.js';
-import { MAX_TILE_FEATURES, MIN_FEATURE_PIXELS, MAX_CHUNKS_PER_TILE } from './tile-constants.js';
+import { bboxIntersects, featureBBox, degreesPerPixel, geometryIntersectsBBox } from './tile-math.js';
+import {
+    MAX_TILE_FEATURES,
+    MIN_FEATURE_PIXELS,
+    MAX_CHUNKS_PER_TILE,
+    HIGH_ZOOM_CHUNK_SCAN_ZOOM,
+    MAX_CHUNKS_PER_TILE_HIGH_ZOOM
+} from './tile-constants.js';
 
 const POINTY = new Set(['Point', 'MultiPoint']);
 
@@ -48,17 +56,39 @@ export function rankChunksByOverlap(chunkRecords, tileBbox) {
 }
 
 /**
+ * Chunk-load budget for a tile zoom. High zooms scan far more chunks and skip
+ * feature-mass early-stop (mass is a bad proxy when every chunk bbox is huge).
+ *
+ * @param {number} z
+ * @param {number} rankedCount
+ * @param {{ maxChunks?: number, maxChunksHighZoom?: number, highZoomScanZoom?: number }} [opts]
+ */
+export function chunkLoadBudgetForZoom(z, rankedCount, opts = {}) {
+    const highZoomScanZoom = opts.highZoomScanZoom ?? HIGH_ZOOM_CHUNK_SCAN_ZOOM;
+    const highZoom = z >= highZoomScanZoom;
+    const maxChunksCap = highZoom
+        ? (opts.maxChunksHighZoom ?? MAX_CHUNKS_PER_TILE_HIGH_ZOOM)
+        : (opts.maxChunks ?? MAX_CHUNKS_PER_TILE);
+    return {
+        highZoom,
+        maxChunks: Math.min(Math.max(0, rankedCount), maxChunksCap),
+        useMassBudget: !highZoom
+    };
+}
+
+/**
  * Decide which chunks to load for a tile. Prefers high tile-overlap chunks and
- * stops once enough feature mass is queued for the per-tile cap.
+ * stops once enough feature mass is queued for the per-tile cap (overview only).
  *
  * @param {Array<{ chunkId: string, bbox: number[], featureCount?: number }>} chunkRecords
  * @param {[number,number,number,number]} tileBbox
- * @param {{ maxFeatures?: number, maxChunks?: number }} [opts]
+ * @param {{ maxFeatures?: number, maxChunks?: number, useMassBudget?: boolean }} [opts]
  * @returns {{ chunkIds: string[], sampled: boolean, rankedCount: number }}
  */
 export function selectChunksForTile(chunkRecords, tileBbox, opts = {}) {
     const maxFeatures = opts.maxFeatures ?? MAX_TILE_FEATURES;
     const maxChunks = opts.maxChunks ?? MAX_CHUNKS_PER_TILE;
+    const useMassBudget = opts.useMassBudget !== false;
     const ranked = rankChunksByOverlap(chunkRecords, tileBbox);
     if (!ranked.length) {
         return { chunkIds: [], sampled: false, rankedCount: 0 };
@@ -78,7 +108,7 @@ export function selectChunksForTile(chunkRecords, tileBbox, opts = {}) {
     const targetMass = maxFeatures * 2;
     for (const rec of ranked) {
         if (selected.length >= maxChunks) break;
-        if (estimate >= targetMass && selected.length > 0) break;
+        if (useMassBudget && estimate >= targetMass && selected.length > 0) break;
         selected.push(rec.chunkId);
         estimate += rec.featureCount;
     }
@@ -106,7 +136,10 @@ export function selectChunksForTile(chunkRecords, tileBbox, opts = {}) {
 export function featureBelongsInTile(feature, tileBbox, z, minSpanDeg = null) {
     const bbox = featureBBox(feature);
     if (!bbox) return false;
+    // Fast reject on envelope, then require real geometry∩tile so long lines
+    // whose envelope covers the tile but miss it do not crowd the budget.
     if (!bboxIntersects(bbox, tileBbox)) return false;
+    if (!geometryIntersectsBBox(feature.geometry, tileBbox)) return false;
     const spanMin = minSpanDeg ?? (degreesPerPixel(z) * MIN_FEATURE_PIXELS);
     if (!POINTY.has(feature.geometry?.type)) {
         const span = Math.max(bbox[2] - bbox[0], bbox[3] - bbox[1]);
@@ -116,15 +149,38 @@ export function featureBelongsInTile(feature, tileBbox, z, minSpanDeg = null) {
 }
 
 /**
+ * Prefer compact (local) features when stride-sampling an oversized candidate
+ * set — statewide long-line envelopes otherwise dominate and geojson-vt clips
+ * them all away, leaving an empty tile.
+ * @param {object[]} features
+ * @param {number} maxFeatures
+ */
+export function preferLocalFeatures(features, maxFeatures) {
+    if (features.length <= maxFeatures) return features;
+    const ranked = features
+        .map((feature, index) => {
+            const bbox = featureBBox(feature);
+            // Use max span (not area): pure E–W / N–S lines have zero area.
+            const span = bbox
+                ? Math.max(bbox[2] - bbox[0], bbox[3] - bbox[1])
+                : Number.POSITIVE_INFINITY;
+            return { feature, index, span };
+        })
+        .sort((a, b) => a.span - b.span || a.index - b.index);
+    return ranked.slice(0, maxFeatures).map((row) => row.feature);
+}
+
+/**
  * @param {Array<{ features: object[] }>} chunks parsed workspace chunks
  * @param {[number,number,number,number]} tileBbox padded tile bounds (lon/lat)
  * @param {number} z tile zoom
- * @param {{ maxFeatures?: number, minFeaturePixels?: number }} [opts]
+ * @param {{ maxFeatures?: number, minFeaturePixels?: number, preferLocal?: boolean }} [opts]
  * @returns {{ features: object[], candidateCount: number, sampled: boolean }}
  */
 export function selectTileFeatures(chunks, tileBbox, z, opts = {}) {
     const maxFeatures = opts.maxFeatures ?? MAX_TILE_FEATURES;
     const minSpanDeg = degreesPerPixel(z) * (opts.minFeaturePixels ?? MIN_FEATURE_PIXELS);
+    const preferLocal = opts.preferLocal ?? z >= HIGH_ZOOM_CHUNK_SCAN_ZOOM;
 
     const candidates = [];
     for (const chunk of chunks) {
@@ -136,6 +192,14 @@ export function selectTileFeatures(chunks, tileBbox, z, opts = {}) {
 
     if (candidates.length <= maxFeatures) {
         return { features: candidates, candidateCount: candidates.length, sampled: false };
+    }
+
+    if (preferLocal) {
+        return {
+            features: preferLocalFeatures(candidates, maxFeatures),
+            candidateCount: candidates.length,
+            sampled: true
+        };
     }
 
     // Even stride sampling keeps the spatial impression at overview zooms.
@@ -194,8 +258,10 @@ export function sampleChunksForTile(chunkIds, totalFeatureEstimate, opts = {}) {
 export default {
     bboxOverlapRatio,
     rankChunksByOverlap,
+    chunkLoadBudgetForZoom,
     selectChunksForTile,
     featureBelongsInTile,
+    preferLocalFeatures,
     selectTileFeatures,
     sampleChunksForTile
 };
