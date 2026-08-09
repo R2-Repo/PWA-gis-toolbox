@@ -15,7 +15,6 @@ import { openQuery } from './query/controller.js';
 import { openWirelessSitePlanning } from './wireless-site-planning/controller.js';
 import { openPresentationLinkBuilder } from './presentation-link-builder/controller.js';
 import { openLayerSummary } from './layer-summary/controller.js';
-import { openLargeDatasetCleanup } from './large-dataset-cleanup/controller.js';
 import logger from '../core/logger.js';
 import {
     hasRequiredCapabilities,
@@ -102,14 +101,6 @@ export const GIS_WIDGETS = [
         tip: 'Cut a project route into numbered plan sheet extents with matchlines and export.',
         badge: 'Beta',
         open: openSheetCutting
-    },
-    {
-        type: 'large-dataset-cleanup',
-        action: 'openLargeDatasetCleanup',
-        label: 'Large Dataset Cleanup',
-        icon: '🧹',
-        tip: 'Review storage footprint, detach cold fields, and remove large workspace layers or preserved sources.',
-        open: openLargeDatasetCleanup
     }
 ];
 

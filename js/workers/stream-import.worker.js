@@ -53,6 +53,8 @@ self.onmessage = (event) => {
         void runImport(msg);
     } else if (msg.type === 'scan-values') {
         void runValueScan(msg);
+    } else if (msg.type === 'estimate-filter') {
+        void runEstimate(msg);
     } else if (msg.type === 'ack') {
         const resolve = ackResolve;
         ackResolve = null;
@@ -104,6 +106,7 @@ function _bboxIntersectsFence(geometry, fence) {
 
 function createImportContext(msg, overrides = {}) {
     const { id, file, options = {} } = msg;
+    const estimateOnly = options.estimateOnly === true;
     const batchFeatures = options.batchFeatures ?? STREAM_BATCH_FEATURES;
     const batchMaxBytes = options.batchMaxBytes ?? STREAM_BATCH_MAX_BYTES;
     const maxFeatures = options.maxFeatures ?? STREAM_MAX_FEATURES;
@@ -118,17 +121,18 @@ function createImportContext(msg, overrides = {}) {
         ? options.featureFilter
         : null;
 
-    const schema = createSchemaAccumulator();
+    const schema = estimateOnly ? null : createSchemaAccumulator();
     let features = [];
     let batchBytes = 0;
     let emitted = 0;
+    let totalSeen = 0;
     let noGeometryCount = 0;
     let fenceFiltered = 0;
     let featureFiltered = 0;
     let lastProgressAt = 0;
 
     const flush = async (bytesProcessed) => {
-        if (!features.length) return;
+        if (estimateOnly || !features.length) return;
         if (cancelled) throw _cancelError();
         const batch = features;
         features = [];
@@ -159,12 +163,17 @@ function createImportContext(msg, overrides = {}) {
                 ...(rawFeature.id != null ? { id: rawFeature.id } : {})
             });
             for (let part of parts) {
+                totalSeen++;
                 if (fence && part.geometry && !_bboxIntersectsFence(part.geometry, fence)) {
                     fenceFiltered++;
                     continue;
                 }
                 if (featureFilter && !featureMatchesImportFilters(part, featureFilter)) {
                     featureFiltered++;
+                    continue;
+                }
+                if (estimateOnly) {
+                    emitted++;
                     continue;
                 }
                 if (selectedFields) {
@@ -188,6 +197,19 @@ function createImportContext(msg, overrides = {}) {
             }
         },
         async finish(bytesProcessed, extra = {}) {
+            if (estimateOnly) {
+                self.postMessage({
+                    id,
+                    type: 'estimate-done',
+                    matchCount: emitted,
+                    totalCount: totalSeen,
+                    featureFiltered,
+                    fenceFiltered,
+                    bytesProcessed,
+                    ...extra
+                });
+                return;
+            }
             await flush(bytesProcessed);
             self.postMessage({
                 id,
@@ -231,6 +253,43 @@ async function runImport(msg) {
             await runZip(msg);
         } else {
             throw new Error(`Streaming import does not support format: ${format}`);
+        }
+    } catch (error) {
+        if (error?.cancelled) return;
+        self.postMessage({
+            id,
+            type: 'error',
+            message: error?.message || String(error),
+            code: error?.code || null
+        });
+    }
+}
+
+/** Count-only pass — same parsers/filters as import, no IndexedDB batches. */
+async function runEstimate(msg) {
+    const { id } = msg;
+    cancelled = false;
+    const estimateMsg = {
+        ...msg,
+        options: {
+            ...(msg.options || {}),
+            estimateOnly: true,
+            maxFeatures: Number.MAX_SAFE_INTEGER,
+            selectedFields: null
+        }
+    };
+    try {
+        const format = estimateMsg.format;
+        if (format === 'geojson' || format === 'json') {
+            await runGeoJSON(estimateMsg);
+        } else if (format === 'csv') {
+            await runCSV(estimateMsg);
+        } else if (format === 'kml' || format === 'xml' || format === 'kmz') {
+            await runKML(estimateMsg);
+        } else if (format === 'zip') {
+            await runZip(estimateMsg);
+        } else {
+            throw new Error(`Filter estimate does not support format: ${format}`);
         }
     } catch (error) {
         if (error?.cancelled) return;

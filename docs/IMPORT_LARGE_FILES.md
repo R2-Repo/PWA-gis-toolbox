@@ -242,12 +242,8 @@ Stable feature identity and write/export paths for workspace layers:
   `sources/{opfsKey}/`. v1 kits still import. Deferred workspace folders
   restore through `importDeferredWorkspaceFromZip` without assembling a full
   bundle in RAM.
-- **Large Dataset Cleanup** GIS Widget — select a workspace layer, review
-  footprint (features, hot/cold fields, source size, quota), detach fields,
-  remove layer, optionally delete the preserved source.
-- **Storage Manager** — Guide → **Storage…** (also linked from the cleanup
-  wizard). Lists preserved OPFS sources with layer refs, quota bar, remove /
-  remove-unreferenced.
+- **Storage Manager** — Guide → **Storage…**. Lists preserved OPFS sources
+  with layer refs, quota bar, remove / remove-unreferenced.
 
 ### Files (Build 6)
 
@@ -257,8 +253,6 @@ Stable feature identity and write/export paths for workspace layers:
 | `js/core/project-kit.js` | Kit format v2, deferred workspace pack/parse, sources |
 | `js/core/layer-restore.js` | Deferred workspace + OPFS source restore on kit import |
 | `js/workspace/storage-summary.js` | Quota + source inventory helpers |
-| `js/widgets/large-dataset-cleanup/` | Cleanup wizard engine + controller |
-| `react/widgets/LargeDatasetCleanupDialog.jsx` | Cleanup wizard UI |
 | `react/tools/StorageManagerDialog.jsx` | Storage manager UI |
 
 Notes: streaming Excel remains impractical (whole-workbook format) —
@@ -289,17 +283,38 @@ addition to attribute deselection and Import Fence:
 | `js/workers/stream-import.worker.js` | `scan-values` + import-time feature filter |
 | `react/tools/ImportFeatureFilterPanel.jsx` | Filter UI |
 | `react/tools/useImportValueScan.js` | Scan hook for Flow + Optimizer |
+| `js/import/import-store-estimate.js` | Stored size/feature estimate vs import limits |
+| `js/import/import-filter-estimate.js` | Count-only worker pass for live filter match count |
+| `react/tools/ImportEstimateGauge.jsx` | Live estimate gauge (red / amber / green) |
+| `react/tools/useImportStoreEstimate.js` | Debounced estimate hook |
+| `react/tools/ImportFencePlaceControl.jsx` | Place / clear fence on configure step |
 
 Out of scope: preview map of matches, spatial predicates beyond fence, Excel
 value lists.
 
 **Note:** Filters reduce what is **stored** (IndexedDB / map). The source file
-is still streamed from disk, so it must stay under `STREAM_MAX_BYTES` (2 GB).
-An 800+ MB statewide roads GeoJSON is eligible for streaming, but **Import is
-blocked until the user reduces attributes, sets a feature filter, or uses an
-import fence** — full unfiltered import of that size is not allowed. Drag-drop
-and the file picker open the same filter UI instead of streaming unchanged.
-Multi‑GB exports still need an external split or subset.
+is still streamed from disk, so it must stay under `STREAM_MAX_BYTES` (2 GB)
+internally — that plumbing ceiling is **not** shown as the user-facing import
+limit. The UI shows the real unchanged-import limits (`TEXT_STRONG_BYTES` ≈
+4 MB, `MAX_IMPORT_FEATURES` = 250,000).
+
+An 800+ MB statewide roads GeoJSON is eligible for the filter UI, but **Import
+is blocked until**:
+
+1. The user reduces attributes, sets a feature filter, or uses an import fence, and
+2. The live **estimated stored feature count** is ≤ 250,000
+
+The gauge shows approximate stored bytes + feature count as selections change.
+Source disk size never shrinks. Estimated byte size vs 4 MB is color guidance
+(amber = features OK, size still large → stream import allowed); feature count
+is the hard unlock gate. Drag-drop / file picker open the same filter UI
+instead of streaming unchanged. Multi‑GB exports still need an external split.
+
+**Place fence from configure:** Import Optimizer and Import Flow’s large-file
+step include **Place Import Fence**. The dialog closes while the map draw tool
+is active, then reopens with the same files, attribute selection, and feature
+filters. Clear / replace keep that session. (Choosing Import Fence from the
+Import chooser still works as a pre-file shortcut.)
 
 ## Governing rules (unchanged from master plan)
 

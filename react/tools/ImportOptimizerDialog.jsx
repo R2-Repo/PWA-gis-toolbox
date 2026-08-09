@@ -15,19 +15,35 @@ import { ImportFieldSelector } from './ImportFieldSelector.jsx';
 import { ImportProgressPanel } from './ImportProgressPanel.jsx';
 import { ImportReductionNotice } from './ImportReductionNotice.jsx';
 import { ImportFeatureFilterPanel } from './ImportFeatureFilterPanel.jsx';
+import { ImportEstimateGauge } from './ImportEstimateGauge.jsx';
+import { ImportFencePlaceControl } from './ImportFencePlaceControl.jsx';
 import { useFeatureFilterState, useImportValueScan } from './useImportValueScan.js';
+import { useImportStoreEstimate } from './useImportStoreEstimate.js';
 
-export function ImportOptimizerDialog({ files = [], onCancel, onConfirm }) {
+export function ImportOptimizerDialog({
+    files = [],
+    onCancel,
+    onConfirm,
+    hasActiveFence = false,
+    onPlaceFence = null,
+    onClearFence = null,
+    initialSelectedFields = null,
+    initialFeatureFilter = null,
+    initialImportMode = null
+}) {
     const cancelImportRef = useRef(null);
     const [scans, setScans] = useState([]);
     const [loading, setLoading] = useState(true);
     const [importing, setImporting] = useState(false);
-    const [importMode, setImportMode] = useState('preserve');
+    const [importMode, setImportMode] = useState(initialImportMode || 'preserve');
     const [routeAssessment, setRouteAssessment] = useState(null);
     const [error, setError] = useState('');
     const [selectedFields, setSelectedFields] = useState([]);
     const [importProgress, setImportProgress] = useState({ percent: 0, step: 'Starting import…' });
+    const [fenceActive, setFenceActive] = useState(hasActiveFence === true);
     const { featureFilter, setFeatureFilter } = useFeatureFilterState();
+    const restoredFilterRef = useRef(false);
+    const restoredFieldsRef = useRef(false);
 
     const fieldNames = useMemo(() => mergeScanFieldNames(scans), [scans]);
     const reductionNotice = useMemo(() => {
@@ -42,6 +58,32 @@ export function ImportOptimizerDialog({ files = [], onCancel, onConfirm }) {
         enabled: !loading && !importing && fieldNames.length > 0
     });
 
+    const totalFeatureEstimate = useMemo(() => {
+        const values = scans.map((s) => s.featureEstimate).filter((n) => n != null && n > 0);
+        if (!values.length) return valueScan.valueCatalog?.rowCount ?? null;
+        return values.reduce((sum, n) => sum + n, 0);
+    }, [scans, valueScan.valueCatalog]);
+
+    const storeEstimate = useImportStoreEstimate({
+        files,
+        fieldNames,
+        selectedFields,
+        featureFilter,
+        totalFeatureEstimate,
+        hasFence: fenceActive,
+        enabled: !loading && !importing && files.length > 0
+    });
+
+    useEffect(() => {
+        setFenceActive(hasActiveFence === true);
+    }, [hasActiveFence]);
+
+    useEffect(() => {
+        if (restoredFilterRef.current || !initialFeatureFilter) return;
+        restoredFilterRef.current = true;
+        setFeatureFilter(initialFeatureFilter);
+    }, [initialFeatureFilter, setFeatureFilter]);
+
     useEffect(() => {
         let cancelled = false;
         void (async () => {
@@ -50,11 +92,22 @@ export function ImportOptimizerDialog({ files = [], onCancel, onConfirm }) {
                 if (!cancelled) {
                     setScans(results);
                     const names = mergeScanFieldNames(results);
-                    setSelectedFields(names);
+                    if (!restoredFieldsRef.current && Array.isArray(initialSelectedFields) && initialSelectedFields.length) {
+                        restoredFieldsRef.current = true;
+                        const allowed = new Set(names);
+                        const restored = initialSelectedFields.filter((f) => allowed.has(f));
+                        setSelectedFields(restored.length ? restored : names);
+                    } else {
+                        setSelectedFields(names);
+                    }
                     const assessment = assessImportRouteFromScans(results);
                     setRouteAssessment(assessment);
                     const hasKml = results.some((s) => s.format === 'kml' || s.format === 'kmz' || s.format === 'xml');
-                    setImportMode(hasKml ? 'preserve' : 'direct');
+                    if (initialImportMode === 'preserve' || initialImportMode === 'gis' || initialImportMode === 'direct') {
+                        setImportMode(initialImportMode);
+                    } else {
+                        setImportMode(hasKml ? 'preserve' : 'direct');
+                    }
                 }
             } catch (e) {
                 if (!cancelled) setError(e?.message || 'Scan failed');
@@ -63,9 +116,22 @@ export function ImportOptimizerDialog({ files = [], onCancel, onConfirm }) {
             }
         })();
         return () => { cancelled = true; };
-    }, [files]);
+    }, [files, initialSelectedFields, initialImportMode]);
 
     const hasKml = scans.some((s) => s.format === 'kml' || s.format === 'kmz' || s.format === 'xml');
+
+    const handlePlaceFence = () => {
+        onPlaceFence?.({
+            selectedFields,
+            featureFilter: hasActiveFeatureFilter(featureFilter) ? featureFilter : null,
+            importMode
+        });
+    };
+
+    const handleClearFence = () => {
+        onClearFence?.();
+        setFenceActive(false);
+    };
 
     const handleConfirm = async () => {
         if (fieldNames.length > 0 && selectedFields.length === 0) {
@@ -186,6 +252,24 @@ export function ImportOptimizerDialog({ files = [], onCancel, onConfirm }) {
                             onChange={setFeatureFilter}
                         />
                     ) : null}
+
+                    {onPlaceFence ? (
+                        <ImportFencePlaceControl
+                            hasActiveFence={fenceActive}
+                            disabled={valueScan.scanState === 'scanning'}
+                            onPlaceFence={handlePlaceFence}
+                            onClearFence={handleClearFence}
+                        />
+                    ) : null}
+
+                    <ImportEstimateGauge
+                        estimate={storeEstimate.estimate}
+                        estimateState={storeEstimate.estimateState}
+                        estimateProgress={storeEstimate.estimateProgress}
+                        estimateMessage={storeEstimate.estimateMessage}
+                        waitingOnRecount={storeEstimate.waitingOnRecount}
+                        sourceBytes={files[0]?.size || 0}
+                    />
                 </>
             )}
 

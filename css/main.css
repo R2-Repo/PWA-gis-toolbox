@@ -1250,15 +1250,13 @@ textarea { resize: vertical; min-height: 60px; }
     padding: 0 2px;
 }
 .layer-overflow-dropdown {
-    position: absolute;
-    top: calc(100% + 4px);
-    right: 0;
+    position: fixed;
     min-width: 168px;
     background: var(--bg-surface);
     border: 1px solid var(--border);
     border-radius: var(--radius-sm);
     box-shadow: var(--shadow-lg);
-    z-index: 220;
+    z-index: 10000;
     overflow: hidden;
     padding: 4px 0;
 }

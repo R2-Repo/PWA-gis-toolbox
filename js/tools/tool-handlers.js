@@ -1199,11 +1199,19 @@ export async function handleFileImport(files, fenceBbox = null, options = {}) {
 }
 
 export function openImportFlow() {
-    clearImportReopenAfterFence();
+    clearAfterFenceRestore();
     _openImportFlowModal();
 }
 
-function _openImportOptimizerModal(files) {
+/**
+ * @param {File[]} files
+ * @param {{
+ *   selectedFields?: string[],
+ *   featureFilter?: object|null,
+ *   importMode?: string
+ * }} [session]
+ */
+function _openImportOptimizerModal(files, session = {}) {
     const optRootId = `import-opt-${Date.now()}`;
     showModal('Import Optimizer', `<div id="${optRootId}"></div>`, {
         width: '560px',
@@ -1212,7 +1220,24 @@ function _openImportOptimizerModal(files) {
             const { mountImportOptimizerDialog } = await import('../../react/tools/mountImportOptimizerDialog.jsx');
             const optMounted = mountImportOptimizerDialog(optRoot, {
                 files,
+                initialSelectedFields: session.selectedFields,
+                initialFeatureFilter: session.featureFilter ?? null,
+                initialImportMode: session.importMode,
+                hasActiveFence: hasActiveImportFence(),
                 onCancel: () => optClose(),
+                onPlaceFence: (snapshot = {}) => {
+                    optClose();
+                    void startImportFence(() => {
+                        _openImportOptimizerModal(files, {
+                            selectedFields: snapshot.selectedFields,
+                            featureFilter: snapshot.featureFilter ?? null,
+                            importMode: snapshot.importMode
+                        });
+                    });
+                },
+                onClearFence: () => {
+                    clearImportFenceState();
+                },
                 onConfirm: async (opts, ui) => {
                     await handleFileImport(files, _fenceBbox, {
                         preflightConfirmed: true,
@@ -1314,9 +1339,25 @@ function _openImportFlowModal(flowProps = {}) {
                     close();
                     createDrawLayer();
                 },
-                onOpenFence: () => {
+                onOpenFence: (session = null) => {
                     close();
-                    startImportFence();
+                    const restore = () => {
+                        if (session?.files?.length) {
+                            _openImportFlowModal({
+                                initialFiles: session.files,
+                                initialScans: session.scans || null,
+                                initialSelectedFields: session.selectedFields || null,
+                                initialFeatureFilter: session.featureFilter ?? null,
+                                startAtFieldPick: true
+                            });
+                            return;
+                        }
+                        _openImportFlowModal();
+                    };
+                    void startImportFence(restore);
+                },
+                onClearFence: () => {
+                    clearImportFenceState();
                 },
                 catalogLiveLayers: listCatalogLiveLayers(),
                 onAddCatalogLiveLayer: async (layerId) => {
@@ -4255,27 +4296,57 @@ export async function materializeServiceLayerWithConfirm(layerId) {
 // Import Fence
 // ============================
 let _fenceBbox = null; // [west, south, east, north] when fence is active
-let _reopenImportAfterFence = false;
+/** @type {null | (() => void)} restore importer after fence draw (dual-screen async) */
+let _afterFenceRestore = null;
 
 function hasActiveImportFence() {
     return !!_fenceBbox || mapService.hasImportFence();
 }
 
-function scheduleImportReopenAfterFence() {
-    _reopenImportAfterFence = true;
+function clearAfterFenceRestore() {
+    _afterFenceRestore = null;
 }
 
-function clearImportReopenAfterFence() {
-    _reopenImportAfterFence = false;
+function scheduleAfterFenceRestore(restoreFn) {
+    _afterFenceRestore = typeof restoreFn === 'function' ? restoreFn : null;
+}
+
+function runAfterFenceRestore() {
+    const fn = _afterFenceRestore;
+    _afterFenceRestore = null;
+    if (typeof fn !== 'function') return;
+    try {
+        fn();
+    } catch (e) {
+        logger.warn('Import', 'Fence restore failed', { error: e?.message });
+    }
 }
 
 function maybeReopenImportAfterFence() {
-    if (!_reopenImportAfterFence) return;
-    clearImportReopenAfterFence();
+    runAfterFenceRestore();
+}
+
+function clearImportFenceState() {
+    mapService.clearImportFence();
+    _fenceBbox = null;
+    updateFenceButtonState();
+    if (dualScreenCoordinator.isActive) {
+        dualScreenCoordinator.setFenceBbox(null);
+        dualScreenCoordinator.broadcastDrawCmd({ action: 'clearFence' });
+    }
+}
+
+function defaultFenceRestore() {
     _openImportFlowModal();
 }
 
-export async function startImportFence() {
+/**
+ * Hide importer → draw fence → restore via callback (also on cancel).
+ * @param {null | (() => void)} [restore]
+ */
+export async function startImportFence(restore = null) {
+    const restoreFn = typeof restore === 'function' ? restore : defaultFenceRestore;
+
     if (dualScreenCoordinator.isActive) {
         if (hasActiveImportFence()) {
             const rootId = `import-fence-react-${Date.now()}`;
@@ -4289,16 +4360,15 @@ export async function startImportFence() {
                         message: 'An import fence is currently active. All imports are filtered to this area.',
                         onPlaceNewFence: () => {
                             close();
-                            scheduleImportReopenAfterFence();
+                            scheduleAfterFenceRestore(restoreFn);
                             dualScreenCoordinator.broadcastDrawCmd({ action: 'startFence' });
                             dualScreenCoordinator.focusMapWindow();
                             showToast('Draw the fence on the Dual Screen map window', 'info');
                         },
                         onRemoveFence: () => {
-                            _fenceBbox = null;
-                            updateFenceButtonState();
-                            dualScreenCoordinator.broadcastDrawCmd({ action: 'clearFence' });
+                            clearImportFenceState();
                             close();
+                            restoreFn();
                         }
                     });
                     watchOverlayUnmount(overlay, () => mounted.unmount?.());
@@ -4306,7 +4376,7 @@ export async function startImportFence() {
             });
             return;
         }
-        scheduleImportReopenAfterFence();
+        scheduleAfterFenceRestore(restoreFn);
         dualScreenCoordinator.broadcastDrawCmd({ action: 'startFence' });
         dualScreenCoordinator.focusMapWindow();
         showToast('Draw the import fence on the Dual Screen map window', 'info');
@@ -4324,16 +4394,15 @@ export async function startImportFence() {
                 const mounted = mountImportFenceOptionsDialog(root, {
                     message: 'An import fence is currently active on the map. All imports (files and ArcGIS) are filtered to this area.',
                     placeNewDescription: 'Remove current fence and draw a new one',
-                    clearDescription: 'Clear fence from map ? imports will no longer be filtered',
+                    clearDescription: 'Clear fence from map — imports will no longer be filtered',
                     onPlaceNewFence: async () => {
                         close();
-                        await drawNewFence({ reopenImportAfter: true });
+                        await drawNewFence({ after: restoreFn });
                     },
                     onRemoveFence: () => {
-                        mapService.clearImportFence();
-                        _fenceBbox = null;
-                        updateFenceButtonState();
+                        clearImportFenceState();
                         close();
+                        restoreFn();
                     }
                 });
                 watchOverlayUnmount(overlay, () => mounted.unmount?.());
@@ -4342,22 +4411,24 @@ export async function startImportFence() {
         return;
     }
 
-    await drawNewFence({ reopenImportAfter: true });
+    await drawNewFence({ after: restoreFn });
 }
 
-async function drawNewFence({ reopenImportAfter = false } = {}) {
+/**
+ * @param {{ after?: null | (() => void) }} [options]
+ */
+async function drawNewFence({ after = null } = {}) {
     const bbox = await mapService.startImportFenceDraw();
     if (!bbox) {
-        if (reopenImportAfter) clearImportReopenAfterFence();
         showToast('Fence cancelled', 'info');
-        return;
+        if (typeof after === 'function') after();
+        return null;
     }
     _fenceBbox = bbox;
     updateFenceButtonState();
     showToast('Import fence placed — all imports will be filtered to this area', 'success');
-    if (reopenImportAfter) {
-        _openImportFlowModal();
-    }
+    if (typeof after === 'function') after();
+    return bbox;
 }
 
 export function updateFenceButtonState() {

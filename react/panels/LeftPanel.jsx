@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
     isSpatialLayer,
     isLiveVectorLayer,
@@ -21,22 +22,56 @@ function getDropIndex(clientY, itemElements) {
 
 function LayerOverflowMenu({ label = 'Layer actions', items = [] }) {
     const [open, setOpen] = useState(false);
-    const wrapperRef = useRef(null);
+    const [menuPos, setMenuPos] = useState({ top: 0, left: 0 });
+    const buttonRef = useRef(null);
+    const menuRef = useRef(null);
+
+    const updateMenuPosition = useCallback(() => {
+        const button = buttonRef.current;
+        if (!button) return;
+        const rect = button.getBoundingClientRect();
+        const menuHeight = menuRef.current?.offsetHeight || items.length * 36 + 8;
+        const menuWidth = menuRef.current?.offsetWidth || 168;
+        const gap = 4;
+        const spaceBelow = window.innerHeight - rect.bottom - gap;
+        const openUpward = spaceBelow < menuHeight && rect.top > spaceBelow;
+        const top = openUpward
+            ? Math.max(8, rect.top - menuHeight - gap)
+            : Math.min(window.innerHeight - menuHeight - 8, rect.bottom + gap);
+        const left = Math.min(
+            window.innerWidth - menuWidth - 8,
+            Math.max(8, rect.right - menuWidth)
+        );
+        setMenuPos({ top, left });
+    }, [items.length]);
+
+    useLayoutEffect(() => {
+        if (!open) return undefined;
+        updateMenuPosition();
+    }, [open, updateMenuPosition]);
 
     useEffect(() => {
         if (!open) return undefined;
         const closeMenu = (e) => {
-            if (!wrapperRef.current?.contains(e.target)) {
-                setOpen(false);
-            }
+            const target = e.target;
+            if (buttonRef.current?.contains(target) || menuRef.current?.contains(target)) return;
+            setOpen(false);
         };
-        document.addEventListener('click', closeMenu);
-        return () => document.removeEventListener('click', closeMenu);
+        const onRepositionOrClose = () => setOpen(false);
+        document.addEventListener('pointerdown', closeMenu);
+        window.addEventListener('resize', onRepositionOrClose);
+        window.addEventListener('scroll', onRepositionOrClose, true);
+        return () => {
+            document.removeEventListener('pointerdown', closeMenu);
+            window.removeEventListener('resize', onRepositionOrClose);
+            window.removeEventListener('scroll', onRepositionOrClose, true);
+        };
     }, [open]);
 
     return (
-        <div className="layer-overflow-menu" ref={wrapperRef}>
+        <div className="layer-overflow-menu">
             <button
+                ref={buttonRef}
                 type="button"
                 className="btn-icon layer-overflow-btn"
                 title={label}
@@ -50,26 +85,35 @@ function LayerOverflowMenu({ label = 'Layer actions', items = [] }) {
             >
                 ⋯
             </button>
-            {open ? (
-                <div className="layer-overflow-dropdown" role="menu">
-                    {items.map((item) => (
-                        <button
-                            key={item.id}
-                            type="button"
-                            className="layer-overflow-item"
-                            role="menuitem"
-                            onClick={(e) => {
-                                e.stopPropagation();
-                                setOpen(false);
-                                item.onClick?.();
-                            }}
-                        >
-                            {item.icon ? <span className="layer-overflow-item-icon" aria-hidden>{item.icon}</span> : null}
-                            <span>{item.label}</span>
-                        </button>
-                    ))}
-                </div>
-            ) : null}
+            {open
+                ? createPortal(
+                    <div
+                        ref={menuRef}
+                        className="layer-overflow-dropdown"
+                        role="menu"
+                        style={{ top: menuPos.top, left: menuPos.left }}
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        {items.map((item) => (
+                            <button
+                                key={item.id}
+                                type="button"
+                                className="layer-overflow-item"
+                                role="menuitem"
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    setOpen(false);
+                                    item.onClick?.();
+                                }}
+                            >
+                                {item.icon ? <span className="layer-overflow-item-icon" aria-hidden>{item.icon}</span> : null}
+                                <span>{item.label}</span>
+                            </button>
+                        ))}
+                    </div>,
+                    document.body
+                )
+                : null}
         </div>
     );
 }
