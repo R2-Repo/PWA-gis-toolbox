@@ -108,10 +108,43 @@ describe('stream-policy', () => {
         expect(res.stream).toBe(true);
     });
 
-    it('keeps large zipped shapefiles on the standard path', async () => {
+    it('streams large single-shapefile archives', async () => {
         const zip = await makeArchive('parcels.zip', {
             'parcels.shp': randomBytes(BINARY_STRONG_BYTES + 1024 * 1024),
-            'parcels.dbf': 'attrs'
+            'parcels.dbf': randomBytes(512 * 1024),
+            'parcels.prj': 'PROJCS["x"]'
+        });
+        const res = await assessStreamEligibility(zip);
+        expect(res.stream).toBe(true);
+    });
+
+    it('streams a compact shapefile archive that expands past the text cap', async () => {
+        // Zeros compress massively — small zip, huge uncompressed .shp.
+        const zip = await makeArchive('sparse.zip', {
+            'sparse.shp': new Uint8Array(TEXT_STRONG_BYTES + 1024 * 1024),
+            'sparse.dbf': new Uint8Array(1024)
+        });
+        expect(zip.size).toBeLessThan(BINARY_STRONG_BYTES);
+        const res = await assessStreamEligibility(zip);
+        expect(res.stream).toBe(true);
+    });
+
+    it('keeps multi-shapefile archives on the standard path', async () => {
+        const zip = await makeArchive('multi.zip', {
+            'a.shp': randomBytes(BINARY_STRONG_BYTES + 1024 * 1024),
+            'a.dbf': 'attrs',
+            'b.shp': randomBytes(64 * 1024),
+            'b.dbf': 'attrs'
+        });
+        const res = await assessStreamEligibility(zip);
+        expect(res.stream).toBe(false);
+        expect(res.reject).toBe(false);
+    });
+
+    it('keeps a genuinely small shapefile archive on the standard path', async () => {
+        const zip = await makeArchive('tiny.zip', {
+            'tiny.shp': randomBytes(64 * 1024),
+            'tiny.dbf': randomBytes(16 * 1024)
         });
         const res = await assessStreamEligibility(zip);
         expect(res.stream).toBe(false);

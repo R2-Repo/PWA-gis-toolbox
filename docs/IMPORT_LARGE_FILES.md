@@ -91,9 +91,9 @@ crashing the tab. Streamed export lifts this in a later build.
 
 Known constraints (deliberate scope):
 
-- Large CSV must contain **lat/lon** columns (projected easting/northing and
-  pure tables are refused with a clear message — reprojection and table
-  storage stream in a later build).
+- Large CSV must contain coordinate columns (pure tables are refused with a
+  clear message — table storage streams in a later build). Projected
+  easting/northing CSVs prompt for a source CRS and reproject in the worker.
 - Large KML/KMZ import as **simplified GIS layers** (`importMode: 'gis'`):
   descriptions/balloon HTML, styleUrl, and embedded icons/overlays are not
   kept — matching the Import Optimizer's recommendation for KML. Small/medium
@@ -101,8 +101,8 @@ Known constraints (deliberate scope):
 - Streaming KMZ requires `DecompressionStream` (all evergreen browsers);
   otherwise the archive falls back to the standard caps. ZIP64 archives are
   not supported.
-- Large Shapefile/Excel keep the existing caps (streaming SHP parse is the
-  next build; Excel's whole-workbook format cannot stream).
+- Large Excel keeps the existing caps (whole-workbook format cannot stream);
+  streamed shapefiles support one shapefile per archive.
 - Workflow-editor file-import nodes keep the standard-path caps.
 
 ### Files
@@ -142,18 +142,28 @@ layers excluded from the in-memory import budget, and materialization guards.
 - KMZ field sniffing now uses the central directory, so it also works for
   archives of any size.
 
+## Build 3 (shipped): streaming shapefile + projected CSV
+
+- Streaming zipped shapefile: `.shp` records and `.dbf` rows parse in lockstep
+  from per-entry `DecompressionStream`s (`byte-reader.js`,
+  `shp-stream-parser.js`, `dbf-stream-parser.js`, `shapefile-stream.js`).
+  `.prj` WKT reprojects to WGS84 via proj4 in the worker (matching shpjs
+  output within 1e-6 in differential tests); `.cpg` selects the DBF text
+  encoding (latin1 default, like shpjs). Polygon rings assemble by winding
+  with a containment fallback for non-spec writers. Z/M values are dropped
+  (2D display data; the original archive is preserved in OPFS).
+- One shapefile per archive on the streaming path; multi-shapefile archives
+  keep the standard path.
+- Projected CSV (easting/northing): the flow now prompts for the source CRS
+  (existing CRS dialog + registry proj4 defs) and retries with in-worker
+  reprojection — previously refused outright.
+- The Import dialog's high-capacity notice shows the head-sniffed feature
+  estimate.
+
 ## Roadmap (subsequent builds)
 
-### Build 3 — Streaming shapefile + remaining formats
-
-- Streaming shapefile (fixed-length .shp records + .dbf rows in lockstep,
-  .prj reprojection via proj4) — zipped shapefiles ride the same
-  central-directory streaming as KMZ.
-- Streaming Excel is not practical (whole-workbook format) — convert-to-CSV
-  guidance or moderate cap raise with worker parse.
-- Deeper preflight report in the Import dialog (feature/coordinate estimates,
-  recommended mode) building on `import-scan.js`.
-- Streamed CSV reprojection (projected easting/northing with user-chosen CRS).
+Notes: streaming Excel remains impractical (whole-workbook format) —
+convert-to-CSV guidance stands.
 
 ### Build 4 — DuckDB-WASM + local MVT tiles (the Re:Earth pattern)
 

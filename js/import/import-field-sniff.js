@@ -86,9 +86,30 @@ export async function sniffFieldsFromFile(file) {
         // Preferred: central-directory + streamed head — works for archives of
         // any size without extracting the whole zip.
         try {
-            const { readZipEntries, chooseMainKmlZipEntry, readZipEntryHead } =
+            const { readZipEntries, chooseMainKmlZipEntry, readZipEntryHead, openZipEntryStream, isRealZipEntry } =
                 await import('./stream/zip-central-directory.js');
             const entries = await readZipEntries(file);
+
+            // Zipped shapefile — field names come from the .dbf header.
+            const dbfEntry = entries.find(
+                (e) => isRealZipEntry(e) && e.name.toLowerCase().endsWith('.dbf')
+            );
+            const hasShp = entries.some(
+                (e) => isRealZipEntry(e) && e.name.toLowerCase().endsWith('.shp')
+            );
+            if (hasShp && dbfEntry) {
+                const { createByteReader } = await import('./stream/byte-reader.js');
+                const { readDbfHeader } = await import('./stream/dbf-stream-parser.js');
+                const reader = createByteReader(await openZipEntryStream(file, dbfEntry));
+                try {
+                    const header = await readDbfHeader(reader);
+                    const names = header.fields.map((f) => f.name).filter(Boolean);
+                    if (names.length) return names.sort((a, b) => a.localeCompare(b));
+                } finally {
+                    await reader.cancel();
+                }
+            }
+
             const main = chooseMainKmlZipEntry(entries);
             if (main) {
                 const head = await readZipEntryHead(file, main.entry, SAMPLE_BYTES);

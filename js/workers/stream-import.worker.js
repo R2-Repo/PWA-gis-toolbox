@@ -8,14 +8,17 @@
  */
 import './xml-worker-globals.js';
 import Papa from 'papaparse';
+import proj4 from 'proj4';
 import { DOMParser } from '@xmldom/xmldom';
 import toGeoJSON from '@mapbox/togeojson';
 import { GeoJSONFeatureStreamParser } from '../import/stream/geojson-stream-parser.js';
 import { KmlPlacemarkStreamParser } from '../import/stream/kml-stream-parser.js';
 import { createKmlBlockConverter } from '../import/stream/kml-stream-convert.js';
+import { streamShapefileFeatures } from '../import/stream/shapefile-stream.js';
 import {
     readZipEntries,
     openZipEntryStream,
+    readZipEntryHead,
     chooseMainKmlZipEntry
 } from '../import/stream/zip-central-directory.js';
 import {
@@ -200,8 +203,10 @@ async function runImport(msg) {
             await runGeoJSON(msg);
         } else if (format === 'csv') {
             await runCSV(msg);
-        } else if (format === 'kml' || format === 'xml' || format === 'kmz' || format === 'zip') {
+        } else if (format === 'kml' || format === 'xml' || format === 'kmz') {
             await runKML(msg);
+        } else if (format === 'zip') {
+            await runZip(msg);
         } else {
             throw new Error(`Streaming import does not support format: ${format}`);
         }
@@ -259,6 +264,76 @@ async function runGeoJSON(msg) {
             reader.releaseLock();
         } catch { /* ignore */ }
     }
+}
+
+function _normalZipName(name) {
+    return String(name || '').replace(/\\/g, '/').replace(/^\/+/, '');
+}
+
+function _isRealEntry(entry) {
+    const name = _normalZipName(entry.name);
+    return !entry.isDir && !name.startsWith('__MACOSX/') && !name.split('/').pop().startsWith('.');
+}
+
+/** Dispatch a .zip archive: KML inside → KML pipeline, shapefile → SHP pipeline. */
+async function runZip(msg) {
+    const entries = await readZipEntries(msg.file);
+    const shpEntries = entries.filter(
+        (e) => _isRealEntry(e) && _normalZipName(e.name).toLowerCase().endsWith('.shp')
+    );
+    if (shpEntries.length) {
+        await runShapefile(msg, entries, shpEntries);
+        return;
+    }
+    await runKML(msg);
+}
+
+async function runShapefile(msg, entries, shpEntries) {
+    const { file } = msg;
+    if (shpEntries.length > 1) {
+        throw new Error(
+            `"${file.name}" contains ${shpEntries.length} shapefiles — high-capacity import supports one shapefile per archive. Split the archive and import separately.`
+        );
+    }
+    const shpEntry = shpEntries[0];
+    const baseName = _normalZipName(shpEntry.name).replace(/\.shp$/i, '').toLowerCase();
+    const companion = (ext) => entries.find(
+        (e) => _isRealEntry(e) && _normalZipName(e.name).toLowerCase() === `${baseName}${ext}`
+    ) || null;
+
+    const dbfEntry = companion('.dbf');
+    const prjEntry = companion('.prj');
+    const cpgEntry = companion('.cpg');
+
+    const prjWkt = prjEntry ? (await readZipEntryHead(file, prjEntry, 64 * 1024)).trim() : null;
+    const cpgText = cpgEntry ? (await readZipEntryHead(file, cpgEntry, 1024)).trim() : null;
+
+    const totalBytes = (shpEntry.uncompressedSize || 0) + (dbfEntry?.uncompressedSize || 0);
+    const ctx = createImportContext(msg, { totalBytes });
+
+    const source = streamShapefileFeatures({
+        shpStream: await openZipEntryStream(file, shpEntry),
+        dbfStream: dbfEntry ? await openZipEntryStream(file, dbfEntry) : null,
+        prjWkt,
+        cpgText,
+        proj4Lib: proj4
+    });
+
+    let approxBytes = 128;
+    if (shpEntry.uncompressedSize) {
+        approxBytes = Math.max(64, Math.round(totalBytes / Math.max((shpEntry.uncompressedSize - 100) / 30, 1)));
+    }
+
+    for await (const feature of source.features) {
+        if (cancelled) throw _cancelError();
+        await ctx.addFeature(feature, approxBytes, source.getBytesConsumed());
+        ctx.progress(source.getBytesConsumed());
+    }
+
+    await ctx.finish(source.getBytesConsumed(), {
+        warnings: source.warnings,
+        sourceMeta: { crsDetected: prjWkt ? 'prj' : 'default' }
+    });
 }
 
 /** Placemark blocks parsed per synthetic document (amortizes DOMParser cost). */
@@ -356,19 +431,29 @@ const CSV_ROW_APPROX_BYTES = 256;
 
 async function runCSV(msg) {
     const ctx = createImportContext(msg);
-    const { id, file } = msg;
+    const { id, file, options = {} } = msg;
+    const sourceCrs = options.sourceCrs || null;
 
     let fields = null;
     let coordInfo = null;
     let coordChecked = false;
+    let projTransform = null;
     const headRows = [];
 
     const rowToFeature = (row) => {
-        const lat = parseCoordValue(row[coordInfo.latField]);
-        const lon = parseCoordValue(row[coordInfo.lonField]);
-        const geometry = (!isNaN(lat) && !isNaN(lon))
-            ? { type: 'Point', coordinates: [lon, lat] }
-            : null;
+        const y = parseCoordValue(row[coordInfo.latField]);
+        const x = parseCoordValue(row[coordInfo.lonField]);
+        let geometry = null;
+        if (!isNaN(y) && !isNaN(x)) {
+            if (projTransform) {
+                const [lon, lat] = projTransform.forward([x, y]);
+                geometry = (Number.isFinite(lon) && Number.isFinite(lat))
+                    ? { type: 'Point', coordinates: [lon, lat] }
+                    : null;
+            } else {
+                geometry = { type: 'Point', coordinates: [x, y] };
+            }
+        }
         return { type: 'Feature', geometry, properties: { ...row } };
     };
 
@@ -384,13 +469,24 @@ async function runCSV(msg) {
             throw err;
         }
         if (coordInfo.projected) {
-            const err = new Error(
-                'This CSV uses projected easting/northing coordinates. Convert it to latitude/longitude externally before importing a file this large.'
-            );
-            err.code = 'PROJECTED_CSV_UNSUPPORTED';
-            throw err;
+            if (!sourceCrs?.def) {
+                const err = new Error(
+                    'This CSV uses projected easting/northing coordinates — pick the source coordinate system to import it.'
+                );
+                err.code = 'PROJECTED_CSV_NEEDS_CRS';
+                throw err;
+            }
+            try {
+                projTransform = proj4(sourceCrs.def, '+proj=longlat +datum=WGS84 +no_defs');
+            } catch (e) {
+                const err = new Error(`Could not initialize reprojection from ${sourceCrs.code || 'the chosen CRS'}: ${e.message}`);
+                err.code = 'PROJECTED_CSV_BAD_CRS';
+                throw err;
+            }
         }
     };
+
+    let failed = false;
 
     await new Promise((resolve, reject) => {
         Papa.parse(file, {
@@ -437,6 +533,7 @@ async function runCSV(msg) {
                 })()
                     .then(() => {
                         if (cancelled) {
+                            failed = true;
                             parser.abort();
                             reject(_cancelError());
                             return;
@@ -444,6 +541,9 @@ async function runCSV(msg) {
                         parser.resume();
                     })
                     .catch((err) => {
+                        // Papa still fires complete() after abort — flag the
+                        // failure so complete() cannot post a stale "done".
+                        failed = true;
                         try {
                             parser.abort();
                         } catch { /* ignore */ }
@@ -451,6 +551,7 @@ async function runCSV(msg) {
                     });
             },
             complete: () => {
+                if (failed || cancelled) return;
                 (async () => {
                     // Small files may finish before the 20-row head buffer filled.
                     if (!coordChecked) {
@@ -460,7 +561,12 @@ async function runCSV(msg) {
                         }
                         headRows.length = 0;
                     }
-                    await ctx.finish(file.size, { coordInfo });
+                    await ctx.finish(file.size, {
+                        coordInfo,
+                        ...(projTransform
+                            ? { sourceMeta: { originalCrs: sourceCrs.code || 'CUSTOM', crsDetected: 'user' } }
+                            : {})
+                    });
                 })().then(resolve, reject);
             },
             error: (err) => {

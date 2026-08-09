@@ -106,6 +106,8 @@ export function ImportFlowDialog({
 
     const [streamFiles, setStreamFiles] = useState([]);
 
+    const [streamEstimate, setStreamEstimate] = useState(null);
+
     const [readyToImport, setReadyToImport] = useState(false);
 
     const [importing, setImporting] = useState(false);
@@ -129,6 +131,8 @@ export function ImportFlowDialog({
         setRouteAssessment(null);
 
         setStreamFiles([]);
+
+        setStreamEstimate(null);
 
         setScanning(false);
 
@@ -381,6 +385,11 @@ export function ImportFlowDialog({
                     }
                     setScanning(false);
                     setImportScans(scans);
+                    const streamNames = new Set(partition.streamFiles.map((f) => f.name));
+                    const estimate = scans
+                        .filter((s) => streamNames.has(s.fileName) && s.featureEstimate)
+                        .reduce((sum, s) => sum + s.featureEstimate, 0);
+                    setStreamEstimate(estimate > 0 ? estimate : null);
                     const names = mergeScanFieldNames(scans);
                     setFieldNames(names);
                     setSelectedFields(names);
@@ -626,6 +635,8 @@ export function ImportFlowDialog({
                     {streamFiles.some((f) => /\.(kml|kmz)$/i.test(f.name))
                         ? ' KML/KMZ imports as a simplified GIS layer (presentation content is not kept).'
                         : ''}
+
+                    {streamEstimate ? ` Roughly ${streamEstimate.toLocaleString()} features estimated.` : ''}
 
                 </div>
 

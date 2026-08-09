@@ -133,6 +133,18 @@ export async function readZipEntryHead(file, entry, maxBytes = 384 * 1024) {
 }
 
 /**
+ * Real data entry — skips directories, macOS resource forks, and dotfiles.
+ * @param {{ name: string, isDir: boolean }} entry
+ */
+export function isRealZipEntry(entry) {
+    if (!entry || entry.isDir) return false;
+    const name = String(entry.name || '').replace(/\\/g, '/').replace(/^\/+/, '');
+    if (name.startsWith('__MACOSX/')) return false;
+    const base = name.split('/').pop();
+    return !!base && !base.startsWith('.');
+}
+
+/**
  * Pick the primary KML entry (mirrors parsers/parse-kmz-buffer chooseMainKmlEntry).
  * @param {Array<object>} entries from readZipEntries
  * @returns {{ entry: object, reason: string }|null}
@@ -165,5 +177,6 @@ export default {
     readZipEntries,
     openZipEntryStream,
     readZipEntryHead,
+    isRealZipEntry,
     chooseMainKmlZipEntry
 };
