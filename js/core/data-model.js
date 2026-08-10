@@ -76,6 +76,7 @@ export function createChunkedSpatialDataset(name, meta, source = {}) {
         workspaceLayerId: meta.id || meta.workspaceLayerId,
         geojson: { type: 'FeatureCollection', features: [] },
         schema: meta.schema,
+        ...(meta.datasetProfile ? { datasetProfile: meta.datasetProfile } : {}),
         source: { file: source.file || name, format: source.format || 'unknown', ...source },
         visible: true,
         active: true,

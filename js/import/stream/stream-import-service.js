@@ -16,6 +16,7 @@ import {
 import { createSpatialChunkWriter } from '../../workspace/spatial-chunk-writer.js';
 import { saveSourceFile, removeSourceFile } from '../../workspace/source-file-store.js';
 import { STORED_FEATURE_LIMIT } from '../import-admission.js';
+import { profileForGeometryClass } from '../dataset-profile.js';
 
 const GEOM_CLASS = {
     Point: 'point',
@@ -293,6 +294,17 @@ export function streamImportFile(file, options = {}) {
 
                         const multiClass = classes.size > 1;
                         const datasets = [];
+                        const fieldCount = Array.isArray(msg.schema?.fields)
+                            ? msg.schema.fields.length
+                            : null;
+                        const globalStats = {
+                            featureCount: msg.stats?.featureCount || total,
+                            noGeometryCount: msg.stats?.noGeometryCount || 0,
+                            coordCount: msg.stats?.coordCount || 0,
+                            maxCoordsInFeature: msg.stats?.maxCoordsInFeature || 0,
+                            bbox: msg.stats?.bbox || null,
+                            geometryTypes: msg.stats?.geometryTypes || []
+                        };
                         for (const [clsKey, cls] of classes) {
                             const name = multiClass
                                 ? `${baseName} - ${CLASS_LABELS[clsKey]}`
@@ -305,10 +317,29 @@ export function streamImportFile(file, options = {}) {
                                 geometryType,
                                 featureCount: cls.count
                             };
-                            await updateWorkspaceLayerMeta(cls.layerId, { name, schema });
+                            const datasetProfile = profileForGeometryClass(
+                                globalStats,
+                                clsKey,
+                                cls.count,
+                                {
+                                    importMethod: 'stream',
+                                    format,
+                                    fileSize: file.size,
+                                    bytesProcessed: msg.stats?.bytesProcessed,
+                                    fieldCount,
+                                    fenceFiltered: msg.stats?.fenceFiltered || 0,
+                                    featureFiltered: msg.stats?.featureFiltered || 0
+                                }
+                            );
+                            await updateWorkspaceLayerMeta(cls.layerId, {
+                                name,
+                                schema,
+                                datasetProfile
+                            });
                             const dataset = createChunkedSpatialDataset(name, {
                                 id: cls.layerId,
-                                schema
+                                schema,
+                                datasetProfile
                             }, {
                                 file: file.name,
                                 format,

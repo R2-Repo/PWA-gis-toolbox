@@ -5,6 +5,7 @@
 import { isWorkspaceLayer, getLayerFeatureCount } from '../core/data-model.js';
 import { TILED_RENDER_THRESHOLD } from './tiles/tile-constants.js';
 import { RENDER_LIMITS } from './render-limits.js';
+import { profileSuggestsTiledDisplay } from '../import/dataset-profile.js';
 
 /** @typedef {'memory'|'viewport'|'tiled'} LayerDisplayModeId */
 
@@ -27,7 +28,7 @@ export function resolveLayerDisplayMode(layer, mapEntry = null) {
 
     const featureCount = getLayerFeatureCount(layer);
     const tiled = mapEntry?.tiled === true
-        || (mapEntry == null && featureCount >= TILED_RENDER_THRESHOLD);
+        || (mapEntry == null && profileSuggestsTiledDisplay(layer, featureCount, TILED_RENDER_THRESHOLD));
 
     if (tiled) {
         return {

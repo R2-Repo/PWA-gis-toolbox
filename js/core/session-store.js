@@ -130,6 +130,7 @@ function _serializeLayer(layer) {
         out.storage = 'workspace';
         out.workspaceLayerId = layer.workspaceLayerId || layer.id;
         out.schema = layer.schema;
+        if (layer.datasetProfile) out.datasetProfile = layer.datasetProfile;
     } else if (layer.type === 'spatial' && layer.geojson) {
         out.geojson = layer.geojson;
     }

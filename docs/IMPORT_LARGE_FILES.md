@@ -347,6 +347,24 @@ is active, then reopens with the same files, attribute selection, and feature
 filters. Clear / replace keep that session. (Choosing Import Fence from the
 Import chooser still works as a pre-file shortcut.)
 
+## Adaptive import — Phase 2 dataset profile
+
+Stream and workspace-conversion imports build a compact `datasetProfile` on each
+workspace layer (also mirrored in workspace IndexedDB meta and session save):
+
+```text
+featureCount, coordCount, avgCoordsPerFeature, maxCoordsInFeature
+geometryClassCounts, geometryTypes, bbox
+fieldCount, import { method, format, fileSize, bytesProcessed }
+pressures { feature, geometry, attribute, storage }  // separate labels — not one score
+```
+
+Module: [`js/import/dataset-profile.js`](../js/import/dataset-profile.js).
+
+**Uses today:** prefer local MVT earlier when geometry pressure is high at
+moderate feature counts (`profileSuggestsTiledDisplay`).  
+**Next (Phase 3):** GIS tool capability / working-set budgets.
+
 ## Governing rules (unchanged from master plan)
 
 1. Never require the whole decoded dataset in memory.
