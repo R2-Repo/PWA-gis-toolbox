@@ -25,6 +25,7 @@ export function ImportOptimizerDialog({
     onCancel,
     onConfirm,
     hasActiveFence = false,
+    fenceBbox = null,
     onPlaceFence = null,
     onClearFence = null,
     initialSelectedFields = null,
@@ -71,6 +72,7 @@ export function ImportOptimizerDialog({
         featureFilter,
         totalFeatureEstimate,
         hasFence: fenceActive,
+        fenceBbox: Array.isArray(fenceBbox) ? fenceBbox : null,
         enabled: !loading && !importing && files.length > 0
     });
 
@@ -141,6 +143,10 @@ export function ImportOptimizerDialog({
         const filterError = validateFeatureFilter(featureFilter);
         if (filterError) {
             setError(filterError);
+            return;
+        }
+        if (!storeEstimate.canImport || storeEstimate.waitingOnRecount) {
+            setError('Reduce stored features under the import limit before continuing.');
             return;
         }
         setError('');
@@ -268,7 +274,7 @@ export function ImportOptimizerDialog({
                         estimateProgress={storeEstimate.estimateProgress}
                         estimateMessage={storeEstimate.estimateMessage}
                         waitingOnRecount={storeEstimate.waitingOnRecount}
-                        sourceBytes={files[0]?.size || 0}
+                        sourceBytes={storeEstimate.estimate.sourceBytes || 0}
                     />
                 </>
             )}
@@ -277,7 +283,12 @@ export function ImportOptimizerDialog({
                 <button className="btn btn-secondary" onClick={() => onCancel?.()} disabled={loading}>Cancel</button>
                 <button
                     className="btn btn-primary"
-                    disabled={loading || valueScan.scanState === 'scanning'}
+                    disabled={
+                        loading
+                        || valueScan.scanState === 'scanning'
+                        || !storeEstimate.canImport
+                        || storeEstimate.waitingOnRecount
+                    }
                     onClick={() => void handleConfirm()}
                 >
                     Import with reduced settings

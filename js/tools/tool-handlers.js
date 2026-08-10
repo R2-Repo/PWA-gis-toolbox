@@ -1224,6 +1224,7 @@ function _openImportOptimizerModal(files, session = {}) {
                 initialFeatureFilter: session.featureFilter ?? null,
                 initialImportMode: session.importMode,
                 hasActiveFence: hasActiveImportFence(),
+                fenceBbox: _fenceBbox,
                 onCancel: () => optClose(),
                 onPlaceFence: (snapshot = {}) => {
                     optClose();
@@ -1292,6 +1293,7 @@ function _openImportFlowModal(flowProps = {}) {
             const mounted = mountImportFlowDialog(root, {
                 onCancel: () => close(),
                 hasActiveFence: hasActiveImportFence(),
+                fenceBbox: _fenceBbox,
                 onImportFiles: async (files, importOpts = {}, ui = {}) => {
                     const { classifyImportFiles } = await import('../import/import-policy.js');
                     const { memoryFiles } = classifyImportFiles(

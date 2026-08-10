@@ -55,23 +55,75 @@ export async function hasStorageHeadroom(extraBytes) {
  * Copy the original file into OPFS.
  * @param {string} key stable source key stored on the dataset (source.opfsKey)
  * @param {File} file
+ * @param {{ signal?: AbortSignal }} [options]
  * @returns {Promise<{ ok: boolean, reason?: string }>}
  */
-export async function saveSourceFile(key, file) {
+export async function saveSourceFile(key, file, options = {}) {
     if (!isSourceStoreSupported()) {
         return { ok: false, reason: 'unsupported' };
     }
+    const signal = options.signal;
+    if (signal?.aborted) {
+        return { ok: false, reason: 'aborted' };
+    }
+
+    let writable = null;
     try {
         if (!(await hasStorageHeadroom(file.size ?? 0))) {
             return { ok: false, reason: 'quota' };
         }
         const dir = await _getSourceDir(true);
         const handle = await dir.getFileHandle(_entryName(key, file.name), { create: true });
-        const writable = await handle.createWritable();
-        await file.stream().pipeTo(writable);
+        writable = await handle.createWritable();
+
+        const onAbort = () => {
+            try {
+                void writable?.abort?.();
+            } catch { /* ignore */ }
+        };
+        signal?.addEventListener('abort', onAbort, { once: true });
+
+        try {
+            if (signal?.aborted) {
+                onAbort();
+                await removeSourceFile(key);
+                return { ok: false, reason: 'aborted' };
+            }
+            // Prefer abortable pipe when the runtime supports signal on pipeTo.
+            const stream = file.stream();
+            try {
+                await stream.pipeTo(writable, signal ? { signal } : undefined);
+                writable = null;
+            } catch (pipeErr) {
+                if (signal?.aborted || pipeErr?.name === 'AbortError') {
+                    try {
+                        await writable?.abort?.();
+                    } catch { /* ignore */ }
+                    writable = null;
+                    await removeSourceFile(key);
+                    return { ok: false, reason: 'aborted' };
+                }
+                throw pipeErr;
+            }
+        } finally {
+            signal?.removeEventListener('abort', onAbort);
+        }
+
+        if (signal?.aborted) {
+            await removeSourceFile(key);
+            return { ok: false, reason: 'aborted' };
+        }
         return { ok: true };
     } catch (e) {
+        if (signal?.aborted || e?.name === 'AbortError') {
+            try {
+                await writable?.abort?.();
+            } catch { /* ignore */ }
+            await removeSourceFile(key);
+            return { ok: false, reason: 'aborted' };
+        }
         logger.warn('SourceStore', 'Failed to preserve source file', { key, error: e?.message });
+        await removeSourceFile(key);
         return { ok: false, reason: e?.message || 'write_failed' };
     }
 }

@@ -71,5 +71,20 @@ describe('estimateStoredImport', () => {
             hasFence: true
         });
         expect(est.hasReduction).toBe(true);
+        expect(est.canImport).toBe(true);
+    });
+
+    it('does not unlock fence when matched features still exceed the limit', () => {
+        const est = estimateStoredImport({
+            sourceBytes: 10_000_000,
+            totalFeatures: 500_000,
+            matchedFeatures: 300_000,
+            fieldNames: ['a'],
+            selectedFields: ['a'],
+            hasFence: true
+        });
+        expect(est.hasReduction).toBe(true);
+        expect(est.underFeatureLimit).toBe(false);
+        expect(est.canImport).toBe(false);
     });
 });

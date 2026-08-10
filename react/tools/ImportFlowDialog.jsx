@@ -84,6 +84,8 @@ export function ImportFlowDialog({
 
     hasActiveFence = false,
 
+    fenceBbox = null,
+
     initialFiles = null,
 
     initialScans = null,
@@ -155,6 +157,7 @@ export function ImportFlowDialog({
             ?? valueScan.valueCatalog?.rowCount
             ?? null,
         hasFence: fenceActive === true,
+        fenceBbox: Array.isArray(fenceBbox) ? fenceBbox : null,
         enabled: readyToImport && streamFiles.length > 0 && !importing
     });
 

@@ -74,6 +74,8 @@ export function streamImportFile(file, options = {}) {
     let cancelled = false;
     let settled = false;
     let opfsKey = null;
+    /** @type {AbortController|null} */
+    let sourceAbort = null;
 
     const report = (percent, step) => {
         try {
@@ -83,6 +85,9 @@ export function streamImportFile(file, options = {}) {
 
     const cleanup = async () => {
         try {
+            sourceAbort?.abort();
+        } catch { /* ignore */ }
+        try {
             worker?.terminate();
         } catch { /* ignore */ }
         worker = null;
@@ -91,12 +96,18 @@ export function streamImportFile(file, options = {}) {
                 await removeWorkspaceLayer(cls.layerId);
             } catch { /* best effort */ }
         }
+        classes.clear();
+        pendingNullGeometry.length = 0;
         if (opfsKey) {
             await removeSourceFile(opfsKey);
+            opfsKey = null;
         }
     };
 
     const getClass = async (clsKey) => {
+        if (cancelled) {
+            throw Object.assign(new Error('Import cancelled'), { cancelled: true });
+        }
         let cls = classes.get(clsKey);
         if (!cls) {
             cls = {
@@ -117,6 +128,9 @@ export function streamImportFile(file, options = {}) {
 
     const flushClass = async (cls) => {
         if (!cls.buffer.length) return;
+        if (cancelled) {
+            throw Object.assign(new Error('Import cancelled'), { cancelled: true });
+        }
         const batch = cls.buffer;
         cls.buffer = [];
         await appendWorkspaceBatch(cls.layerId, batch, cls.count);
@@ -124,6 +138,9 @@ export function streamImportFile(file, options = {}) {
     };
 
     const routeFeature = async (feature) => {
+        if (cancelled) {
+            throw Object.assign(new Error('Import cancelled'), { cancelled: true });
+        }
         const geomType = feature.geometry?.type || null;
         let clsKey = geomType ? GEOM_CLASS[geomType] : null;
 
@@ -199,10 +216,20 @@ export function streamImportFile(file, options = {}) {
             if (preserveSource) {
                 report(1, `Preserving original file…`);
                 const key = _generateId('src');
-                const saved = await saveSourceFile(key, file);
-                if (saved.ok) {
-                    opfsKey = key;
-                } else {
+                // Register key before the copy finishes so cancel can always clean up.
+                opfsKey = key;
+                sourceAbort = new AbortController();
+                const saved = await saveSourceFile(key, file, { signal: sourceAbort.signal });
+                if (cancelled) {
+                    await removeSourceFile(key);
+                    opfsKey = null;
+                    throw Object.assign(new Error('Import cancelled'), { cancelled: true });
+                }
+                if (!saved.ok) {
+                    opfsKey = null;
+                    if (saved.reason === 'aborted') {
+                        throw Object.assign(new Error('Import cancelled'), { cancelled: true });
+                    }
                     logger.info('StreamImport', 'Source preservation skipped', { reason: saved.reason });
                 }
             }
@@ -334,6 +361,9 @@ export function streamImportFile(file, options = {}) {
     const cancel = () => {
         if (settled || cancelled) return;
         cancelled = true;
+        try {
+            sourceAbort?.abort();
+        } catch { /* ignore */ }
         try {
             worker?.postMessage({ type: 'cancel' });
         } catch { /* ignore */ }

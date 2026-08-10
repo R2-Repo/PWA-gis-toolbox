@@ -46,6 +46,29 @@ These already appear in `IMPORT_LARGE_FILES.md`; make them the single source of 
 
 ---
 
+## Build 8 status (in progress on this branch)
+
+Shipped in code (this PR):
+
+- [x] `js/import/import-admission.js` — documented 250k / 1M limits + `canAdmitStoredImport`
+- [x] Fence no longer bypasses the stored-feature limit (`useImportStoreEstimate`)
+- [x] Multi-file estimate aggregation + fence bounds passed to recount worker
+- [x] Import Optimizer confirm gated on `storeEstimate.canImport`
+- [x] IndexedDB attributes `by-layer-feature` compound index (DB v3)
+- [x] Versioned spatial-index persist + flush awaits in-flight save
+- [x] `appendWorkspaceBatch` refuses to recreate a deleted layer
+- [x] Abortable OPFS `saveSourceFile({ signal })`; stream path registers `opfsKey` before copy completes
+- [x] Stream cancel stops batch routing; map-registration failure rolls back that file’s layers
+- [x] `convertSpatialDatasetToWorkspace` rolls back + flushes spatial index
+
+Still open for a follow-up pass:
+
+- [ ] Full entry-point wiring so every path (drag-drop, dual-screen, programmatic) calls one admission decision object end-to-end
+- [ ] Stronger import-transaction object covering group ids / active write tracking as a single module
+- [ ] Browser smoke for cancel-during-OPFS and fence-over-limit UX
+
+---
+
 # Build 8 — Correctness & safety (do first)
 
 Goal: no silent data loss, no wrong attribute ranges, one admission story.
