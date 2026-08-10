@@ -1,4 +1,5 @@
 import { formatBytes } from '../../js/import/import-preflight.js';
+import { STORED_FEATURE_LIMIT } from '../../js/import/import-admission.js';
 
 const STATUS_COLOR = {
     red: 'var(--danger)',
@@ -8,7 +9,8 @@ const STATUS_COLOR = {
 };
 
 /**
- * Live estimate of what would be stored after field / feature-filter reduction.
+ * Live estimate of what would be stored after field / feature-filter / fence cuts.
+ * Unlock = readyToImport (≤250k stored features), not gauge color alone.
  */
 export function ImportEstimateGauge({
     estimate = null,
@@ -16,54 +18,60 @@ export function ImportEstimateGauge({
     estimateProgress = null,
     estimateMessage = null,
     waitingOnRecount = false,
+    readyToImport = false,
+    blockReason = null,
     sourceBytes = 0
 }) {
     if (!estimate) return null;
 
-    const color = STATUS_COLOR[estimate.status] || STATUS_COLOR.idle;
+    const updating = waitingOnRecount || estimateState === 'scanning';
+    const displayStatus = updating
+        ? 'amber'
+        : (readyToImport ? 'green' : (estimate.status === 'idle' ? 'idle' : estimate.status));
+    const color = STATUS_COLOR[displayStatus] || STATUS_COLOR.idle;
     const featuresLabel = estimate.estimatedFeatures != null
         ? estimate.estimatedFeatures.toLocaleString()
         : '—';
-    const updating = waitingOnRecount || estimateState === 'scanning';
+    const limitFeatures = estimate.limitFeatures ?? STORED_FEATURE_LIMIT;
 
     return (
         <div className="info-box text-xs mt-8 mb-8" style={{ color }}>
             <div>
-                <strong>Estimated after your selections:</strong>
+                <strong>Estimated stored features:</strong>
                 {' '}
-                {estimate.estimatedBytesLabel}
-                {' · '}
                 {featuresLabel}
-                {' '}
-                features
+                {' / '}
+                {limitFeatures.toLocaleString()}
+                {estimate.estimatedBytesLabel
+                    ? ` · ~${estimate.estimatedBytesLabel} attributes+geometry`
+                    : ''}
                 {updating
                     ? ` (${estimateProgress?.percent != null ? `${estimateProgress.percent}% — ` : ''}updating…)`
                     : ''}
             </div>
             <div style={{ marginTop: 4 }}>
-                Import limits: {estimate.limitBytesLabel} file size, {estimate.limitFeatures.toLocaleString()} features.
+                You can store up to {limitFeatures.toLocaleString()} features on the map.
             </div>
             <div className="text-muted" style={{ marginTop: 4, color: 'inherit', opacity: 0.85 }}>
                 Source file size does not change
                 {sourceBytes > 0 ? ` (${formatBytes(sourceBytes)})` : ''}
                 ; this is what would be stored.
             </div>
-            {estimate.status === 'red' ? (
+            {updating ? (
                 <div style={{ marginTop: 4 }}>
-                    Still over the feature limit — tighten filters or uncheck more attributes.
+                    Updating estimate…
                 </div>
-            ) : null}
-            {estimate.status === 'amber' ? (
+            ) : readyToImport ? (
                 <div style={{ marginTop: 4 }}>
-                    Feature count is within limits; estimated stored size is still large (stream import OK).
+                    Within the feature limit — you can import.
                 </div>
-            ) : null}
-            {estimate.status === 'green' ? (
+            ) : (
                 <div style={{ marginTop: 4 }}>
-                    Within import limits — you can import.
+                    {blockReason
+                        || 'Still over the feature limit — tighten filters or place a tighter fence.'}
                 </div>
-            ) : null}
-            {estimateMessage ? (
+            )}
+            {estimateMessage && !updating ? (
                 <div style={{ marginTop: 4 }}>{estimateMessage}</div>
             ) : null}
         </div>

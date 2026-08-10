@@ -2,7 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { hasActiveFeatureFilter } from '../../js/import/import-feature-filter.js';
 import { estimateImportFilterMatches } from '../../js/import/import-filter-estimate.js';
 import { estimateStoredImport } from '../../js/import/import-store-estimate.js';
-import { isActiveFenceBbox } from '../../js/import/import-admission.js';
+import { isActiveFenceBbox, STORED_FEATURE_LIMIT } from '../../js/import/import-admission.js';
+import { describeImportBlockReason } from '../../js/import/import-limit-copy.js';
 
 const ESTIMATE_DEBOUNCE_MS = 400;
 
@@ -147,6 +148,10 @@ export function useImportStoreEstimate({
         ? matchTotal
         : (totalFeatureEstimate != null ? totalFeatureEstimate : null);
 
+    const waitingOnRecount = (filterActive || fenceActive)
+        && estimateState === 'scanning'
+        && matchCount == null;
+
     const estimate = useMemo(() => estimateStoredImport({
         sourceBytes,
         totalFeatures,
@@ -154,7 +159,8 @@ export function useImportStoreEstimate({
         fieldNames,
         selectedFields,
         featureFilter,
-        hasFence: fenceActive
+        hasFence: fenceActive,
+        waitingOnRecount
     }), [
         sourceBytes,
         totalFeatures,
@@ -163,18 +169,30 @@ export function useImportStoreEstimate({
         matchCount,
         fieldNames,
         selectedFields,
-        featureFilter
+        featureFilter,
+        waitingOnRecount
     ]);
 
-    const waitingOnRecount = (filterActive || fenceActive)
-        && estimateState === 'scanning'
-        && matchCount == null;
-
-    // Fence no longer bypasses the stored-feature limit — require underFeatureLimit.
-    const canImport = estimate.canImport
+    const readyToImport = estimate.canImport
         && !waitingOnRecount
         && estimateState !== 'error'
         && estimateState !== 'unsupported';
+
+    const blockReason = useMemo(() => describeImportBlockReason({
+        readyToImport,
+        waitingOnRecount,
+        estimateState,
+        estimatedFeatures: estimate.estimatedFeatures,
+        limitFeatures: estimate.limitFeatures ?? STORED_FEATURE_LIMIT,
+        estimateMessage
+    }), [
+        readyToImport,
+        waitingOnRecount,
+        estimateState,
+        estimate.estimatedFeatures,
+        estimate.limitFeatures,
+        estimateMessage
+    ]);
 
     return {
         estimate,
@@ -182,7 +200,10 @@ export function useImportStoreEstimate({
         estimateProgress,
         estimateMessage,
         waitingOnRecount,
-        canImport,
+        /** @deprecated use readyToImport — same value */
+        canImport: readyToImport,
+        readyToImport,
+        blockReason,
         cancelEstimate: () => cancelRef.current?.()
     };
 }

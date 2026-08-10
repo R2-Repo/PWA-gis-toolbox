@@ -48,7 +48,9 @@ Two gates only (end-user / “what lands in the app”):
 | GIS-tool full materialization | 250,000 | existing materialize guards |
 | Viewport / tile budgets | per render path | `render-limits.js`, `tile-constants.js` |
 
-**User-facing rule:** large import finishes only when **estimated stored** features after fields / filter / fence are ≤ **250,000**.
+**User-facing rule:** large import finishes when **estimated stored** features
+are ≤ **250,000**. Field / filter / fence cuts are optional tools — not unlock
+tokens. A no-op fence does not specially unlock import.
 
 ---
 

@@ -145,13 +145,13 @@ export function ImportOptimizerDialog({
             setError(filterError);
             return;
         }
-        if (!storeEstimate.canImport || storeEstimate.waitingOnRecount) {
-            setError('Reduce stored features under the import limit before continuing.');
+        if (!storeEstimate.readyToImport) {
+            setError(storeEstimate.blockReason || 'Stored features must be ≤ 250,000 before continuing.');
             return;
         }
         setError('');
         setImporting(true);
-        setImportProgress({ percent: 0, step: 'Starting optimized import…' });
+        setImportProgress({ percent: 0, step: 'Starting import…' });
 
         try {
             await onConfirm?.({
@@ -274,6 +274,8 @@ export function ImportOptimizerDialog({
                         estimateProgress={storeEstimate.estimateProgress}
                         estimateMessage={storeEstimate.estimateMessage}
                         waitingOnRecount={storeEstimate.waitingOnRecount}
+                        readyToImport={storeEstimate.readyToImport}
+                        blockReason={storeEstimate.blockReason}
                         sourceBytes={storeEstimate.estimate.sourceBytes || 0}
                     />
                 </>
@@ -285,13 +287,12 @@ export function ImportOptimizerDialog({
                     className="btn btn-primary"
                     disabled={
                         loading
-                        || valueScan.scanState === 'scanning'
-                        || !storeEstimate.canImport
-                        || storeEstimate.waitingOnRecount
+                        || !storeEstimate.readyToImport
                     }
+                    title={!storeEstimate.readyToImport ? (storeEstimate.blockReason || undefined) : undefined}
                     onClick={() => void handleConfirm()}
                 >
-                    Import with reduced settings
+                    Import
                 </button>
             </div>
         </div>

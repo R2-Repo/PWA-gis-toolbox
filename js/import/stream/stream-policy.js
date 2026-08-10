@@ -101,7 +101,7 @@ async function _assessArchiveStreamEligibility(file, opts = {}) {
             return {
                 stream: false,
                 reject: true,
-                message: `"${file.name}" expands to ${formatBytes(totalUncompressed)} of shapefile data — exceeds the ${formatBytes(STREAM_MAX_BYTES)} high-capacity import limit. Split the file externally, or export a smaller subset, before importing.`
+                message: `"${file.name}" expands to ${formatBytes(totalUncompressed)} of shapefile data — exceeds the ${formatBytes(STREAM_MAX_BYTES)} source open limit. Split the file externally, or export a smaller subset, before importing.`
             };
         }
         if (opts.requireLargeEntry && totalUncompressed < ARCHIVE_LARGE_ENTRY_BYTES) {
@@ -121,7 +121,7 @@ async function _assessArchiveStreamEligibility(file, opts = {}) {
         return {
             stream: false,
             reject: true,
-            message: `"${file.name}" expands to ${formatBytes(main.entry.uncompressedSize)} of KML — exceeds the ${formatBytes(STREAM_MAX_BYTES)} high-capacity import limit. Split the file externally, or export a smaller subset, before importing.`
+            message: `"${file.name}" expands to ${formatBytes(main.entry.uncompressedSize)} of KML — exceeds the ${formatBytes(STREAM_MAX_BYTES)} source open limit. Split the file externally, or export a smaller subset, before importing.`
         };
     }
     if (opts.requireLargeEntry && (main.entry.uncompressedSize || 0) < ARCHIVE_LARGE_ENTRY_BYTES) {
@@ -149,7 +149,7 @@ export async function assessStreamEligibility(file, format = null) {
             return {
                 stream: false,
                 reject: true,
-                message: `"${file.name}" is ${formatBytes(sizeBytes)} — exceeds the ${formatBytes(STREAM_MAX_BYTES)} high-capacity import limit. Attribute filters reduce what is stored on the map, but the source file must still be under this limit. Split or export a smaller subset externally before importing.`
+                message: `"${file.name}" is ${formatBytes(sizeBytes)} — source file exceeds the ${formatBytes(STREAM_MAX_BYTES)} open limit. Split or export a smaller subset externally before importing.`
             };
         }
         const overCap = check.level === PREFLIGHT_LEVEL.REJECT;
@@ -168,7 +168,7 @@ export async function assessStreamEligibility(file, format = null) {
         return {
             stream: false,
             reject: true,
-            message: `"${file.name}" is ${formatBytes(file.size)} — exceeds the ${formatBytes(STREAM_MAX_BYTES)} high-capacity import limit. Attribute filters reduce what is stored on the map, but the source file must still be under this limit. Split or export a smaller subset externally before importing.`
+            message: `"${file.name}" is ${formatBytes(file.size)} — source file exceeds the ${formatBytes(STREAM_MAX_BYTES)} open limit. Split or export a smaller subset externally before importing.`
         };
     }
 

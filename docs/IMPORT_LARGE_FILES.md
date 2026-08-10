@@ -94,22 +94,26 @@ Above those sizes the standard path refuses; streamable formats move to Gate B.
 | | Min | Max (what lands) |
 |---|---|---|
 | Source file size | ~**≥ 4 MB** text / **≥ 5 MB** binary (enters this path) | Source may be large so the user can **filter**; completing import still requires Gate B feature max |
-| **Features stored in the app** | none | **250,000** after fields / filter / fence |
+| **Features stored in the app** | none | **250,000** (fields / filter / fence are optional tools to get under the cap) |
 
 **Product max for large import = 250,000 stored features.** That is the only
 feature ceiling that matters for “can this import finish and live in my app?”
 
+Unlock is **feature count only** — a no-op statewide fence does **not** specially
+unlock import, and ritual reduction is **not** required when the estimate is
+already ≤ 250,000.
+
 Do **not** say the app’s large-import max is “2 GB / 1,000,000 features.”
-Those numbers are **internal source-read / worker-abort plumbing** so a big
-file is not rejected before the user can reduce it. A 2 GB / 1M-feature file
-is only importable if reduction brings **stored** features to ≤ 250,000.
+Those numbers are **internal source-read plumbing** so a big file is not
+rejected before the user can cut it down. A 2 GB / 1M-feature file is only
+importable if stored features end up ≤ 250,000.
 
 #### Internal plumbing (not the product max — do not lead with these)
 
 | Plumbing | Value | Role |
 |---|---|---|
 | `STREAM_MAX_BYTES` | 2 GB | Max source bytes the stream reader will open |
-| `STREAM_MAX_FEATURES` | 1,000,000 | Worker hard abort (runaway safety), **not** the unlock |
+| `STREAM_MAX_FEATURES` | 1,000,000 | Legacy constant; product stream abort uses **250k** (`STORED_FEATURE_LIMIT`) |
 | Streaming trigger | text ≥ 4 MB / binary ≥ 5 MB | When Gate A rejects → Gate B |
 | Tiled rendering | ≥ 50,000 features | Render path, not import unlock |
 | GIS-tool full materialize | 250,000 | Tools needing whole FeatureCollection in RAM |
@@ -320,23 +324,19 @@ addition to attribute deselection and Import Fence:
 Out of scope: preview map of matches, spatial predicates beyond fence, Excel
 value lists.
 
-**Note:** Filters reduce what is **stored** (IndexedDB / map). The source file
-is still streamed from disk, so it must stay under `STREAM_MAX_BYTES` (2 GB)
-internally — that plumbing ceiling is **not** shown as the user-facing import
-limit. The UI shows the real unchanged-import limits (`TEXT_STRONG_BYTES` ≈
-4 MB, `MAX_IMPORT_FEATURES` = 250,000).
+**Note:** Filters / fence reduce what is **stored** (IndexedDB / map). The source
+file is still streamed from disk, so it must stay under `STREAM_MAX_BYTES`
+(2 GB) to open — that plumbing ceiling is **not** the product import max.
+Product unlock = **estimated stored features ≤ 250,000**.
 
-An 800+ MB statewide roads GeoJSON is eligible for the filter UI, but **Import
-is blocked until**:
+An 800+ MB statewide roads GeoJSON is eligible for the large-file configure UI.
+**Import is enabled when** the live estimated stored feature count is ≤ 250,000
+— even with all attributes selected and no fence. If the source has more than
+250k features, use a filter or fence that actually cuts the estimate.
 
-1. The user reduces attributes, sets a feature filter, or uses an import fence, and
-2. The live **estimated stored feature count** is ≤ 250,000
-
-The gauge shows approximate stored bytes + feature count as selections change.
-Source disk size never shrinks. Estimated byte size vs 4 MB is color guidance
-(amber = features OK, size still large → stream import allowed); feature count
-is the hard unlock gate. Drag-drop / file picker open the same filter UI
-instead of streaming unchanged. Multi‑GB exports still need an external split.
+The gauge shows estimated **stored features** vs 250k. Source disk size never
+shrinks. Drag-drop / file picker open the same configure UI instead of
+streaming silently. Multi‑GB exports still need an external split.
 
 **Place fence from configure:** Import Optimizer and Import Flow’s large-file
 step include **Place Import Fence**. The dialog closes while the map draw tool

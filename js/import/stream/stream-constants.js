@@ -18,7 +18,7 @@ export const STREAM_MAX_BYTES = 2 * 1024 * 1024 * 1024;
 
 /**
  * Worker runaway abort while streaming (plumbing, not product max).
- * Completing import still requires ≤ 250k stored features after reduction.
+ * Completing import still requires ≤ 250k stored features (product max).
  */
 export const STREAM_MAX_FEATURES = 1_000_000;
 
