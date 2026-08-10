@@ -6,7 +6,7 @@ import {
 } from '../js/import/import-store-estimate.js';
 
 describe('estimateStoredImport', () => {
-    it('keeps full size when nothing is reduced', () => {
+    it('blocks when over the feature limit with no cuts', () => {
         const est = estimateStoredImport({
             sourceBytes: 100_000_000,
             totalFeatures: 400_000,
@@ -17,6 +17,21 @@ describe('estimateStoredImport', () => {
         expect(est.canImport).toBe(false);
         expect(est.status).toBe('red');
         expect(est.estimatedFeatures).toBe(400_000);
+        expect(est.needsFeatureCut).toBe(true);
+    });
+
+    it('unlocks large sources under the feature limit without ritual reduction', () => {
+        const est = estimateStoredImport({
+            sourceBytes: 10_000_000,
+            totalFeatures: 100_000,
+            fieldNames: ['a'],
+            selectedFields: ['a'],
+            hasFence: false
+        });
+        expect(est.hasReduction).toBe(false);
+        expect(est.canImport).toBe(true);
+        expect(est.status).toBe('green');
+        expect(est.needsFeatureCut).toBe(false);
     });
 
     it('unlocks when filter brings features under the limit', () => {
@@ -36,12 +51,12 @@ describe('estimateStoredImport', () => {
         expect(est.estimatedFeatures).toBe(50_000);
         expect(est.underFeatureLimit).toBe(true);
         expect(est.canImport).toBe(true);
-        expect(est.status).toBe('amber'); // still over size
+        expect(est.status).toBe('green');
         expect(est.estimatedBytes).toBeLessThan(100_000_000);
         expect(est.estimatedBytes).toBeGreaterThan(IMPORT_LIMIT_BYTES);
     });
 
-    it('is green when under both limits', () => {
+    it('is green when under the feature limit', () => {
         const est = estimateStoredImport({
             sourceBytes: 80_000_000,
             totalFeatures: 200_000,
@@ -56,13 +71,12 @@ describe('estimateStoredImport', () => {
         });
         expect(est.canImport).toBe(true);
         expect(est.underFeatureLimit).toBe(true);
-        expect(est.underSizeLimit).toBe(true);
         expect(est.status).toBe('green');
         expect(est.limitFeatures).toBe(IMPORT_LIMIT_FEATURES);
     });
 
-    it('treats fence as reduction', () => {
-        const est = estimateStoredImport({
+    it('does not require a no-op fence to unlock under-limit imports', () => {
+        const withFence = estimateStoredImport({
             sourceBytes: 10_000_000,
             totalFeatures: 100_000,
             matchedFeatures: 100_000,
@@ -70,8 +84,18 @@ describe('estimateStoredImport', () => {
             selectedFields: ['a'],
             hasFence: true
         });
-        expect(est.hasReduction).toBe(true);
-        expect(est.canImport).toBe(true);
+        const withoutFence = estimateStoredImport({
+            sourceBytes: 10_000_000,
+            totalFeatures: 100_000,
+            matchedFeatures: 100_000,
+            fieldNames: ['a'],
+            selectedFields: ['a'],
+            hasFence: false
+        });
+        expect(withFence.canImport).toBe(true);
+        expect(withoutFence.canImport).toBe(true);
+        expect(withFence.hasReduction).toBe(true);
+        expect(withoutFence.hasReduction).toBe(false);
     });
 
     it('does not unlock fence when matched features still exceed the limit', () => {
@@ -86,5 +110,18 @@ describe('estimateStoredImport', () => {
         expect(est.hasReduction).toBe(true);
         expect(est.underFeatureLimit).toBe(false);
         expect(est.canImport).toBe(false);
+        expect(est.status).toBe('red');
+    });
+
+    it('uses amber while waiting on a recount', () => {
+        const est = estimateStoredImport({
+            sourceBytes: 10_000_000,
+            totalFeatures: 100_000,
+            fieldNames: ['a'],
+            selectedFields: ['a'],
+            hasFence: true,
+            waitingOnRecount: true
+        });
+        expect(est.status).toBe('amber');
     });
 });

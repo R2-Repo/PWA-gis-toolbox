@@ -171,7 +171,7 @@ function createImportContext(msg, overrides = {}) {
                 emitted++;
                 if (emitted > maxFeatures) {
                     const err = new Error(
-                        `File contains more than ${maxFeatures.toLocaleString()} features — exceeds the high-capacity import limit.`
+                        `File would store more than ${maxFeatures.toLocaleString()} features — over the import limit. Use a filter or fence to keep ≤ ${maxFeatures.toLocaleString()} features.`
                     );
                     err.code = 'TOO_MANY_FEATURES';
                     throw err;

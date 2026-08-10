@@ -15,7 +15,7 @@ import {
 } from '../../workspace/workspace-store.js';
 import { createSpatialChunkWriter } from '../../workspace/spatial-chunk-writer.js';
 import { saveSourceFile, removeSourceFile } from '../../workspace/source-file-store.js';
-import { STREAM_MAX_FEATURES } from './stream-constants.js';
+import { STORED_FEATURE_LIMIT } from '../import-admission.js';
 
 const GEOM_CLASS = {
     Point: 'point',
@@ -354,7 +354,7 @@ export function streamImportFile(file, options = {}) {
                 format,
                 options: {
                     fenceBbox,
-                    maxFeatures: STREAM_MAX_FEATURES,
+                    maxFeatures: STORED_FEATURE_LIMIT,
                     ...(selectedFields?.length ? { selectedFields } : {}),
                     ...(featureFilter ? { featureFilter } : {}),
                     ...(importMode ? { importMode } : {}),

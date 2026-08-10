@@ -5,6 +5,10 @@
  * features that actually land in the app). Large path = stream → IndexedDB;
  * small path = in-memory. Same feature ceiling.
  *
+ * Unlock rule: estimated stored features ≤ 250k. Field / filter / fence are
+ * tools to get under that cap — not required tokens. A no-op fence does not
+ * specially unlock anything.
+ *
  * Plumbing only (not product max — do not lead with these in answers):
  *   STREAM_STORAGE_FEATURE_LIMIT (1M) — worker runaway abort
  *   STREAM_MAX_BYTES (2 GB) — max source bytes readable for filter/import
@@ -16,13 +20,13 @@ import { MAX_IMPORT_FEATURES, TEXT_STRONG_BYTES } from './import-preflight.js';
 import { STREAM_MAX_FEATURES, STREAM_MAX_BYTES } from './stream/stream-constants.js';
 import { hasActiveFeatureFilter } from './import-feature-filter.js';
 
-/** User-facing unlock: estimated stored features after reduction. */
+/** User-facing unlock: estimated stored features after any cuts. */
 export const STORED_FEATURE_LIMIT = MAX_IMPORT_FEATURES;
 
-/** Worker abort ceiling for streaming imports (not the UI unlock). */
+/** Worker runaway abort ceiling for streaming (not the UI unlock). */
 export const STREAM_STORAGE_FEATURE_LIMIT = STREAM_MAX_FEATURES;
 
-/** Unchanged-import size guidance (standard path strong threshold). */
+/** Standard-path size reject / Gate B entry guidance (not Gate B unlock). */
 export const STORED_SIZE_GUIDANCE_BYTES = TEXT_STRONG_BYTES;
 
 export { STREAM_MAX_BYTES };
@@ -39,6 +43,18 @@ export function isUnderStoredFeatureLimit(featureCount, limit = STORED_FEATURE_L
 }
 
 /**
+ * True when the source/total estimate is over the product max (UI hint to cut).
+ * @param {number|null|undefined} featureCount
+ * @param {number} [limit]
+ * @returns {boolean}
+ */
+export function needsFeatureCut(featureCount, limit = STORED_FEATURE_LIMIT) {
+    return featureCount != null
+        && Number.isFinite(featureCount)
+        && featureCount > limit;
+}
+
+/**
  * @param {unknown} fenceBbox
  * @returns {boolean}
  */
@@ -48,7 +64,8 @@ export function isActiveFenceBbox(fenceBbox) {
 }
 
 /**
- * Whether large-file import may proceed given reduction + estimated stored count.
+ * Whether import may proceed given estimated stored feature count.
+ * Fields / filter / fence are ignored for unlock — only the count matters.
  * @param {{
  *   estimatedFeatures?: number|null,
  *   hasFieldReduction?: boolean,
@@ -61,13 +78,26 @@ export function isActiveFenceBbox(fenceBbox) {
  */
 export function canAdmitStoredImport(input = {}) {
     const limit = input.limitFeatures ?? STORED_FEATURE_LIMIT;
+    return isUnderStoredFeatureLimit(input.estimatedFeatures, limit);
+}
+
+/**
+ * Whether the user has applied a real cut (subset fields, filter, or fence).
+ * Hint-only — not required for admission when already ≤ limit.
+ * @param {{
+ *   hasFieldReduction?: boolean,
+ *   hasFeatureReduction?: boolean,
+ *   hasFence?: boolean,
+ *   featureFilter?: object|null,
+ *   fenceBbox?: number[]|null
+ * }} input
+ */
+export function hasImportReduction(input = {}) {
     const hasFence = input.hasFence === true || isActiveFenceBbox(input.fenceBbox);
     const hasFeatureReduction = input.hasFeatureReduction === true
         || hasActiveFeatureFilter(input.featureFilter);
     const hasFieldReduction = input.hasFieldReduction === true;
-    const hasReduction = hasFieldReduction || hasFeatureReduction || hasFence;
-    const underLimit = isUnderStoredFeatureLimit(input.estimatedFeatures, limit);
-    return hasReduction && underLimit;
+    return hasFieldReduction || hasFeatureReduction || hasFence;
 }
 
 /**
@@ -108,7 +138,9 @@ export default {
     STORED_SIZE_GUIDANCE_BYTES,
     STREAM_MAX_BYTES,
     isUnderStoredFeatureLimit,
+    needsFeatureCut,
     isActiveFenceBbox,
     canAdmitStoredImport,
+    hasImportReduction,
     createAdmissionPolicy
 };

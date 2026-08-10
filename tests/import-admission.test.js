@@ -3,7 +3,9 @@ import {
     STORED_FEATURE_LIMIT,
     STREAM_STORAGE_FEATURE_LIMIT,
     canAdmitStoredImport,
+    hasImportReduction,
     isUnderStoredFeatureLimit,
+    needsFeatureCut,
     createAdmissionPolicy,
     isActiveFenceBbox
 } from '../js/import/import-admission.js';
@@ -12,7 +14,7 @@ import { STREAM_MAX_FEATURES } from '../js/import/stream/stream-constants.js';
 import { MAX_IMPORT_FEATURES } from '../js/import/import-preflight.js';
 
 describe('import-admission', () => {
-    it('documents distinct 250k stored vs 1M stream limits', () => {
+    it('documents distinct 250k stored vs 1M stream plumbing limits', () => {
         expect(STORED_FEATURE_LIMIT).toBe(250_000);
         expect(STORED_FEATURE_LIMIT).toBe(MAX_IMPORT_FEATURES);
         expect(STREAM_STORAGE_FEATURE_LIMIT).toBe(1_000_000);
@@ -20,7 +22,18 @@ describe('import-admission', () => {
         expect(STORED_FEATURE_LIMIT).toBeLessThan(STREAM_STORAGE_FEATURE_LIMIT);
     });
 
-    it('blocks fence-only imports still over the stored feature limit', () => {
+    it('unlocks on feature count alone — no ritual reduction required', () => {
+        expect(canAdmitStoredImport({
+            estimatedFeatures: 10_000,
+            hasFence: false,
+            hasFieldReduction: false,
+            hasFeatureReduction: false
+        })).toBe(true);
+        expect(needsFeatureCut(10_000)).toBe(false);
+        expect(needsFeatureCut(250_001)).toBe(true);
+    });
+
+    it('blocks when estimated features exceed the stored limit even with a fence', () => {
         expect(canAdmitStoredImport({
             estimatedFeatures: 400_000,
             hasFence: true
@@ -40,7 +53,7 @@ describe('import-admission', () => {
         expect(est.status).toBe('red');
     });
 
-    it('allows fence import when matched features are under the limit', () => {
+    it('allows import when matched features are under the limit', () => {
         expect(canAdmitStoredImport({
             estimatedFeatures: 12_000,
             hasFence: true
@@ -55,15 +68,13 @@ describe('import-admission', () => {
             hasFence: true
         });
         expect(est.canImport).toBe(true);
+        expect(est.status).toBe('green');
     });
 
-    it('requires reduction even when under the limit', () => {
-        expect(canAdmitStoredImport({
-            estimatedFeatures: 10_000,
-            hasFence: false,
-            hasFieldReduction: false,
-            hasFeatureReduction: false
-        })).toBe(false);
+    it('treats hasImportReduction as a hint helper only', () => {
+        expect(hasImportReduction({ hasFence: true })).toBe(true);
+        expect(hasImportReduction({ hasFieldReduction: true })).toBe(true);
+        expect(hasImportReduction({})).toBe(false);
     });
 
     it('validates fence bbox shape', () => {

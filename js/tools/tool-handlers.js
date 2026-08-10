@@ -1322,7 +1322,8 @@ function _openImportFlowModal(flowProps = {}) {
                     close();
                     void openImportForFiles(files, _fenceBbox, {
                         selectedFields: streamOpts.selectedFields || null,
-                        featureFilter: streamOpts.featureFilter || null
+                        featureFilter: streamOpts.featureFilter || null,
+                        allowStreamImport: streamOpts.allowStreamImport === true
                     });
                 },
                 onOpenArcGIS: () => {
@@ -1420,13 +1421,9 @@ export async function openImportForFiles(files, fenceBbox = null, options = {}) 
         }
         if (partition.streamFiles.length) {
             const activeFence = fenceBbox ?? _fenceBbox;
-            const { hasActiveFeatureFilter } = await import('../import/import-feature-filter.js');
-            const hasFieldReduction = Array.isArray(options.selectedFields) && options.selectedFields.length > 0;
-            const hasFeatureReduction = hasActiveFeatureFilter(options.featureFilter);
-            const hasFenceReduction = Array.isArray(activeFence) && activeFence.length === 4;
-            // Never auto-import an oversized file unchanged — open the filter UI first
-            // (drag-drop / file picker used to bypass the dialog and stream everything).
-            if (!hasFieldReduction && !hasFeatureReduction && !hasFenceReduction) {
+            // Large files always open the configure UI unless the dialog already
+            // confirmed unlock (≤250k stored) via allowStreamImport.
+            if (!options.allowStreamImport) {
                 _openImportFlowModal({
                     initialFiles: dataFiles,
                     startAtFieldPick: true

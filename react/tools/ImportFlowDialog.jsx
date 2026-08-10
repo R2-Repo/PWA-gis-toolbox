@@ -47,7 +47,7 @@ import { ImportFeatureFilterPanel } from './ImportFeatureFilterPanel.jsx';
 import { useFeatureFilterState, useImportValueScan } from './useImportValueScan.js';
 
 import { hasActiveFeatureFilter, validateFeatureFilter } from '../../js/import/import-feature-filter.js';
-import { TEXT_STRONG_BYTES, MAX_IMPORT_FEATURES } from '../../js/import/import-preflight.js';
+import { largeFileBannerText, kmlGisModeNote } from '../../js/import/import-limit-copy.js';
 import { ImportEstimateGauge } from './ImportEstimateGauge.jsx';
 import { useImportStoreEstimate } from './useImportStoreEstimate.js';
 import { ImportFencePlaceControl } from './ImportFencePlaceControl.jsx';
@@ -161,8 +161,8 @@ export function ImportFlowDialog({
         enabled: readyToImport && streamFiles.length > 0 && !importing
     });
 
-    /** High-capacity stream path: reduction + estimated features under import limit. */
-    const streamImportReady = streamFiles.length === 0 || storeEstimate.canImport;
+    /** Large-file stream path: unlock when estimated stored features ≤ 250k. */
+    const streamImportReady = streamFiles.length === 0 || storeEstimate.readyToImport;
 
     const resetImportStep = () => {
 
@@ -268,31 +268,22 @@ export function ImportFlowDialog({
 
         const activeFeatureFilter = hasActiveFeatureFilter(featureFilter) ? featureFilter : null;
 
-        // High-capacity streaming path — delegate to the parent flow. Only pass
-        // a field filter when the user deselected something: head-sniffed field
-        // lists can miss fields that appear later in very large files.
+        // Streaming path — dialog already gated on readyToImport (≤250k stored).
         if (streamFiles.length > 0 && onStreamImport) {
+            if (!storeEstimate.readyToImport) {
+                setError(
+                    storeEstimate.blockReason
+                    || 'Estimated features are still over the 250,000 feature limit. Tighten your filter or fence.'
+                );
+                return;
+            }
             const fieldsReduced = fieldNames.length > 0
                 && fields?.length > 0
                 && fields.length < fieldNames.length;
-            if (!fieldsReduced && !activeFeatureFilter && !fenceActive) {
-                setError(
-                    'This file is too large to import in full. Uncheck attributes you do not need, set a feature filter, or place an import fence before importing.'
-                );
-                return;
-            }
-            if (!storeEstimate.canImport) {
-                setError(
-                    'Estimated features are still over the import limit. Tighten your filter until the estimate is within limits.'
-                );
-                return;
-            }
-
-            setError('');
-            const useFieldFilter = fieldNames.length > 0 && fields.length < fieldNames.length;
             onStreamImport(files, {
-                selectedFields: useFieldFilter ? fields : null,
-                featureFilter: activeFeatureFilter
+                selectedFields: fieldsReduced ? fields : null,
+                featureFilter: activeFeatureFilter,
+                allowStreamImport: true
             });
             return;
         }
@@ -713,31 +704,16 @@ export function ImportFlowDialog({
 
                 <div
                     className="info-box text-xs mb-8"
-                    style={{ color: streamImportReady ? 'var(--warning, orange)' : 'var(--danger)' }}
+                    style={{ color: streamImportReady ? 'var(--success, #2a7a3a)' : 'var(--danger)' }}
                 >
 
-                    {streamFiles.length === 1
-                        ? (
-                            `"${streamFiles[0].name}" is too large to import unchanged (${formatBytes(streamFiles[0].size)}${
-                                streamEstimate != null
-                                    ? `, Roughly ${streamEstimate.toLocaleString()} features estimated`
-                                    : ''
-                            }).`
-                        )
-                        : (
-                            `${streamFiles.length} files are too large to import unchanged${
-                                streamEstimate != null
-                                    ? ` (Roughly ${streamEstimate.toLocaleString()} features estimated)`
-                                    : ''
-                            }.`
-                        )}
-                    {' '}
-                    Import is blocked until you reduce what is stored: uncheck attributes you do not need, set a feature filter, or import inside an active fence.
-                    {streamFiles.some((f) => /\.(kml|kmz)$/i.test(f.name))
-                        ? ' KML/KMZ imports as a simplified GIS layer (presentation content is not kept).'
-                        : ''}
-                    {' '}
-                    Import limits: {formatBytes(TEXT_STRONG_BYTES)} file size, {MAX_IMPORT_FEATURES.toLocaleString()} features.
+                    {largeFileBannerText({
+                        fileName: streamFiles[0]?.name,
+                        fileCount: streamFiles.length,
+                        sourceBytes: streamFiles.length === 1 ? streamFiles[0].size : 0,
+                        featureEstimate: streamEstimate
+                    })}
+                    {kmlGisModeNote(streamFiles.some((f) => /\.(kml|kmz)$/i.test(f.name)))}
 
                 </div>
 
@@ -889,15 +865,16 @@ export function ImportFlowDialog({
                                     estimateProgress={storeEstimate.estimateProgress}
                                     estimateMessage={storeEstimate.estimateMessage}
                                     waitingOnRecount={storeEstimate.waitingOnRecount}
-                                    sourceBytes={pendingFiles[0]?.size || 0}
+                                    readyToImport={storeEstimate.readyToImport}
+                                    blockReason={storeEstimate.blockReason}
+                                    sourceBytes={storeEstimate.estimate?.sourceBytes || pendingFiles[0]?.size || 0}
                                 />
                             ) : null}
 
                             {streamFiles.length > 0 && !streamImportReady ? (
                                 <p className="text-xs mt-8" style={{ color: 'var(--danger)' }}>
-                                    {!storeEstimate.estimate.hasReduction
-                                        ? 'Uncheck unused attributes and/or add a feature filter, then wait for the estimate to fall within import limits.'
-                                        : 'Tighten your filter until the estimated feature count is within import limits.'}
+                                    {storeEstimate.blockReason
+                                        || 'Tighten filters or place a fence until stored features are ≤ 250,000.'}
                                 </p>
                             ) : null}
 
@@ -908,7 +885,7 @@ export function ImportFlowDialog({
                                 disabled={streamFiles.length > 0 ? !streamImportReady : false}
 
                                 title={streamFiles.length > 0 && !streamImportReady
-                                    ? 'Reduce until the estimate is within import limits'
+                                    ? (storeEstimate.blockReason || 'Wait until the estimate is within the 250,000 feature limit')
                                     : undefined}
 
                                 onClick={() => void startImport(pendingFiles, { selectedFields })}

@@ -78,7 +78,7 @@ describe('stream-policy', () => {
         const res = await assessStreamEligibility(fakeFile('huge.geojson', STREAM_MAX_BYTES + 1));
         expect(res.stream).toBe(false);
         expect(res.reject).toBe(true);
-        expect(res.message).toMatch(/high-capacity import limit/);
+        expect(res.message).toMatch(/source file exceeds.*open limit/);
     });
 
     it('streams statewide-scale GeoJSON under the 2 GB ceiling', async () => {
