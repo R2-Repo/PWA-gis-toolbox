@@ -158,6 +158,7 @@ export function buildDatasetFromWorkspaceRef(saved, newLayerId = saved.id) {
         workspaceLayerId,
         geojson: { type: 'FeatureCollection', features: [] },
         schema: saved.schema,
+        ...(saved.datasetProfile ? { datasetProfile: saved.datasetProfile } : {}),
         source: saved.source || { file: saved.name, format: 'session' },
         visible: saved.visible !== false,
         active: false,

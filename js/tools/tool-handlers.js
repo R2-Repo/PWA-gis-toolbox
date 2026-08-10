@@ -182,7 +182,12 @@ export async function restoreSessionIfAvailable() {
                             logger.warn('Session', `Workspace layer "${saved.name}" not found in storage`);
                             continue;
                         }
-                        dataset = buildDatasetFromWorkspaceRef(saved);
+                        dataset = buildDatasetFromWorkspaceRef({
+                            ...saved,
+                            schema: saved.schema || wsMeta.schema,
+                            datasetProfile: saved.datasetProfile || wsMeta.datasetProfile || null,
+                            source: saved.source || wsMeta.source
+                        });
                     } else if (saved.type === 'service') {
                         dataset = await buildDatasetFromSavedLayer(saved, {});
                     } else {

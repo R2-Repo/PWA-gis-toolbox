@@ -8,10 +8,12 @@ import {
     appendWorkspaceBatch,
     removeWorkspaceLayer,
     flushSpatialIndexSave,
+    updateWorkspaceLayerMeta,
     WORKSPACE_CHUNK_SIZE,
     WORKSPACE_FEATURE_THRESHOLD
 } from '../workspace/workspace-store.js';
 import { createSpatialChunkWriter } from '../workspace/spatial-chunk-writer.js';
+import { buildDatasetProfileFromFeatures } from './dataset-profile.js';
 
 /**
  * @param {object} dataset spatial dataset with geojson
@@ -28,12 +30,20 @@ export async function convertSpatialDatasetToWorkspace(dataset) {
     }
 
     const layerId = dataset.id;
+    const schema = dataset.schema || analyzeSchema(dataset.geojson);
+    const datasetProfile = buildDatasetProfileFromFeatures(features, {
+        importMethod: dataset.source?.importMethod || 'standard',
+        format: dataset.source?.format || 'unknown',
+        fileSize: dataset.source?.fileSize,
+        fieldCount: Array.isArray(schema?.fields) ? schema.fields.length : null
+    });
     try {
         await createWorkspaceLayer({
             id: layerId,
             name: dataset.name,
             source: dataset.source,
-            schema: dataset.schema || analyzeSchema(dataset.geojson)
+            schema,
+            datasetProfile
         });
 
         const selectedFields = dataset.source?.importSelectedFields || null;
@@ -49,6 +59,10 @@ export async function convertSpatialDatasetToWorkspace(dataset) {
         }
         await writer.flush();
         await flushSpatialIndexSave();
+        await updateWorkspaceLayerMeta(layerId, {
+            schema: { ...schema, featureCount: features.length },
+            datasetProfile
+        });
     } catch (err) {
         try {
             await removeWorkspaceLayer(layerId);
@@ -63,8 +77,9 @@ export async function convertSpatialDatasetToWorkspace(dataset) {
         workspaceLayerId: layerId,
         geojson: { type: 'FeatureCollection', features: [] },
         _viewportCache: true,
+        datasetProfile,
         schema: {
-            ...(dataset.schema || analyzeSchema(dataset.geojson)),
+            ...schema,
             featureCount: features.length
         }
     };

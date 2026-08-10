@@ -34,6 +34,10 @@ import {
     IMPORT_VALUE_SCAN_CAP
 } from '../import/import-feature-filter.js';
 import {
+    createProfileAccumulator,
+    observeFeatureForProfile
+} from '../import/dataset-profile.js';
+import {
     createValueAccumulator,
     extractKmlPlacemarkProperties
 } from '../import/import-value-accumulator.js';
@@ -108,6 +112,7 @@ function createImportContext(msg, overrides = {}) {
         : null;
 
     const schema = estimateOnly ? null : createSchemaAccumulator();
+    const profileAcc = estimateOnly ? null : createProfileAccumulator();
     let features = [];
     let batchBytes = 0;
     let emitted = 0;
@@ -177,6 +182,7 @@ function createImportContext(msg, overrides = {}) {
                     throw err;
                 }
                 schema.addFeature(part);
+                observeFeatureForProfile(profileAcc, part);
                 features.push(part);
                 batchBytes += approxBytes;
                 if (features.length >= batchFeatures || batchBytes >= batchMaxBytes) {
@@ -199,6 +205,9 @@ function createImportContext(msg, overrides = {}) {
                 return;
             }
             await flush(bytesProcessed);
+            const geometryTypes = profileAcc?.geometryTypes instanceof Set
+                ? [...profileAcc.geometryTypes]
+                : [];
             self.postMessage({
                 id,
                 type: 'done',
@@ -208,7 +217,14 @@ function createImportContext(msg, overrides = {}) {
                     noGeometryCount,
                     fenceFiltered,
                     featureFiltered,
-                    bytesProcessed
+                    bytesProcessed,
+                    coordCount: profileAcc?.coordCount || 0,
+                    maxCoordsInFeature: profileAcc?.maxCoordsInFeature || 0,
+                    bbox: profileAcc?.bbox || null,
+                    geometryClassCounts: profileAcc?.geometryClassCounts
+                        ? { ...profileAcc.geometryClassCounts }
+                        : {},
+                    geometryTypes
                 },
                 ...extra
             });

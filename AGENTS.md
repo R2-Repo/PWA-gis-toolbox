@@ -86,6 +86,8 @@ Do not put widget logic inline in `js/tools/tool-handlers.js`. Copy the closest 
 
 **Import limits (end-user):** see [`docs/IMPORT_LARGE_FILES.md`](docs/IMPORT_LARGE_FILES.md) **End-user import gates** and [`js/import/import-limit-taxonomy.js`](js/import/import-limit-taxonomy.js). Gate A = in-memory (&lt;~4/5 MB, ≤250k). Gate B store unlock ≈ **1M** features. **250k** = materialize / heavy-tool budget (OPERATION), not “cannot import.” 2 GB = source-open SAFETY. Never conflate ROUTING / SAFETY / OPERATION.
 
+**Dataset profile (Phase 2):** stream/convert builds `datasetProfile` on workspace layers (`js/import/dataset-profile.js`) — feature/geometry/attribute/storage pressures, not a single score. Used lightly for early MVT preference; Phase 3 tools will consume it.
+
 ## Project layout (quick reference)
 
 | Path | Purpose |

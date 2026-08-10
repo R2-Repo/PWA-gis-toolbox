@@ -13,6 +13,7 @@ import {
     isPmTilesLayer
 } from '../core/data-model.js';
 import { TILED_RENDER_THRESHOLD, TILE_SOURCE_MAX_ZOOM, TILE_SOURCE_LAYER } from './tiles/tile-constants.js';
+import { profileSuggestsTiledDisplay } from '../import/dataset-profile.js';
 import { getCoverageRasters, isCoverageRasterLayer } from '../core/coverage-raster-layer.js';
 import { MAP_CHUNK_BATCH_SIZE, RENDER_LIMITS } from './render-limits.js';
 import { buildViewportGeoJSON } from '../workspace/viewport-loader.js';
@@ -1089,7 +1090,8 @@ class MapManager {
 
         // Heavy layers render as locally generated vector tiles — the whole
         // layer stays visible at every zoom instead of a viewport packet.
-        if (getLayerFeatureCount(dataset) >= TILED_RENDER_THRESHOLD) {
+        const featureCount = getLayerFeatureCount(dataset);
+        if (profileSuggestsTiledDisplay(dataset, featureCount, TILED_RENDER_THRESHOLD)) {
             const installed = await this._installTiledWorkspaceLayer(dataset, colorIndex, layerStyle, { fit });
             if (installed) return;
             logger.warn('Map', 'Tiled rendering unavailable — using viewport rendering', { id: dataset.id });
