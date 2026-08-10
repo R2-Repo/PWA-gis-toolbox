@@ -34,9 +34,9 @@ export function kmlGisModeNote(hasKml = false) {
         : '';
 }
 
-export function materializeRestrictionNote(estimatedFeatures = null) {
-    if (!exceedsMaterializeLimit(estimatedFeatures)) return null;
-    return `This layer will be larger than ${MATERIALIZE_FEATURE_LIMIT.toLocaleString()} features — some GIS tools will need a selection, filter, or fence (they cannot load the whole layer into memory).`;
+export function materializeRestrictionNote(estimatedFeatures = null, materializeLimit = MATERIALIZE_FEATURE_LIMIT) {
+    if (!exceedsMaterializeLimit(estimatedFeatures, materializeLimit)) return null;
+    return `This layer will be larger than ${materializeLimit.toLocaleString()} features — some GIS tools will need a selection, filter, or fence (they cannot load the whole layer into memory).`;
 }
 
 export function describeImportBlockReason({

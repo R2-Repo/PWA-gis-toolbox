@@ -10,6 +10,7 @@ import {
 } from '../core/data-model.js';
 import { AppError, ErrorCategory } from '../core/error-handler.js';
 import { MATERIALIZE_FEATURE_LIMIT } from '../import/import-limit-taxonomy.js';
+import { getAdaptiveMaterializeLimit } from '../import/import-capacity-context.js';
 import {
     loadAllWorkspaceFeatures,
     getWorkspaceFeaturesByIndices
@@ -24,6 +25,7 @@ import {
  * Workspace layers above this cannot be fully loaded into memory for GIS
  * tools — streamed layers can exceed what the in-memory pipeline supports.
  * GeoJSON/CSV export uses the streamed path instead and is not bound by this cap.
+ * Prefer adaptive limits via {@link getAdaptiveMaterializeLimit} / materializeForOperation.
  */
 export const MAX_MATERIALIZE_FEATURES = MATERIALIZE_FEATURE_LIMIT;
 
@@ -54,11 +56,12 @@ export async function materializeSpatialLayer(layer) {
     if (!isWorkspaceLayer(layer)) return layer;
 
     const featureCount = getLayerFeatureCount(layer);
-    if (featureCount > MAX_MATERIALIZE_FEATURES) {
+    const materializeLimit = getAdaptiveMaterializeLimit([layer]);
+    if (featureCount > materializeLimit) {
         throw new AppError(
-            `"${layer.name}" has ${featureCount.toLocaleString()} features — too many to load into memory for this operation (limit ${MAX_MATERIALIZE_FEATURES.toLocaleString()}). Work with a selection or a smaller subset instead.`,
+            `"${layer.name}" has ${featureCount.toLocaleString()} features — too many to load into memory for this operation (limit ${materializeLimit.toLocaleString()}). Work with a selection or a smaller subset instead.`,
             ErrorCategory.OUT_OF_MEMORY,
-            { layerId: layer.id, featureCount }
+            { layerId: layer.id, featureCount, materializeLimit }
         );
     }
 
@@ -80,7 +83,8 @@ export async function materializeSpatialLayer(layer) {
  *     getSelectedIndices?: (id: string) => number[],
  *     getSelectedFeatures?: (id: string, geojson: object) => object|null
  *   },
- *   limitFeatures?: number
+ *   limitFeatures?: number,
+ *   projectLayers?: object[]
  * }} [options]
  * @returns {Promise<object|null>}
  */
@@ -92,7 +96,8 @@ export async function materializeForOperation(layer, options = {}) {
         layer,
         applyTo: options.applyTo || 'auto',
         mapApi: options.mapApi || {},
-        limitFeatures: options.limitFeatures
+        limitFeatures: options.limitFeatures,
+        projectLayers: options.projectLayers
     });
 
     if (!evaluation.ok) {

@@ -147,7 +147,7 @@ export function ImportOptimizerDialog({
             return;
         }
         if (!storeEstimate.readyToImport) {
-            setError(storeEstimate.blockReason || `Stored features must be ≤ ${STORED_FEATURE_LIMIT.toLocaleString()} before continuing.`);
+            setError(storeEstimate.blockReason || `Stored features must be ≤ ${(storeEstimate.estimate?.limitFeatures ?? STORED_FEATURE_LIMIT).toLocaleString()} before continuing.`);
             return;
         }
         setError('');

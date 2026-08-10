@@ -36,7 +36,9 @@ export const IMPORT_LIMIT_FEATURES = STORED_FEATURE_LIMIT;
  *   featureFilter?: object|null,
  *   hasFence?: boolean,
  *   geometryWeight?: number,
- *   waitingOnRecount?: boolean
+ *   waitingOnRecount?: boolean,
+ *   limitFeatures?: number,
+ *   materializeLimit?: number
  * }} input
  */
 export function estimateStoredImport(input = {}) {
@@ -52,6 +54,12 @@ export function estimateStoredImport(input = {}) {
     const selectedFields = Array.isArray(input.selectedFields) ? input.selectedFields : fieldNames;
     const geometryWeight = Math.min(0.95, Math.max(0.05, input.geometryWeight ?? GEOMETRY_SIZE_WEIGHT));
     const attrWeight = 1 - geometryWeight;
+    const limitFeatures = Number.isFinite(Number(input.limitFeatures)) && Number(input.limitFeatures) > 0
+        ? Math.floor(Number(input.limitFeatures))
+        : IMPORT_LIMIT_FEATURES;
+    const materializeLimit = Number.isFinite(Number(input.materializeLimit)) && Number(input.materializeLimit) > 0
+        ? Math.floor(Number(input.materializeLimit))
+        : MATERIALIZE_FEATURE_LIMIT;
 
     const hasFieldReduction = fieldNames.length > 0
         && selectedFields.length > 0
@@ -80,11 +88,11 @@ export function estimateStoredImport(input = {}) {
 
     const underFeatureLimit = estimatedFeatures == null
         ? false
-        : estimatedFeatures <= IMPORT_LIMIT_FEATURES;
+        : estimatedFeatures <= limitFeatures;
     const underSizeLimit = estimatedBytes <= IMPORT_LIMIT_BYTES;
-    const mustCut = needsFeatureCut(estimatedFeatures, IMPORT_LIMIT_FEATURES)
-        || (estimatedFeatures == null && needsFeatureCut(totalFeatures, IMPORT_LIMIT_FEATURES));
-    const aboveMaterialize = exceedsMaterializeLimit(estimatedFeatures);
+    const mustCut = needsFeatureCut(estimatedFeatures, limitFeatures)
+        || (estimatedFeatures == null && needsFeatureCut(totalFeatures, limitFeatures));
+    const aboveMaterialize = exceedsMaterializeLimit(estimatedFeatures, materializeLimit);
 
     const waitingOnRecount = input.waitingOnRecount === true;
 
@@ -105,7 +113,7 @@ export function estimateStoredImport(input = {}) {
 
     const canImport = canAdmitStoredImport({
         estimatedFeatures,
-        limitFeatures: IMPORT_LIMIT_FEATURES
+        limitFeatures
     });
 
     return {
@@ -122,11 +130,11 @@ export function estimateStoredImport(input = {}) {
         underSizeLimit,
         needsFeatureCut: mustCut,
         exceedsMaterializeLimit: aboveMaterialize,
-        materializeLimit: MATERIALIZE_FEATURE_LIMIT,
+        materializeLimit,
         status,
         canImport,
         limitBytes: IMPORT_LIMIT_BYTES,
-        limitFeatures: IMPORT_LIMIT_FEATURES,
+        limitFeatures,
         estimatedBytesLabel: formatBytes(estimatedBytes),
         limitBytesLabel: formatBytes(IMPORT_LIMIT_BYTES)
     };

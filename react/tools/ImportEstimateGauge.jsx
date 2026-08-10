@@ -14,7 +14,7 @@ const STATUS_COLOR = {
 
 /**
  * Live estimate of what would be stored after field / feature-filter / fence cuts.
- * Unlock = readyToImport (≤ ~1M stored features).
+ * Unlock = readyToImport (≤ adaptive Gate B soft ceiling, taxonomy max ~1M).
  */
 export function ImportEstimateGauge({
     estimate = null,
@@ -39,8 +39,11 @@ export function ImportEstimateGauge({
         ? estimate.estimatedFeatures.toLocaleString()
         : '—';
     const limitFeatures = estimate.limitFeatures ?? STORED_FEATURE_LIMIT;
+    const materializeLimit = estimate.materializeLimit ?? MATERIALIZE_FEATURE_LIMIT;
+    const capacityTightened = limitFeatures < STORED_FEATURE_LIMIT
+        || materializeLimit < MATERIALIZE_FEATURE_LIMIT;
     const materializeNote = !updating && readyToImport
-        ? materializeRestrictionNote(estimate.estimatedFeatures)
+        ? materializeRestrictionNote(estimate.estimatedFeatures, materializeLimit)
         : null;
 
     return (
@@ -61,8 +64,17 @@ export function ImportEstimateGauge({
             <div style={{ marginTop: 4 }}>
                 You can store up to {limitFeatures.toLocaleString()} features on the map
                 {' '}
-                (whole-layer GIS tools use a {MATERIALIZE_FEATURE_LIMIT.toLocaleString()} feature working-set budget).
+                (whole-layer GIS tools use a {materializeLimit.toLocaleString()} feature working-set budget).
             </div>
+            {capacityTightened ? (
+                <div className="text-muted" style={{ marginTop: 4, color: 'inherit', opacity: 0.85 }}>
+                    Soft ceilings are tightened for this device/project
+                    {' '}
+                    (taxonomy max {STORED_FEATURE_LIMIT.toLocaleString()} store /
+                    {' '}
+                    {MATERIALIZE_FEATURE_LIMIT.toLocaleString()} materialize).
+                </div>
+            ) : null}
             <div className="text-muted" style={{ marginTop: 4, color: 'inherit', opacity: 0.85 }}>
                 Source file size does not change
                 {sourceBytes > 0 ? ` (${formatBytes(sourceBytes)})` : ''}

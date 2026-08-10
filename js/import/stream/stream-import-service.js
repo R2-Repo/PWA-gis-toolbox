@@ -52,7 +52,8 @@ function _baseName(fileName) {
  *   selectedFields?: string[]|null,
  *   featureFilter?: object|null,
  *   importMode?: 'gis'|'preserve',
- *   sourceCrs?: { code: string, def: string }|null
+ *   sourceCrs?: { code: string, def: string }|null,
+ *   maxFeatures?: number|null
  * }} options
  * @returns {{ promise: Promise<{ datasets: object[], stats: object }>, cancel: () => void }}
  */
@@ -65,7 +66,8 @@ export function streamImportFile(file, options = {}) {
         selectedFields = null,
         featureFilter = null,
         importMode,
-        sourceCrs = null
+        sourceCrs = null,
+        maxFeatures = null
     } = options;
     const baseName = _baseName(file.name);
 
@@ -378,6 +380,10 @@ export function streamImportFile(file, options = {}) {
                 }
             };
 
+            const featureCap =
+                Number.isFinite(Number(maxFeatures)) && Number(maxFeatures) > 0
+                    ? Math.floor(Number(maxFeatures))
+                    : STORED_FEATURE_LIMIT;
             worker.postMessage({
                 type: 'start',
                 id: jobId,
@@ -385,7 +391,7 @@ export function streamImportFile(file, options = {}) {
                 format,
                 options: {
                     fenceBbox,
-                    maxFeatures: STORED_FEATURE_LIMIT,
+                    maxFeatures: featureCap,
                     ...(selectedFields?.length ? { selectedFields } : {}),
                     ...(featureFilter ? { featureFilter } : {}),
                     ...(importMode ? { importMode } : {}),
