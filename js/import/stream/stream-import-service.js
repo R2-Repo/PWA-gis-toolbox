@@ -13,6 +13,7 @@ import {
     flushSpatialIndexSave,
     WORKSPACE_CHUNK_SIZE
 } from '../../workspace/workspace-store.js';
+import { createSpatialChunkWriter } from '../../workspace/spatial-chunk-writer.js';
 import { saveSourceFile, removeSourceFile } from '../../workspace/source-file-store.js';
 import { STREAM_MAX_FEATURES } from './stream-constants.js';
 
@@ -67,7 +68,7 @@ export function streamImportFile(file, options = {}) {
     } = options;
     const baseName = _baseName(file.name);
 
-    /** @type {Map<string, { layerId: string, count: number, geomTypes: Set<string>, buffer: object[] }>} */
+    /** @type {Map<string, { layerId: string, count: number, geomTypes: Set<string>, writer: ReturnType<typeof createSpatialChunkWriter> }>} */
     const classes = new Map();
     const pendingNullGeometry = [];
     let worker = null;
@@ -110,15 +111,26 @@ export function streamImportFile(file, options = {}) {
         }
         let cls = classes.get(clsKey);
         if (!cls) {
+            const layerId = _generateId();
             cls = {
-                layerId: _generateId(),
+                layerId,
                 count: 0,
                 geomTypes: new Set(),
-                buffer: []
+                writer: null
             };
+            cls.writer = createSpatialChunkWriter({
+                chunkSize: WORKSPACE_CHUNK_SIZE,
+                onFlush: async (batch, startIndex) => {
+                    if (cancelled) {
+                        throw Object.assign(new Error('Import cancelled'), { cancelled: true });
+                    }
+                    await appendWorkspaceBatch(layerId, batch, startIndex);
+                    cls.count = startIndex + batch.length;
+                }
+            });
             classes.set(clsKey, cls);
             await createWorkspaceLayer({
-                id: cls.layerId,
+                id: layerId,
                 name: baseName,
                 source: { file: file.name, format }
             });
@@ -127,14 +139,12 @@ export function streamImportFile(file, options = {}) {
     };
 
     const flushClass = async (cls) => {
-        if (!cls.buffer.length) return;
+        if (!cls?.writer) return;
         if (cancelled) {
             throw Object.assign(new Error('Import cancelled'), { cancelled: true });
         }
-        const batch = cls.buffer;
-        cls.buffer = [];
-        await appendWorkspaceBatch(cls.layerId, batch, cls.count);
-        cls.count += batch.length;
+        await cls.writer.flush();
+        cls.count = cls.writer.writtenCount;
     };
 
     const routeFeature = async (feature) => {
@@ -166,10 +176,8 @@ export function streamImportFile(file, options = {}) {
 
         const cls = await getClass(clsKey);
         if (geomType) cls.geomTypes.add(geomType);
-        cls.buffer.push(feature);
-        if (cls.buffer.length >= WORKSPACE_CHUNK_SIZE) {
-            await flushClass(cls);
-        }
+        await cls.writer.add(feature);
+        cls.count = cls.writer.featureCount;
 
         if (pendingNullGeometry.length) {
             await drainPendingNullGeometry(clsKey);
@@ -180,11 +188,9 @@ export function streamImportFile(file, options = {}) {
         if (!pendingNullGeometry.length) return;
         const cls = await getClass(clsKey);
         for (const f of pendingNullGeometry) {
-            cls.buffer.push(f);
-            if (cls.buffer.length >= WORKSPACE_CHUNK_SIZE) {
-                await flushClass(cls);
-            }
+            await cls.writer.add(f);
         }
+        cls.count = cls.writer.featureCount;
         pendingNullGeometry.length = 0;
     };
 
@@ -192,7 +198,7 @@ export function streamImportFile(file, options = {}) {
         let best = null;
         let bestCount = -1;
         for (const [key, cls] of classes) {
-            const n = cls.count + cls.buffer.length;
+            const n = cls.writer?.featureCount ?? cls.count;
             if (n > bestCount) {
                 best = key;
                 bestCount = n;

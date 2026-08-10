@@ -48,7 +48,8 @@ File (drag-drop or Import dialog)
       KMZ/zip: central-directory lookup → DecompressionStream on the main
                KML entry only (icons/overlays are never extracted)
   → batches of ~1000 features posted to main thread (ack backpressure)
-  → appendWorkspaceBatch → IndexedDB chunks + grid spatial index
+  → spatial chunk writer (coarse degree-grid buckets) → appendWorkspaceBatch
+    → IndexedDB chunks + grid spatial index
   → original file preserved in OPFS (import-sources/)
   → workspace layer on map (viewport-only rendering, existing path)
 ```
@@ -331,7 +332,6 @@ fix admission/limits consistency, IndexedDB attribute ranges, spatial-index
 save races, and transactional cancel/rollback before treating very large
 imports as production-safe.
 
-**Build 8** (admission / IDB / index save / rollback), **Build 9** (fence
-parity, CRS, CSV IDs, KML cleanup, picker honesty), and **Build 10** (sampled
-value scans + estimate/value-scan caching) are implemented — see the hardening
-plan for status checklists.
+**Build 8–11** are implemented — admission/IDB/rollback, fence/CRS/CSV/KML/
+picker integrity, sampled scan caching, and spatial workspace chunking. See
+[`IMPORT_HARDENING_PLAN.md`](IMPORT_HARDENING_PLAN.md) for status checklists.

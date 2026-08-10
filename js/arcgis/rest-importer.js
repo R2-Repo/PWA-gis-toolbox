@@ -21,6 +21,7 @@ import {
     flushSpatialIndexSave,
     WORKSPACE_CHUNK_SIZE
 } from '../workspace/workspace-store.js';
+import { createSpatialChunkWriter } from '../workspace/spatial-chunk-writer.js';
 import { applyArcgisScaleRangeToLayer } from '../map/scale-range.js';
 
 /** Maximum features to download without explicit user override. */
@@ -73,25 +74,28 @@ export function schemaFromArcgisMetadata(metadata, selectedFields = null) {
 }
 
 /**
- * Append ESRI features to workspace in fixed-size chunks (avoids stack overflow from spread).
+ * Append ESRI features to workspace in spatially bucketed chunks.
  */
 export async function appendArcgisFeaturesToWorkspace(layerId, esriFeatures, convertGeometry, startIndex, selectedFields = null) {
     if (!esriFeatures?.length) return 0;
 
-    let written = 0;
-    for (let i = 0; i < esriFeatures.length; i += WORKSPACE_CHUNK_SIZE) {
-        const slice = esriFeatures.slice(i, i + WORKSPACE_CHUNK_SIZE);
-        const geojsonBatch = new Array(slice.length);
-        for (let j = 0; j < slice.length; j++) {
-            geojsonBatch[j] = filterFeatureProperties(
-                esriFeatureToGeoJSON(slice[j], convertGeometry),
-                selectedFields
-            );
+    const writer = createSpatialChunkWriter({
+        chunkSize: WORKSPACE_CHUNK_SIZE,
+        initialIndex: startIndex,
+        onFlush: async (batch, index) => {
+            await appendWorkspaceBatch(layerId, batch, index, selectedFields);
         }
-        await appendWorkspaceBatch(layerId, geojsonBatch, startIndex + i, selectedFields);
-        written += geojsonBatch.length;
+    });
+
+    for (let i = 0; i < esriFeatures.length; i++) {
+        const feature = filterFeatureProperties(
+            esriFeatureToGeoJSON(esriFeatures[i], convertGeometry),
+            selectedFields
+        );
+        await writer.add(feature);
     }
-    return written;
+    await writer.flush();
+    return writer.writtenCount - startIndex;
 }
 
 function _pushAll(target, items) {

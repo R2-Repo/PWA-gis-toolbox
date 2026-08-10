@@ -11,6 +11,7 @@ import {
     WORKSPACE_CHUNK_SIZE,
     WORKSPACE_FEATURE_THRESHOLD
 } from '../workspace/workspace-store.js';
+import { createSpatialChunkWriter } from '../workspace/spatial-chunk-writer.js';
 
 /**
  * @param {object} dataset spatial dataset with geojson
@@ -36,17 +37,17 @@ export async function convertSpatialDatasetToWorkspace(dataset) {
         });
 
         const selectedFields = dataset.source?.importSelectedFields || null;
-
-        for (let i = 0; i < features.length; i += WORKSPACE_CHUNK_SIZE) {
-            const batch = features.slice(i, i + WORKSPACE_CHUNK_SIZE);
-            await appendWorkspaceBatch(
-                layerId,
-                batch,
-                i,
-                shouldFilterFields(selectedFields) ? selectedFields : null
-            );
+        const filter = shouldFilterFields(selectedFields) ? selectedFields : null;
+        const writer = createSpatialChunkWriter({
+            chunkSize: WORKSPACE_CHUNK_SIZE,
+            onFlush: async (batch, startIndex) => {
+                await appendWorkspaceBatch(layerId, batch, startIndex, filter);
+            }
+        });
+        for (const feature of features) {
+            await writer.add(feature);
         }
-
+        await writer.flush();
         await flushSpatialIndexSave();
     } catch (err) {
         try {
