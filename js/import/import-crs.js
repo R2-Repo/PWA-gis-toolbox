@@ -1,9 +1,12 @@
 /**
- * Import CRS metadata — warn-only policy (no auto-reproject).
+ * Build import CRS metadata from shapefile .prj WKT.
+ * shpjs reprojects coords to WGS84 when .prj present — schema.crs stays 4326.
+ * Missing .prj is NOT assumed WGS84 when coordinates look projected.
  */
 import { buildCrsWarning, isDisplayReady, parsePrjWkt } from '../crs/detect.js';
 import { normalizeCrsCode } from '../crs/registry.js';
 import { isSpatialLayer } from '../core/data-model.js';
+import { hasProjectedCoordinates } from '../crs/layer-crs.js';
 
 /**
  * Apply CRS metadata to imported datasets without mutating coordinates.
@@ -43,14 +46,30 @@ function _applyToDataset(dataset, options) {
 }
 
 /**
- * Build import CRS metadata from shapefile .prj WKT.
- * shpjs reprojects coords to WGS84 when .prj present — schema.crs stays 4326.
  * @param {string|null} prjWkt
- * @returns {{ crs: string, originalCrs?: string, crsDetected: string, crsWkt?: string }}
+ * @param {object|null} [geojson] optional — used to detect projected coords when .prj missing
+ * @returns {{
+ *   crs: string,
+ *   originalCrs?: string,
+ *   crsDetected: 'prj'|'extent'|'unknown',
+ *   crsWkt?: string,
+ *   crsWarning?: string
+ * }}
  */
-export function shapefileCrsFromPrj(prjWkt) {
+export function shapefileCrsFromPrj(prjWkt, geojson = null) {
     if (!prjWkt) {
-        return { crs: 'EPSG:4326', crsDetected: 'default' };
+        if (geojson && hasProjectedCoordinates(geojson)) {
+            return {
+                crs: 'UNKNOWN',
+                crsDetected: 'unknown',
+                crsWarning: buildCrsWarning('UNKNOWN')
+            };
+        }
+        // Geographic-looking coords without .prj — assume WGS84; soft note only.
+        return {
+            crs: 'EPSG:4326',
+            crsDetected: 'extent'
+        };
     }
 
     const parsed = parsePrjWkt(prjWkt);
