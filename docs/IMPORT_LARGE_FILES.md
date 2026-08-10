@@ -75,18 +75,45 @@ dialog, watch one progress bar, get a layer. No new dialogs.
   Polygons`), matching the standard import convention.
 - **Fence imports** filter per-feature in the worker (bbox test).
 
-### Limits (v1)
+### End-user import gates (authoritative — read this first)
 
-| Limit | Value | Where |
+Agents and docs must describe **what can actually land in the app**, not
+source-read plumbing. There are **two** product gates:
+
+#### Gate A — Small / standard (in-memory, no streaming IndexedDB write)
+
+| | Min | Max (what lands) |
 |---|---|---|
-| Streaming trigger | text ≥ 4 MB (standard reject point) | `stream-policy.js` |
-| Max streamed file | **2 GB** | `STREAM_MAX_BYTES` |
-| Max streamed features | 1,000,000 | `STREAM_MAX_FEATURES` |
-| Tiled rendering trigger | ≥ 50,000 features | `tile-constants.js` |
-| Max single feature | 24 MB JSON | `geojson-stream-parser.js` |
-| GIS tools materialization | 250,000 features | `gis-layer-context.js` |
-| Streamed GeoJSON/CSV export | up to stream import cap | `stream-export-service.js` |
-| Toolbox Kit bundle per layer | 250,000 features | `workspace-store.js` |
+| File size | none | **&lt; ~4 MB** text / **&lt; ~5 MB** binary |
+| Features | none | **250,000** |
+
+Above those sizes the standard path refuses; streamable formats move to Gate B.
+
+#### Gate B — Large / streaming → IndexedDB (what lands on the map)
+
+| | Min | Max (what lands) |
+|---|---|---|
+| Source file size | ~**≥ 4 MB** text / **≥ 5 MB** binary (enters this path) | Source may be large so the user can **filter**; completing import still requires Gate B feature max |
+| **Features stored in the app** | none | **250,000** after fields / filter / fence |
+
+**Product max for large import = 250,000 stored features.** That is the only
+feature ceiling that matters for “can this import finish and live in my app?”
+
+Do **not** say the app’s large-import max is “2 GB / 1,000,000 features.”
+Those numbers are **internal source-read / worker-abort plumbing** so a big
+file is not rejected before the user can reduce it. A 2 GB / 1M-feature file
+is only importable if reduction brings **stored** features to ≤ 250,000.
+
+#### Internal plumbing (not the product max — do not lead with these)
+
+| Plumbing | Value | Role |
+|---|---|---|
+| `STREAM_MAX_BYTES` | 2 GB | Max source bytes the stream reader will open |
+| `STREAM_MAX_FEATURES` | 1,000,000 | Worker hard abort (runaway safety), **not** the unlock |
+| Streaming trigger | text ≥ 4 MB / binary ≥ 5 MB | When Gate A rejects → Gate B |
+| Tiled rendering | ≥ 50,000 features | Render path, not import unlock |
+| GIS-tool full materialize | 250,000 | Tools needing whole FeatureCollection in RAM |
+| Toolbox Kit in-memory pack | 250,000 | Kit bundle path |
 
 Streamed layers above the materialization cap are **view/inspect/identify/
 edit-selection/export-stream** layers: GIS tools that need a full in-memory

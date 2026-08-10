@@ -30,19 +30,25 @@ This plan is for **correctness, consistency, and data integrity**. Spatial chunk
 
 ## Documented limit model (adopt and enforce)
 
-These already appear in `IMPORT_LARGE_FILES.md`; make them the single source of truth in code + UI copy:
+**Source of truth for product limits:** [`IMPORT_LARGE_FILES.md`](IMPORT_LARGE_FILES.md) → **End-user import gates**.
 
-| Concern | Cap | Constant / module |
+Two gates only (end-user / “what lands in the app”):
+
+| Gate | Path | Max features that land | Max file size that lands as-is |
+|---|---|---|---|
+| **A — Small** | Standard in-memory | **250,000** (`MAX_IMPORT_FEATURES`) | **&lt; ~4 MB** text / **&lt; ~5 MB** binary |
+| **B — Large** | Stream → IndexedDB | **250,000 stored** after reduction | Source may be larger; **stored** result still ≤ 250k features |
+
+**Never** describe the product max as “2 GB / 1M features.” Those are plumbing:
+
+| Plumbing | Cap | Constant |
 |---|---|---|
-| Standard in-memory import | 250,000 features | `MAX_IMPORT_FEATURES` |
-| Workspace streaming storage (per file) | 1,000,000 features | `STREAM_MAX_FEATURES` |
-| Streamed file size plumbing | 2 GB | `STREAM_MAX_BYTES` (internal; not the user-facing “import limit”) |
-| GIS-tool full materialization | 250,000 features | existing materialize guards |
-| Viewport packet | `RENDER_LIMITS.maxFeaturesPerSource` | `render-limits.js` |
-| Tile render | per-tile budgets | `tile-constants.js` / select helpers |
-| Streamed export | up to workspace storage | stream export service |
+| Source-read ceiling (open for filter UI) | 2 GB | `STREAM_MAX_BYTES` |
+| Worker runaway abort | 1,000,000 | `STREAM_MAX_FEATURES` |
+| GIS-tool full materialization | 250,000 | existing materialize guards |
+| Viewport / tile budgets | per render path | `render-limits.js`, `tile-constants.js` |
 
-**User-facing rule (keep):** large files may stream only when the **estimated stored** feature count after reduction (fields / filter / fence) is ≤ **250,000**. The 1M stream ceiling is a hard abort inside the worker for runaway files — not the unlock gauge.
+**User-facing rule:** large import finishes only when **estimated stored** features after fields / filter / fence are ≤ **250,000**.
 
 ---
 
