@@ -98,8 +98,8 @@ Above those sizes the standard path refuses; streamable formats move to Gate B.
 | **Features stored** | none | **~1,000,000** soft ceiling (`STORED_FEATURE_SOFT_LIMIT`) |
 | Whole-layer GIS tools | — | **250,000** materialize budget — use selection / filter / fence for larger layers |
 
-**Product stored unlock (Gate B) ≈ 1,000,000 features.**  
-**250,000** is the **materialize / heavy-tool** budget — not “you cannot import.”
+**Product stored unlock (Gate B) ≈ 1,000,000 features** (may tighten under Phase 4 capacity pressure).  
+**250,000** is the **materialize / heavy-tool** budget — not “you cannot import” (also may tighten).
 
 Unlock is **stored feature count only** — a no-op statewide fence does **not**
 specially unlock import. Ritual reduction is **not** required when the estimate
@@ -377,6 +377,29 @@ evaluate a **working set** (whole layer / selection / viewport) against the
 
 If the whole layer is too large, the UI asks the user to select features, use
 the current view, or filter — instead of treating the layer as unusable.
+
+## Adaptive import — Phase 4 device + project capacity
+
+Soft ceilings may **tighten** for the current browser tab and open project.
+They never raise taxonomy maxima, and they do not change SAFETY opens (2 GB /
+hard quota deny).
+
+Module: [`js/import/import-capacity-context.js`](../js/import/import-capacity-context.js)
+
+**Separate pressures (not one score):**
+
+| Pressure | Signals |
+|----------|---------|
+| Device | heap used/limit, `navigator.hardwareConcurrency`, `deviceMemory`, storage `usageRatio` |
+| Project | sum of layer feature counts, in-memory (non-workspace) features, storage band |
+
+**Modifiers:** `storedFeatureSoftLimit`, `materializeFeatureLimit`, `streamStorageMultiplier` — only tighten.
+
+**Wired into:**
+
+- Gate B stream preflight (`assessStreamCapacity` → adaptive `maxFeatures` on the worker)
+- Import estimate gauge / unlock (`estimateStoredImport` limit overrides)
+- Operation budgets (`evaluateOperation` / `materializeForOperation` via `getAdaptiveMaterializeLimit`)
 
 ## Governing rules (unchanged from master plan)
 

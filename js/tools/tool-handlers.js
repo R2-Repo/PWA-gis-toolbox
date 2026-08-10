@@ -2922,7 +2922,8 @@ async function requireSpatialLayer(geomTypes = null, operation = 'generic') {
         layer = await materializeForOperation(raw, {
             operation,
             applyTo: 'auto',
-            mapApi: GIS_MAP_API
+            mapApi: GIS_MAP_API,
+            projectLayers: getLayers()
         });
     } catch (e) {
         showErrorToast(handleError(e, 'GISTools', 'Load layer'));
@@ -2970,7 +2971,8 @@ async function prepareWorkingDataset(layerHint, applyTo = 'auto', operation = 'g
     const materialized = await materializeForOperation(raw, {
         operation,
         applyTo,
-        mapApi: GIS_MAP_API
+        mapApi: GIS_MAP_API,
+        projectLayers: getLayers()
     });
     return getWorkingDatasetFromLayer(materialized, applyTo, GIS_MAP_API);
 }

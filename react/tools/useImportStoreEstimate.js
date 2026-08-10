@@ -3,7 +3,12 @@ import { hasActiveFeatureFilter } from '../../js/import/import-feature-filter.js
 import { estimateImportFilterMatches } from '../../js/import/import-filter-estimate.js';
 import { estimateStoredImport } from '../../js/import/import-store-estimate.js';
 import { isActiveFenceBbox, STORED_FEATURE_LIMIT } from '../../js/import/import-admission.js';
+import {
+    getAdaptiveMaterializeLimit,
+    getAdaptiveStoredSoftLimit
+} from '../../js/import/import-capacity-context.js';
 import { describeImportBlockReason } from '../../js/import/import-limit-copy.js';
+import { getLayers } from '../../js/core/state.js';
 
 const ESTIMATE_DEBOUNCE_MS = 400;
 
@@ -152,16 +157,26 @@ export function useImportStoreEstimate({
         && estimateState === 'scanning'
         && matchCount == null;
 
-    const estimate = useMemo(() => estimateStoredImport({
-        sourceBytes,
-        totalFeatures,
-        matchedFeatures: (filterActive || fenceActive) ? matchCount : totalFeatures,
-        fieldNames,
-        selectedFields,
-        featureFilter,
-        hasFence: fenceActive,
-        waitingOnRecount
-    }), [
+    const estimate = useMemo(() => {
+        let layers = [];
+        try {
+            layers = getLayers() || [];
+        } catch {
+            layers = [];
+        }
+        return estimateStoredImport({
+            sourceBytes,
+            totalFeatures,
+            matchedFeatures: (filterActive || fenceActive) ? matchCount : totalFeatures,
+            fieldNames,
+            selectedFields,
+            featureFilter,
+            hasFence: fenceActive,
+            waitingOnRecount,
+            limitFeatures: getAdaptiveStoredSoftLimit(layers),
+            materializeLimit: getAdaptiveMaterializeLimit(layers)
+        });
+    }, [
         sourceBytes,
         totalFeatures,
         filterActive,

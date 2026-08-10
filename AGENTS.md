@@ -90,6 +90,8 @@ Do not put widget logic inline in `js/tools/tool-handlers.js`. Copy the closest 
 
 **Operation budgets (Phase 3):** `evaluateOperation` / `materializeForOperation` (`js/tools/operation-budget.js`, `gis-layer-context.js`) — GIS tools run on selection/viewport/layer working sets against the 250k materialize budget; oversized whole-layer ops suggest selection/viewport/filter.
 
+**Capacity context (Phase 4):** `js/import/import-capacity-context.js` — device + project pressures may tighten Gate B store unlock and materialize budgets (never raise taxonomy max; SAFETY ceilings unchanged).
+
 ## Project layout (quick reference)
 
 | Path | Purpose |

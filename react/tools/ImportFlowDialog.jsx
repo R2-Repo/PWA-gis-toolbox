@@ -274,7 +274,7 @@ export function ImportFlowDialog({
             if (!storeEstimate.readyToImport) {
                 setError(
                     storeEstimate.blockReason
-                    || `Estimated features are still over the ${STORED_FEATURE_LIMIT.toLocaleString()} stored-feature limit. Tighten your filter or fence.`
+                    || `Estimated features are still over the ${(storeEstimate.estimate?.limitFeatures ?? STORED_FEATURE_LIMIT).toLocaleString()} stored-feature limit. Tighten your filter or fence.`
                 );
                 return;
             }
@@ -875,7 +875,7 @@ export function ImportFlowDialog({
                             {streamFiles.length > 0 && !streamImportReady ? (
                                 <p className="text-xs mt-8" style={{ color: 'var(--danger)' }}>
                                     {storeEstimate.blockReason
-                                        || `Tighten filters or place a fence until stored features are ≤ ${STORED_FEATURE_LIMIT.toLocaleString()}.`}
+                                        || `Tighten filters or place a fence until stored features are ≤ ${(storeEstimate.estimate?.limitFeatures ?? STORED_FEATURE_LIMIT).toLocaleString()}.`}
                                 </p>
                             ) : null}
 
@@ -886,7 +886,7 @@ export function ImportFlowDialog({
                                 disabled={streamFiles.length > 0 ? !streamImportReady : false}
 
                                 title={streamFiles.length > 0 && !streamImportReady
-                                    ? (storeEstimate.blockReason || `Wait until the estimate is within the ${STORED_FEATURE_LIMIT.toLocaleString()} feature limit`)
+                                    ? (storeEstimate.blockReason || `Wait until the estimate is within the ${(storeEstimate.estimate?.limitFeatures ?? STORED_FEATURE_LIMIT).toLocaleString()} feature limit`)
                                     : undefined}
 
                                 onClick={() => void startImport(pendingFiles, { selectedFields })}

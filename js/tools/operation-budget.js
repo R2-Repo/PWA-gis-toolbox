@@ -10,10 +10,10 @@
  */
 import {
     getLayerFeatureCount,
-    isWorkspaceLayer,
     isLiveVectorLayer
 } from '../core/data-model.js';
 import { MATERIALIZE_FEATURE_LIMIT } from '../import/import-limit-taxonomy.js';
+import { getAdaptiveMaterializeLimit } from '../import/import-capacity-context.js';
 
 /** @typedef {'layer'|'selection'|'viewport'} WorkingSetMode */
 /** @typedef {'auto'|'layer'|'selection'|'viewport'} ApplyToMode */
@@ -49,14 +49,16 @@ export const HEAVY_OPERATIONS = new Set([
  *     getSelectionCount?: (id: string) => number,
  *     getSelectedIndices?: (id: string) => number[]
  *   },
- *   limitFeatures?: number
+ *   limitFeatures?: number,
+ *   projectLayers?: object[]
  * }} input
  */
 export function resolveWorkingSet(input = {}) {
     const layer = input.layer;
     const applyTo = input.applyTo || 'auto';
     const mapApi = input.mapApi || {};
-    const limit = input.limitFeatures ?? MATERIALIZE_FEATURE_LIMIT;
+    const limit = input.limitFeatures
+        ?? getAdaptiveMaterializeLimit(input.projectLayers || (layer ? [layer] : []));
 
     const totalCount = layer ? getLayerFeatureCount(layer) : 0;
     const selectionCount = layer && mapApi.getSelectionCount
@@ -113,7 +115,8 @@ export function resolveWorkingSet(input = {}) {
  *   layers?: Array<{ layer: object, role?: string }>,
  *   applyTo?: ApplyToMode,
  *   mapApi?: object,
- *   limitFeatures?: number
+ *   limitFeatures?: number,
+ *   projectLayers?: object[]
  * }} input
  * @returns {{
  *   ok: boolean,
@@ -128,10 +131,15 @@ export function resolveWorkingSet(input = {}) {
  */
 export function evaluateOperation(input = {}) {
     const operation = input.operation || 'generic';
-    const limit = input.limitFeatures ?? MATERIALIZE_FEATURE_LIMIT;
     const primary = input.layer
         || input.layers?.[0]?.layer
         || null;
+    const projectLayers = Array.isArray(input.projectLayers) && input.projectLayers.length
+        ? input.projectLayers
+        : Array.isArray(input.layers)
+            ? input.layers.map((entry) => entry?.layer || entry).filter(Boolean)
+            : (primary ? [primary] : []);
+    const limit = input.limitFeatures ?? getAdaptiveMaterializeLimit(projectLayers);
 
     if (!primary) {
         return {
@@ -158,7 +166,8 @@ export function evaluateOperation(input = {}) {
         layer: primary,
         applyTo: input.applyTo || 'auto',
         mapApi: input.mapApi || {},
-        limitFeatures: limit
+        limitFeatures: limit,
+        projectLayers
     });
 
     const pressures = primary.datasetProfile?.pressures || null;
@@ -275,13 +284,11 @@ export function formatOperationBlockMessage(evaluation) {
  * @param {object|null|undefined} layer
  * @param {number} [limit]
  */
-export function layerNeedsWorkingSet(layer, limit = MATERIALIZE_FEATURE_LIMIT) {
+export function layerNeedsWorkingSet(layer, limit = null, projectLayers = null) {
     if (!layer) return false;
     if (isLiveVectorLayer(layer)) return false;
-    if (!isWorkspaceLayer(layer)) {
-        return getLayerFeatureCount(layer) > limit;
-    }
-    return getLayerFeatureCount(layer) > limit;
+    const cap = limit ?? getAdaptiveMaterializeLimit(projectLayers || [layer]);
+    return getLayerFeatureCount(layer) > cap;
 }
 
 export default {

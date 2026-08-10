@@ -15,8 +15,9 @@ import { detectFormat } from '../import/importer.js';
 import { applyImportLayerStyles } from '../import/post-import.js';
 import { streamImportFile } from '../import/stream/stream-import-service.js';
 import { removeWorkspaceLayer } from '../workspace/workspace-store.js';
-import { removeSourceFileIfUnreferenced, hasStorageHeadroom } from '../workspace/source-file-store.js';
+import { removeSourceFileIfUnreferenced } from '../workspace/source-file-store.js';
 import { formatBytes } from '../import/import-preflight.js';
+import { assessStreamCapacity } from '../import/import-capacity-context.js';
 
 async function _rollbackStreamedLayers(datasets) {
     for (const ds of datasets) {
@@ -92,18 +93,26 @@ export async function runStreamingImportFlow(files, options = {}) {
     if (!fileList.length) return;
 
     // Ritual field/filter/fence tokens are not required — Gate B unlock is the
-    // stored soft ceiling (~1M; enforced in the dialog + worker maxFeatures).
+    // stored soft ceiling (~1M, may tighten under device/project pressure).
 
     const totalSourceBytes = fileList.reduce((sum, f) => sum + (f?.size || 0), 0);
-    // SAFETY: refuse when remaining browser storage cannot hold source + workspace write.
-    const storageOk = await hasStorageHeadroom(totalSourceBytes * 2);
-    if (!storageOk) {
+    const capacityCheck = await assessStreamCapacity({
+        files: fileList,
+        layers: getLayers()
+    });
+    if (!capacityCheck.ok) {
         showToast(
-            `Not enough browser storage for this import (~${formatBytes(totalSourceBytes)} source). Free space in Storage settings, or import a smaller subset.`,
+            capacityCheck.denyReason
+            || `Not enough browser storage for this import (~${formatBytes(totalSourceBytes)} source). Free space in Storage settings, or import a smaller subset.`,
             'error'
         );
         return;
     }
+    for (const warning of capacityCheck.warnings || []) {
+        showToast(warning, 'warning');
+    }
+
+    const adaptiveStoredLimit = capacityCheck.capacity?.modifiers?.storedFeatureSoftLimit ?? null;
 
     let progress = null;
     let cancelCurrent = null;
@@ -141,6 +150,7 @@ export async function runStreamingImportFlow(files, options = {}) {
                 fenceBbox,
                 selectedFields,
                 featureFilter,
+                ...(adaptiveStoredLimit != null ? { maxFeatures: adaptiveStoredLimit } : {}),
                 // Large KML/KMZ import as simplified GIS layers (presentation
                 // bloat stripped) — matches the Import Optimizer recommendation.
                 importMode: KML_FAMILY.has(format) ? 'gis' : undefined,

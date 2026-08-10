@@ -135,4 +135,19 @@ describe('estimateStoredImport', () => {
         });
         expect(est.status).toBe('amber');
     });
+
+    it('honors an explicit lower limitFeatures override', () => {
+        const est = estimateStoredImport({
+            sourceBytes: 10_000_000,
+            totalFeatures: 500_000,
+            fieldNames: ['a'],
+            selectedFields: ['a'],
+            limitFeatures: 400_000,
+            materializeLimit: 100_000
+        });
+        expect(est.canImport).toBe(false);
+        expect(est.limitFeatures).toBe(400_000);
+        expect(est.materializeLimit).toBe(100_000);
+        expect(est.status).toBe('red');
+    });
 });

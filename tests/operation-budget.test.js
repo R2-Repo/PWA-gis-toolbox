@@ -6,6 +6,7 @@ import {
     layerNeedsWorkingSet
 } from '../js/tools/operation-budget.js';
 import { MATERIALIZE_FEATURE_LIMIT } from '../js/import/import-limit-taxonomy.js';
+import { getAdaptiveMaterializeLimit } from '../js/import/import-capacity-context.js';
 
 function fakeLayer(overrides = {}) {
     return {
@@ -28,7 +29,8 @@ describe('operation-budget', () => {
             operation: 'buffer',
             layer: fakeLayer(),
             applyTo: 'layer',
-            mapApi: { getSelectionCount: () => 0 }
+            mapApi: { getSelectionCount: () => 0 },
+            limitFeatures: MATERIALIZE_FEATURE_LIMIT
         });
         expect(evaluation.ok).toBe(false);
         expect(evaluation.kind).toBe('OPERATION');
@@ -36,6 +38,19 @@ describe('operation-budget', () => {
         expect(evaluation.limit).toBe(MATERIALIZE_FEATURE_LIMIT);
         expect(evaluation.suggestions).toContain('selection');
         expect(formatOperationBlockMessage(evaluation)).toMatch(/too many to load/i);
+    });
+
+    it('uses adaptive materialize limit when limitFeatures is omitted', () => {
+        const evaluation = evaluateOperation({
+            operation: 'buffer',
+            layer: fakeLayer(),
+            applyTo: 'layer',
+            mapApi: { getSelectionCount: () => 0 },
+            projectLayers: [fakeLayer()]
+        });
+        expect(evaluation.limit).toBe(getAdaptiveMaterializeLimit([fakeLayer()]));
+        expect(evaluation.limit).toBeLessThanOrEqual(MATERIALIZE_FEATURE_LIMIT);
+        expect(evaluation.ok).toBe(false);
     });
 
     it('allows selection working sets under the limit', () => {
@@ -64,7 +79,8 @@ describe('operation-budget', () => {
         const ws = resolveWorkingSet({
             layer,
             applyTo: 'auto',
-            mapApi: { getSelectionCount: () => 0 }
+            mapApi: { getSelectionCount: () => 0 },
+            limitFeatures: MATERIALIZE_FEATURE_LIMIT
         });
         expect(ws.mode).toBe('viewport');
         expect(ws.count).toBe(80);
