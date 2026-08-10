@@ -15,7 +15,8 @@ import { detectFormat } from '../import/importer.js';
 import { applyImportLayerStyles } from '../import/post-import.js';
 import { streamImportFile } from '../import/stream/stream-import-service.js';
 import { removeWorkspaceLayer } from '../workspace/workspace-store.js';
-import { removeSourceFileIfUnreferenced } from '../workspace/source-file-store.js';
+import { removeSourceFileIfUnreferenced, hasStorageHeadroom } from '../workspace/source-file-store.js';
+import { formatBytes } from '../import/import-preflight.js';
 
 async function _rollbackStreamedLayers(datasets) {
     for (const ds of datasets) {
@@ -90,8 +91,19 @@ export async function runStreamingImportFlow(files, options = {}) {
     const fileList = Array.from(files || []);
     if (!fileList.length) return;
 
-    // Ritual field/filter/fence tokens are not required — product unlock is ≤250k
-    // stored features (enforced in the dialog + worker maxFeatures).
+    // Ritual field/filter/fence tokens are not required — Gate B unlock is the
+    // stored soft ceiling (~1M; enforced in the dialog + worker maxFeatures).
+
+    const totalSourceBytes = fileList.reduce((sum, f) => sum + (f?.size || 0), 0);
+    // SAFETY: refuse when remaining browser storage cannot hold source + workspace write.
+    const storageOk = await hasStorageHeadroom(totalSourceBytes * 2);
+    if (!storageOk) {
+        showToast(
+            `Not enough browser storage for this import (~${formatBytes(totalSourceBytes)} source). Free space in Storage settings, or import a smaller subset.`,
+            'error'
+        );
+        return;
+    }
 
     let progress = null;
     let cancelCurrent = null;

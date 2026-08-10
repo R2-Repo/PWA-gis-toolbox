@@ -78,14 +78,15 @@ dialog, watch one progress bar, get a layer. No new dialogs.
 ### End-user import gates (authoritative — read this first)
 
 Agents and docs must describe **what can actually land in the app**, not
-source-read plumbing. There are **two** product gates:
+source-open plumbing alone. Limits are classified as **ROUTING**, **SAFETY**,
+or **OPERATION** — see [`js/import/import-limit-taxonomy.js`](../js/import/import-limit-taxonomy.js).
 
-#### Gate A — Small / standard (in-memory, no streaming IndexedDB write)
+#### Gate A — Small / standard (in-memory)
 
 | | Min | Max (what lands) |
 |---|---|---|
-| File size | none | **&lt; ~4 MB** text / **&lt; ~5 MB** binary |
-| Features | none | **250,000** |
+| File size | none | **&lt; ~4 MB** text / **&lt; ~5 MB** binary (**ROUTING**) |
+| Features | none | **250,000** in memory (**OPERATION** — same as materialize budget) |
 
 Above those sizes the standard path refuses; streamable formats move to Gate B.
 
@@ -93,31 +94,32 @@ Above those sizes the standard path refuses; streamable formats move to Gate B.
 
 | | Min | Max (what lands) |
 |---|---|---|
-| Source file size | ~**≥ 4 MB** text / **≥ 5 MB** binary (enters this path) | Source may be large so the user can **filter**; completing import still requires Gate B feature max |
-| **Features stored in the app** | none | **250,000** (fields / filter / fence are optional tools to get under the cap) |
+| Source file size | ~**≥ 4 MB** text / **≥ 5 MB** binary | Open up to **2 GB** (**SAFETY**); storage quota may still abort |
+| **Features stored** | none | **~1,000,000** soft ceiling (`STORED_FEATURE_SOFT_LIMIT`) |
+| Whole-layer GIS tools | — | **250,000** materialize budget — use selection / filter / fence for larger layers |
 
-**Product max for large import = 250,000 stored features.** That is the only
-feature ceiling that matters for “can this import finish and live in my app?”
+**Product stored unlock (Gate B) ≈ 1,000,000 features.**  
+**250,000** is the **materialize / heavy-tool** budget — not “you cannot import.”
 
-Unlock is **feature count only** — a no-op statewide fence does **not** specially
-unlock import, and ritual reduction is **not** required when the estimate is
-already ≤ 250,000.
+Unlock is **stored feature count only** — a no-op statewide fence does **not**
+specially unlock import. Ritual reduction is **not** required when the estimate
+is already under the stored soft ceiling.
 
-Do **not** say the app’s large-import max is “2 GB / 1,000,000 features.”
-Those numbers are **internal source-read plumbing** so a big file is not
-rejected before the user can cut it down. A 2 GB / 1M-feature file is only
-importable if stored features end up ≤ 250,000.
+Do **not** say the app’s max is “2 GB / 1M” as if those were one product gate.
+- **2 GB** = source-open **SAFETY**
+- **1M** = stored soft ceiling (**ROUTING** unlock)
+- **250k** = in-memory / whole-layer **OPERATION** budget
 
-#### Internal plumbing (not the product max — do not lead with these)
+#### Internal / related constants
 
-| Plumbing | Value | Role |
+| Constant | Value | Kind |
 |---|---|---|
-| `STREAM_MAX_BYTES` | 2 GB | Max source bytes the stream reader will open |
-| `STREAM_MAX_FEATURES` | 1,000,000 | Legacy constant; product stream abort uses **250k** (`STORED_FEATURE_LIMIT`) |
-| Streaming trigger | text ≥ 4 MB / binary ≥ 5 MB | When Gate A rejects → Gate B |
-| Tiled rendering | ≥ 50,000 features | Render path, not import unlock |
-| GIS-tool full materialize | 250,000 | Tools needing whole FeatureCollection in RAM |
-| Toolbox Kit in-memory pack | 250,000 | Kit bundle path |
+| `STORED_FEATURE_SOFT_LIMIT` / `STREAM_MAX_FEATURES` | 1,000,000 | Gate B unlock + stream abort |
+| `MATERIALIZE_FEATURE_LIMIT` / `MAX_IMPORT_FEATURES` | 250,000 | Gate A + materialize / heavy tools |
+| `STREAM_MAX_BYTES` | 2 GB | Source-open SAFETY |
+| Streaming trigger | text ≥ 4 MB / binary ≥ 5 MB | ROUTING Gate A → B |
+| Tiled rendering | ≥ 50,000 features | ROUTING display |
+| Toolbox Kit in-memory pack | 250,000 | OPERATION |
 
 Streamed layers above the materialization cap are **view/inspect/identify/
 edit-selection/export-stream** layers: GIS tools that need a full in-memory
@@ -326,17 +328,18 @@ value lists.
 
 **Note:** Filters / fence reduce what is **stored** (IndexedDB / map). The source
 file is still streamed from disk, so it must stay under `STREAM_MAX_BYTES`
-(2 GB) to open — that plumbing ceiling is **not** the product import max.
-Product unlock = **estimated stored features ≤ 250,000**.
+(2 GB) to open — that is a **SAFETY** ceiling. Browser storage quota may also
+abort the import.
 
-An 800+ MB statewide roads GeoJSON is eligible for the large-file configure UI.
-**Import is enabled when** the live estimated stored feature count is ≤ 250,000
-— even with all attributes selected and no fence. If the source has more than
-250k features, use a filter or fence that actually cuts the estimate.
+**Import is enabled when** estimated stored features ≤ **~1,000,000** (soft
+ceiling). If the estimate is above **250,000**, the layer can still import and
+map (viewport / tiles), but whole-layer GIS tools will ask for a selection,
+filter, or fence.
 
-The gauge shows estimated **stored features** vs 250k. Source disk size never
-shrinks. Drag-drop / file picker open the same configure UI instead of
-streaming silently. Multi‑GB exports still need an external split.
+The gauge shows estimated **stored features** vs the soft ceiling, plus a note
+when the materialize budget is exceeded. Drag-drop / file picker open the
+configure UI instead of streaming silently. Multi‑GB exports still need an
+external split.
 
 **Place fence from configure:** Import Optimizer and Import Flow’s large-file
 step include **Place Import Fence**. The dialog closes while the map draw tool

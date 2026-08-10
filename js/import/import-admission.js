@@ -1,35 +1,47 @@
 /**
- * Authoritative import admission — shared limits and stored-feature unlock gate.
+ * Authoritative import admission — stored-feature unlock + materialize budget.
  *
- * End-user product max (both small + large import): STORED_FEATURE_LIMIT (250k
- * features that actually land in the app). Large path = stream → IndexedDB;
- * small path = in-memory. Same feature ceiling.
+ * Phase 1 adaptive import:
+ *   STORED_FEATURE_LIMIT (1M)     — Gate B unlock: features that may land in IndexedDB
+ *   MATERIALIZE_FEATURE_LIMIT (250k) — whole-layer RAM / heavy GIS tools
+ *   MAX_IMPORT_FEATURES (250k)    — Gate A in-memory import (unchanged)
  *
- * Unlock rule: estimated stored features ≤ 250k. Field / filter / fence are
- * tools to get under that cap — not required tokens. A no-op fence does not
- * specially unlock anything.
+ * Unlock rule (Gate B): estimated stored features ≤ STORED_FEATURE_LIMIT.
+ * Field / filter / fence are tools — not required tokens.
  *
- * Plumbing only (not product max — do not lead with these in answers):
- *   STREAM_STORAGE_FEATURE_LIMIT (1M) — worker runaway abort
- *   STREAM_MAX_BYTES (2 GB) — max source bytes readable for filter/import
+ * SAFETY plumbing:
+ *   STREAM_MAX_BYTES (2 GB) — max source bytes readable
+ *   storage quota — checked before/during stream import
  *
  * @see docs/IMPORT_LARGE_FILES.md (“End-user import gates”)
- * @see docs/IMPORT_HARDENING_PLAN.md
+ * @see js/import/import-limit-taxonomy.js
  */
 import { MAX_IMPORT_FEATURES, TEXT_STRONG_BYTES } from './import-preflight.js';
 import { STREAM_MAX_FEATURES, STREAM_MAX_BYTES } from './stream/stream-constants.js';
 import { hasActiveFeatureFilter } from './import-feature-filter.js';
+import {
+    MATERIALIZE_FEATURE_LIMIT,
+    STORED_FEATURE_SOFT_LIMIT
+} from './import-limit-taxonomy.js';
 
-/** User-facing unlock: estimated stored features after any cuts. */
-export const STORED_FEATURE_LIMIT = MAX_IMPORT_FEATURES;
+/**
+ * Gate B unlock / stream abort: soft stored-feature ceiling (~1M).
+ * Prefer this name over STREAM_STORAGE_FEATURE_LIMIT in new code.
+ */
+export const STORED_FEATURE_LIMIT = STORED_FEATURE_SOFT_LIMIT;
 
-/** Worker runaway abort ceiling for streaming (not the UI unlock). */
+/** @deprecated alias — same as STORED_FEATURE_LIMIT (1M soft stored ceiling) */
 export const STREAM_STORAGE_FEATURE_LIMIT = STREAM_MAX_FEATURES;
 
-/** Standard-path size reject / Gate B entry guidance (not Gate B unlock). */
+/** Standard-path size reject / Gate B entry guidance (ROUTING, not unlock). */
 export const STORED_SIZE_GUIDANCE_BYTES = TEXT_STRONG_BYTES;
 
-export { STREAM_MAX_BYTES };
+export {
+    MATERIALIZE_FEATURE_LIMIT,
+    STORED_FEATURE_SOFT_LIMIT,
+    STREAM_MAX_BYTES,
+    MAX_IMPORT_FEATURES
+};
 
 /**
  * @param {number|null|undefined} featureCount
@@ -43,12 +55,25 @@ export function isUnderStoredFeatureLimit(featureCount, limit = STORED_FEATURE_L
 }
 
 /**
- * True when the source/total estimate is over the product max (UI hint to cut).
+ * True when stored estimate exceeds the Gate B soft ceiling (must cut to import).
  * @param {number|null|undefined} featureCount
  * @param {number} [limit]
  * @returns {boolean}
  */
 export function needsFeatureCut(featureCount, limit = STORED_FEATURE_LIMIT) {
+    return featureCount != null
+        && Number.isFinite(featureCount)
+        && featureCount > limit;
+}
+
+/**
+ * True when stored estimate exceeds the materialize / heavy-tool budget.
+ * Import may still proceed; some whole-layer tools will need a working set.
+ * @param {number|null|undefined} featureCount
+ * @param {number} [limit]
+ * @returns {boolean}
+ */
+export function exceedsMaterializeLimit(featureCount, limit = MATERIALIZE_FEATURE_LIMIT) {
     return featureCount != null
         && Number.isFinite(featureCount)
         && featureCount > limit;
@@ -64,8 +89,7 @@ export function isActiveFenceBbox(fenceBbox) {
 }
 
 /**
- * Whether import may proceed given estimated stored feature count.
- * Fields / filter / fence are ignored for unlock — only the count matters.
+ * Whether Gate B import may proceed given estimated stored feature count.
  * @param {{
  *   estimatedFeatures?: number|null,
  *   hasFieldReduction?: boolean,
@@ -83,14 +107,7 @@ export function canAdmitStoredImport(input = {}) {
 
 /**
  * Whether the user has applied a real cut (subset fields, filter, or fence).
- * Hint-only — not required for admission when already ≤ limit.
- * @param {{
- *   hasFieldReduction?: boolean,
- *   hasFeatureReduction?: boolean,
- *   hasFence?: boolean,
- *   featureFilter?: object|null,
- *   fenceBbox?: number[]|null
- * }} input
+ * Hint-only — not required for admission when already ≤ stored limit.
  */
 export function hasImportReduction(input = {}) {
     const hasFence = input.hasFence === true || isActiveFenceBbox(input.fenceBbox);
@@ -102,19 +119,6 @@ export function hasImportReduction(input = {}) {
 
 /**
  * Normalize an admission policy object for import orchestration.
- * @param {{
- *   route?: 'standard-memory'|'stream-workspace'|'unsupported'|'rejected',
- *   fileResults?: object[],
- *   maxStoredFeatures?: number,
- *   maxStreamFeatures?: number,
- *   maxFileBytes?: number,
- *   useWorkspace?: boolean,
- *   requiresReduction?: boolean,
- *   selectedFields?: string[]|null,
- *   featureFilter?: object|null,
- *   fenceBbox?: number[]|null,
- *   reasons?: string[]
- * }} [partial]
  */
 export function createAdmissionPolicy(partial = {}) {
     return {
@@ -122,6 +126,7 @@ export function createAdmissionPolicy(partial = {}) {
         fileResults: Array.isArray(partial.fileResults) ? partial.fileResults : [],
         maxStoredFeatures: partial.maxStoredFeatures ?? STORED_FEATURE_LIMIT,
         maxStreamFeatures: partial.maxStreamFeatures ?? STREAM_STORAGE_FEATURE_LIMIT,
+        maxMaterializeFeatures: partial.maxMaterializeFeatures ?? MATERIALIZE_FEATURE_LIMIT,
         maxFileBytes: partial.maxFileBytes ?? STREAM_MAX_BYTES,
         useWorkspace: partial.useWorkspace === true,
         requiresReduction: partial.requiresReduction === true,
@@ -134,11 +139,15 @@ export function createAdmissionPolicy(partial = {}) {
 
 export default {
     STORED_FEATURE_LIMIT,
+    STORED_FEATURE_SOFT_LIMIT,
     STREAM_STORAGE_FEATURE_LIMIT,
+    MATERIALIZE_FEATURE_LIMIT,
     STORED_SIZE_GUIDANCE_BYTES,
     STREAM_MAX_BYTES,
+    MAX_IMPORT_FEATURES,
     isUnderStoredFeatureLimit,
     needsFeatureCut,
+    exceedsMaterializeLimit,
     isActiveFenceBbox,
     canAdmitStoredImport,
     hasImportReduction,

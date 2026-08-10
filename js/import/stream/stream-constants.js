@@ -1,24 +1,22 @@
 /**
  * Streaming import tuning constants — dependency-free (shared by worker + main thread).
  *
- * PRODUCT MAX (what may land in the app): 250,000 *stored* features
- * (`MAX_IMPORT_FEATURES` / `STORED_FEATURE_LIMIT`). See docs/IMPORT_LARGE_FILES.md
- * “End-user import gates”.
+ * Phase 1 adaptive import:
+ *   STORED_FEATURE_SOFT_LIMIT / STREAM_MAX_FEATURES (1M) — Gate B stored unlock + worker abort
+ *   MATERIALIZE_FEATURE_LIMIT (250k) — whole-layer RAM / heavy tools (see import-limit-taxonomy.js)
+ *   STREAM_MAX_BYTES (2 GB) — SAFETY source-open ceiling
  *
- * The constants below are SOURCE-READ / WORKER plumbing only — so oversized
- * files are not rejected before the user can filter. Do not describe them as
- * the app’s import max.
+ * @see docs/IMPORT_LARGE_FILES.md (“End-user import gates”)
  */
 
 /**
- * Max source file bytes the stream reader will open (plumbing, not product max).
- * Filters reduce what is stored; unlock is still ≤ 250k stored features.
+ * Max source file bytes the stream reader will open (SAFETY).
  */
 export const STREAM_MAX_BYTES = 2 * 1024 * 1024 * 1024;
 
 /**
- * Worker runaway abort while streaming (plumbing, not product max).
- * Completing import still requires ≤ 250k stored features (product max).
+ * Soft stored-feature ceiling for stream → IndexedDB (Gate B unlock + worker abort).
+ * Same value as STORED_FEATURE_SOFT_LIMIT in import-limit-taxonomy.js.
  */
 export const STREAM_MAX_FEATURES = 1_000_000;
 

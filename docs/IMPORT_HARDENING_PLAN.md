@@ -30,27 +30,19 @@ This plan is for **correctness, consistency, and data integrity**. Spatial chunk
 
 ## Documented limit model (adopt and enforce)
 
-**Source of truth for product limits:** [`IMPORT_LARGE_FILES.md`](IMPORT_LARGE_FILES.md) → **End-user import gates**.
+**Source of truth:** [`IMPORT_LARGE_FILES.md`](IMPORT_LARGE_FILES.md) → **End-user import gates** + [`js/import/import-limit-taxonomy.js`](../js/import/import-limit-taxonomy.js).
 
-Two gates only (end-user / “what lands in the app”):
-
-| Gate | Path | Max features that land | Max file size that lands as-is |
+| Gate / budget | Path | Cap | Kind |
 |---|---|---|---|
-| **A — Small** | Standard in-memory | **250,000** (`MAX_IMPORT_FEATURES`) | **&lt; ~4 MB** text / **&lt; ~5 MB** binary |
-| **B — Large** | Stream → IndexedDB | **250,000 stored** after reduction | Source may be larger; **stored** result still ≤ 250k features |
+| **A — Small** | In-memory | &lt; ~4/5 MB; **≤ 250k** features | ROUTING + OPERATION |
+| **B — Large store** | Stream → IndexedDB | **≤ ~1M** stored features | ROUTING unlock |
+| **Materialize / heavy tools** | Whole-layer RAM | **250k** | OPERATION |
+| Source open | Stream reader | **2 GB** | SAFETY |
+| Storage quota | OPFS / IndexedDB | Device-dependent | SAFETY |
 
-**Never** describe the product max as “2 GB / 1M features.” Those are plumbing:
-
-| Plumbing | Cap | Constant |
-|---|---|---|
-| Source-read ceiling (open for filter UI) | 2 GB | `STREAM_MAX_BYTES` |
-| Worker runaway abort | 1,000,000 | `STREAM_MAX_FEATURES` |
-| GIS-tool full materialization | 250,000 | existing materialize guards |
-| Viewport / tile budgets | per render path | `render-limits.js`, `tile-constants.js` |
-
-**User-facing rule:** large import finishes when **estimated stored** features
-are ≤ **250,000**. Field / filter / fence cuts are optional tools — not unlock
-tokens. A no-op fence does not specially unlock import.
+**User-facing rule:** Gate B finishes when estimated stored features ≤ **~1M**.
+Field / filter / fence are optional tools. Layers above **250k** may still
+import; some GIS tools require a smaller working set.
 
 ---
 

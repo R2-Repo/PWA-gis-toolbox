@@ -101,7 +101,7 @@ export function preflightFile(file, options = {}) {
             level: PREFLIGHT_LEVEL.SOFT,
             sizeBytes,
             format,
-            message: `"${file.name}" is ${formatBytes(sizeBytes)} — above the recommended size for a simple browser import. Large files use streaming import (up to ${MAX_IMPORT_FEATURES.toLocaleString()} stored features after you choose what to keep).`
+            message: `"${file.name}" is ${formatBytes(sizeBytes)} — above the recommended size for a simple browser import. Large files use streaming import into local storage (up to about 1,000,000 stored features; some GIS tools still need a smaller working set).`
         };
     }
     return { level: PREFLIGHT_LEVEL.OK, sizeBytes, format };
