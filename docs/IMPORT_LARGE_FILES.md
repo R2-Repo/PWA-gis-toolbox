@@ -362,8 +362,21 @@ pressures { feature, geometry, attribute, storage }  // separate labels — not 
 Module: [`js/import/dataset-profile.js`](../js/import/dataset-profile.js).
 
 **Uses today:** prefer local MVT earlier when geometry pressure is high at
-moderate feature counts (`profileSuggestsTiledDisplay`).  
-**Next (Phase 3):** GIS tool capability / working-set budgets.
+moderate feature counts (`profileSuggestsTiledDisplay`).
+
+## Adaptive import — Phase 3 operation budgets
+
+GIS tools no longer always refuse oversized workspace layers up front. They
+evaluate a **working set** (whole layer / selection / viewport) against the
+**250k materialize budget**:
+
+- Module: [`js/tools/operation-budget.js`](../js/tools/operation-budget.js) → `evaluateOperation`
+- Load path: [`materializeForOperation`](../js/tools/gis-layer-context.js) (selection via IndexedDB indices)
+- Panel tools enter through `requireSpatialLayer` / `prepareWorkingDataset`
+- Widgets: [`js/widgets/widget-operation.js`](../js/widgets/widget-operation.js)
+
+If the whole layer is too large, the UI asks the user to select features, use
+the current view, or filter — instead of treating the layer as unusable.
 
 ## Governing rules (unchanged from master plan)
 

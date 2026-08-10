@@ -2,6 +2,7 @@ import { openReactIsland } from '../../ui/open-react-island.js';
 import { getSpatialLayerOptions } from '../widget-context.js';
 import { spatialJoinPointsInPolygons } from '../../tools/gis-tools.js';
 import { PREDICATE_OPTIONS, validateSpatialJoinConfig } from './engine.js';
+import { materializeLayersForWidget } from '../widget-operation.js';
 
 export async function openSpatialJoin(ctx) {
     await openReactIsland({
@@ -31,10 +32,17 @@ export async function openSpatialJoin(ctx) {
                     throw new Error(validation.errors[0]);
                 }
 
+                handlers.onProgress?.('Preparing layers…');
+                const [left, right] = await materializeLayersForWidget(
+                    ctx,
+                    [leftLayer, rightLayer],
+                    { operation: 'spatial-join', applyTo: 'auto' }
+                );
+
                 handlers.onProgress?.('Running spatial join…');
                 const result = await spatialJoinPointsInPolygons(
-                    leftLayer,
-                    rightLayer,
+                    left,
+                    right,
                     config.joinFields || [],
                     config.prefix || ''
                 );

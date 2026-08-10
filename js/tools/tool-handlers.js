@@ -16,7 +16,7 @@ import { importFile, importFiles } from '../import/importer.js';
 import { cancelWorkerParse } from '../import/import-parse-service.js';
 import { convertSpatialDatasetToWorkspace } from '../import/workspace-import.js';
 import {
-    materializeSpatialLayer,
+    materializeForOperation,
     getWorkingFeaturesFromLayer,
     getWorkingDatasetFromLayer
 } from './gis-layer-context.js';
@@ -2719,7 +2719,7 @@ function addUID() {
 // GIS Tool modals
 // ============================
 async function openBuffer() {
-    const layer = await requireSpatialLayer();
+    const layer = await requireSpatialLayer(null, 'buffer');
     if (!layer) return;
 
     const work = getWorkingFeatures(layer);
@@ -2740,8 +2740,9 @@ async function openBuffer() {
                     onApply: async ({ dist, units, applyTo }) => {
                         close();
                         try {
+                            const working = await prepareWorkingDataset(layer, applyTo, 'buffer');
                             const result = await runWithTaskProgress('Buffer', () =>
-                                gisTools.bufferFeatures(getWorkingDataset(layer, applyTo), dist, units)
+                                gisTools.bufferFeatures(working, dist, units)
                             );
                             if (!result) return;
                             addLayer(result);
@@ -2898,8 +2899,14 @@ async function openClip() {
 // New Turf.js Geoprocessing Tools
 // ============================
 
-// Helper: require spatial / live-vector layer (materializes workspace + viewport live layers)
-async function requireSpatialLayer(geomTypes = null) {
+const GIS_MAP_API = {
+    getSelectionCount: (layerId) => mapService.getSelectionCount(layerId),
+    getSelectedIndices: (layerId) => mapService.getSelectedIndices(layerId),
+    getSelectedFeatures: (layerId, geojson) => mapService.getSelectedFeatures(layerId, geojson)
+};
+
+// Helper: require spatial / live-vector layer (materializes working set for tools)
+async function requireSpatialLayer(geomTypes = null, operation = 'generic') {
     const raw = getActiveLayer();
     if (!raw || !isAnalyzableLayer(raw)) {
         showToast('Need a spatial layer', 'warning');
@@ -2912,7 +2919,11 @@ async function requireSpatialLayer(geomTypes = null) {
 
     let layer;
     try {
-        layer = await materializeSpatialLayer(raw);
+        layer = await materializeForOperation(raw, {
+            operation,
+            applyTo: 'auto',
+            mapApi: GIS_MAP_API
+        });
     } catch (e) {
         showErrorToast(handleError(e, 'GISTools', 'Load layer'));
         return null;
@@ -2932,7 +2943,7 @@ async function requireSpatialLayer(geomTypes = null) {
         const features = work?.geojson?.features || [];
         const has = features.some(f => f.geometry && types.includes(f.geometry.type));
         if (!has) {
-            const scope = work?.isSelection ? 'selection' : 'layer';
+            const scope = work?.isSelection ? 'selection' : (work?.isViewport ? 'viewport' : 'layer');
             showToast(`Need ${types.join(' or ')} features in ${scope}`, 'warning');
             return null;
         }
@@ -2940,17 +2951,28 @@ async function requireSpatialLayer(geomTypes = null) {
     return layer;
 }
 
-const GIS_MAP_API = {
-    getSelectionCount: (layerId) => mapService.getSelectionCount(layerId),
-    getSelectedFeatures: (layerId, geojson) => mapService.getSelectedFeatures(layerId, geojson)
-};
-
 function getWorkingFeatures(layer, applyTo = 'auto') {
     return getWorkingFeaturesFromLayer(layer, applyTo, GIS_MAP_API);
 }
 
 function getWorkingDataset(layer, applyTo = 'auto') {
     return getWorkingDatasetFromLayer(layer, applyTo, GIS_MAP_API);
+}
+
+/**
+ * Re-resolve and materialize the working set at apply time (selection / viewport / layer).
+ * @param {object} layerHint
+ * @param {'auto'|'layer'|'selection'|'viewport'} applyTo
+ * @param {string} operation
+ */
+async function prepareWorkingDataset(layerHint, applyTo = 'auto', operation = 'generic') {
+    const raw = getLayers().find((l) => l.id === layerHint?.id) || layerHint;
+    const materialized = await materializeForOperation(raw, {
+        operation,
+        applyTo,
+        mapApi: GIS_MAP_API
+    });
+    return getWorkingDatasetFromLayer(materialized, applyTo, GIS_MAP_API);
 }
 
 /** @deprecated Selection is always on; clears current selection */
@@ -3625,7 +3647,7 @@ async function openCombine() {
 
 // --- Union ---
 async function openUnion() {
-    const layer = await requireSpatialLayer(['Polygon', 'MultiPolygon']);
+    const layer = await requireSpatialLayer(['Polygon', 'MultiPolygon'], 'union');
     if (!layer) return;
 
     const work = getWorkingFeatures(layer);
@@ -3646,7 +3668,12 @@ async function openUnion() {
                     onUnion: async () => {
                         close();
                         try {
-                            const result = await gisTools.unionFeatures(getWorkingDataset(layer));
+                            const working = await prepareWorkingDataset(
+                                layer,
+                                work.isSelection ? 'selection' : 'auto',
+                                'union'
+                            );
+                            const result = await gisTools.unionFeatures(working);
                             addResultLayer(result);
                         } catch (e) {
                             showErrorToast(handleError(e, 'GISTools', 'Union'));
@@ -3732,7 +3759,7 @@ async function openExplode() {
 
 // --- Dissolve ---
 async function openDissolve() {
-    const layer = await requireSpatialLayer(['Polygon', 'MultiPolygon']);
+    const layer = await requireSpatialLayer(['Polygon', 'MultiPolygon'], 'dissolve');
     if (!layer) return;
 
     const work = getWorkingFeatures(layer);
@@ -3753,8 +3780,9 @@ async function openDissolve() {
                     onDissolve: async ({ field, applyTo }) => {
                         close();
                         try {
+                            const working = await prepareWorkingDataset(layer, applyTo, 'dissolve');
                             const result = await runWithTaskProgress('Dissolve', () =>
-                                gisTools.dissolveFeatures(getWorkingDataset(layer, applyTo), field)
+                                gisTools.dissolveFeatures(working, field)
                             );
                             if (!result) return;
                             addResultLayer(result);
