@@ -259,6 +259,25 @@ Optional: one worker pass returning `{ totalCount, matchedCount, fenceMatchedCou
 
 ---
 
+## Build 10 status
+
+- [x] Sampled value scan caps: 10k features / 16 MB (`VALUE_SCAN_MAX_*`)
+- [x] Exact filter/fence estimates cached by file + filter + fence identity
+- [x] Value-scan results cached; identical requests reuse cache
+- [x] Scan/estimate workers tracked; cancel/unmount terminates orphans
+- [x] Rapid filter changes still cancel prior estimate jobs (existing debounce + cancel)
+
+---
+
+## Build 11 status (this branch)
+
+- [x] Spatial chunk writer (`spatial-chunk-writer.js`) — coarse grid + LRU open-cell cap
+- [x] Stream import writes features through spatial buckets (tight chunk bboxes)
+- [x] Standard→workspace conversion + ArcGIS workspace append use the same writer
+- [x] Feature indexes stay sequential across spatial flushes
+
+---
+
 # Build 11 — Optional: spatial workspace chunks
 
 Not a correctness blocker. During import, bucket features into coarse grid-cell buffers (LRU-capped), flush when full → tighter chunk bboxes → fewer IndexedDB reads for viewport/tiles. Defer until Builds 8–9 are green and real-world tile cost still hurts.
@@ -295,6 +314,6 @@ Ship Build 8 before treating multi-hundred-MB imports as production-safe.
 | Limits | `import-preflight.js`, `stream-constants.js`, `import-store-estimate.js` |
 | Estimate UI | `useImportStoreEstimate.js`, `ImportFlowDialog.jsx`, `ImportOptimizerDialog.jsx` |
 | Stream path | `stream-import-service.js`, `stream-import-flow.js`, `stream-import.worker.js` |
-| Workspace | `workspace-store.js`, `source-file-store.js` |
+| Workspace | `workspace-store.js`, `source-file-store.js`, `spatial-chunk-writer.js` |
 | Fence (standard) | `post-import.js` |
 | Docs | `IMPORT_LARGE_FILES.md` (Builds 1–7 shipped) |
