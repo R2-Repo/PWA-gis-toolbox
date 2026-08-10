@@ -37,6 +37,10 @@ import {
     createValueAccumulator,
     extractKmlPlacemarkProperties
 } from '../import/import-value-accumulator.js';
+import {
+    VALUE_SCAN_MAX_FEATURES,
+    VALUE_SCAN_MAX_BYTES
+} from '../import/import-scan-cache.js';
 import { createByteReader } from '../import/stream/byte-reader.js';
 import { geometryIntersectsImportFence } from '../import/import-fence.js';
 import { csvDynamicTypingForField } from '../import/csv-typing.js';
@@ -682,10 +686,6 @@ async function runCSV(msg) {
 // Pre-import distinct-value scan (properties only)
 // ---------------------------------------------------------------------------
 
-function _postScanProgress(id, bytesProcessed, totalBytes) {
-    self.postMessage({ id, type: 'progress', bytesProcessed, totalBytes });
-}
-
 async function runValueScan(msg) {
     const { id, format } = msg;
     cancelled = false;
@@ -716,19 +716,52 @@ function _createScanState(msg) {
     const { id, file, options = {} } = msg;
     const fieldNames = Array.isArray(options.fieldNames) ? options.fieldNames.filter(Boolean) : [];
     const valueCap = options.valueCap ?? IMPORT_VALUE_SCAN_CAP;
+    const sampleMaxFeatures = Number.isFinite(options.sampleMaxFeatures)
+        ? options.sampleMaxFeatures
+        : VALUE_SCAN_MAX_FEATURES;
+    const sampleMaxBytes = Number.isFinite(options.sampleMaxBytes)
+        ? options.sampleMaxBytes
+        : VALUE_SCAN_MAX_BYTES;
     const acc = createValueAccumulator(valueCap);
     if (fieldNames.length) acc.ensureFields(fieldNames);
     let lastProgressAt = 0;
+    let sampled = false;
     return {
         id,
         file,
         fieldNames: fieldNames.length ? fieldNames : null,
         acc,
+        sampleMaxFeatures,
+        sampleMaxBytes,
+        get sampled() {
+            return sampled;
+        },
+        /**
+         * @param {number} [bytesProcessed]
+         * @returns {boolean} true when the sample budget is exhausted
+         */
+        shouldStop(bytesProcessed = 0) {
+            if (acc.rowCount >= sampleMaxFeatures) {
+                sampled = true;
+                return true;
+            }
+            if (bytesProcessed >= sampleMaxBytes) {
+                sampled = true;
+                return true;
+            }
+            return false;
+        },
         progress(bytesProcessed, totalBytes) {
             const now = Date.now();
             if (now - lastProgressAt < PROGRESS_INTERVAL_MS) return;
             lastProgressAt = now;
-            _postScanProgress(id, bytesProcessed, totalBytes);
+            self.postMessage({
+                id,
+                type: 'progress',
+                bytesProcessed,
+                totalBytes,
+                sampled
+            });
         },
         done() {
             const built = acc.build();
@@ -736,7 +769,8 @@ function _createScanState(msg) {
                 id,
                 type: 'scan-done',
                 fields: built.fields,
-                rowCount: built.rowCount
+                rowCount: built.rowCount,
+                sampled
             });
         }
     };
@@ -757,24 +791,33 @@ async function scanGeoJSONValues(msg) {
     try {
         while (true) {
             if (cancelled) throw _cancelError();
+            if (state.shouldStop(bytesProcessed)) break;
             const { done, value } = await reader.read();
             if (done) break;
             bytesProcessed += value.byteLength;
             parser.push(decoder.decode(value, { stream: true }));
             for (const props of pending) {
                 state.acc.addProperties(props, state.fieldNames);
+                if (state.shouldStop(bytesProcessed)) break;
             }
             pending.length = 0;
             state.progress(bytesProcessed, file.size);
+            if (state.shouldStop(bytesProcessed)) break;
         }
-        const tail = decoder.decode();
-        if (tail) parser.push(tail);
-        parser.finish();
-        for (const props of pending) {
-            state.acc.addProperties(props, state.fieldNames);
+        if (!state.sampled) {
+            const tail = decoder.decode();
+            if (tail) parser.push(tail);
+            parser.finish();
+            for (const props of pending) {
+                state.acc.addProperties(props, state.fieldNames);
+                if (state.shouldStop(bytesProcessed)) break;
+            }
         }
         state.done();
     } finally {
+        try {
+            await reader.cancel();
+        } catch { /* ignore */ }
         try {
             reader.releaseLock();
         } catch { /* ignore */ }
@@ -798,12 +841,19 @@ async function scanCsvValues(msg) {
                     return;
                 }
                 const rows = results.data || [];
-                for (let i = 0; i < rows.length; i++) {
-                    state.acc.addProperties(rows[i], state.fieldNames);
-                }
                 const meta = results.meta;
                 const cursor = meta?.cursor ?? 0;
+                for (let i = 0; i < rows.length; i++) {
+                    state.acc.addProperties(rows[i], state.fieldNames);
+                    if (state.shouldStop(cursor)) {
+                        parser.abort();
+                        break;
+                    }
+                }
                 state.progress(cursor, file.size);
+                if (state.shouldStop(cursor)) {
+                    parser.abort();
+                }
             },
             complete: () => {
                 activeCsvParser = null;
@@ -816,6 +866,12 @@ async function scanCsvValues(msg) {
             },
             error: (err) => {
                 activeCsvParser = null;
+                // PapaParse reports abort as an error in some environments — treat sample stop as success.
+                if (state.sampled && !cancelled) {
+                    state.done();
+                    resolve();
+                    return;
+                }
                 reject(new Error('CSV scan failed: ' + (err?.message || String(err))));
             }
         });
@@ -850,17 +906,24 @@ async function scanKmlValues(msg) {
     try {
         while (true) {
             if (cancelled) throw _cancelError();
+            if (state.shouldStop(bytesProcessed)) break;
             const { done, value } = await reader.read();
             if (done) break;
             bytesProcessed += value.byteLength;
             parser.push(decoder.decode(value, { stream: true }));
             state.progress(bytesProcessed, totalBytes);
+            if (state.shouldStop(bytesProcessed)) break;
         }
-        const tail = decoder.decode();
-        if (tail) parser.push(tail);
-        parser.finish();
+        if (!state.sampled) {
+            const tail = decoder.decode();
+            if (tail) parser.push(tail);
+            parser.finish();
+        }
         state.done();
     } finally {
+        try {
+            await reader.cancel();
+        } catch { /* ignore */ }
         try {
             reader.releaseLock();
         } catch { /* ignore */ }
@@ -907,6 +970,7 @@ async function scanShapefileDbfValues(msg, entries, shpEntries) {
         if (cancelled) throw _cancelError();
         state.acc.addProperties(props, state.fieldNames);
         state.progress(byteReader.bytesConsumed, totalBytes);
+        if (state.shouldStop(byteReader.bytesConsumed)) break;
     }
     state.done();
 }

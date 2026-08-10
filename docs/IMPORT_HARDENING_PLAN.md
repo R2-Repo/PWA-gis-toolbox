@@ -226,12 +226,22 @@ Normalize `{ originalFormat, contentFormat, importMode }` before dispatch so `.x
 
 ### Build 9 acceptance
 
-- [ ] Stream vs standard fence same result for sample point/line/polygon fixtures
-- [ ] CSV `"00123"` stays `"00123"`
-- [ ] Missing `.prj` + projected coords prompts CRS
-- [ ] `fill_status` / `stroke_count` survive GIS-mode KML
-- [ ] XML/ZIP KML honor import mode
-- [ ] Picker only advertises supported formats (or guided refuse)
+- [x] Stream vs standard fence same result for sample point/line/polygon fixtures
+- [x] CSV `"00123"` stays `"00123"`
+- [x] Missing `.prj` + projected coords prompts CRS
+- [x] `fill_status` / `stroke_count` survive GIS-mode KML
+- [x] XML/ZIP KML honor import mode
+- [x] Picker only advertises supported formats (or guided refuse)
+
+---
+
+## Build 10 status (this branch)
+
+- [x] Sampled value scan caps: 10k features / 16 MB (`VALUE_SCAN_MAX_*`)
+- [x] Exact filter/fence estimates cached by file + filter + fence identity
+- [x] Value-scan results cached; identical requests reuse cache
+- [x] Scan/estimate workers tracked; cancel/unmount terminates orphans
+- [x] Rapid filter changes still cancel prior estimate jobs (existing debounce + cancel)
 
 ---
 

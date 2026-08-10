@@ -170,6 +170,12 @@ export function ImportFeatureFilterPanel({
                     Choose a field, then pick values from the list (up to{' '}
                     {IMPORT_VALUE_SCAN_CAP.toLocaleString()} distinct values per field).
                     Use checkboxes to keep several values at once.
+                    {scanMessage ? (
+                        <>
+                            {' '}
+                            <span>{scanMessage}</span>
+                        </>
+                    ) : null}
                 </p>
             ) : null}
 

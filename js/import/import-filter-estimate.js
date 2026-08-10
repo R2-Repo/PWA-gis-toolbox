@@ -1,9 +1,17 @@
 /**
  * Count-only filter estimate — streams the file in a worker and returns how
  * many features would match the current feature filter (no IndexedDB write).
+ *
+ * Build 10: caches exact counts by file + filter + fence identity.
  */
 import { detectFormat } from './importer.js';
 import { STREAM_FORMATS, sniffJsonIsFeatureCollection, sniffXmlIsKml } from './stream/stream-policy.js';
+import {
+    estimateCacheKey,
+    getImportScanCache,
+    setImportScanCache,
+    trackImportScanWorker
+} from './import-scan-cache.js';
 
 /**
  * @param {File} file
@@ -11,7 +19,8 @@ import { STREAM_FORMATS, sniffJsonIsFeatureCollection, sniffXmlIsKml } from './s
  *   featureFilter?: object|null,
  *   fenceBbox?: number[]|null,
  *   format?: string,
- *   onProgress?: (percent: number, step: string) => void
+ *   onProgress?: (percent: number, step: string) => void,
+ *   bypassCache?: boolean
  * }} [options]
  * @returns {{
  *   promise: Promise<{
@@ -20,6 +29,7 @@ import { STREAM_FORMATS, sniffJsonIsFeatureCollection, sniffXmlIsKml } from './s
  *     featureFiltered: number,
  *     fenceFiltered: number,
  *     supported: boolean,
+ *     fromCache?: boolean,
  *     message?: string
  *   }>,
  *   cancel: () => void
@@ -30,12 +40,26 @@ export function estimateImportFilterMatches(file, options = {}) {
         featureFilter = null,
         fenceBbox = null,
         format: formatHint = null,
-        onProgress
+        onProgress,
+        bypassCache = false
     } = options;
+
+    const cacheKey = estimateCacheKey(file, { featureFilter, fenceBbox });
+    if (!bypassCache) {
+        const cached = getImportScanCache(cacheKey);
+        if (cached) {
+            return {
+                promise: Promise.resolve({ ...cached, fromCache: true }),
+                cancel: () => {}
+            };
+        }
+    }
 
     let worker = null;
     let cancelled = false;
     let settled = false;
+    /** @type {(() => void)|null} */
+    let untrack = null;
     /** @type {((e: Error) => void)|null} */
     let failFn = null;
 
@@ -49,9 +73,8 @@ export function estimateImportFilterMatches(file, options = {}) {
         failFn = (err) => {
             if (settled) return;
             settled = true;
-            try {
-                worker?.terminate();
-            } catch { /* ignore */ }
+            untrack?.();
+            untrack = null;
             worker = null;
             reject(err);
         };
@@ -63,14 +86,16 @@ export function estimateImportFilterMatches(file, options = {}) {
                 const ok = await sniffJsonIsFeatureCollection(file);
                 if (!ok) {
                     settled = true;
-                    resolve({
+                    const unsupported = {
                         matchCount: 0,
                         totalCount: 0,
                         featureFiltered: 0,
                         fenceFiltered: 0,
                         supported: false,
                         message: 'Filter estimate is not available for this JSON type.'
-                    });
+                    };
+                    setImportScanCache(cacheKey, unsupported);
+                    resolve(unsupported);
                     return;
                 }
                 streamFormat = 'geojson';
@@ -79,14 +104,16 @@ export function estimateImportFilterMatches(file, options = {}) {
                 const ok = await sniffXmlIsKml(file);
                 if (!ok) {
                     settled = true;
-                    resolve({
+                    const unsupported = {
                         matchCount: 0,
                         totalCount: 0,
                         featureFiltered: 0,
                         fenceFiltered: 0,
                         supported: false,
                         message: 'Filter estimate is not available for this XML type.'
-                    });
+                    };
+                    setImportScanCache(cacheKey, unsupported);
+                    resolve(unsupported);
                     return;
                 }
                 streamFormat = 'kml';
@@ -94,14 +121,21 @@ export function estimateImportFilterMatches(file, options = {}) {
 
             if (!STREAM_FORMATS.has(streamFormat) && streamFormat !== 'geojson') {
                 settled = true;
-                resolve({
+                const unsupported = {
                     matchCount: 0,
                     totalCount: 0,
                     featureFiltered: 0,
                     fenceFiltered: 0,
                     supported: false,
                     message: 'Filter estimate is not available for this format.'
-                });
+                };
+                setImportScanCache(cacheKey, unsupported);
+                resolve(unsupported);
+                return;
+            }
+
+            if (cancelled) {
+                reject(Object.assign(new Error('Estimate cancelled'), { cancelled: true }));
                 return;
             }
 
@@ -109,6 +143,7 @@ export function estimateImportFilterMatches(file, options = {}) {
             worker = new Worker(new URL('../workers/stream-import.worker.js', import.meta.url), {
                 type: 'module'
             });
+            untrack = trackImportScanWorker(worker);
             const jobId = `est_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
 
             worker.onmessage = (event) => {
@@ -125,18 +160,19 @@ export function estimateImportFilterMatches(file, options = {}) {
 
                 if (msg.type === 'estimate-done') {
                     settled = true;
-                    try {
-                        worker?.terminate();
-                    } catch { /* ignore */ }
+                    untrack?.();
+                    untrack = null;
                     worker = null;
                     report(100, 'Estimate ready');
-                    resolve({
+                    const result = {
                         matchCount: msg.matchCount || 0,
                         totalCount: msg.totalCount || 0,
                         featureFiltered: msg.featureFiltered || 0,
                         fenceFiltered: msg.fenceFiltered || 0,
                         supported: true
-                    });
+                    };
+                    if (!cancelled) setImportScanCache(cacheKey, result);
+                    resolve(result);
                     return;
                 }
 
@@ -168,6 +204,9 @@ export function estimateImportFilterMatches(file, options = {}) {
         try {
             worker?.postMessage({ type: 'cancel' });
         } catch { /* ignore */ }
+        untrack?.();
+        untrack = null;
+        worker = null;
         void failFn?.(Object.assign(new Error('Estimate cancelled'), { cancelled: true }));
     };
 
