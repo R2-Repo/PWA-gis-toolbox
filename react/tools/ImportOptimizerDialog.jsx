@@ -16,6 +16,7 @@ import { ImportProgressPanel } from './ImportProgressPanel.jsx';
 import { ImportReductionNotice } from './ImportReductionNotice.jsx';
 import { ImportFeatureFilterPanel } from './ImportFeatureFilterPanel.jsx';
 import { ImportEstimateGauge } from './ImportEstimateGauge.jsx';
+import { STORED_FEATURE_LIMIT } from '../../js/import/import-admission.js';
 import { ImportFencePlaceControl } from './ImportFencePlaceControl.jsx';
 import { useFeatureFilterState, useImportValueScan } from './useImportValueScan.js';
 import { useImportStoreEstimate } from './useImportStoreEstimate.js';
@@ -146,7 +147,7 @@ export function ImportOptimizerDialog({
             return;
         }
         if (!storeEstimate.readyToImport) {
-            setError(storeEstimate.blockReason || 'Stored features must be ≤ 250,000 before continuing.');
+            setError(storeEstimate.blockReason || `Stored features must be ≤ ${STORED_FEATURE_LIMIT.toLocaleString()} before continuing.`);
             return;
         }
         setError('');

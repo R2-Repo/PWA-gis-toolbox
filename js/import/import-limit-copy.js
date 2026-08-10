@@ -1,9 +1,16 @@
 /**
  * Shared Gate A / Gate B import limit copy — keep Flow, Optimizer, and gauge aligned.
- * Product max that lands in the app: STORED_FEATURE_LIMIT (250k features).
+ *
+ * Gate B unlock: STORED_FEATURE_LIMIT (~1M stored features).
+ * MATERIALIZE_FEATURE_LIMIT (250k): whole-layer tools may need a working set.
  */
 import { formatBytes } from './import-preflight.js';
-import { STORED_FEATURE_LIMIT, STORED_SIZE_GUIDANCE_BYTES } from './import-admission.js';
+import {
+    STORED_FEATURE_LIMIT,
+    STORED_SIZE_GUIDANCE_BYTES,
+    MATERIALIZE_FEATURE_LIMIT,
+    exceedsMaterializeLimit
+} from './import-admission.js';
 
 export function largeFileBannerText({
     fileName = null,
@@ -16,15 +23,20 @@ export function largeFileBannerText({
         ? ` Roughly ${featureEstimate.toLocaleString()} features in the source.`
         : '';
     const who = fileCount > 1
-        ? `${fileCount} files are too large for a simple import${sizeBit ? '' : ''}.`
+        ? `${fileCount} files are too large for a simple import.`
         : `"${fileName || 'This file'}" is too large for a simple import${sizeBit}.`;
-    return `${who}${featBit} Choose what to keep — you can store up to ${STORED_FEATURE_LIMIT.toLocaleString()} features on the map. Attributes, filters, and an import fence only help if they bring the stored count under that limit.`;
+    return `${who}${featBit} Large files stream into local storage — you can store up to ${STORED_FEATURE_LIMIT.toLocaleString()} features on the map. Filters and fences help when you need a smaller stored set.`;
 }
 
 export function kmlGisModeNote(hasKml = false) {
     return hasKml
         ? ' KML/KMZ imports as a simplified GIS layer (presentation content is not kept).'
         : '';
+}
+
+export function materializeRestrictionNote(estimatedFeatures = null) {
+    if (!exceedsMaterializeLimit(estimatedFeatures)) return null;
+    return `This layer will be larger than ${MATERIALIZE_FEATURE_LIMIT.toLocaleString()} features — some GIS tools will need a selection, filter, or fence (they cannot load the whole layer into memory).`;
 }
 
 export function describeImportBlockReason({
@@ -55,4 +67,8 @@ export function gateASizeGuidanceLabel() {
     return formatBytes(STORED_SIZE_GUIDANCE_BYTES);
 }
 
-export { STORED_FEATURE_LIMIT, STORED_SIZE_GUIDANCE_BYTES };
+export {
+    STORED_FEATURE_LIMIT,
+    STORED_SIZE_GUIDANCE_BYTES,
+    MATERIALIZE_FEATURE_LIMIT
+};

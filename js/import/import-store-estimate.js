@@ -2,8 +2,8 @@
  * Estimate stored size / feature count after field + feature-filter reduction.
  * Source file bytes on disk do not change — this is what would be kept.
  *
- * Product unlock = estimated features ≤ STORED_FEATURE_LIMIT (250k).
- * Estimated bytes vs TEXT_STRONG_BYTES is soft guidance only (not unlock).
+ * Gate B unlock = estimated features ≤ STORED_FEATURE_LIMIT (~1M).
+ * MATERIALIZE_FEATURE_LIMIT (250k) is an OPERATION hint, not unlock.
  */
 import {
     formatBytes,
@@ -13,7 +13,9 @@ import { hasActiveFeatureFilter } from './import-feature-filter.js';
 import {
     canAdmitStoredImport,
     needsFeatureCut,
-    STORED_FEATURE_LIMIT
+    exceedsMaterializeLimit,
+    STORED_FEATURE_LIMIT,
+    MATERIALIZE_FEATURE_LIMIT
 } from './import-admission.js';
 
 /** Fraction of GeoJSON/KML mass treated as geometry (not shrunk by field picks). */
@@ -21,6 +23,7 @@ export const GEOMETRY_SIZE_WEIGHT = 0.7;
 
 /** Soft size guidance (Gate A threshold) — not the Gate B unlock. */
 export const IMPORT_LIMIT_BYTES = TEXT_STRONG_BYTES;
+/** Gate B stored-feature unlock ceiling. */
 export const IMPORT_LIMIT_FEATURES = STORED_FEATURE_LIMIT;
 
 /**
@@ -35,26 +38,6 @@ export const IMPORT_LIMIT_FEATURES = STORED_FEATURE_LIMIT;
  *   geometryWeight?: number,
  *   waitingOnRecount?: boolean
  * }} input
- * @returns {{
- *   sourceBytes: number,
- *   estimatedBytes: number,
- *   totalFeatures: number|null,
- *   estimatedFeatures: number|null,
- *   fieldRatio: number,
- *   featureRatio: number,
- *   hasFieldReduction: boolean,
- *   hasFeatureReduction: boolean,
- *   hasReduction: boolean,
- *   underFeatureLimit: boolean,
- *   underSizeLimit: boolean,
- *   needsFeatureCut: boolean,
- *   status: 'red'|'amber'|'green'|'idle',
- *   canImport: boolean,
- *   limitBytes: number,
- *   limitFeatures: number,
- *   estimatedBytesLabel: string,
- *   limitBytesLabel: string
- * }}
  */
 export function estimateStoredImport(input = {}) {
     const sourceBytes = Math.max(0, Number(input.sourceBytes) || 0);
@@ -88,7 +71,6 @@ export function estimateStoredImport(input = {}) {
             featureRatio = Math.min(1, matchedFeatures / totalFeatures);
         }
     } else if (hasFeatureReduction && totalFeatures != null) {
-        // Filter/fence active but recount not finished — keep full count until known.
         estimatedFeatures = totalFeatures;
         featureRatio = 1;
     }
@@ -102,6 +84,7 @@ export function estimateStoredImport(input = {}) {
     const underSizeLimit = estimatedBytes <= IMPORT_LIMIT_BYTES;
     const mustCut = needsFeatureCut(estimatedFeatures, IMPORT_LIMIT_FEATURES)
         || (estimatedFeatures == null && needsFeatureCut(totalFeatures, IMPORT_LIMIT_FEATURES));
+    const aboveMaterialize = exceedsMaterializeLimit(estimatedFeatures);
 
     const waitingOnRecount = input.waitingOnRecount === true;
 
@@ -113,9 +96,9 @@ export function estimateStoredImport(input = {}) {
         status = sourceBytes > IMPORT_LIMIT_BYTES ? 'amber' : 'idle';
     } else if (!underFeatureLimit) {
         status = 'red';
-    } else if (sourceBytes > IMPORT_LIMIT_BYTES) {
-        // Large source that still fits the feature cap — stream is fine.
-        status = 'green';
+    } else if (aboveMaterialize) {
+        // Import OK; whole-layer tools will be restricted.
+        status = 'amber';
     } else {
         status = 'green';
     }
@@ -138,6 +121,8 @@ export function estimateStoredImport(input = {}) {
         underFeatureLimit,
         underSizeLimit,
         needsFeatureCut: mustCut,
+        exceedsMaterializeLimit: aboveMaterialize,
+        materializeLimit: MATERIALIZE_FEATURE_LIMIT,
         status,
         canImport,
         limitBytes: IMPORT_LIMIT_BYTES,

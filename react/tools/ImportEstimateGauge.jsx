@@ -1,5 +1,9 @@
 import { formatBytes } from '../../js/import/import-preflight.js';
-import { STORED_FEATURE_LIMIT } from '../../js/import/import-admission.js';
+import {
+    STORED_FEATURE_LIMIT,
+    MATERIALIZE_FEATURE_LIMIT
+} from '../../js/import/import-admission.js';
+import { materializeRestrictionNote } from '../../js/import/import-limit-copy.js';
 
 const STATUS_COLOR = {
     red: 'var(--danger)',
@@ -10,7 +14,7 @@ const STATUS_COLOR = {
 
 /**
  * Live estimate of what would be stored after field / feature-filter / fence cuts.
- * Unlock = readyToImport (≤250k stored features), not gauge color alone.
+ * Unlock = readyToImport (≤ ~1M stored features).
  */
 export function ImportEstimateGauge({
     estimate = null,
@@ -27,12 +31,17 @@ export function ImportEstimateGauge({
     const updating = waitingOnRecount || estimateState === 'scanning';
     const displayStatus = updating
         ? 'amber'
-        : (readyToImport ? 'green' : (estimate.status === 'idle' ? 'idle' : estimate.status));
+        : (readyToImport
+            ? (estimate.exceedsMaterializeLimit ? 'amber' : 'green')
+            : (estimate.status === 'idle' ? 'idle' : estimate.status));
     const color = STATUS_COLOR[displayStatus] || STATUS_COLOR.idle;
     const featuresLabel = estimate.estimatedFeatures != null
         ? estimate.estimatedFeatures.toLocaleString()
         : '—';
     const limitFeatures = estimate.limitFeatures ?? STORED_FEATURE_LIMIT;
+    const materializeNote = !updating && readyToImport
+        ? materializeRestrictionNote(estimate.estimatedFeatures)
+        : null;
 
     return (
         <div className="info-box text-xs mt-8 mb-8" style={{ color }}>
@@ -50,7 +59,9 @@ export function ImportEstimateGauge({
                     : ''}
             </div>
             <div style={{ marginTop: 4 }}>
-                You can store up to {limitFeatures.toLocaleString()} features on the map.
+                You can store up to {limitFeatures.toLocaleString()} features on the map
+                {' '}
+                (whole-layer GIS tools use a {MATERIALIZE_FEATURE_LIMIT.toLocaleString()} feature working-set budget).
             </div>
             <div className="text-muted" style={{ marginTop: 4, color: 'inherit', opacity: 0.85 }}>
                 Source file size does not change
@@ -63,14 +74,17 @@ export function ImportEstimateGauge({
                 </div>
             ) : readyToImport ? (
                 <div style={{ marginTop: 4 }}>
-                    Within the feature limit — you can import.
+                    Within the stored-feature limit — you can import.
                 </div>
             ) : (
                 <div style={{ marginTop: 4 }}>
                     {blockReason
-                        || 'Still over the feature limit — tighten filters or place a tighter fence.'}
+                        || 'Still over the stored-feature limit — tighten filters or place a tighter fence.'}
                 </div>
             )}
+            {materializeNote ? (
+                <div style={{ marginTop: 4 }}>{materializeNote}</div>
+            ) : null}
             {estimateMessage && !updating ? (
                 <div style={{ marginTop: 4 }}>{estimateMessage}</div>
             ) : null}

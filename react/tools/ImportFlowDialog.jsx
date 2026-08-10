@@ -48,6 +48,7 @@ import { useFeatureFilterState, useImportValueScan } from './useImportValueScan.
 
 import { hasActiveFeatureFilter, validateFeatureFilter } from '../../js/import/import-feature-filter.js';
 import { largeFileBannerText, kmlGisModeNote } from '../../js/import/import-limit-copy.js';
+import { STORED_FEATURE_LIMIT } from '../../js/import/import-admission.js';
 import { ImportEstimateGauge } from './ImportEstimateGauge.jsx';
 import { useImportStoreEstimate } from './useImportStoreEstimate.js';
 import { ImportFencePlaceControl } from './ImportFencePlaceControl.jsx';
@@ -268,12 +269,12 @@ export function ImportFlowDialog({
 
         const activeFeatureFilter = hasActiveFeatureFilter(featureFilter) ? featureFilter : null;
 
-        // Streaming path — dialog already gated on readyToImport (≤250k stored).
+        // Streaming path — dialog already gated on readyToImport (~1M stored soft ceiling).
         if (streamFiles.length > 0 && onStreamImport) {
             if (!storeEstimate.readyToImport) {
                 setError(
                     storeEstimate.blockReason
-                    || 'Estimated features are still over the 250,000 feature limit. Tighten your filter or fence.'
+                    || `Estimated features are still over the ${STORED_FEATURE_LIMIT.toLocaleString()} stored-feature limit. Tighten your filter or fence.`
                 );
                 return;
             }
@@ -874,7 +875,7 @@ export function ImportFlowDialog({
                             {streamFiles.length > 0 && !streamImportReady ? (
                                 <p className="text-xs mt-8" style={{ color: 'var(--danger)' }}>
                                     {storeEstimate.blockReason
-                                        || 'Tighten filters or place a fence until stored features are ≤ 250,000.'}
+                                        || `Tighten filters or place a fence until stored features are ≤ ${STORED_FEATURE_LIMIT.toLocaleString()}.`}
                                 </p>
                             ) : null}
 
@@ -885,7 +886,7 @@ export function ImportFlowDialog({
                                 disabled={streamFiles.length > 0 ? !streamImportReady : false}
 
                                 title={streamFiles.length > 0 && !streamImportReady
-                                    ? (storeEstimate.blockReason || 'Wait until the estimate is within the 250,000 feature limit')
+                                    ? (storeEstimate.blockReason || `Wait until the estimate is within the ${STORED_FEATURE_LIMIT.toLocaleString()} feature limit`)
                                     : undefined}
 
                                 onClick={() => void startImport(pendingFiles, { selectedFields })}

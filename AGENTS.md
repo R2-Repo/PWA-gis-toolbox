@@ -84,7 +84,7 @@ Do not put widget logic inline in `js/tools/tool-handlers.js`. Copy the closest 
 
 **Sheet Cutter clipped polygons:** follow [`docs/SHEET_CUTTING.md`](docs/SHEET_CUTTING.md) — the **clean sheet cutting** model (buffer corridor + perpendicular match lines + along-route clip). Do not change geometry without reading that doc first.
 
-**Import limits (end-user):** two gates only — see [`docs/IMPORT_LARGE_FILES.md`](docs/IMPORT_LARGE_FILES.md) **End-user import gates**. Product max that lands in the app is **250k features** (small in-memory or large stream→IndexedDB). Never describe the product max as 2 GB / 1M — those are source-read plumbing.
+**Import limits (end-user):** see [`docs/IMPORT_LARGE_FILES.md`](docs/IMPORT_LARGE_FILES.md) **End-user import gates** and [`js/import/import-limit-taxonomy.js`](js/import/import-limit-taxonomy.js). Gate A = in-memory (&lt;~4/5 MB, ≤250k). Gate B store unlock ≈ **1M** features. **250k** = materialize / heavy-tool budget (OPERATION), not “cannot import.” 2 GB = source-open SAFETY. Never conflate ROUTING / SAFETY / OPERATION.
 
 ## Project layout (quick reference)
 
