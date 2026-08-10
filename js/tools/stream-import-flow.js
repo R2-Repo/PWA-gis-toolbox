@@ -10,10 +10,11 @@ import { createImportGroupForDatasets } from '../core/layer-groups.js';
 import sessionStore from '../core/session-store.js';
 import mapService from '../map/map-service.js';
 import { showToast, showErrorToast } from '../ui/toast.js';
-import { showModal, showProgressModal } from '../ui/modals.js';
+import { showModal, showProgressModal, confirm } from '../ui/modals.js';
 import { detectFormat } from '../import/importer.js';
 import { applyImportLayerStyles } from '../import/post-import.js';
-import { streamImportFile } from '../import/stream/stream-import-service.js';
+import { streamImportFile, resumeStreamImportFromCheckpoint, discardImportCheckpoint } from '../import/stream/stream-import-service.js';
+import { listInterruptedCheckpoints } from '../import/stream/import-checkpoint-store.js';
 import { removeWorkspaceLayer } from '../workspace/workspace-store.js';
 import { removeSourceFileIfUnreferenced } from '../workspace/source-file-store.js';
 import { formatBytes } from '../import/import-preflight.js';
@@ -290,4 +291,89 @@ export async function runStreamingImportFlow(files, options = {}) {
     }
 }
 
-export default { runStreamingImportFlow };
+/**
+ * Offer to resume or discard interrupted streaming imports (crash / tab-close).
+ * Explicit Cancel still rolls back and does not leave checkpoints.
+ * @param {{ refreshUI?: () => void }} [options]
+ */
+export async function promptInterruptedImports(options = {}) {
+    let interrupted = [];
+    try {
+        interrupted = await listInterruptedCheckpoints();
+    } catch (err) {
+        logger.warn('Import', 'Failed to list import checkpoints', { message: err?.message });
+        return;
+    }
+    if (!interrupted.length) return;
+
+    for (const checkpoint of interrupted) {
+        const pct = checkpoint.totalBytes
+            ? Math.round((checkpoint.bytesProcessed / checkpoint.totalBytes) * 100)
+            : null;
+        const progressBit = pct != null ? ` (~${pct}% written)` : '';
+        const featureBit = checkpoint.skipFeatures
+            ? ` ${checkpoint.skipFeatures.toLocaleString()} features already stored.`
+            : '';
+        const ok = await confirm(
+            'Resume interrupted import?',
+            `"${checkpoint.fileName || 'Large file'}" was interrupted${progressBit}.${featureBit} Confirm resumes from the preserved source. Cancel discards the partial import.`
+        );
+        if (!ok) {
+            try {
+                await discardImportCheckpoint(checkpoint);
+                showToast(`Discarded interrupted import of ${checkpoint.fileName || 'file'}`, 'info');
+            } catch (err) {
+                showErrorToast(handleError(err, 'Import', 'Discard interrupted import'));
+            }
+            continue;
+        }
+
+        let progress = null;
+        try {
+            progress = showProgressModal('Resuming Import');
+            let cancelCurrent = null;
+            let userCancelled = false;
+            progress.onCancel(() => {
+                userCancelled = true;
+                cancelCurrent?.();
+                progress.close();
+                showToast('Resume cancelled', 'warning');
+            });
+            const job = await resumeStreamImportFromCheckpoint(checkpoint, {
+                onProgress: (percent, step) => {
+                    progress.update(percent, step, {
+                        fileName: checkpoint.fileName,
+                        fileSize: checkpoint.fileSize
+                    });
+                }
+            });
+            // resumeStreamImportFromCheckpoint returns { promise, cancel } from streamImportFile
+            cancelCurrent = job.cancel;
+            const result = await job.promise;
+            if (userCancelled) continue;
+            progress.close();
+
+            const { datasets } = result;
+            if (datasets.length >= 2) {
+                createImportGroupForDatasets(datasets);
+            }
+            for (const ds of datasets) {
+                addLayer(ds, { activate: true });
+                const layerIdx = getLayers().indexOf(ds);
+                applyImportLayerStyles(ds, { mapService, getLayers, layerIndex: layerIdx });
+                await mapService.addWorkspaceLayer(ds, layerIdx, { fit: false });
+            }
+            options.refreshUI?.();
+            showToast(
+                `Resumed import: ${datasets.map((d) => d.name).join(', ')}`,
+                'success'
+            );
+        } catch (err) {
+            progress?.close();
+            if (err?.cancelled) continue;
+            showErrorToast(handleError(err, 'Import', 'Resume interrupted import'));
+        }
+    }
+}
+
+export default { runStreamingImportFlow, promptInterruptedImports };

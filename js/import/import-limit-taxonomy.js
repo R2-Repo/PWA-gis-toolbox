@@ -33,6 +33,18 @@ import {
 export const MATERIALIZE_FEATURE_LIMIT = MAX_IMPORT_FEATURES;
 
 /**
+ * Working-set coordinate (vertex) budget for heavy GIS tools.
+ * Complements feature count — dense geometries can blow RAM under the feature cap.
+ */
+export const MATERIALIZE_VERTEX_LIMIT = 5_000_000;
+
+/**
+ * Single-feature coordinate ceiling for whole-layer materialize.
+ * Blocks pathological mega-polygons even when totals look OK.
+ */
+export const MATERIALIZE_MAX_COORDS_PER_FEATURE = 500_000;
+
+/**
  * Soft ceiling for features stored via stream → IndexedDB (Gate B unlock).
  * Same numeric value as STREAM_MAX_FEATURES by design (Phase 1).
  */
@@ -52,7 +64,7 @@ export const SOURCE_OPEN_MAX_BYTES = STREAM_MAX_BYTES;
  *   id: string,
  *   kind: LimitKind,
  *   value: number,
- *   unit: 'features'|'bytes',
+ *   unit: 'features'|'bytes'|'coordinates',
  *   note: string
  * }>}
  */
@@ -114,6 +126,20 @@ export const IMPORT_LIMIT_REGISTRY = [
         note: 'Whole-layer materialize / heavy GIS tools'
     },
     {
+        id: 'MATERIALIZE_VERTEX_LIMIT',
+        kind: 'OPERATION',
+        value: MATERIALIZE_VERTEX_LIMIT,
+        unit: 'coordinates',
+        note: 'Working-set coordinate budget for heavy GIS tools (Phase 5)'
+    },
+    {
+        id: 'MATERIALIZE_MAX_COORDS_PER_FEATURE',
+        kind: 'OPERATION',
+        value: MATERIALIZE_MAX_COORDS_PER_FEATURE,
+        unit: 'coordinates',
+        note: 'Single-feature coordinate ceiling for whole-layer materialize'
+    },
+    {
         id: 'STORED_FEATURE_SOFT_LIMIT',
         kind: 'ROUTING',
         value: STORED_FEATURE_SOFT_LIMIT,
@@ -139,6 +165,8 @@ export function getLimitEntry(id) {
 
 export default {
     MATERIALIZE_FEATURE_LIMIT,
+    MATERIALIZE_VERTEX_LIMIT,
+    MATERIALIZE_MAX_COORDS_PER_FEATURE,
     STORED_FEATURE_SOFT_LIMIT,
     GATE_A_TEXT_REJECT_BYTES,
     GATE_A_BINARY_REJECT_BYTES,

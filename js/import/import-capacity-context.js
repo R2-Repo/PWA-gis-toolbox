@@ -13,6 +13,7 @@ import { getLayerFeatureCount, isWorkspaceLayer } from '../core/data-model.js';
 import { getBrowserHeapInfo } from './import-memory-budget.js';
 import {
     MATERIALIZE_FEATURE_LIMIT,
+    MATERIALIZE_VERTEX_LIMIT,
     STORED_FEATURE_SOFT_LIMIT
 } from './import-limit-taxonomy.js';
 import { getStorageQuotaSummary } from '../workspace/storage-summary.js';
@@ -146,6 +147,7 @@ export function computeCapacityModifiers(input = {}) {
 
     let storedFeatureSoftLimit = STORED_FEATURE_SOFT_LIMIT;
     let materializeFeatureLimit = MATERIALIZE_FEATURE_LIMIT;
+    let materializeVertexLimit = MATERIALIZE_VERTEX_LIMIT;
     /** Extra multiplier applied to source bytes for quota headroom checks. */
     let streamStorageMultiplier = 2;
     /** @type {string[]} */
@@ -160,49 +162,59 @@ export function computeCapacityModifiers(input = {}) {
     if (storagePressure === 'high') {
         storedFeatureSoftLimit = Math.min(storedFeatureSoftLimit, 400_000);
         materializeFeatureLimit = Math.min(materializeFeatureLimit, 100_000);
+        materializeVertexLimit = Math.min(materializeVertexLimit, 2_000_000);
         streamStorageMultiplier = Math.max(streamStorageMultiplier, 3);
         reasons.push('storage_high');
     } else if (storagePressure === 'moderate') {
         storedFeatureSoftLimit = Math.min(storedFeatureSoftLimit, 700_000);
         materializeFeatureLimit = Math.min(materializeFeatureLimit, 175_000);
+        materializeVertexLimit = Math.min(materializeVertexLimit, 3_500_000);
         streamStorageMultiplier = Math.max(streamStorageMultiplier, 2.5);
         reasons.push('storage_moderate');
     }
 
     if (heapPressure === 'high') {
         materializeFeatureLimit = Math.min(materializeFeatureLimit, 80_000);
+        materializeVertexLimit = Math.min(materializeVertexLimit, 1_000_000);
         storedFeatureSoftLimit = Math.min(storedFeatureSoftLimit, 500_000);
         reasons.push('heap_high');
     } else if (heapPressure === 'moderate') {
         materializeFeatureLimit = Math.min(materializeFeatureLimit, 150_000);
+        materializeVertexLimit = Math.min(materializeVertexLimit, 2_500_000);
         reasons.push('heap_moderate');
     }
 
     if (projectFeature === 'high') {
         storedFeatureSoftLimit = Math.min(storedFeatureSoftLimit, 500_000);
         materializeFeatureLimit = Math.min(materializeFeatureLimit, 120_000);
+        materializeVertexLimit = Math.min(materializeVertexLimit, 2_500_000);
         reasons.push('project_features_high');
     } else if (projectFeature === 'moderate') {
         storedFeatureSoftLimit = Math.min(storedFeatureSoftLimit, 800_000);
         materializeFeatureLimit = Math.min(materializeFeatureLimit, 200_000);
+        materializeVertexLimit = Math.min(materializeVertexLimit, 4_000_000);
         reasons.push('project_features_moderate');
     }
 
     if (resident === 'high') {
         materializeFeatureLimit = Math.min(materializeFeatureLimit, 100_000);
+        materializeVertexLimit = Math.min(materializeVertexLimit, 1_500_000);
         reasons.push('resident_memory_high');
     } else if (resident === 'moderate') {
         materializeFeatureLimit = Math.min(materializeFeatureLimit, 175_000);
+        materializeVertexLimit = Math.min(materializeVertexLimit, 3_000_000);
         reasons.push('resident_memory_moderate');
     }
 
     // Low-core / low-RAM devices: modest further tighten on materialize only.
     if (device.cores != null && device.cores > 0 && device.cores <= 4) {
         materializeFeatureLimit = Math.min(materializeFeatureLimit, 150_000);
+        materializeVertexLimit = Math.min(materializeVertexLimit, 2_500_000);
         reasons.push('low_core_count');
     }
     if (device.deviceMemoryGb != null && device.deviceMemoryGb > 0 && device.deviceMemoryGb <= 4) {
         materializeFeatureLimit = Math.min(materializeFeatureLimit, 120_000);
+        materializeVertexLimit = Math.min(materializeVertexLimit, 2_000_000);
         storedFeatureSoftLimit = Math.min(storedFeatureSoftLimit, 600_000);
         reasons.push('low_device_memory');
     }
@@ -210,9 +222,11 @@ export function computeCapacityModifiers(input = {}) {
     return {
         storedFeatureSoftLimit: Math.max(50_000, Math.floor(storedFeatureSoftLimit)),
         materializeFeatureLimit: Math.max(25_000, Math.floor(materializeFeatureLimit)),
+        materializeVertexLimit: Math.max(250_000, Math.floor(materializeVertexLimit)),
         streamStorageMultiplier,
         taxonomyStoredSoftLimit: STORED_FEATURE_SOFT_LIMIT,
         taxonomyMaterializeLimit: MATERIALIZE_FEATURE_LIMIT,
+        taxonomyMaterializeVertexLimit: MATERIALIZE_VERTEX_LIMIT,
         tightened: reasons.length > 0,
         reasons
     };
@@ -312,9 +326,22 @@ export async function assessStreamCapacity(input = {}) {
  * @param {object[]} [layers]
  */
 export function getAdaptiveMaterializeLimit(layers = []) {
+    return getAdaptiveMaterializeLimits(layers).featureLimit;
+}
+
+/**
+ * Sync feature + vertex materialize limits (Phase 5).
+ * @param {object[]} [layers]
+ * @returns {{ featureLimit: number, vertexLimit: number }}
+ */
+export function getAdaptiveMaterializeLimits(layers = []) {
     const device = gatherDeviceProfileSync();
     const project = gatherProjectPressure(layers);
-    return computeCapacityModifiers({ device, project }).materializeFeatureLimit;
+    const modifiers = computeCapacityModifiers({ device, project });
+    return {
+        featureLimit: modifiers.materializeFeatureLimit,
+        vertexLimit: modifiers.materializeVertexLimit
+    };
 }
 
 /**
@@ -336,5 +363,6 @@ export default {
     getImportCapacityContext,
     assessStreamCapacity,
     getAdaptiveMaterializeLimit,
+    getAdaptiveMaterializeLimits,
     getAdaptiveStoredSoftLimit
 };
