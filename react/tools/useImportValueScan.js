@@ -53,7 +53,7 @@ export function useImportValueScan({ files = [], fieldNames = [], enabled = true
                 setScanMessage(result.message || 'Enter filter values manually.');
             } else {
                 setScanState('ready');
-                setScanMessage(null);
+                setScanMessage(result.sampled ? (result.message || null) : null);
             }
             setScanProgress(null);
         }).catch((err) => {

@@ -1,10 +1,21 @@
 /**
  * Pre-import distinct-value scan — streams the file in a worker and returns
  * capped value lists per field for the filter UI.
+ *
+ * Build 10: samples at most VALUE_SCAN_MAX_FEATURES / VALUE_SCAN_MAX_BYTES and
+ * caches results by file identity + options.
  */
 import { detectFormat } from './importer.js';
 import { IMPORT_VALUE_SCAN_CAP } from './import-feature-filter.js';
 import { STREAM_FORMATS, sniffJsonIsFeatureCollection, sniffXmlIsKml } from './stream/stream-policy.js';
+import {
+    VALUE_SCAN_MAX_FEATURES,
+    VALUE_SCAN_MAX_BYTES,
+    valueScanCacheKey,
+    getImportScanCache,
+    setImportScanCache,
+    trackImportScanWorker
+} from './import-scan-cache.js';
 
 /**
  * @param {File} file
@@ -12,21 +23,55 @@ import { STREAM_FORMATS, sniffJsonIsFeatureCollection, sniffXmlIsKml } from './s
  *   fieldNames?: string[],
  *   format?: string,
  *   onProgress?: (percent: number, step: string) => void,
- *   valueCap?: number
+ *   valueCap?: number,
+ *   sampleMaxFeatures?: number,
+ *   sampleMaxBytes?: number,
+ *   bypassCache?: boolean
  * }} [options]
- * @returns {{ promise: Promise<{ fields: object[], rowCount: number, supported: boolean, message?: string }>, cancel: () => void }}
+ * @returns {{
+ *   promise: Promise<{
+ *     fields: object[],
+ *     rowCount: number,
+ *     supported: boolean,
+ *     sampled?: boolean,
+ *     message?: string
+ *   }>,
+ *   cancel: () => void
+ * }}
  */
 export function scanImportFieldValues(file, options = {}) {
     const {
         fieldNames = [],
         format: formatHint = null,
         onProgress,
-        valueCap = IMPORT_VALUE_SCAN_CAP
+        valueCap = IMPORT_VALUE_SCAN_CAP,
+        sampleMaxFeatures = VALUE_SCAN_MAX_FEATURES,
+        sampleMaxBytes = VALUE_SCAN_MAX_BYTES,
+        bypassCache = false
     } = options;
+
+    const cacheKey = valueScanCacheKey(file, {
+        fieldNames,
+        valueCap,
+        sampleMaxFeatures,
+        sampleMaxBytes
+    });
+
+    if (!bypassCache) {
+        const cached = getImportScanCache(cacheKey);
+        if (cached) {
+            return {
+                promise: Promise.resolve(cached),
+                cancel: () => {}
+            };
+        }
+    }
 
     let worker = null;
     let cancelled = false;
     let settled = false;
+    /** @type {(() => void)|null} */
+    let untrack = null;
     /** @type {((e: Error) => void)|null} */
     let failFn = null;
 
@@ -40,9 +85,8 @@ export function scanImportFieldValues(file, options = {}) {
         failFn = (err) => {
             if (settled) return;
             settled = true;
-            try {
-                worker?.terminate();
-            } catch { /* ignore */ }
+            untrack?.();
+            untrack = null;
             worker = null;
             reject(err);
         };
@@ -54,14 +98,17 @@ export function scanImportFieldValues(file, options = {}) {
                 const ok = await sniffJsonIsFeatureCollection(file);
                 if (!ok) {
                     settled = true;
-                    resolve({
+                    const unsupported = {
                         fields: fieldNames.map((name) => ({
                             name, values: [], truncated: false, uniqueCount: 0
                         })),
                         rowCount: 0,
                         supported: false,
+                        sampled: false,
                         message: 'Value lists are not available for this JSON type — enter filter values manually.'
-                    });
+                    };
+                    setImportScanCache(cacheKey, unsupported);
+                    resolve(unsupported);
                     return;
                 }
                 streamFormat = 'geojson';
@@ -70,14 +117,17 @@ export function scanImportFieldValues(file, options = {}) {
                 const ok = await sniffXmlIsKml(file);
                 if (!ok) {
                     settled = true;
-                    resolve({
+                    const unsupported = {
                         fields: fieldNames.map((name) => ({
                             name, values: [], truncated: false, uniqueCount: 0
                         })),
                         rowCount: 0,
                         supported: false,
+                        sampled: false,
                         message: 'Value lists are not available for this XML type — enter filter values manually.'
-                    });
+                    };
+                    setImportScanCache(cacheKey, unsupported);
+                    resolve(unsupported);
                     return;
                 }
                 streamFormat = 'kml';
@@ -85,14 +135,22 @@ export function scanImportFieldValues(file, options = {}) {
 
             if (!STREAM_FORMATS.has(streamFormat) && streamFormat !== 'geojson') {
                 settled = true;
-                resolve({
+                const unsupported = {
                     fields: fieldNames.map((name) => ({
                         name, values: [], truncated: false, uniqueCount: 0
                     })),
                     rowCount: 0,
                     supported: false,
+                    sampled: false,
                     message: 'Value lists are not available for this format — enter filter values manually.'
-                });
+                };
+                setImportScanCache(cacheKey, unsupported);
+                resolve(unsupported);
+                return;
+            }
+
+            if (cancelled) {
+                reject(Object.assign(new Error('Scan cancelled'), { cancelled: true }));
                 return;
             }
 
@@ -100,6 +158,7 @@ export function scanImportFieldValues(file, options = {}) {
             worker = new Worker(new URL('../workers/stream-import.worker.js', import.meta.url), {
                 type: 'module'
             });
+            untrack = trackImportScanWorker(worker);
             const jobId = `scan_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
 
             worker.onmessage = (event) => {
@@ -110,22 +169,27 @@ export function scanImportFieldValues(file, options = {}) {
                     const pct = msg.totalBytes
                         ? Math.round((msg.bytesProcessed / msg.totalBytes) * 95)
                         : 5;
-                    report(pct, 'Reading attribute values…');
+                    report(pct, msg.sampled ? 'Sampling attribute values…' : 'Reading attribute values…');
                     return;
                 }
 
                 if (msg.type === 'scan-done') {
                     settled = true;
-                    try {
-                        worker?.terminate();
-                    } catch { /* ignore */ }
+                    untrack?.();
+                    untrack = null;
                     worker = null;
                     report(100, 'Attribute values ready');
-                    resolve({
+                    const result = {
                         fields: msg.fields || [],
                         rowCount: msg.rowCount || 0,
-                        supported: true
-                    });
+                        supported: true,
+                        sampled: msg.sampled === true,
+                        message: msg.sampled
+                            ? `Sampled the first ${(msg.rowCount || 0).toLocaleString()} features for filter suggestions.`
+                            : undefined
+                    };
+                    if (!cancelled) setImportScanCache(cacheKey, result);
+                    resolve(result);
                     return;
                 }
 
@@ -145,7 +209,9 @@ export function scanImportFieldValues(file, options = {}) {
                 format: streamFormat,
                 options: {
                     fieldNames,
-                    valueCap
+                    valueCap,
+                    sampleMaxFeatures,
+                    sampleMaxBytes
                 }
             });
         })().catch((e) => void failFn?.(e));
@@ -157,6 +223,9 @@ export function scanImportFieldValues(file, options = {}) {
         try {
             worker?.postMessage({ type: 'cancel' });
         } catch { /* ignore */ }
+        untrack?.();
+        untrack = null;
+        worker = null;
         void failFn?.(Object.assign(new Error('Scan cancelled'), { cancelled: true }));
     };
 

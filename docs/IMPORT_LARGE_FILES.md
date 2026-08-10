@@ -331,6 +331,7 @@ fix admission/limits consistency, IndexedDB attribute ranges, spatial-index
 save races, and transactional cancel/rollback before treating very large
 imports as production-safe.
 
-**Build 8** (admission / IDB / index save / rollback) and **Build 9** (fence
-parity, CRS, CSV IDs, KML cleanup, picker honesty) are implemented — see the
-hardening plan for status checklists.
+**Build 8** (admission / IDB / index save / rollback), **Build 9** (fence
+parity, CRS, CSV IDs, KML cleanup, picker honesty), and **Build 10** (sampled
+value scans + estimate/value-scan caching) are implemented — see the hardening
+plan for status checklists.
