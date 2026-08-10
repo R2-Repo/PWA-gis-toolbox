@@ -6,6 +6,8 @@ import { shouldFilterFields } from './import-field-filter.js';
 import {
     createWorkspaceLayer,
     appendWorkspaceBatch,
+    removeWorkspaceLayer,
+    flushSpatialIndexSave,
     WORKSPACE_CHUNK_SIZE,
     WORKSPACE_FEATURE_THRESHOLD
 } from '../workspace/workspace-store.js';
@@ -25,18 +27,32 @@ export async function convertSpatialDatasetToWorkspace(dataset) {
     }
 
     const layerId = dataset.id;
-    await createWorkspaceLayer({
-        id: layerId,
-        name: dataset.name,
-        source: dataset.source,
-        schema: dataset.schema || analyzeSchema(dataset.geojson)
-    });
+    try {
+        await createWorkspaceLayer({
+            id: layerId,
+            name: dataset.name,
+            source: dataset.source,
+            schema: dataset.schema || analyzeSchema(dataset.geojson)
+        });
 
-    const selectedFields = dataset.source?.importSelectedFields || null;
+        const selectedFields = dataset.source?.importSelectedFields || null;
 
-    for (let i = 0; i < features.length; i += WORKSPACE_CHUNK_SIZE) {
-        const batch = features.slice(i, i + WORKSPACE_CHUNK_SIZE);
-        await appendWorkspaceBatch(layerId, batch, i, shouldFilterFields(selectedFields) ? selectedFields : null);
+        for (let i = 0; i < features.length; i += WORKSPACE_CHUNK_SIZE) {
+            const batch = features.slice(i, i + WORKSPACE_CHUNK_SIZE);
+            await appendWorkspaceBatch(
+                layerId,
+                batch,
+                i,
+                shouldFilterFields(selectedFields) ? selectedFields : null
+            );
+        }
+
+        await flushSpatialIndexSave();
+    } catch (err) {
+        try {
+            await removeWorkspaceLayer(layerId);
+        } catch { /* best effort rollback */ }
+        throw err;
     }
 
     return {

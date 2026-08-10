@@ -322,3 +322,11 @@ Import chooser still works as a pre-file shortcut.)
 2. MapLibre renders the view; IndexedDB/OPFS hold the data.
 3. Preserve the authoritative source separately from display data.
 4. Prevention over recovery: guards and caps stay, streaming raises them.
+
+## Next: hardening (Builds 8+)
+
+Post-build assessment of the current import stack: see
+[`IMPORT_HARDENING_PLAN.md`](IMPORT_HARDENING_PLAN.md). Keep the architecture;
+fix admission/limits consistency, IndexedDB attribute ranges, spatial-index
+save races, and transactional cancel/rollback before treating very large
+imports as production-safe.

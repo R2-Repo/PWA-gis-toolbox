@@ -165,12 +165,25 @@ export async function runStreamingImportFlow(files, options = {}) {
                 if (datasets.length >= 2) {
                     createImportGroupForDatasets(datasets);
                 }
-                for (const ds of datasets) {
-                    addLayer(ds, { activate: true });
-                    const layerIdx = getLayers().indexOf(ds);
-                    applyImportLayerStyles(ds, { mapService, getLayers, layerIndex: layerIdx });
-                    await mapService.addWorkspaceLayer(ds, layerIdx, { fit: false });
-                    addedDatasets.push(ds);
+                const registered = [];
+                try {
+                    for (const ds of datasets) {
+                        // Register for rollback before styling / map wiring so a
+                        // mid-registration failure still cleans workspace + OPFS.
+                        addedDatasets.push(ds);
+                        registered.push(ds);
+                        addLayer(ds, { activate: true });
+                        const layerIdx = getLayers().indexOf(ds);
+                        applyImportLayerStyles(ds, { mapService, getLayers, layerIndex: layerIdx });
+                        await mapService.addWorkspaceLayer(ds, layerIdx, { fit: false });
+                    }
+                } catch (regErr) {
+                    for (const ds of registered) {
+                        const idx = addedDatasets.indexOf(ds);
+                        if (idx >= 0) addedDatasets.splice(idx, 1);
+                    }
+                    await _rollbackStreamedLayers(registered);
+                    throw regErr;
                 }
 
                 totalFeatures += stats.featureCount || 0;

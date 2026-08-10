@@ -26,12 +26,14 @@ import {
 } from './attribute-table.js';
 
 const DB_NAME = 'gis-toolbox-workspace';
-const DB_VERSION = 2;
+/** Bumped for attributes `by-layer-feature` compound index (numeric ranges). */
+export const DB_VERSION = 3;
 const STORE_LAYERS = 'layers';
 const STORE_CHUNKS = 'chunks';
 const STORE_ATTRIBUTES = 'attributes';
 const STORE_COLD = 'cold_attributes';
 const STORE_INDEX = 'spatial_index';
+export const ATTR_LAYER_FEATURE_INDEX = 'by-layer-feature';
 
 /** Feature count above which imports use workspace storage. */
 export const WORKSPACE_FEATURE_THRESHOLD = 15_000;
@@ -41,8 +43,17 @@ export const WORKSPACE_CHUNK_SIZE = 1000;
 let db = null;
 /** @type {GridSpatialIndex|null} */
 let spatialIndex = null;
-let _indexDirty = false;
+let _indexMutationVersion = 0;
+let _indexPersistedVersion = 0;
 let _indexSaveTimer = null;
+/** @type {Promise<void>|null} */
+let _indexSavePromise = null;
+
+function _ensureAttributeLayerFeatureIndex(attrStore) {
+    if (!attrStore.indexNames.contains(ATTR_LAYER_FEATURE_INDEX)) {
+        attrStore.createIndex(ATTR_LAYER_FEATURE_INDEX, ['layerId', 'featureIndex'], { unique: true });
+    }
+}
 
 function openDB() {
     return new Promise((resolve, reject) => {
@@ -50,15 +61,21 @@ function openDB() {
         const req = indexedDB.open(DB_NAME, DB_VERSION);
         req.onupgradeneeded = (e) => {
             const idb = e.target.result;
+            const tx = e.target.transaction;
             if (!idb.objectStoreNames.contains(STORE_LAYERS)) {
                 idb.createObjectStore(STORE_LAYERS, { keyPath: 'id' });
             }
             if (!idb.objectStoreNames.contains(STORE_CHUNKS)) {
                 idb.createObjectStore(STORE_CHUNKS, { keyPath: 'id' });
             }
+            /** @type {IDBObjectStore} */
+            let attrStore;
             if (!idb.objectStoreNames.contains(STORE_ATTRIBUTES)) {
-                idb.createObjectStore(STORE_ATTRIBUTES, { keyPath: 'id' });
+                attrStore = idb.createObjectStore(STORE_ATTRIBUTES, { keyPath: 'id' });
+            } else {
+                attrStore = tx.objectStore(STORE_ATTRIBUTES);
             }
+            _ensureAttributeLayerFeatureIndex(attrStore);
             if (!idb.objectStoreNames.contains(STORE_COLD)) {
                 idb.createObjectStore(STORE_COLD, { keyPath: 'id' });
             }
@@ -84,29 +101,51 @@ async function _getSpatialIndex() {
     return spatialIndex;
 }
 
-async function _saveSpatialIndexNow() {
-    if (!spatialIndex) return;
+async function _persistSpatialIndexSnapshot(snapshot, saveVersion) {
     const idb = await openDB();
     const tx = idb.transaction(STORE_INDEX, 'readwrite');
-    tx.objectStore(STORE_INDEX).put({ key: 'main', data: spatialIndex.toJSON() });
+    tx.objectStore(STORE_INDEX).put({ key: 'main', data: snapshot });
     await new Promise((resolve, reject) => {
         tx.oncomplete = resolve;
         tx.onerror = () => reject(tx.error);
     });
-    _indexDirty = false;
+    _indexPersistedVersion = Math.max(_indexPersistedVersion, saveVersion);
+}
+
+/**
+ * Serialized, versioned spatial-index persist.
+ * Mutations bump `_indexMutationVersion`; saves snapshot that version and
+ * re-run until persisted catches up (avoids clearing dirty across overlapping saves).
+ */
+async function _runSpatialIndexSave() {
+    if (_indexSavePromise) return _indexSavePromise;
+    _indexSavePromise = (async () => {
+        try {
+            while (_indexPersistedVersion < _indexMutationVersion) {
+                const saveVersion = _indexMutationVersion;
+                if (!spatialIndex) {
+                    _indexPersistedVersion = Math.max(_indexPersistedVersion, saveVersion);
+                    break;
+                }
+                const snapshot = spatialIndex.toJSON();
+                await _persistSpatialIndexSnapshot(snapshot, saveVersion);
+            }
+        } finally {
+            _indexSavePromise = null;
+        }
+    })();
+    return _indexSavePromise;
 }
 
 /** Debounced spatial index persist — avoids rewriting the full index every batch. */
 export function markSpatialIndexDirty() {
-    _indexDirty = true;
+    _indexMutationVersion += 1;
     if (_indexSaveTimer) return;
     _indexSaveTimer = setTimeout(() => {
         _indexSaveTimer = null;
-        if (_indexDirty) {
-            void _saveSpatialIndexNow().catch((err) => {
-                console.error('[Workspace] Spatial index save failed:', err);
-            });
-        }
+        void _runSpatialIndexSave().catch((err) => {
+            console.error('[Workspace] Spatial index save failed:', err);
+        });
     }, 300);
 }
 
@@ -116,8 +155,19 @@ export async function flushSpatialIndexSave() {
         clearTimeout(_indexSaveTimer);
         _indexSaveTimer = null;
     }
-    if (!_indexDirty) return;
-    await _saveSpatialIndexNow();
+    if (_indexSavePromise) await _indexSavePromise;
+    if (_indexPersistedVersion < _indexMutationVersion) {
+        await _runSpatialIndexSave();
+    }
+}
+
+/** Test helper — inspect spatial-index persistence versions. */
+export function _getSpatialIndexPersistState() {
+    return {
+        mutationVersion: _indexMutationVersion,
+        persistedVersion: _indexPersistedVersion,
+        saving: !!_indexSavePromise
+    };
 }
 
 function _featureId(layerId, index) {
@@ -197,9 +247,19 @@ export async function updateWorkspaceLayerMeta(layerId, patch) {
  * @param {import('geojson').Feature[]} features
  * @param {number} startIndex
  * @param {string[]|null} [selectedFields]
+ * @param {{ allowCreateLayer?: boolean }} [options]
+ *   allowCreateLayer — restore/import only. Normal import must not recreate a
+ *   layer that was deleted during cancel/rollback.
  */
-export async function appendWorkspaceBatch(layerId, features, startIndex = 0, selectedFields = null) {
+export async function appendWorkspaceBatch(
+    layerId,
+    features,
+    startIndex = 0,
+    selectedFields = null,
+    options = {}
+) {
     if (!features?.length) return null;
+    const allowCreateLayer = options.allowCreateLayer === true;
 
     const idb = await openDB();
     const idx = await _getSpatialIndex();
@@ -249,16 +309,40 @@ export async function appendWorkspaceBatch(layerId, features, startIndex = 0, se
     const layerStore = tx.objectStore(STORE_LAYERS);
     const layerReq = layerStore.get(layerId);
     await new Promise((resolve, reject) => {
+        let rejected = false;
         layerReq.onsuccess = () => {
-            const layer = layerReq.result || { id: layerId, chunkIds: [], featureCount: 0 };
+            const layer = layerReq.result;
+            if (!layer) {
+                if (!allowCreateLayer) {
+                    rejected = true;
+                    try {
+                        tx.abort();
+                    } catch { /* already finished */ }
+                    reject(new Error(`Workspace layer "${layerId}" was removed; refusing to recreate from a late batch.`));
+                    return;
+                }
+                layerStore.put({
+                    id: layerId,
+                    chunkIds: [chunkId],
+                    featureCount: features.length
+                });
+                return;
+            }
             layer.chunkIds = layer.chunkIds || [];
             layer.chunkIds.push(chunkId);
             layer.featureCount = (layer.featureCount || 0) + features.length;
             layerStore.put(layer);
         };
         layerReq.onerror = () => reject(layerReq.error);
-        tx.oncomplete = resolve;
-        tx.onerror = () => reject(tx.error);
+        tx.oncomplete = () => {
+            if (!rejected) resolve();
+        };
+        tx.onerror = () => {
+            if (!rejected) reject(tx.error);
+        };
+        tx.onabort = () => {
+            if (!rejected) reject(tx.error || new Error('Workspace batch write aborted'));
+        };
     });
 
     idx.insert(chunkId, layerId, bbox, features.length);
@@ -326,19 +410,49 @@ export async function getWorkspaceFeatureAttributes(layerId, featureIndex, optio
  * @param {number} startIndex
  * @param {number} count
  */
+/**
+ * Numeric feature-index range bound for the attributes compound index.
+ * Exported for regression tests (string primary keys sort lexicographically).
+ * @param {string} layerId
+ * @param {number} startIndex
+ * @param {number} count
+ */
+export function attributeFeatureIndexRange(layerId, startIndex, count) {
+    return IDBKeyRange.bound(
+        [layerId, startIndex],
+        [layerId, startIndex + count - 1]
+    );
+}
+
 async function _loadAttributeRecordsRange(layerId, startIndex, count) {
     if (count <= 0) return new Map();
     const idb = await openDB();
-    const lower = _featureId(layerId, startIndex);
-    const upper = _featureId(layerId, startIndex + count - 1);
     const rows = await new Promise((resolve, reject) => {
         const tx = idb.transaction(STORE_ATTRIBUTES, 'readonly');
-        const r = tx.objectStore(STORE_ATTRIBUTES).getAll(IDBKeyRange.bound(lower, upper));
+        const store = tx.objectStore(STORE_ATTRIBUTES);
+        const index = store.indexNames.contains(ATTR_LAYER_FEATURE_INDEX)
+            ? store.index(ATTR_LAYER_FEATURE_INDEX)
+            : null;
+        const r = index
+            ? index.getAll(attributeFeatureIndexRange(layerId, startIndex, count))
+            // Legacy DBs without the compound index: fall back to primary-key
+            // string range (incorrect across decade boundaries — callers on
+            // DB_VERSION >= 3 should never hit this).
+            : store.getAll(IDBKeyRange.bound(
+                _featureId(layerId, startIndex),
+                _featureId(layerId, startIndex + count - 1)
+            ));
         r.onsuccess = () => resolve(r.result || []);
         r.onerror = () => reject(r.error);
     });
     const byIndex = new Map();
-    for (const rec of rows) byIndex.set(rec.featureIndex, rec);
+    const end = startIndex + count - 1;
+    for (const rec of rows) {
+        const idx = rec.featureIndex;
+        if (idx == null || idx < startIndex || idx > end) continue;
+        if (rec.layerId && rec.layerId !== layerId) continue;
+        byIndex.set(idx, rec);
+    }
     return byIndex;
 }
 
@@ -1330,6 +1444,10 @@ function _remapWorkspaceBundle(bundle, newLayerId) {
 export function _resetWorkspaceCache() {
     spatialIndex = null;
     db = null;
+    _indexMutationVersion = 0;
+    _indexPersistedVersion = 0;
+    _indexSaveTimer = null;
+    _indexSavePromise = null;
 }
 
 export default {
@@ -1337,9 +1455,12 @@ export default {
     WORKSPACE_CHUNK_SIZE,
     MAX_BUNDLE_FEATURES,
     KIT_ATTR_PART_SIZE,
+    DB_VERSION,
+    ATTR_LAYER_FEATURE_INDEX,
     createWorkspaceLayer,
     updateWorkspaceLayerMeta,
     appendWorkspaceBatch,
+    attributeFeatureIndexRange,
     queryWorkspaceChunks,
     loadWorkspaceChunks,
     getWorkspaceFeatureRecord,
@@ -1365,5 +1486,6 @@ export default {
     importWorkspaceLayerBundle,
     flushSpatialIndexSave,
     markSpatialIndexDirty,
+    _getSpatialIndexPersistState,
     _resetWorkspaceCache
 };

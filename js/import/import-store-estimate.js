@@ -4,16 +4,16 @@
  */
 import {
     formatBytes,
-    TEXT_STRONG_BYTES,
-    MAX_IMPORT_FEATURES
+    TEXT_STRONG_BYTES
 } from './import-preflight.js';
 import { hasActiveFeatureFilter } from './import-feature-filter.js';
+import { canAdmitStoredImport, STORED_FEATURE_LIMIT } from './import-admission.js';
 
 /** Fraction of GeoJSON/KML mass treated as geometry (not shrunk by field picks). */
 export const GEOMETRY_SIZE_WEIGHT = 0.7;
 
 export const IMPORT_LIMIT_BYTES = TEXT_STRONG_BYTES;
-export const IMPORT_LIMIT_FEATURES = MAX_IMPORT_FEATURES;
+export const IMPORT_LIMIT_FEATURES = STORED_FEATURE_LIMIT;
 
 /**
  * @param {{
@@ -78,7 +78,7 @@ export function estimateStoredImport(input = {}) {
             featureRatio = Math.min(1, matchedFeatures / totalFeatures);
         }
     } else if (hasFeatureReduction && totalFeatures != null) {
-        // Filter active but recount not finished — keep full count until known.
+        // Filter/fence active but recount not finished — keep full count until known.
         estimatedFeatures = totalFeatures;
         featureRatio = 1;
     }
@@ -103,7 +103,13 @@ export function estimateStoredImport(input = {}) {
         status = 'red';
     }
 
-    const canImport = hasReduction && underFeatureLimit;
+    const canImport = canAdmitStoredImport({
+        estimatedFeatures,
+        hasFieldReduction,
+        hasFeatureReduction: hasActiveFeatureFilter(input.featureFilter),
+        hasFence: input.hasFence === true,
+        limitFeatures: IMPORT_LIMIT_FEATURES
+    });
 
     return {
         sourceBytes,
