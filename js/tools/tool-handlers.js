@@ -4309,6 +4309,10 @@ export function openPresentationLinkBuilderWidget() {
 
 export function bootstrapAppFromUrl() {
     bootstrapAppUrl({ mapService, setPanelCollapsed });
+    // Phase 5: offer to resume crash/tab-close interrupted stream imports.
+    void import('./stream-import-flow.js').then(({ promptInterruptedImports }) => (
+        promptInterruptedImports({ refreshUI: () => bus.emit('layers:changed', getLayers()) })
+    )).catch(() => { /* non-fatal */ });
 }
 
 export async function materializeServiceLayerWithConfirm(layerId) {

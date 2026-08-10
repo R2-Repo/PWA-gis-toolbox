@@ -98,6 +98,32 @@ describe('operation-budget', () => {
         expect(evaluation.suggestions).toContain('selection');
     });
 
+    it('blocks dense-under-feature-cap layers on vertex budget', () => {
+        const layer = fakeLayer({
+            schema: { featureCount: 120_000, fields: [] },
+            datasetProfile: {
+                featureCount: 120_000,
+                coordCount: 12_000_000,
+                avgCoordsPerFeature: 100,
+                maxCoordsInFeature: 5_000,
+                pressures: { feature: 'moderate', geometry: 'high', attribute: 'low', storage: 'high' }
+            }
+        });
+        const evaluation = evaluateOperation({
+            operation: 'buffer',
+            layer,
+            applyTo: 'layer',
+            mapApi: { getSelectionCount: () => 0 },
+            limitFeatures: MATERIALIZE_FEATURE_LIMIT,
+            limitVertices: 5_000_000
+        });
+        expect(evaluation.ok).toBe(false);
+        expect(evaluation.estimatedCoords).toBe(12_000_000);
+        expect(evaluation.vertexLimit).toBe(5_000_000);
+        expect(evaluation.reason).toMatch(/coordinates/i);
+        expect(evaluation.suggestions).toContain('selection');
+    });
+
     it('flags layers that need a bounded working set', () => {
         expect(layerNeedsWorkingSet(fakeLayer())).toBe(true);
         expect(layerNeedsWorkingSet(fakeLayer({

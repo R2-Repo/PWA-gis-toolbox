@@ -401,6 +401,41 @@ Module: [`js/import/import-capacity-context.js`](../js/import/import-capacity-co
 - Import estimate gauge / unlock (`estimateStoredImport` limit overrides)
 - Operation budgets (`evaluateOperation` / `materializeForOperation` via `getAdaptiveMaterializeLimit`)
 
+## Adaptive import — Phase 5 resumable imports + geometry budgets
+
+### Geometry / vertex budgets
+
+Heavy GIS tools now check a **coordinate working-set budget** in addition to
+feature count (dense lines/polygons can blow RAM under the 250k feature cap):
+
+| Constant | Default | Role |
+|----------|---------|------|
+| `MATERIALIZE_VERTEX_LIMIT` | 5,000,000 | Working-set coord ceiling |
+| `MATERIALIZE_MAX_COORDS_PER_FEATURE` | 500,000 | Single-feature ceiling (whole-layer) |
+
+Module: [`js/import/geometry-budget.js`](../js/import/geometry-budget.js) →
+`estimateWorkingSetCoords` / `evaluateGeometryBudget`.
+
+Uses `datasetProfile.coordCount` / `avgCoordsPerFeature` (layer / selection
+estimate) and exact viewport GeoJSON sums. Phase 4 capacity modifiers may
+**tighten** `materializeVertexLimit` (never raise the taxonomy max).
+
+### Resumable streaming imports
+
+Crash / tab-close recovery for Gate B stream imports (explicit **Cancel** still
+rolls back and deletes the checkpoint):
+
+- Checkpoint store: [`js/import/stream/import-checkpoint-store.js`](../js/import/stream/import-checkpoint-store.js)
+  (dedicated IndexedDB `gis-toolbox-import-jobs`)
+- After each durable batch flush → update checkpoint (`skipFeatures`, class
+  layer IDs, `opfsKey`, bytes processed)
+- Worker `skipFeatures` re-parses and skips already-stored features
+- App boot: [`promptInterruptedImports`](../js/tools/stream-import-flow.js)
+  offers Resume / Discard
+
+Resume requires a preserved OPFS source (`preserveSource`). Options fingerprint
+must match (fence / fields / filter / CRS).
+
 ## Governing rules (unchanged from master plan)
 
 1. Never require the whole decoded dataset in memory.

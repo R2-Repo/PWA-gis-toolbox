@@ -11,12 +11,19 @@ import {
     appendWorkspaceBatch,
     removeWorkspaceLayer,
     flushSpatialIndexSave,
+    getWorkspaceLayer,
     WORKSPACE_CHUNK_SIZE
 } from '../../workspace/workspace-store.js';
 import { createSpatialChunkWriter } from '../../workspace/spatial-chunk-writer.js';
-import { saveSourceFile, removeSourceFile } from '../../workspace/source-file-store.js';
+import { saveSourceFile, removeSourceFile, getSourceFile } from '../../workspace/source-file-store.js';
 import { STORED_FEATURE_LIMIT } from '../import-admission.js';
 import { profileForGeometryClass } from '../dataset-profile.js';
+import {
+    optionsFingerprint,
+    upsertImportCheckpoint,
+    removeImportCheckpoint,
+    markImportCheckpointInterrupted
+} from './import-checkpoint-store.js';
 
 const GEOM_CLASS = {
     Point: 'point',
@@ -53,7 +60,9 @@ function _baseName(fileName) {
  *   featureFilter?: object|null,
  *   importMode?: 'gis'|'preserve',
  *   sourceCrs?: { code: string, def: string }|null,
- *   maxFeatures?: number|null
+ *   maxFeatures?: number|null,
+ *   resume?: object|null,
+ *   persistCheckpoint?: boolean
  * }} options
  * @returns {{ promise: Promise<{ datasets: object[], stats: object }>, cancel: () => void }}
  */
@@ -67,9 +76,14 @@ export function streamImportFile(file, options = {}) {
         featureFilter = null,
         importMode,
         sourceCrs = null,
-        maxFeatures = null
+        maxFeatures = null,
+        resume = null,
+        persistCheckpoint = true
     } = options;
     const baseName = _baseName(file.name);
+    const resumeClasses = Array.isArray(resume?.classes) ? resume.classes : [];
+    const resumeSkipFeatures = Math.max(0, Number(resume?.skipFeatures) || 0);
+    const isResume = !!resume?.id;
 
     /** @type {Map<string, { layerId: string, count: number, geomTypes: Set<string>, writer: ReturnType<typeof createSpatialChunkWriter> }>} */
     const classes = new Map();
@@ -77,9 +91,12 @@ export function streamImportFile(file, options = {}) {
     let worker = null;
     let cancelled = false;
     let settled = false;
-    let opfsKey = null;
+    let opfsKey = resume?.opfsKey || null;
+    /** @type {string|null} */
+    let checkpointId = persistCheckpoint ? (resume?.id || null) : null;
     /** @type {AbortController|null} */
     let sourceAbort = null;
+    let lastBytesProcessed = Number(resume?.bytesProcessed) || 0;
 
     const report = (percent, step) => {
         try {
@@ -87,7 +104,60 @@ export function streamImportFile(file, options = {}) {
         } catch { /* progress must never break the import */ }
     };
 
-    const cleanup = async () => {
+    const snapshotClasses = () => [...classes.entries()].map(([clsKey, cls]) => ({
+        clsKey,
+        layerId: cls.layerId,
+        featureCount: cls.writer?.writtenCount ?? cls.count ?? 0,
+        geomTypes: [...(cls.geomTypes || [])]
+    }));
+
+    const persistCheckpointNow = async (patch = {}) => {
+        if (!persistCheckpoint || !checkpointId) return null;
+        try {
+            return await upsertImportCheckpoint({
+                id: checkpointId,
+                status: 'running',
+                fileName: file.name,
+                fileSize: file.size,
+                lastModified: file.lastModified || 0,
+                format,
+                optionsHash: optionsFingerprint({
+                    fileName: file.name,
+                    fileSize: file.size,
+                    lastModified: file.lastModified || 0,
+                    format,
+                    fenceBbox,
+                    selectedFields,
+                    featureFilter,
+                    importMode,
+                    sourceCrs,
+                    maxFeatures
+                }),
+                options: {
+                    fenceBbox,
+                    selectedFields,
+                    featureFilter,
+                    importMode,
+                    sourceCrs,
+                    maxFeatures
+                },
+                opfsKey,
+                bytesProcessed: lastBytesProcessed,
+                totalBytes: file.size,
+                skipFeatures: [...classes.values()].reduce(
+                    (sum, cls) => sum + (cls.writer?.writtenCount ?? cls.count ?? 0),
+                    0
+                ),
+                classes: snapshotClasses(),
+                ...patch
+            });
+        } catch (err) {
+            logger.warn('StreamImport', 'Checkpoint persist failed', { message: err?.message });
+            return null;
+        }
+    };
+
+    const cleanup = async ({ keepPartial = false } = {}) => {
         try {
             sourceAbort?.abort();
         } catch { /* ignore */ }
@@ -95,16 +165,29 @@ export function streamImportFile(file, options = {}) {
             worker?.terminate();
         } catch { /* ignore */ }
         worker = null;
-        for (const cls of classes.values()) {
+        if (!keepPartial) {
+            for (const cls of classes.values()) {
+                try {
+                    await removeWorkspaceLayer(cls.layerId);
+                } catch { /* best effort */ }
+            }
+            classes.clear();
+            pendingNullGeometry.length = 0;
+            if (opfsKey) {
+                await removeSourceFile(opfsKey);
+                opfsKey = null;
+            }
+            if (checkpointId) {
+                try {
+                    await removeImportCheckpoint(checkpointId);
+                } catch { /* ignore */ }
+                checkpointId = null;
+            }
+        } else if (checkpointId) {
             try {
-                await removeWorkspaceLayer(cls.layerId);
-            } catch { /* best effort */ }
-        }
-        classes.clear();
-        pendingNullGeometry.length = 0;
-        if (opfsKey) {
-            await removeSourceFile(opfsKey);
-            opfsKey = null;
+                await markImportCheckpointInterrupted(checkpointId);
+                await persistCheckpointNow({ status: 'interrupted' });
+            } catch { /* ignore */ }
         }
     };
 
@@ -114,15 +197,18 @@ export function streamImportFile(file, options = {}) {
         }
         let cls = classes.get(clsKey);
         if (!cls) {
-            const layerId = _generateId();
+            const resumed = resumeClasses.find((entry) => entry.clsKey === clsKey);
+            const layerId = resumed?.layerId || _generateId();
+            const initialIndex = Math.max(0, Number(resumed?.featureCount) || 0);
             cls = {
                 layerId,
-                count: 0,
-                geomTypes: new Set(),
+                count: initialIndex,
+                geomTypes: new Set(resumed?.geomTypes || []),
                 writer: null
             };
             cls.writer = createSpatialChunkWriter({
                 chunkSize: WORKSPACE_CHUNK_SIZE,
+                initialIndex,
                 onFlush: async (batch, startIndex) => {
                     if (cancelled) {
                         throw Object.assign(new Error('Import cancelled'), { cancelled: true });
@@ -132,11 +218,20 @@ export function streamImportFile(file, options = {}) {
                 }
             });
             classes.set(clsKey, cls);
-            await createWorkspaceLayer({
-                id: layerId,
-                name: baseName,
-                source: { file: file.name, format }
-            });
+            if (!resumed) {
+                await createWorkspaceLayer({
+                    id: layerId,
+                    name: baseName,
+                    source: { file: file.name, format }
+                });
+            } else {
+                const existing = await getWorkspaceLayer(layerId);
+                if (!existing) {
+                    throw new Error(
+                        `Cannot resume import — workspace layer for ${clsKey} is missing. Discard the interrupted import and try again.`
+                    );
+                }
+            }
         }
         return cls;
     };
@@ -216,13 +311,19 @@ export function streamImportFile(file, options = {}) {
         const fail = async (error) => {
             if (settled) return;
             settled = true;
-            await cleanup();
+            const keepPartial = !error?.cancelled && !!checkpointId;
+            await cleanup({ keepPartial });
             reject(error);
         };
         failFn = fail;
 
         (async () => {
-            if (preserveSource) {
+            // Seed resume class writers so skipFeatures aligns with existing chunks.
+            for (const entry of resumeClasses) {
+                if (entry?.clsKey) await getClass(entry.clsKey);
+            }
+
+            if (preserveSource && !opfsKey) {
                 report(1, `Preserving original file…`);
                 const key = _generateId('src');
                 // Register key before the copy finishes so cancel can always clean up.
@@ -244,7 +345,44 @@ export function streamImportFile(file, options = {}) {
             }
             if (cancelled) throw Object.assign(new Error('Import cancelled'), { cancelled: true });
 
-            report(3, `Reading ${file.name}…`);
+            if (persistCheckpoint) {
+                const created = await upsertImportCheckpoint({
+                    id: checkpointId || undefined,
+                    status: 'running',
+                    fileName: file.name,
+                    fileSize: file.size,
+                    lastModified: file.lastModified || 0,
+                    format,
+                    optionsHash: optionsFingerprint({
+                        fileName: file.name,
+                        fileSize: file.size,
+                        lastModified: file.lastModified || 0,
+                        format,
+                        fenceBbox,
+                        selectedFields,
+                        featureFilter,
+                        importMode,
+                        sourceCrs,
+                        maxFeatures
+                    }),
+                    options: {
+                        fenceBbox,
+                        selectedFields,
+                        featureFilter,
+                        importMode,
+                        sourceCrs,
+                        maxFeatures
+                    },
+                    opfsKey,
+                    bytesProcessed: lastBytesProcessed,
+                    totalBytes: file.size,
+                    skipFeatures: resumeSkipFeatures,
+                    classes: snapshotClasses()
+                });
+                checkpointId = created.id;
+            }
+
+            report(3, isResume ? `Resuming ${file.name}…` : `Reading ${file.name}…`);
 
             worker = new Worker(
                 new URL('../../workers/stream-import.worker.js', import.meta.url),
@@ -262,10 +400,13 @@ export function streamImportFile(file, options = {}) {
                 if (msg.id !== jobId || settled) return;
 
                 if (msg.type === 'progress' || msg.type === 'batch') {
+                    if (Number.isFinite(msg.bytesProcessed)) {
+                        lastBytesProcessed = msg.bytesProcessed;
+                    }
                     const pct = msg.totalBytes
                         ? 3 + (msg.bytesProcessed / msg.totalBytes) * 90
                         : 10;
-                    report(pct, `Importing ${file.name}…`);
+                    report(pct, isResume ? `Resuming ${file.name}…` : `Importing ${file.name}…`);
                 }
 
                 if (msg.type === 'batch') {
@@ -273,7 +414,13 @@ export function streamImportFile(file, options = {}) {
                         for (const feature of msg.features || []) {
                             await routeFeature(feature);
                         }
+                        // Durability: flush open spatial buffers before ack/checkpoint
+                        // so skipFeatures matches IndexedDB on resume.
+                        for (const cls of classes.values()) {
+                            await flushClass(cls);
+                        }
                         if (!settled && worker) worker.postMessage({ type: 'ack', id: jobId });
+                        await persistCheckpointNow();
                     })().catch((e) => void fail(e));
                     return;
                 }
@@ -358,6 +505,12 @@ export function streamImportFile(file, options = {}) {
                         worker?.terminate();
                         worker = null;
                         settled = true;
+                        if (checkpointId) {
+                            try {
+                                await removeImportCheckpoint(checkpointId);
+                            } catch { /* ignore */ }
+                            checkpointId = null;
+                        }
                         report(100, 'Done');
                         resolve({
                             datasets,
@@ -392,6 +545,7 @@ export function streamImportFile(file, options = {}) {
                 options: {
                     fenceBbox,
                     maxFeatures: featureCap,
+                    skipFeatures: resumeSkipFeatures,
                     ...(selectedFields?.length ? { selectedFields } : {}),
                     ...(featureFilter ? { featureFilter } : {}),
                     ...(importMode ? { importMode } : {}),
@@ -416,4 +570,64 @@ export function streamImportFile(file, options = {}) {
     return { promise, cancel };
 }
 
-export default { streamImportFile };
+/**
+ * Resume an interrupted streaming import from a checkpoint (OPFS source required).
+ * @param {object} checkpoint
+ * @param {{
+ *   onProgress?: (percent: number, step: string) => void,
+ *   refreshUI?: () => void
+ * }} [options]
+ */
+export async function resumeStreamImportFromCheckpoint(checkpoint, options = {}) {
+    if (!checkpoint?.id) {
+        throw new Error('Missing import checkpoint.');
+    }
+    if (!checkpoint.opfsKey) {
+        throw new Error('This interrupted import has no preserved source file to resume from.');
+    }
+    const file = await getSourceFile(checkpoint.opfsKey);
+    if (!file) {
+        throw new Error('Preserved source file is missing — discard the interrupted import and re-import.');
+    }
+    const opts = checkpoint.options || {};
+    return streamImportFile(file, {
+        format: checkpoint.format,
+        fenceBbox: opts.fenceBbox || null,
+        selectedFields: opts.selectedFields || null,
+        featureFilter: opts.featureFilter || null,
+        importMode: opts.importMode,
+        sourceCrs: opts.sourceCrs || null,
+        maxFeatures: opts.maxFeatures ?? null,
+        preserveSource: false,
+        resume: checkpoint,
+        onProgress: options.onProgress
+    });
+}
+
+/**
+ * Discard an interrupted import (workspace layers + OPFS + checkpoint).
+ * @param {object} checkpoint
+ */
+export async function discardImportCheckpoint(checkpoint) {
+    if (!checkpoint) return;
+    for (const entry of checkpoint.classes || []) {
+        if (!entry?.layerId) continue;
+        try {
+            await removeWorkspaceLayer(entry.layerId);
+        } catch { /* best effort */ }
+    }
+    if (checkpoint.opfsKey) {
+        try {
+            await removeSourceFile(checkpoint.opfsKey);
+        } catch { /* best effort */ }
+    }
+    if (checkpoint.id) {
+        await removeImportCheckpoint(checkpoint.id);
+    }
+}
+
+export default {
+    streamImportFile,
+    resumeStreamImportFromCheckpoint,
+    discardImportCheckpoint
+};

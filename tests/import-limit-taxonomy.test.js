@@ -18,6 +18,8 @@ describe('import-limit-taxonomy', () => {
         expect(MATERIALIZE_FEATURE_LIMIT).toBe(250_000);
         expect(STORED_FEATURE_SOFT_LIMIT).toBe(1_000_000);
         expect(getLimitEntry('MATERIALIZE_FEATURE_LIMIT')?.kind).toBe('OPERATION');
+        expect(getLimitEntry('MATERIALIZE_VERTEX_LIMIT')?.kind).toBe('OPERATION');
+        expect(getLimitEntry('MATERIALIZE_MAX_COORDS_PER_FEATURE')?.unit).toBe('coordinates');
         expect(getLimitEntry('STORED_FEATURE_SOFT_LIMIT')?.kind).toBe('ROUTING');
         expect(getLimitEntry('SOURCE_OPEN_MAX_BYTES')?.kind).toBe('SAFETY');
     });

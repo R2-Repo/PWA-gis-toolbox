@@ -90,6 +90,7 @@ describe('import-capacity-context', () => {
         });
         expect(tight.storedFeatureSoftLimit).toBeLessThan(STORED_FEATURE_SOFT_LIMIT);
         expect(tight.materializeFeatureLimit).toBeLessThan(MATERIALIZE_FEATURE_LIMIT);
+        expect(tight.materializeVertexLimit).toBeLessThan(5_000_000);
         expect(tight.tightened).toBe(true);
         expect(tight.reasons.length).toBeGreaterThan(0);
         expect(tight.streamStorageMultiplier).toBeGreaterThanOrEqual(2);

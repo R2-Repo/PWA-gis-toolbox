@@ -92,6 +92,8 @@ Do not put widget logic inline in `js/tools/tool-handlers.js`. Copy the closest 
 
 **Capacity context (Phase 4):** `js/import/import-capacity-context.js` — device + project pressures may tighten Gate B store unlock and materialize budgets (never raise taxonomy max; SAFETY ceilings unchanged).
 
+**Geometry budgets + resume (Phase 5):** `js/import/geometry-budget.js` adds a coordinate working-set gate alongside feature count; stream imports checkpoint after durable batches (`js/import/stream/import-checkpoint-store.js`) so crash/tab-close can resume from OPFS.
+
 ## Project layout (quick reference)
 
 | Path | Purpose |

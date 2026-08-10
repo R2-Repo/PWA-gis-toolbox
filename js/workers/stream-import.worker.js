@@ -100,6 +100,7 @@ function createImportContext(msg, overrides = {}) {
     const batchFeatures = options.batchFeatures ?? STREAM_BATCH_FEATURES;
     const batchMaxBytes = options.batchMaxBytes ?? STREAM_BATCH_MAX_BYTES;
     const maxFeatures = options.maxFeatures ?? STREAM_MAX_FEATURES;
+    let skipFeatures = Math.max(0, Math.floor(Number(options.skipFeatures) || 0));
     const totalBytes = overrides.totalBytes ?? file.size;
     const selectedFields = shouldFilterFields(options.selectedFields)
         ? options.selectedFields
@@ -166,6 +167,11 @@ function createImportContext(msg, overrides = {}) {
                     continue;
                 }
                 if (estimateOnly) {
+                    emitted++;
+                    continue;
+                }
+                if (skipFeatures > 0) {
+                    skipFeatures--;
                     emitted++;
                     continue;
                 }
