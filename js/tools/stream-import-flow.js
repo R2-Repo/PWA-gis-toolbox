@@ -36,19 +36,13 @@ async function _rollbackStreamedLayers(datasets) {
 /** gis importMode applies to the KML pipeline (zip may be a KMZ in disguise). */
 const KML_FAMILY = new Set(['kml', 'kmz', 'xml', 'zip']);
 
-/**
- * Ask the user for the source CRS of a projected CSV and resolve a proj4
- * definition the worker can use.
- * @param {File} file
- * @returns {Promise<{ code: string, def: string }|null>}
- */
-async function _promptCsvSourceCrs(file) {
+async function _promptSourceCrs(file, message) {
     const { pickCrsConfirmModal } = await import('../../react/tools/mountCrsConfirmDialog.jsx');
     const { resolveCrs, getCrsWkt, normalizeCrsCode } = await import('../crs/registry.js');
 
     const picked = await pickCrsConfirmModal({
         layerName: file.name,
-        message: `"${file.name}" uses projected easting/northing coordinates. Choose the source coordinate system so features can be converted to WGS84 while importing.`,
+        message,
         defaultCrs: 'EPSG:6337'
     });
     if (!picked) return null;
@@ -61,6 +55,26 @@ async function _promptCsvSourceCrs(file) {
         return null;
     }
     return { code, def: workerDef };
+}
+
+/**
+ * Ask the user for the source CRS of a projected CSV and resolve a proj4
+ * definition the worker can use.
+ * @param {File} file
+ * @returns {Promise<{ code: string, def: string }|null>}
+ */
+async function _promptCsvSourceCrs(file) {
+    return _promptSourceCrs(
+        file,
+        `"${file.name}" uses projected easting/northing coordinates. Choose the source coordinate system so features can be converted to WGS84 while importing.`
+    );
+}
+
+async function _promptShapefileSourceCrs(file) {
+    return _promptSourceCrs(
+        file,
+        `"${file.name}" has no .prj and coordinates look projected. Choose the source coordinate system so features can be converted to WGS84 while importing.`
+    );
 }
 
 /**
@@ -146,12 +160,16 @@ export async function runStreamingImportFlow(files, options = {}) {
                 try {
                     result = await job.promise;
                 } catch (e) {
-                    // Projected CSV — ask for the source CRS, then retry with
+                    // Projected CSV / shapefile — ask for the source CRS, then retry with
                     // in-worker reprojection. The progress modal closes first
                     // so it cannot block the CRS dialog.
-                    if (e?.code !== 'PROJECTED_CSV_NEEDS_CRS' || userCancelled) throw e;
+                    const needsCrs = e?.code === 'PROJECTED_CSV_NEEDS_CRS'
+                        || e?.code === 'PROJECTED_SHAPEFILE_NEEDS_CRS';
+                    if (!needsCrs || userCancelled) throw e;
                     progress.close();
-                    const sourceCrs = await _promptCsvSourceCrs(file);
+                    const sourceCrs = e.code === 'PROJECTED_SHAPEFILE_NEEDS_CRS'
+                        ? await _promptShapefileSourceCrs(file)
+                        : await _promptCsvSourceCrs(file);
                     if (userCancelled) throw Object.assign(new Error('Import cancelled'), { cancelled: true });
                     if (!sourceCrs) throw e;
                     openProgress();

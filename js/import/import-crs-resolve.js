@@ -1,9 +1,13 @@
 /**
  * Resolve CRS metadata for imported datasets that need user confirmation.
+ * When the user picks a source CRS and coordinates look projected, reproject
+ * the in-memory FeatureCollection to WGS84.
  */
-import { isSpatialLayer } from '../core/data-model.js';
+import { isSpatialLayer, analyzeSchema } from '../core/data-model.js';
 import { buildCrsWarning, isDisplayReady } from '../crs/detect.js';
 import { normalizeCrsCode } from '../crs/registry.js';
+import { hasProjectedCoordinates } from '../crs/layer-crs.js';
+import { reprojectFeatureCollection } from '../crs/reproject.js';
 
 /**
  * @param {object[]} datasets
@@ -15,8 +19,8 @@ export async function resolveImportCrsForDatasets(datasets, pickCrs) {
     for (const ds of datasets) {
         if (!isSpatialLayer(ds)) continue;
         const crs = ds.schema?.crs;
-        if (crs && crs !== 'UNKNOWN') continue;
-        if (!ds.source?.crsWarning && crs !== 'UNKNOWN') continue;
+        const needsPrompt = crs === 'UNKNOWN' || (!!ds.source?.crsWarning && !isDisplayReady(crs));
+        if (!needsPrompt) continue;
 
         const picked = await pickCrs({
             layerName: ds.name,
@@ -24,15 +28,31 @@ export async function resolveImportCrsForDatasets(datasets, pickCrs) {
             defaultCrs: 'EPSG:6337'
         });
 
-        if (picked) {
-            const normalized = normalizeCrsCode(picked);
-            ds.schema.crs = normalized;
-            ds.source.crsDetected = 'user';
-            if (isDisplayReady(normalized)) {
+        if (!picked) continue;
+
+        const normalized = normalizeCrsCode(picked);
+        const projected = ds.geojson?.features?.length && hasProjectedCoordinates(ds.geojson);
+
+        if (projected && !isDisplayReady(normalized)) {
+            try {
+                ds.geojson = await reprojectFeatureCollection(ds.geojson, normalized, 'EPSG:4326');
+                ds.schema = analyzeSchema(ds.geojson);
+                ds.schema.crs = 'EPSG:4326';
+                ds.source.originalCrs = normalized;
+                ds.source.crsDetected = 'user';
                 delete ds.source.crsWarning;
-            } else {
-                ds.source.crsWarning = buildCrsWarning(normalized);
+                continue;
+            } catch {
+                // Fall through to metadata-only update
             }
+        }
+
+        ds.schema.crs = normalized;
+        ds.source.crsDetected = 'user';
+        if (isDisplayReady(normalized)) {
+            delete ds.source.crsWarning;
+        } else {
+            ds.source.crsWarning = buildCrsWarning(normalized);
         }
     }
 

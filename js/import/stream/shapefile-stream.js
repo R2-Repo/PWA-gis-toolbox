@@ -20,12 +20,31 @@ export function prjIsWgs84(prjWkt) {
 }
 
 /**
- * Build a coordinate transform from .prj WKT, or null when none is needed.
+ * Build a coordinate transform from .prj WKT or a user-supplied proj4 definition.
  * @param {string|null} prjWkt
  * @param {object|null} proj4Lib
+ * @param {string|null} [sourceCrsDef] proj4/WKT definition chosen by the user
  * @returns {{ transform: ((coord: [number,number]) => [number,number])|null, warning: string|null }}
  */
-export function buildPrjTransform(prjWkt, proj4Lib) {
+export function buildPrjTransform(prjWkt, proj4Lib, sourceCrsDef = null) {
+    if (sourceCrsDef && proj4Lib) {
+        try {
+            const converter = proj4Lib(sourceCrsDef, WGS84_DEF);
+            const probe = converter.forward([0, 0]);
+            if (!Number.isFinite(probe[0]) || !Number.isFinite(probe[1])) {
+                throw new Error('probe failed');
+            }
+            return {
+                transform: (coord) => converter.forward([coord[0], coord[1]]),
+                warning: null
+            };
+        } catch {
+            return {
+                transform: null,
+                warning: 'The selected source CRS could not be applied — coordinates imported unprojected.'
+            };
+        }
+    }
     if (!prjWkt || prjIsWgs84(prjWkt)) {
         return { transform: null, warning: null };
     }
@@ -72,7 +91,8 @@ function _mapGeometryCoords(geometry, fn) {
  *   dbfStream?: ReadableStream<Uint8Array>|null,
  *   prjWkt?: string|null,
  *   cpgText?: string|null,
- *   proj4Lib?: object|null
+ *   proj4Lib?: object|null,
+ *   sourceCrsDef?: string|null
  * }} sources
  * @returns {{
  *   features: AsyncGenerator<object>,
@@ -81,11 +101,18 @@ function _mapGeometryCoords(geometry, fn) {
  * }}
  */
 export function streamShapefileFeatures(sources) {
-    const { shpStream, dbfStream = null, prjWkt = null, cpgText = null, proj4Lib = null } = sources;
+    const {
+        shpStream,
+        dbfStream = null,
+        prjWkt = null,
+        cpgText = null,
+        proj4Lib = null,
+        sourceCrsDef = null
+    } = sources;
 
     const shpReader = createByteReader(shpStream);
     const dbfReader = dbfStream ? createByteReader(dbfStream) : null;
-    const { transform, warning } = buildPrjTransform(prjWkt, proj4Lib);
+    const { transform, warning } = buildPrjTransform(prjWkt, proj4Lib, sourceCrsDef);
     const warnings = warning ? [warning] : [];
 
     async function* generate() {

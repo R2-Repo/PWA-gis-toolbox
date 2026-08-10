@@ -54,7 +54,7 @@ import { ImportFencePlaceControl } from './ImportFencePlaceControl.jsx';
 
 
 
-const LOCAL_FILE_ACCEPT = '.geojson,.json,.csv,.tsv,.txt,.xlsx,.xls,.kml,.kmz,.gpx,.zip,.xml,.gis-toolbox,.gtbx,.tif,.tiff,.gpkg,.shp,.parquet';
+const LOCAL_FILE_ACCEPT = '.geojson,.json,.csv,.tsv,.txt,.xlsx,.xls,.kml,.kmz,.gpx,.zip,.xml,.gis-toolbox,.gtbx';
 
 export function ImportFlowDialog({
 

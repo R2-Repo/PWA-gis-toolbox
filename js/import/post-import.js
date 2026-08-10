@@ -2,8 +2,6 @@
  * Shared post-import pipeline — normalize importer output, expand mixed geometry,
  * apply fence/style prep before map render. Used by main import, workflow, dual-screen.
  */
-import booleanIntersects from '@turf/boolean-intersects';
-import bboxPolygon from '@turf/bbox-polygon';
 import logger from '../core/logger.js';
 import { analyzeSchema, splitByGeometryType, isSpatialLayer } from '../core/data-model.js';
 import { processInChunks } from '../core/task-runner.js';
@@ -15,6 +13,7 @@ import {
     filterFeaturesByImportFilters,
     hasActiveFeatureFilter
 } from './import-feature-filter.js';
+import { featureIntersectsImportFence } from './import-fence.js';
 
 /**
  * @param {object|object[]|null|undefined} result
@@ -44,27 +43,6 @@ export function expandMixedGeometryDatasets(datasets) {
 export const FENCE_CHUNK_SIZE = 200;
 export const FENCE_CHUNK_THRESHOLD = 500;
 
-function _featureBboxIntersectsFence(f, west, south, east, north) {
-    const g = f?.geometry;
-    if (!g?.coordinates) return true;
-    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-    const visit = (coords) => {
-        if (typeof coords[0] === 'number') {
-            const x = coords[0];
-            const y = coords[1];
-            if (x < minX) minX = x;
-            if (y < minY) minY = y;
-            if (x > maxX) maxX = x;
-            if (y > maxY) maxY = y;
-            return;
-        }
-        for (const c of coords) visit(c);
-    };
-    visit(g.coordinates);
-    if (!isFinite(minX)) return true;
-    return !(maxX < west || minX > east || maxY < south || minY > north);
-}
-
 /**
  * @param {object} dataset
  * @param {[number, number, number, number]|null} bbox [west, south, east, north]
@@ -73,19 +51,10 @@ function _featureBboxIntersectsFence(f, west, south, east, north) {
 export async function filterDatasetByFenceAsync(dataset, bbox, task = null) {
     if (!bbox || dataset.type !== 'spatial' || !dataset.geojson?.features?.length) return dataset;
 
-    const [west, south, east, north] = bbox;
-    const fencePoly = bboxPolygon([west, south, east, north]);
     const features = dataset.geojson.features;
     const before = features.length;
 
-    const testFeature = (f) => {
-        if (!_featureBboxIntersectsFence(f, west, south, east, north)) return false;
-        try {
-            return booleanIntersects(f, fencePoly);
-        } catch {
-            return true;
-        }
-    };
+    const testFeature = (f) => featureIntersectsImportFence(f, bbox);
 
     let kept;
     if (!task || features.length < FENCE_CHUNK_THRESHOLD) {
@@ -118,18 +87,10 @@ export async function filterDatasetByFenceAsync(dataset, bbox, task = null) {
 export function filterDatasetByFence(dataset, bbox) {
     if (!bbox || dataset.type !== 'spatial' || !dataset.geojson?.features?.length) return dataset;
 
-    const [west, south, east, north] = bbox;
-    const fencePoly = bboxPolygon([west, south, east, north]);
-
     const before = dataset.geojson.features.length;
-    dataset.geojson.features = dataset.geojson.features.filter((f) => {
-        if (!_featureBboxIntersectsFence(f, west, south, east, north)) return false;
-        try {
-            return booleanIntersects(f, fencePoly);
-        } catch {
-            return true;
-        }
-    });
+    dataset.geojson.features = dataset.geojson.features.filter((f) => (
+        featureIntersectsImportFence(f, bbox)
+    ));
     const after = dataset.geojson.features.length;
 
     if (before !== after) {

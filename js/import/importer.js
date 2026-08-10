@@ -64,7 +64,11 @@ async function importXML(file, task, payloadOpts = {}) {
             { fileName: file.name }
         );
     }
-    return importKML(text, task, { sourceFileName: file.name, text });
+    return importKML(text, task, {
+        sourceFileName: file.name,
+        text,
+        importMode: payloadOpts.importMode
+    });
 }
 
 /**
@@ -111,7 +115,7 @@ async function importZip(file, task, payloadOpts = {}) {
     const buffer = payloadOpts.buffer ?? await file.arrayBuffer();
     const kind = await detectZipKindFromBuffer(buffer, file.name);
     if (kind === 'kmz') {
-        return importKMZ(file, task, { buffer });
+        return importKMZ(file, task, { buffer, importMode: payloadOpts.importMode });
     }
     if (kind === 'shapefile') {
         return importShapefile(file, task, { buffer });
@@ -218,9 +222,9 @@ export async function importFileCore(file, task, options = {}) {
             importMode: options.importMode
         });
     } else if (format === 'xml') {
-        result = await importXML(file, task, payloadOpts);
+        result = await importXML(file, task, { ...payloadOpts, importMode: options.importMode });
     } else if (format === 'zip') {
-        result = await importZip(file, task, payloadOpts);
+        result = await importZip(file, task, { ...payloadOpts, importMode: options.importMode });
     } else if (format === 'kmz') {
         result = await importKMZ(file, task, { ...payloadOpts, importMode: options.importMode });
     } else if (format === 'json') {

@@ -16,18 +16,23 @@ async function _normalizeFeatureCollection(fc, task) {
 }
 
 function _buildDataset(name, geojson, source, prjWkt) {
-    const crsMeta = shapefileCrsFromPrj(prjWkt);
-    return createSpatialDataset(
+    const crsMeta = shapefileCrsFromPrj(prjWkt, geojson);
+    const ds = createSpatialDataset(
         name,
         geojson,
         {
             file: source.file,
             format: 'shapefile',
             originalCrs: crsMeta.originalCrs,
-            crsDetected: crsMeta.crsDetected
+            crsDetected: crsMeta.crsDetected,
+            ...(crsMeta.crsWarning ? { crsWarning: crsMeta.crsWarning } : {})
         },
         { crs: crsMeta.crs, crsWkt: crsMeta.crsWkt }
     );
+    if (!prjWkt && crsMeta.crsDetected === 'extent') {
+        ds._importWarning = 'No .prj file found. Coordinates look geographic and were assumed WGS84 (EPSG:4326).';
+    }
+    return ds;
 }
 
 export async function importShapefile(file, task, options = {}) {

@@ -11,6 +11,7 @@ import {
     detectAnyCoordinateColumns
 } from './coord-detect.js';
 import { projectedTableCrsMetadata } from './import-crs.js';
+import { csvDynamicTypingForField } from './csv-typing.js';
 
 export const CSV_BATCH_SIZE = 5000;
 export const CSV_STEP_YIELD_EVERY = 2000;
@@ -69,7 +70,7 @@ export async function importCSV(file, task, options = {}) {
 
         papa.parse(text, {
             header: true,
-            dynamicTyping: true,
+            dynamicTyping: csvDynamicTypingForField,
             skipEmptyLines: 'greedy',
             transformHeader: (h) => h.trim(),
             step: (result, parser) => {

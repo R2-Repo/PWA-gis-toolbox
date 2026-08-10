@@ -38,6 +38,10 @@ import {
     extractKmlPlacemarkProperties
 } from '../import/import-value-accumulator.js';
 import { createByteReader } from '../import/stream/byte-reader.js';
+import { geometryIntersectsImportFence } from '../import/import-fence.js';
+import { csvDynamicTypingForField } from '../import/csv-typing.js';
+import { looksProjected } from '../crs/detect.js';
+import { sampleLayerCoordinate } from '../crs/layer-crs.js';
 import { iterateDbfRecords, decoderFromCpg } from '../import/stream/dbf-stream-parser.js';
 import { detectAnyCoordinateColumns, parseCoordValue } from '../import/coord-detect.js';
 
@@ -80,28 +84,6 @@ function _waitForAck() {
     return new Promise((resolve) => {
         ackResolve = resolve;
     });
-}
-
-function _bboxIntersectsFence(geometry, fence) {
-    if (!geometry?.coordinates) return true;
-    const [west, south, east, north] = fence;
-    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-    const stack = [geometry.coordinates];
-    while (stack.length) {
-        const coords = stack.pop();
-        if (typeof coords[0] === 'number') {
-            const x = coords[0];
-            const y = coords[1];
-            if (x < minX) minX = x;
-            if (y < minY) minY = y;
-            if (x > maxX) maxX = x;
-            if (y > maxY) maxY = y;
-            continue;
-        }
-        for (let i = 0; i < coords.length; i++) stack.push(coords[i]);
-    }
-    if (!isFinite(minX)) return true;
-    return !(maxX < west || minX > east || maxY < south || minY > north);
 }
 
 function createImportContext(msg, overrides = {}) {
@@ -164,9 +146,11 @@ function createImportContext(msg, overrides = {}) {
             });
             for (let part of parts) {
                 totalSeen++;
-                if (fence && part.geometry && !_bboxIntersectsFence(part.geometry, fence)) {
-                    fenceFiltered++;
-                    continue;
+                if (fence) {
+                    if (!part.geometry || !geometryIntersectsImportFence(part.geometry, fence)) {
+                        fenceFiltered++;
+                        continue;
+                    }
                 }
                 if (featureFilter && !featureMatchesImportFilters(part, featureFilter)) {
                     featureFiltered++;
@@ -370,7 +354,7 @@ async function runZip(msg) {
 }
 
 async function runShapefile(msg, entries, shpEntries) {
-    const { file } = msg;
+    const { file, options = {} } = msg;
     if (shpEntries.length > 1) {
         throw new Error(
             `"${file.name}" contains ${shpEntries.length} shapefiles — high-capacity import supports one shapefile per archive. Split the archive and import separately.`
@@ -388,6 +372,35 @@ async function runShapefile(msg, entries, shpEntries) {
 
     const prjWkt = prjEntry ? (await readZipEntryHead(file, prjEntry, 64 * 1024)).trim() : null;
     const cpgText = cpgEntry ? (await readZipEntryHead(file, cpgEntry, 1024)).trim() : null;
+    const sourceCrs = options.sourceCrs || null;
+
+    if (!prjWkt && !sourceCrs?.def) {
+        // Peek the first geometry via a short stream to decide if coords look projected.
+        // Full import restarts from a fresh stream below.
+        const peek = streamShapefileFeatures({
+            shpStream: await openZipEntryStream(file, shpEntry),
+            dbfStream: null,
+            prjWkt: null,
+            cpgText: null,
+            proj4Lib: null
+        });
+        let first = null;
+        for await (const feature of peek.features) {
+            first = feature;
+            break;
+        }
+        const sample = sampleLayerCoordinate({
+            type: 'FeatureCollection',
+            features: first ? [first] : []
+        });
+        if (sample && looksProjected(sample[0], sample[1])) {
+            const err = new Error(
+                'This shapefile has no .prj and coordinates look projected — pick the source coordinate system to import it.'
+            );
+            err.code = 'PROJECTED_SHAPEFILE_NEEDS_CRS';
+            throw err;
+        }
+    }
 
     const totalBytes = (shpEntry.uncompressedSize || 0) + (dbfEntry?.uncompressedSize || 0);
     const ctx = createImportContext(msg, { totalBytes });
@@ -397,7 +410,8 @@ async function runShapefile(msg, entries, shpEntries) {
         dbfStream: dbfEntry ? await openZipEntryStream(file, dbfEntry) : null,
         prjWkt,
         cpgText,
-        proj4Lib: proj4
+        proj4Lib: proj4,
+        sourceCrsDef: sourceCrs?.def || null
     });
 
     let approxBytes = 128;
@@ -411,9 +425,13 @@ async function runShapefile(msg, entries, shpEntries) {
         ctx.progress(source.getBytesConsumed());
     }
 
+    const crsDetected = prjWkt ? 'prj' : (sourceCrs ? 'user' : 'extent');
     await ctx.finish(source.getBytesConsumed(), {
         warnings: source.warnings,
-        sourceMeta: { crsDetected: prjWkt ? 'prj' : 'default' }
+        sourceMeta: {
+            crsDetected,
+            ...(sourceCrs?.code ? { originalCrs: sourceCrs.code } : {})
+        }
     });
 }
 
@@ -572,7 +590,7 @@ async function runCSV(msg) {
     await new Promise((resolve, reject) => {
         Papa.parse(file, {
             header: true,
-            dynamicTyping: true,
+            dynamicTyping: csvDynamicTypingForField,
             skipEmptyLines: 'greedy',
             transformHeader: (h) => h.trim(),
             chunkSize: 4 * 1024 * 1024,
@@ -769,7 +787,7 @@ async function scanCsvValues(msg) {
     await new Promise((resolve, reject) => {
         Papa.parse(file, {
             header: true,
-            dynamicTyping: true,
+            dynamicTyping: csvDynamicTypingForField,
             skipEmptyLines: 'greedy',
             transformHeader: (h) => h.trim(),
             chunkSize: 4 * 1024 * 1024,

@@ -180,6 +180,18 @@ Rules:
 
 ---
 
+## Build 9 status (this branch)
+
+- [x] Shared fence intersection (`import-fence.js`) for standard + stream
+- [x] Null geometry excluded from fenced imports
+- [x] CSV identifier strings preserved (`csvDynamicTypingForField`)
+- [x] KML GIS strip uses exact presentation-key allowlist (keeps `fill_status` / long notes)
+- [x] KML `importMode` forwarded for `.xml` and ZIP-disguised KML
+- [x] Missing shapefile `.prj` + projected coords → CRS prompt (stream + standard)
+- [x] File picker accept list limited to supported formats
+
+---
+
 # Build 9 — Consistency & format integrity
 
 ### 9.1 Shared fence intersection
