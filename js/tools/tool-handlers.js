@@ -16,12 +16,9 @@ import { importFile, importFiles } from '../import/importer.js';
 import { cancelWorkerParse } from '../import/import-parse-service.js';
 import { convertSpatialDatasetToWorkspace } from '../import/workspace-import.js';
 import {
-    materializeSpatialLayer,
     materializeForOperation,
     getWorkingFeaturesFromLayer,
-    getWorkingDatasetFromLayer,
-    evaluateOperation,
-    formatOperationBlockMessage
+    getWorkingDatasetFromLayer
 } from './gis-layer-context.js';
 import { removeWorkspaceLayer, detachFieldsForExport } from '../workspace/workspace-store.js';
 import { removeSourceFileIfUnreferenced } from '../workspace/source-file-store.js';
