@@ -4,6 +4,7 @@ import {
     summarizeFeatureCollection,
     validateLayerGeoJson
 } from './engine.js';
+import { materializeLayersForWidget } from '../widget-operation.js';
 
 /**
  * Summarize a workspace layer in the browser.
@@ -23,13 +24,20 @@ export async function openLayerSummary(ctx) {
                 const layer = ctx.getLayers().find((entry) => entry.id === layerId);
                 if (!layer) throw new Error('Layer not found.');
 
-                const validation = validateLayerGeoJson(layer.geojson);
+                onProgress?.({ percent: 20, stage: 'load', message: 'Loading working set…' });
+                const [materialized] = await materializeLayersForWidget(
+                    ctx,
+                    [layer],
+                    { operation: 'summary', applyTo: 'auto' }
+                );
+
+                const validation = validateLayerGeoJson(materialized.geojson);
                 if (!validation.ok) {
                     throw new Error(validation.error);
                 }
 
                 onProgress?.({ percent: 60, stage: 'analyze', message: 'Summarizing…' });
-                const summary = summarizeFeatureCollection(layer.geojson, {
+                const summary = summarizeFeatureCollection(materialized.geojson, {
                     layerName: layer.name
                 });
                 onProgress?.({ percent: 100, stage: 'done', message: 'Complete' });

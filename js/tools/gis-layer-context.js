@@ -10,7 +10,15 @@ import {
 } from '../core/data-model.js';
 import { AppError, ErrorCategory } from '../core/error-handler.js';
 import { MATERIALIZE_FEATURE_LIMIT } from '../import/import-limit-taxonomy.js';
-import { loadAllWorkspaceFeatures } from '../workspace/workspace-store.js';
+import {
+    loadAllWorkspaceFeatures,
+    getWorkspaceFeaturesByIndices
+} from '../workspace/workspace-store.js';
+import {
+    evaluateOperation,
+    formatOperationBlockMessage,
+    resolveWorkingSet
+} from './operation-budget.js';
 
 /**
  * Workspace layers above this cannot be fully loaded into memory for GIS
@@ -28,8 +36,9 @@ export function isGisToolLayer(layer) {
 }
 
 /**
- * Load feature geometry for GIS tools.
+ * Load feature geometry for GIS tools (whole layer).
  * Workspace layers are read from IndexedDB; live services use the current viewport cache.
+ * Prefer {@link materializeForOperation} when selection/viewport can shrink the set.
  * @param {object} layer
  * @returns {Promise<object|null>}
  */
@@ -61,8 +70,108 @@ export async function materializeSpatialLayer(layer) {
 }
 
 /**
+ * Materialize only the working set allowed for an operation (layer / selection / viewport).
+ * @param {object} layer
+ * @param {{
+ *   operation?: string,
+ *   applyTo?: 'auto'|'layer'|'selection'|'viewport',
+ *   mapApi?: {
+ *     getSelectionCount?: (id: string) => number,
+ *     getSelectedIndices?: (id: string) => number[],
+ *     getSelectedFeatures?: (id: string, geojson: object) => object|null
+ *   },
+ *   limitFeatures?: number
+ * }} [options]
+ * @returns {Promise<object|null>}
+ */
+export async function materializeForOperation(layer, options = {}) {
+    if (!layer) return null;
+
+    const evaluation = evaluateOperation({
+        operation: options.operation || 'generic',
+        layer,
+        applyTo: options.applyTo || 'auto',
+        mapApi: options.mapApi || {},
+        limitFeatures: options.limitFeatures
+    });
+
+    if (!evaluation.ok) {
+        throw new AppError(
+            formatOperationBlockMessage(evaluation) || evaluation.reason,
+            ErrorCategory.OUT_OF_MEMORY,
+            {
+                layerId: layer.id,
+                evaluation
+            }
+        );
+    }
+
+    const { mode } = evaluation.workingSet;
+
+    if (isLiveVectorLayer(layer)) {
+        if (mode === 'selection') {
+            const geojson = layer.geojson || { type: 'FeatureCollection', features: [] };
+            const selected = options.mapApi?.getSelectedFeatures?.(layer.id, geojson);
+            return {
+                ...layer,
+                geojson: selected || { type: 'FeatureCollection', features: [] },
+                _operationWorkingSet: 'selection'
+            };
+        }
+        return {
+            ...layer,
+            geojson: layer.geojson || { type: 'FeatureCollection', features: [] },
+            _operationWorkingSet: mode
+        };
+    }
+
+    if (!isSpatialLayer(layer)) return null;
+    if (!isWorkspaceLayer(layer)) {
+        if (mode === 'selection') {
+            const geojson = layer.geojson || { type: 'FeatureCollection', features: [] };
+            const selected = options.mapApi?.getSelectedFeatures?.(layer.id, geojson);
+            return {
+                ...layer,
+                geojson: selected || { type: 'FeatureCollection', features: [] },
+                _operationWorkingSet: 'selection'
+            };
+        }
+        return { ...layer, _operationWorkingSet: mode };
+    }
+
+    const wsId = layer.workspaceLayerId || layer.id;
+
+    if (mode === 'selection') {
+        const indices = options.mapApi?.getSelectedIndices?.(layer.id) || [];
+        const features = await getWorkspaceFeaturesByIndices(wsId, indices);
+        return {
+            ...layer,
+            geojson: { type: 'FeatureCollection', features },
+            _operationWorkingSet: 'selection',
+            _selectionCount: features.length
+        };
+    }
+
+    if (mode === 'viewport') {
+        const features = Array.isArray(layer.geojson?.features) ? layer.geojson.features : [];
+        return {
+            ...layer,
+            geojson: { type: 'FeatureCollection', features },
+            _operationWorkingSet: 'viewport'
+        };
+    }
+
+    const features = await loadAllWorkspaceFeatures(wsId);
+    return {
+        ...layer,
+        geojson: { type: 'FeatureCollection', features },
+        _operationWorkingSet: 'layer'
+    };
+}
+
+/**
  * @param {object} layer materialized spatial layer
- * @param {'auto'|'layer'|'selection'} [applyTo]
+ * @param {'auto'|'layer'|'selection'|'viewport'} [applyTo]
  * @param {{ getSelectionCount?: (id: string) => number, getSelectedFeatures?: (id: string, geojson: object) => object|null }} mapApi
  */
 export function getWorkingFeaturesFromLayer(layer, applyTo = 'auto', mapApi = {}) {
@@ -75,14 +184,28 @@ export function getWorkingFeaturesFromLayer(layer, applyTo = 'auto', mapApi = {}
     const selected = mapApi.getSelectedFeatures?.(layer.id, geojson);
     const selectionCount = selected?.features?.length ?? 0;
 
-    const useSelection = applyTo === 'selection'
-        || (applyTo === 'auto' && selectionCount > 0);
-
-    if (useSelection && selectionCount > 0) {
+    if (applyTo === 'viewport' || layer._operationWorkingSet === 'viewport') {
         return {
-            geojson: selected,
+            geojson,
+            isSelection: false,
+            isViewport: true,
+            count: geojson.features?.length ?? 0,
+            totalCount
+        };
+    }
+
+    const useSelection = applyTo === 'selection'
+        || (applyTo === 'auto' && (selectionCount > 0 || layer._operationWorkingSet === 'selection'));
+
+    if (useSelection && (selectionCount > 0 || layer._operationWorkingSet === 'selection')) {
+        const fc = selectionCount > 0
+            ? selected
+            : geojson;
+        return {
+            geojson: fc,
             isSelection: true,
-            count: selectionCount,
+            isViewport: false,
+            count: fc?.features?.length ?? 0,
             totalCount
         };
     }
@@ -90,6 +213,7 @@ export function getWorkingFeaturesFromLayer(layer, applyTo = 'auto', mapApi = {}
     return {
         geojson,
         isSelection: false,
+        isViewport: false,
         count: geojson.features?.length ?? totalCount,
         totalCount
     };
@@ -97,7 +221,7 @@ export function getWorkingFeaturesFromLayer(layer, applyTo = 'auto', mapApi = {}
 
 /**
  * @param {object} layer
- * @param {'auto'|'layer'|'selection'} [applyTo]
+ * @param {'auto'|'layer'|'selection'|'viewport'} [applyTo]
  * @param {object} mapApi
  */
 export function getWorkingDatasetFromLayer(layer, applyTo = 'auto', mapApi = {}) {
@@ -110,3 +234,9 @@ export function getWorkingDatasetFromLayer(layer, applyTo = 'auto', mapApi = {})
         _selectionCount: work.count
     };
 }
+
+export {
+    evaluateOperation,
+    formatOperationBlockMessage,
+    resolveWorkingSet
+};
