@@ -1,15 +1,25 @@
 /**
  * Streaming import tuning constants — dependency-free (shared by worker + main thread).
+ *
+ * PRODUCT MAX (what may land in the app): 250,000 *stored* features
+ * (`MAX_IMPORT_FEATURES` / `STORED_FEATURE_LIMIT`). See docs/IMPORT_LARGE_FILES.md
+ * “End-user import gates”.
+ *
+ * The constants below are SOURCE-READ / WORKER plumbing only — so oversized
+ * files are not rejected before the user can filter. Do not describe them as
+ * the app’s import max.
  */
 
 /**
- * Hard per-file ceiling for streaming imports.
- * Source is read incrementally (never whole-file in RAM); filters reduce what is
- * stored. 2 GB covers statewide road centerlines and similar large GeoJSON/CSV.
+ * Max source file bytes the stream reader will open (plumbing, not product max).
+ * Filters reduce what is stored; unlock is still ≤ 250k stored features.
  */
 export const STREAM_MAX_BYTES = 2 * 1024 * 1024 * 1024;
 
-/** Hard per-file feature ceiling for streaming imports. */
+/**
+ * Worker runaway abort while streaming (plumbing, not product max).
+ * Completing import still requires ≤ 250k stored features after reduction.
+ */
 export const STREAM_MAX_FEATURES = 1_000_000;
 
 /** Features per worker batch — matches WORKSPACE_CHUNK_SIZE so each batch is one chunk. */

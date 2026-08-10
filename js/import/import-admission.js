@@ -1,12 +1,16 @@
 /**
  * Authoritative import admission — shared limits and stored-feature unlock gate.
  *
- * UI unlock / stored features: STORED_FEATURE_LIMIT (250k)
- * Stream worker hard abort:    STREAM_STORAGE_FEATURE_LIMIT (1M)
- * Stream file size plumbing:   STREAM_MAX_BYTES (internal; not the UI unlock)
+ * End-user product max (both small + large import): STORED_FEATURE_LIMIT (250k
+ * features that actually land in the app). Large path = stream → IndexedDB;
+ * small path = in-memory. Same feature ceiling.
  *
+ * Plumbing only (not product max — do not lead with these in answers):
+ *   STREAM_STORAGE_FEATURE_LIMIT (1M) — worker runaway abort
+ *   STREAM_MAX_BYTES (2 GB) — max source bytes readable for filter/import
+ *
+ * @see docs/IMPORT_LARGE_FILES.md (“End-user import gates”)
  * @see docs/IMPORT_HARDENING_PLAN.md
- * @see docs/IMPORT_LARGE_FILES.md
  */
 import { MAX_IMPORT_FEATURES, TEXT_STRONG_BYTES } from './import-preflight.js';
 import { STREAM_MAX_FEATURES, STREAM_MAX_BYTES } from './stream/stream-constants.js';
