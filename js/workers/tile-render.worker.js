@@ -152,18 +152,17 @@ async function buildTile(layerId, z, x, y) {
                 const feature = features[i];
                 if (!featureBelongsInTile(feature, tileBbox, z)) continue;
                 candidates.push(feature);
-                if (candidates.length >= MAX_TILE_FEATURES) break;
             }
         }
     }
 
-    // Prefer local features at close zoom when over the per-tile cap.
-    const features = highZoom
-        ? selectTileFeatures(loaded, tileBbox, z, {
-            maxFeatures: MAX_TILE_FEATURES,
-            preferLocal: true
-        }).features
-        : selectTileFeatures(loaded, tileBbox, z).features;
+    // Close zoom: keep multi-tile spanning lines when over the per-tile cap
+    // (preferLocal alone demoted them). Overview keeps stride/local sampling.
+    const features = selectTileFeatures(loaded, tileBbox, z, {
+        maxFeatures: MAX_TILE_FEATURES,
+        preferCrossing: highZoom,
+        preferLocal: false
+    }).features;
 
     return buildTileFromFeatures(features, z, x, y, {
         tolerance: simplifyToleranceForZoom(z)

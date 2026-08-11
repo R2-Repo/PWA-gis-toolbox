@@ -18,6 +18,7 @@ import {
     chunkLoadBudgetForZoom,
     shouldContinueChunkScan,
     preferLocalFeatures,
+    preferCrossingThenLocalFeatures,
     featureBelongsInTile
 } from '../js/map/tiles/tile-feature-select.js';
 import {
@@ -230,39 +231,72 @@ describe('selectChunksForTile (overlap ranking)', () => {
         expect(capped.sparseCandidateFloor).toBe(64);
     });
 
-    it('keeps scanning past the soft high-zoom budget while candidates are sparse', () => {
-        // Soft budget exhausted, zero real hits → continue.
+    it('at close zoom keeps scanning all ranked chunks until the feature cap', () => {
+        // Soft budget exhausted with some local hits — still continue (v1 stopped
+        // here and missed later long lines).
         expect(shouldContinueChunkScan({
             highZoom: true,
             loadedCount: 512,
-            rankedCount: 2000,
-            candidateCount: 0,
+            rankedCount: 8000,
+            candidateCount: 80,
             maxChunks: 512,
-            hardMaxChunks: 4096,
+            hardMaxChunks: 8000,
             sparseCandidateFloor: 64
         })).toBe(true);
 
-        // Soft budget exhausted but enough in-tile geometry → stop.
+        // Only stop when every ranked chunk was tried.
         expect(shouldContinueChunkScan({
             highZoom: true,
-            loadedCount: 512,
-            rankedCount: 2000,
+            loadedCount: 8000,
+            rankedCount: 8000,
             candidateCount: 80,
             maxChunks: 512,
-            hardMaxChunks: 4096,
-            sparseCandidateFloor: 64
+            hardMaxChunks: 8000
         })).toBe(false);
 
-        // Hard ceiling always stops.
+        // Or when the ranked list is exhausted (feature-cap does not stop the scan).
         expect(shouldContinueChunkScan({
             highZoom: true,
-            loadedCount: 4096,
+            loadedCount: 100,
             rankedCount: 8000,
-            candidateCount: 0,
+            candidateCount: 20_000,
             maxChunks: 512,
-            hardMaxChunks: 4096,
-            sparseCandidateFloor: 64
-        })).toBe(false);
+            hardMaxChunks: 8000,
+            maxFeatures: 20_000
+        })).toBe(true);
+    });
+
+    it('keeps multi-tile spanning lines when truncating an oversized tile', () => {
+        const tileBbox = [-111.1, 40.0, -111.0, 40.1];
+        const features = [];
+        for (let i = 0; i < 50; i++) {
+            features.push({
+                type: 'Feature',
+                properties: { id: `local-${i}` },
+                geometry: {
+                    type: 'LineString',
+                    coordinates: [
+                        [-111.08, 40.02 + i * 0.001],
+                        [-111.02, 40.03 + i * 0.001]
+                    ]
+                }
+            });
+        }
+        // Long lines that cross the tile E–W / N–S.
+        for (let i = 0; i < 10; i++) {
+            features.push({
+                type: 'Feature',
+                properties: { id: `span-${i}` },
+                geometry: {
+                    type: 'LineString',
+                    coordinates: [[-112, 40.05 + i * 0.002], [-110, 40.05 + i * 0.002]]
+                }
+            });
+        }
+        const kept = preferCrossingThenLocalFeatures(features, tileBbox, 20);
+        const ids = kept.map((f) => f.properties.id);
+        expect(ids.filter((id) => id.startsWith('span-'))).toHaveLength(10);
+        expect(kept).toHaveLength(20);
     });
 
     it('selectChunksForTile can ignore mass budget so late local chunks are reached', () => {
