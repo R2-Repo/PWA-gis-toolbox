@@ -111,7 +111,41 @@ export function ImportFlowDialog({
         setImportView('chooser');
         setPendingFiles([]);
         setError('');
+        setLocalDragOver(false);
         resetImportStep();
+    };
+
+    const openLocalFilesScreen = () => {
+        setError('');
+        setImportView('localFiles');
+        setLocalDragOver(false);
+    };
+
+    const openLocalFilePicker = () => {
+        if (fileInputRef.current) {
+            fileInputRef.current.value = '';
+            fileInputRef.current.click();
+        }
+    };
+
+    const localFilesDropHandlers = {
+        onDragEnter: (e) => {
+            preventDragDefaults(e);
+            setLocalDragOver(true);
+        },
+        onDragOver: (e) => {
+            preventDragDefaults(e);
+            setLocalDragOver(true);
+        },
+        onDragLeave: (e) => {
+            preventDragDefaults(e);
+            setLocalDragOver(false);
+        },
+        onDrop: (e) => {
+            preventDragDefaults(e);
+            setLocalDragOver(false);
+            void handleFiles(e.dataTransfer?.files);
+        }
     };
 
     const runPreflight = (fileList) => {
@@ -239,18 +273,23 @@ export function ImportFlowDialog({
         const files = runPreflight(fileList);
         if (files.length === 0) return;
 
+        // Leave the empty Local Files setup screen immediately (picker + drag-drop).
+        setScanning(true);
+        setError('');
+
         // Large streamable files use streaming import — field pick, not a size error.
         if (onStreamImport) {
             try {
                 const { partitionStreamingFiles } = await import('../../js/import/stream/stream-policy.js');
                 const partition = await partitionStreamingFiles(files);
                 if (partition.rejectedFiles.length) {
+                    setScanning(false);
+                    setPendingFiles([]);
                     setError(partition.rejectedFiles.map((r) => r.message).join(' '));
                     return;
                 }
                 if (partition.streamFiles.length) {
                     setStreamFiles(partition.streamFiles);
-                    setScanning(true);
                     let scans = [];
                     try {
                         scans = await scanFilesForImport(files);
@@ -278,11 +317,14 @@ export function ImportFlowDialog({
 
         const check = preflightFiles(files);
         if (check.reject) {
+            setScanning(false);
+            setPendingFiles([]);
             setError(check.messages.join(' '));
             return;
         }
 
         if (files.every(isProjectKitFile)) {
+            setScanning(false);
             setReadyToImport(true);
             setFieldNames([]);
             setSelectedFields([]);
@@ -298,24 +340,25 @@ export function ImportFlowDialog({
 
         let scans = [];
         if (shouldPreScan) {
-            setScanning(true);
             try {
                 scans = await scanFilesForImport(files);
             } catch (err) {
                 setScanning(false);
+                setPendingFiles([]);
                 setError(err?.message || 'Could not scan files.');
                 return;
             }
-            setScanning(false);
         }
 
         const assessment = await assessImportRoute(files, { scans });
         if (assessment.route === 'optimizer' && onOptimizeImport) {
+            setScanning(false);
             onOptimizeImport(files);
             return;
         }
 
         if (scans.length) {
+            setScanning(false);
             applyScans(files, scans);
         } else {
             await prepareImportOptions(files);
@@ -364,6 +407,14 @@ export function ImportFlowDialog({
 
     const isKitOnly = pendingFiles.length > 0 && pendingFiles.every(isProjectKitFile);
     const showChooser = !readyToImport && !startAtFieldPick && !importing && importView === 'chooser';
+    // Empty Local Files setup only — hide as soon as files are chosen / scanning /
+    // configure so drag-drop and file-picker both leave this screen cleanly.
+    const showLocalFilesScreen = importView === 'localFiles'
+        && !readyToImport
+        && !startAtFieldPick
+        && !importing
+        && !scanning
+        && pendingFiles.length === 0;
 
     if (importing) {
         return (
@@ -396,6 +447,12 @@ export function ImportFlowDialog({
                 </button>
             ) : null}
 
+            {showLocalFilesScreen ? (
+                <button type="button" className="btn btn-ghost btn-sm mb-8" onClick={backToChooser}>
+                    ← Back
+                </button>
+            ) : null}
+
             {pendingFiles.length > 0 ? (
                 <ul className="text-xs text-muted mb-8" style={{ margin: '0 0 8px', paddingLeft: '18px' }}>
                     {pendingFiles.map((f) => (
@@ -406,6 +463,47 @@ export function ImportFlowDialog({
 
             {scanning ? (
                 <ImportProgressPanel step="Scanning attributes…" percent={0} />
+            ) : null}
+
+            {showLocalFilesScreen ? (
+                <div className="mb-8">
+                    <button
+                        type="button"
+                        className="btn btn-primary btn-sm mb-8"
+                        onClick={openLocalFilePicker}
+                    >
+                        Add local file
+                    </button>
+                    <div
+                        className={`import-option-card${localDragOver ? ' import-option-card--dragover' : ''}`}
+                        role="button"
+                        tabIndex={0}
+                        style={{
+                            cursor: 'pointer',
+                            minHeight: 120,
+                            display: 'flex',
+                            flexDirection: 'column',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            textAlign: 'center',
+                            padding: 16
+                        }}
+                        onClick={openLocalFilePicker}
+                        onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                                e.preventDefault();
+                                openLocalFilePicker();
+                            }
+                        }}
+                        {...localFilesDropHandlers}
+                    >
+                        <div style={{ fontSize: 28, lineHeight: 1, marginBottom: 8 }}>📂</div>
+                        <div className="text-xs" style={{ fontWeight: 600 }}>Drop files here</div>
+                        <p className="text-xs text-muted" style={{ margin: '6px 0 0', maxWidth: 280 }}>
+                            GeoJSON, CSV, Excel, KML, Shapefile, and other supported formats.
+                        </p>
+                    </div>
+                </div>
             ) : null}
 
             {readyToImport && !scanning ? (
@@ -486,24 +584,8 @@ export function ImportFlowDialog({
                             title="Local Files"
                             description="GeoJSON, CSV, Excel, KML, Shapefile…"
                             className={localDragOver ? 'import-option-card--dragover' : ''}
-                            onClick={() => fileInputRef.current?.click()}
-                            onDragEnter={(e) => {
-                                preventDragDefaults(e);
-                                setLocalDragOver(true);
-                            }}
-                            onDragOver={(e) => {
-                                preventDragDefaults(e);
-                                setLocalDragOver(true);
-                            }}
-                            onDragLeave={(e) => {
-                                preventDragDefaults(e);
-                                setLocalDragOver(false);
-                            }}
-                            onDrop={(e) => {
-                                preventDragDefaults(e);
-                                setLocalDragOver(false);
-                                void handleFiles(e.dataTransfer?.files);
-                            }}
+                            onClick={openLocalFilesScreen}
+                            {...localFilesDropHandlers}
                         />
                         <ImportOptionCard
                             icon="🌐"
@@ -565,16 +647,20 @@ export function ImportFlowDialog({
                     <p className="import-option-hint">
                         Drag files onto Local Files or Toolbox Kit cards.
                     </p>
-                    <input
-                        ref={fileInputRef}
-                        type="file"
-                        multiple
-                        accept={LOCAL_FILE_ACCEPT}
-                        style={{ display: 'none' }}
-                        onChange={(e) => void handleFiles(e.target.files)}
-                    />
                 </>
             ) : null}
+
+            <input
+                ref={fileInputRef}
+                type="file"
+                multiple
+                accept={LOCAL_FILE_ACCEPT}
+                style={{ display: 'none' }}
+                onChange={(e) => {
+                    void handleFiles(e.target.files);
+                    e.target.value = '';
+                }}
+            />
         </div>
     );
 }

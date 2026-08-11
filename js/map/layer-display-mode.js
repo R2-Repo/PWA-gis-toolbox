@@ -42,6 +42,7 @@ export function resolveLayerDisplayMode(layer, mapEntry = null) {
                 `About ${featureCount.toLocaleString()} features are stored in workspace (IndexedDB).`,
                 'Nothing was left out during import — at far zoom, dense tiles may thin some features so the map stays fast.',
                 'Zoom in for denser local detail; tiles prefer geometry that actually falls in the current view.',
+                'While tiles are building, squares nearer the center of the screen are preferred over the edges.',
                 'Export still includes the full layer.',
                 'Click or identify still works; selection highlights on tiled layers are limited.'
             ],
@@ -59,6 +60,7 @@ export function resolveLayerDisplayMode(layer, mapEntry = null) {
             details: [
                 `About ${featureCount.toLocaleString()} features are stored in workspace (IndexedDB).`,
                 `The map shows up to about ${RENDER_LIMITS.maxFeaturesPerSource.toLocaleString()} features that intersect the current view at a time.`,
+                'When the view is dense, features near the center of the screen are drawn before features near the edges.',
                 'Features outside the view are still in the layer — they appear when you move the map.',
                 'Very dense views may still omit some intersecting features so the map stays fast; zoom in further or export for the complete set.',
                 'Export still includes the full layer.'

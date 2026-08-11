@@ -1,8 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
     countGeometryVertices,
-    featureIntersectsViewport
+    featureIntersectsViewport,
+    centerFocusBounds,
+    selectViewportFeaturesCenterFirst,
+    VIEWPORT_CENTER_FOCUS_FRACTION
 } from '../js/workspace/viewport-loader.js';
+import { tileFocusScore, setGisTileFocus, getGisTileFocus } from '../js/map/tiles/tile-protocol.js';
 
 describe('viewport-loader feature selection', () => {
     const view = [-111.95, 40.55, -111.85, 40.65];
@@ -108,5 +112,63 @@ describe('viewport fill prefers in-view features', () => {
 
         expect(selected).toHaveLength(1);
         expect(selected[0].properties._featureIndex).toBe(99);
+    });
+});
+
+describe('viewport center focus', () => {
+    it('shrinks bounds toward the center', () => {
+        const focus = centerFocusBounds([0, 0, 10, 10], 0.5);
+        expect(focus[0]).toBeCloseTo(2.5);
+        expect(focus[1]).toBeCloseTo(2.5);
+        expect(focus[2]).toBeCloseTo(7.5);
+        expect(focus[3]).toBeCloseTo(7.5);
+        expect(VIEWPORT_CENTER_FOCUS_FRACTION).toBe(0.5);
+    });
+
+    it('keeps center features when the render cap is tight', () => {
+        const view = [0, 0, 10, 10];
+        const focus = centerFocusBounds(view, 0.5);
+        const edge = [];
+        const center = [];
+        for (let i = 0; i < 20; i++) {
+            edge.push({
+                type: 'Feature',
+                properties: { id: `edge-${i}` },
+                geometry: {
+                    type: 'LineString',
+                    coordinates: [[0.1, 0.1 + i * 0.01], [0.2, 0.1 + i * 0.01]]
+                }
+            });
+        }
+        center.push({
+            type: 'Feature',
+            properties: { id: 'center-main' },
+            geometry: {
+                type: 'LineString',
+                coordinates: [[4.5, 5], [5.5, 5]]
+            }
+        });
+        expect(featureIntersectsViewport(center[0], focus)).toBe(true);
+        expect(featureIntersectsViewport(edge[0], focus)).toBe(false);
+
+        const { features, truncated } = selectViewportFeaturesCenterFirst(center, edge, {
+            maxFeatures: 5,
+            maxVertices: 250_000
+        });
+        expect(truncated).toBe(true);
+        expect(features[0].properties.id).toBe('center-main');
+        expect(features).toHaveLength(5);
+        expect(features.filter((f) => String(f.properties.id).startsWith('edge-'))).toHaveLength(4);
+    });
+});
+
+describe('gis tile focus score', () => {
+    it('scores tiles nearer the focus lower', () => {
+        setGisTileFocus(-111.89, 40.76);
+        expect(getGisTileFocus()).toEqual({ lon: -111.89, lat: 40.76 });
+        // SLC-ish z12 tile vs a far tile
+        const near = tileFocusScore(12, 774, 1539);
+        const far = tileFocusScore(12, 100, 100);
+        expect(near).toBeLessThan(far);
     });
 });

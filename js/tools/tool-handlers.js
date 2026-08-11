@@ -827,8 +827,17 @@ export function handleLayerScaleRangeChange(layerId, range) {
 }
 
 // ============================
-// Drag & Drop file import (global ??? works anywhere in the app)
+// Drag & Drop file import (global — works anywhere in the app)
 // ============================
+
+/** Workflow editor or any app modal — those UIs handle drops themselves (e.g. Import). */
+function shouldSuppressGlobalFileDrop() {
+    if (document.querySelector('.wf-overlay.visible')) return true;
+    // Avoid stacking a second Import modal on top of Local Files setup / chooser.
+    if (document.querySelector('.modal-overlay')) return true;
+    return false;
+}
+
 export function setupDragDrop() {
     let dragCounter = 0;
 
@@ -842,8 +851,7 @@ export function setupDragDrop() {
     document.addEventListener('dragover', e => { e.preventDefault(); });
     document.addEventListener('dragenter', e => {
         e.preventDefault();
-        // Suppress overlay when workflow editor is open
-        if (document.querySelector('.wf-overlay.visible')) return;
+        if (shouldSuppressGlobalFileDrop()) return;
         dragCounter++;
         overlay.classList.add('visible');
     });
@@ -860,8 +868,8 @@ export function setupDragDrop() {
         dragCounter = 0;
         overlay.classList.remove('visible');
 
-        // Don't handle file drops when workflow editor is open
-        if (document.querySelector('.wf-overlay.visible')) return;
+        // Let open Import / other modals (and the workflow editor) own the drop.
+        if (shouldSuppressGlobalFileDrop()) return;
 
         const files = Array.from(e.dataTransfer?.files || []);
         if (files.length === 0) return;

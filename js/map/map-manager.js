@@ -418,7 +418,17 @@ class MapManager {
         });
 
         this._workspaceMoveTimer = null;
+        this._gisTilesMod = null;
+        const publishTileFocus = () => {
+            try {
+                const c = this.map?.getCenter?.();
+                if (!c || !this._gisTilesMod) return;
+                this._gisTilesMod.setGisTileFocus(c.lng, c.lat);
+            } catch { /* map not ready */ }
+        };
+        this.map.on('move', publishTileFocus);
         this.map.on('moveend', () => {
+            publishTileFocus();
             window.clearTimeout(this._workspaceMoveTimer);
             this._workspaceMoveTimer = window.setTimeout(() => {
                 this._reapplyAllScaleRangesIfNeeded();
@@ -1154,6 +1164,11 @@ class MapManager {
         try {
             const tiles = await import('./tiles/tile-protocol.js');
             if (!tiles.ensureGisTileProtocol()) return false;
+            this._gisTilesMod = tiles;
+            try {
+                const c = this.map?.getCenter?.();
+                if (c) tiles.setGisTileFocus(c.lng, c.lat);
+            } catch { /* ignore */ }
 
             const wsId = dataset.workspaceLayerId || dataset.id;
             tiles.invalidateGisTiles(wsId);
