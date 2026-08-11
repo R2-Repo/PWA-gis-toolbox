@@ -299,8 +299,12 @@ Large-file Import Flow and Import Optimizer now support **row filters** in
 addition to attribute deselection and Import Fence:
 
 1. **Distinct-value scan** — a worker pass (`scan-values`) streams the file and
-   collects up to 2,000 distinct values per field (CSV / DBF-only shapefile /
-   GeoJSON properties / KML ExtendedData). Progress is shown; cancel aborts.
+   collects up to **5,000** distinct values per field (sample budget ≈ **50k
+   features / 256 MB** — raised for long-line GeoJSON where geometries are
+   multi-MB). Field names for GeoJSON are discovered by a **streaming feature
+   sniff** (not a fixed 384 KB head), so attributes after large geometries still
+   appear in the filter dropdown. CSV / DBF shapefile / KML ExtendedData
+   unchanged. Progress is shown; cancel aborts.
 2. **Geometry type toggles** — Points / Lines / Polygons (all on by default).
 3. **Attribute rules** — same operators as Filter Builder / Query (`equals`,
    `in`, `not_in`, …) with multi-select checklists from the scan when cardinality
