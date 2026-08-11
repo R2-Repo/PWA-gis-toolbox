@@ -71,21 +71,28 @@ export function chunkLoadBudgetForZoom(z, rankedCount, opts = {}) {
     const maxChunksCap = highZoom
         ? (opts.maxChunksHighZoom ?? MAX_CHUNKS_PER_TILE_HIGH_ZOOM)
         : (opts.maxChunks ?? MAX_CHUNKS_PER_TILE);
+    // Close zoom: always allow exhausting the ranked list. A fixed hard cap
+    // (even 4k) still misses Build-11 long-line layers with huge bbox fan-out.
     const hardMaxChunksCap = highZoom
-        ? (opts.maxChunksHighZoomHard ?? MAX_CHUNKS_PER_TILE_HIGH_ZOOM_HARD)
+        ? (opts.maxChunksHighZoomHard ?? rankedCount)
         : maxChunksCap;
     return {
         highZoom,
         maxChunks: Math.min(Math.max(0, rankedCount), maxChunksCap),
-        hardMaxChunks: Math.min(Math.max(0, rankedCount), hardMaxChunksCap),
+        hardMaxChunks: Math.min(Math.max(0, rankedCount), Math.max(0, hardMaxChunksCap)),
         sparseCandidateFloor: opts.sparseCandidateFloor ?? HIGH_ZOOM_SPARSE_CANDIDATE_FLOOR,
         useMassBudget: !highZoom
     };
 }
 
 /**
- * Progressive high-zoom chunk scan: after the soft budget, keep loading while
- * in-tile candidates remain sparse (common for long lines spanning many tiles).
+ * Progressive chunk scan stop condition.
+ *
+ * High zoom: keep loading until every ranked chunk is tried or the per-tile
+ * feature cap is full. Do NOT stop just because a few local features were
+ * found — that hid long multi-tile lines sitting later in the ranked list.
+ *
+ * Overview: soft chunk + feature-mass budgets (unchanged).
  *
  * @param {{
  *   highZoom?: boolean,
@@ -109,18 +116,18 @@ export function shouldContinueChunkScan(state = {}) {
     const maxChunks = state.maxChunks ?? MAX_CHUNKS_PER_TILE;
     const hardMaxChunks = state.hardMaxChunks ?? maxChunks;
     const maxFeatures = state.maxFeatures ?? MAX_TILE_FEATURES;
-    const sparseFloor = state.sparseCandidateFloor ?? HIGH_ZOOM_SPARSE_CANDIDATE_FLOOR;
 
     if (loadedCount >= rankedCount) return false;
-    if (candidateCount >= maxFeatures) return false;
     if (loadedCount >= hardMaxChunks) return false;
 
     if (state.highZoom) {
-        if (loadedCount < maxChunks) return true;
-        // Soft budget exhausted: only stop once we have enough real geometry.
-        return candidateCount < sparseFloor;
+        // Do not stop when candidateCount hits maxFeatures mid-scan — later
+        // ranked chunks often hold the multi-tile spanning lines. Truncate
+        // after the full scan with preferCrossingThenLocalFeatures.
+        return true;
     }
 
+    if (candidateCount >= maxFeatures) return false;
     if (loadedCount >= maxChunks) return false;
     if (state.useMassBudget
         && (state.estimatedFeatureMass || 0) >= (state.targetMass ?? maxFeatures * 2)
@@ -225,16 +232,60 @@ export function preferLocalFeatures(features, maxFeatures) {
 }
 
 /**
+ * True when a feature's envelope clearly spans across the tile (typical of
+ * long lines that cross multiple tiles).
+ * @param {object} feature
+ * @param {[number,number,number,number]} tileBbox
+ */
+export function featureCrossesTile(feature, tileBbox) {
+    const bbox = featureBBox(feature);
+    if (!bbox || !tileBbox) return false;
+    const [cw, cs, ce, cn] = bbox;
+    const [tw, ts, te, tn] = tileBbox;
+    const crossesEW = cw < tw && ce > te;
+    const crossesNS = cs < ts && cn > tn;
+    return crossesEW || crossesNS;
+}
+
+/**
+ * Close-zoom truncation: keep multi-tile-spanning lines first, then fill with
+ * compact local features. `preferLocalFeatures` alone demoted long lines and
+ * dropped them when the per-tile cap was hit.
+ *
+ * @param {object[]} features
+ * @param {[number,number,number,number]} tileBbox
+ * @param {number} maxFeatures
+ */
+export function preferCrossingThenLocalFeatures(features, tileBbox, maxFeatures) {
+    if (features.length <= maxFeatures) return features;
+    const crossing = [];
+    const local = [];
+    for (let i = 0; i < features.length; i++) {
+        const feature = features[i];
+        if (featureCrossesTile(feature, tileBbox)) crossing.push(feature);
+        else local.push(feature);
+    }
+    if (crossing.length >= maxFeatures) {
+        // Still too many spanning lines — keep a stable prefix.
+        return crossing.slice(0, maxFeatures);
+    }
+    const room = maxFeatures - crossing.length;
+    return crossing.concat(preferLocalFeatures(local, room));
+}
+
+/**
  * @param {Array<{ features: object[] }>} chunks parsed workspace chunks
  * @param {[number,number,number,number]} tileBbox padded tile bounds (lon/lat)
  * @param {number} z tile zoom
- * @param {{ maxFeatures?: number, minFeaturePixels?: number, preferLocal?: boolean }} [opts]
+ * @param {{ maxFeatures?: number, minFeaturePixels?: number, preferLocal?: boolean, preferCrossing?: boolean }} [opts]
  * @returns {{ features: object[], candidateCount: number, sampled: boolean }}
  */
 export function selectTileFeatures(chunks, tileBbox, z, opts = {}) {
     const maxFeatures = opts.maxFeatures ?? MAX_TILE_FEATURES;
     const minSpanDeg = degreesPerPixel(z) * (opts.minFeaturePixels ?? MIN_FEATURE_PIXELS);
-    const preferLocal = opts.preferLocal ?? z >= HIGH_ZOOM_CHUNK_SCAN_ZOOM;
+    const highZoom = z >= HIGH_ZOOM_CHUNK_SCAN_ZOOM;
+    const preferCrossing = opts.preferCrossing ?? highZoom;
+    const preferLocal = opts.preferLocal ?? (!preferCrossing && highZoom);
 
     const candidates = [];
     for (const chunk of chunks) {
@@ -246,6 +297,14 @@ export function selectTileFeatures(chunks, tileBbox, z, opts = {}) {
 
     if (candidates.length <= maxFeatures) {
         return { features: candidates, candidateCount: candidates.length, sampled: false };
+    }
+
+    if (preferCrossing) {
+        return {
+            features: preferCrossingThenLocalFeatures(candidates, tileBbox, maxFeatures),
+            candidateCount: candidates.length,
+            sampled: true
+        };
     }
 
     if (preferLocal) {
@@ -316,7 +375,9 @@ export default {
     shouldContinueChunkScan,
     selectChunksForTile,
     featureBelongsInTile,
+    featureCrossesTile,
     preferLocalFeatures,
+    preferCrossingThenLocalFeatures,
     selectTileFeatures,
     sampleChunksForTile
 };

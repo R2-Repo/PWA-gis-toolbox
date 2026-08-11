@@ -27,7 +27,7 @@ export const MIN_FEATURE_PIXELS = 0.75;
 export const TILE_SOURCE_LAYER = 'features';
 
 /** Parsed workspace chunks kept in the tile worker's LRU cache. */
-export const TILE_CHUNK_CACHE_SIZE = 128;
+export const TILE_CHUNK_CACHE_SIZE = 512;
 
 /** Max workspace chunks loaded for a single tile at overview zooms. */
 export const MAX_CHUNKS_PER_TILE = 64;
@@ -39,22 +39,24 @@ export const MAX_CHUNKS_PER_TILE = 64;
  */
 export const HIGH_ZOOM_CHUNK_SCAN_ZOOM = 12;
 
-/** Max chunks to load per tile at {@link HIGH_ZOOM_CHUNK_SCAN_ZOOM}+ (soft budget). */
+/**
+ * Soft overview-style budget at high zoom (used only when the tile is already
+ * dense with in-tile hits). Sparse / long-line tiles ignore this and scan all
+ * ranked chunks — a fixed hard cap still misses Build-11 long-line fan-out.
+ */
 export const MAX_CHUNKS_PER_TILE_HIGH_ZOOM = 512;
 
 /**
- * After the soft high-zoom chunk budget, keep scanning while in-tile candidates
- * stay below this floor — statewide long-line chunk bboxes often fill the soft
- * budget with zero-yield chunks before the real crossing lines are reached.
+ * @deprecated Kept for tests/compat. High-zoom sparse scans now exhaust ranked
+ * chunks instead of stopping at a hard ceiling.
  */
 export const HIGH_ZOOM_SPARSE_CANDIDATE_FLOOR = 64;
 
 /**
- * Absolute ceiling on chunks loaded per tile at close zoom (pathological
- * statewide index fan-out). Prefer exhausting ranked chunks when under the
- * sparse floor, but never unbounded.
+ * @deprecated High-zoom hard ceiling removed — use rankedCount. Kept so older
+ * tests/imports of the name still resolve.
  */
-export const MAX_CHUNKS_PER_TILE_HIGH_ZOOM_HARD = 4096;
+export const MAX_CHUNKS_PER_TILE_HIGH_ZOOM_HARD = Number.MAX_SAFE_INTEGER;
 
 /** geojson-vt simplification tolerance below high-detail zoom. */
 export const TILE_SIMPLIFY_TOLERANCE = 3;
