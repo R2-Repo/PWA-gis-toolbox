@@ -64,6 +64,20 @@ describe('import-admission (Phase 1 adaptive)', () => {
         expect(est.status).toBe('amber');
     });
 
+    it('allows import when feature estimate is unknown', () => {
+        expect(canAdmitStoredImport({ estimatedFeatures: null })).toBe(true);
+        expect(canAdmitStoredImport({})).toBe(true);
+
+        const est = estimateStoredImport({
+            sourceBytes: 50_000_000,
+            totalFeatures: null,
+            fieldNames: ['a'],
+            selectedFields: ['a']
+        });
+        expect(est.canImport).toBe(true);
+        expect(est.underFeatureLimit).toBe(true);
+    });
+
     it('blocks when estimated features exceed the stored soft ceiling', () => {
         expect(canAdmitStoredImport({
             estimatedFeatures: 1_200_000,

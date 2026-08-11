@@ -7,6 +7,18 @@ import {
 import { MATERIALIZE_FEATURE_LIMIT, STORED_FEATURE_LIMIT } from '../js/import/import-admission.js';
 
 describe('estimateStoredImport', () => {
+    it('allows import when feature count is unknown', () => {
+        const est = estimateStoredImport({
+            sourceBytes: 100_000_000,
+            totalFeatures: null,
+            fieldNames: ['a', 'b'],
+            selectedFields: ['a']
+        });
+        expect(est.canImport).toBe(true);
+        expect(est.underFeatureLimit).toBe(true);
+        expect(est.estimatedFeatures).toBeNull();
+    });
+
     it('blocks when over the stored soft ceiling with no cuts', () => {
         const est = estimateStoredImport({
             sourceBytes: 100_000_000,

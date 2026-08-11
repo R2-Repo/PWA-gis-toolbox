@@ -25,11 +25,6 @@ export function ImportFencePlaceControl({
                     </span>
                 ) : null}
             </div>
-            <p className="text-xs text-muted" style={{ margin: '0 0 8px' }}>
-                {hasActiveFence
-                    ? 'Only features inside the fence will be imported. Dialog hides while you redraw.'
-                    : 'Draw a map area to import only features inside it. The importer hides while you draw, then returns with your settings.'}
-            </p>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
                 <button
                     type="button"

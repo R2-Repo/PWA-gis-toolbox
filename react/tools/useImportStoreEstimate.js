@@ -188,25 +188,22 @@ export function useImportStoreEstimate({
         waitingOnRecount
     ]);
 
-    const readyToImport = estimate.canImport
-        && !waitingOnRecount
-        && estimateState !== 'error'
-        && estimateState !== 'unsupported';
+    // Only block when we *know* stored features exceed the soft ceiling.
+    // Unknown / failed estimates must not gatekeep — stream SAFETY still aborts.
+    const readyToImport = estimate.canImport && !waitingOnRecount;
 
     const blockReason = useMemo(() => describeImportBlockReason({
         readyToImport,
         waitingOnRecount,
         estimateState,
         estimatedFeatures: estimate.estimatedFeatures,
-        limitFeatures: estimate.limitFeatures ?? STORED_FEATURE_LIMIT,
-        estimateMessage
+        limitFeatures: estimate.limitFeatures ?? STORED_FEATURE_LIMIT
     }), [
         readyToImport,
         waitingOnRecount,
         estimateState,
         estimate.estimatedFeatures,
-        estimate.limitFeatures,
-        estimateMessage
+        estimate.limitFeatures
     ]);
 
     return {

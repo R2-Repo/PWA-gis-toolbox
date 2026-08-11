@@ -1,7 +1,6 @@
 import { useMemo } from 'react';
 import {
     IMPORT_FILTER_OPERATORS,
-    IMPORT_VALUE_SCAN_CAP,
     createEmptyFeatureFilter
 } from '../../js/import/import-feature-filter.js';
 
@@ -102,10 +101,6 @@ export function ImportFeatureFilterPanel({
     return (
         <div className="mb-8">
             <div className="text-xs mb-4"><strong>Feature filters</strong></div>
-            <p className="text-xs text-muted mb-8">
-                Drop features you do not need before they are stored. Combine with attribute
-                deselection above and an Import Fence for spatial extent.
-            </p>
 
             <div className="text-xs mb-4"><strong>Geometry types</strong></div>
             <div className="flex gap-8 mb-8" style={{ flexWrap: 'wrap' }}>
@@ -141,14 +136,10 @@ export function ImportFeatureFilterPanel({
 
             {scanning ? (
                 <div className="info-box text-xs mb-8">
-                    <div><strong>Reading attribute values from the file…</strong></div>
-                    <div className="text-muted" style={{ marginTop: 4 }}>
+                    <div>
                         {typeof scanProgress?.percent === 'number'
-                            ? `${scanProgress.percent}% — large files can take a few minutes.`
-                            : 'Working… large files can take a few minutes.'}
-                    </div>
-                    <div className="text-muted" style={{ marginTop: 4 }}>
-                        Wait for this to finish — then each filter field gets a dropdown of values found in the file.
+                            ? `Scanning values… ${scanProgress.percent}%`
+                            : 'Scanning values…'}
                     </div>
                     {onCancelScan ? (
                         <button
@@ -165,10 +156,7 @@ export function ImportFeatureFilterPanel({
 
             {scanFailed ? (
                 <div className="info-box text-xs mb-8">
-                    <div>{scanMessage || 'Could not build value lists from this file.'}</div>
-                    <div className="text-muted" style={{ marginTop: 4 }}>
-                        You can still type values manually, or retry the scan.
-                    </div>
+                    <div>{scanMessage || 'Could not build value lists.'}</div>
                     {onRetryScan ? (
                         <button
                             type="button"
@@ -180,26 +168,6 @@ export function ImportFeatureFilterPanel({
                         </button>
                     ) : null}
                 </div>
-            ) : null}
-
-            {scanReady ? (
-                <p className="text-xs text-muted mb-8">
-                    Choose a field, then pick values from the list (up to{' '}
-                    {IMPORT_VALUE_SCAN_CAP.toLocaleString()} distinct values per field).
-                    Use checkboxes to keep several values at once.
-                    {scanMessage ? (
-                        <>
-                            {' '}
-                            <span>{scanMessage}</span>
-                        </>
-                    ) : null}
-                </p>
-            ) : null}
-
-            {!scanning && scanState === 'idle' ? (
-                <p className="text-xs text-muted mb-8">
-                    Value lists appear after the file is scanned for distinct attribute values.
-                </p>
             ) : null}
 
             {rules.map((rule, index) => {
@@ -285,25 +253,8 @@ export function ImportFeatureFilterPanel({
                             </button>
                         </div>
 
-                        {listOps && !hasValues && scanReady ? (
-                            <div className="text-xs text-muted mb-4">
-                                No values found for “{rule.field}” in the scan (all null/empty, or field missing from sampled features).
-                                Type a value above if you know it.
-                            </div>
-                        ) : null}
-
-                        {catalog?.truncated ? (
-                            <div className="text-xs text-muted mb-4">
-                                Showing first {values.length.toLocaleString()} distinct values
-                                — type the exact value above if yours is not listed.
-                            </div>
-                        ) : null}
-
                         {showValuePicker ? (
                             <div>
-                                <div className="text-xs text-muted mb-4">
-                                    Or check multiple values to keep (uses “In” / “Not in”):
-                                </div>
                                 <div
                                     className="text-xs"
                                     style={{

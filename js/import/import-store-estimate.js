@@ -86,12 +86,12 @@ export function estimateStoredImport(input = {}) {
     const sizeFactor = (geometryWeight + attrWeight * fieldRatio) * featureRatio;
     const estimatedBytes = Math.round(sourceBytes * sizeFactor);
 
+    // Unknown count is not treated as over-limit — only a known excess blocks.
     const underFeatureLimit = estimatedFeatures == null
-        ? false
+        ? true
         : estimatedFeatures <= limitFeatures;
     const underSizeLimit = estimatedBytes <= IMPORT_LIMIT_BYTES;
-    const mustCut = needsFeatureCut(estimatedFeatures, limitFeatures)
-        || (estimatedFeatures == null && needsFeatureCut(totalFeatures, limitFeatures));
+    const mustCut = needsFeatureCut(estimatedFeatures, limitFeatures);
     const aboveMaterialize = exceedsMaterializeLimit(estimatedFeatures, materializeLimit);
 
     const waitingOnRecount = input.waitingOnRecount === true;

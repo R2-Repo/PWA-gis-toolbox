@@ -3,23 +3,17 @@ import { scanFilesForImport } from '../../js/import/import-scan.js';
 import { mergeScanFieldNames } from '../../js/import/import-field-filter.js';
 import { assessImportRouteFromScans } from '../../js/import/import-routing.js';
 import {
-    buildNoticeForRoute,
-    buildImportProgressReductionNotice,
-    shouldShowImportProgressNotice
-} from '../../js/import/import-size-notices.js';
-import {
     hasActiveFeatureFilter,
     validateFeatureFilter
 } from '../../js/import/import-feature-filter.js';
 import { ImportFieldSelector } from './ImportFieldSelector.jsx';
 import { ImportProgressPanel } from './ImportProgressPanel.jsx';
-import { ImportReductionNotice } from './ImportReductionNotice.jsx';
 import { ImportFeatureFilterPanel } from './ImportFeatureFilterPanel.jsx';
-import { ImportEstimateGauge } from './ImportEstimateGauge.jsx';
 import { STORED_FEATURE_LIMIT } from '../../js/import/import-admission.js';
 import { ImportFencePlaceControl } from './ImportFencePlaceControl.jsx';
 import { useFeatureFilterState, useImportValueScan } from './useImportValueScan.js';
 import { useImportStoreEstimate } from './useImportStoreEstimate.js';
+import { formatBytes } from '../../js/import/import-preflight.js';
 
 export function ImportOptimizerDialog({
     files = [],
@@ -48,11 +42,6 @@ export function ImportOptimizerDialog({
     const restoredFieldsRef = useRef(false);
 
     const fieldNames = useMemo(() => mergeScanFieldNames(scans), [scans]);
-    const reductionNotice = useMemo(() => {
-        if (!routeAssessment) return null;
-        return buildNoticeForRoute({ ...routeAssessment, scans });
-    }, [routeAssessment, scans]);
-    const showProgressNotice = shouldShowImportProgressNotice(routeAssessment);
 
     const valueScan = useImportValueScan({
         files,
@@ -179,7 +168,6 @@ export function ImportOptimizerDialog({
                     step={importProgress.step}
                     percent={importProgress.percent}
                     fileName={importProgress.fileName}
-                    notice={showProgressNotice ? buildImportProgressReductionNotice() : null}
                     onCancel={cancelImportRef.current ? () => cancelImportRef.current?.() : null}
                 />
             </div>
@@ -193,19 +181,14 @@ export function ImportOptimizerDialog({
             ) : null}
 
             {loading ? (
-                <>
-                    {reductionNotice ? <ImportReductionNotice {...reductionNotice} /> : null}
-                    <ImportProgressPanel step="Scanning files…" percent={0} />
-                </>
+                <ImportProgressPanel step="Scanning files…" percent={0} />
             ) : (
                 <>
-                    {reductionNotice ? <ImportReductionNotice {...reductionNotice} /> : null}
                     <ul className="text-xs text-muted mb-8" style={{ margin: 0, paddingLeft: 18 }}>
                         {scans.map((s) => (
                             <li key={s.fileName}>
-                                <strong>{s.fileName}</strong> ({s.sizeLabel})
-                                {s.featureEstimate != null ? ` · ~${s.featureEstimate.toLocaleString()} features est.` : ''}
-                                {s.fields?.length ? ` · ${s.fields.length} fields detected` : ''}
+                                <strong>{s.fileName}</strong>
+                                {s.sizeBytes != null ? ` (${formatBytes(s.sizeBytes)})` : (s.sizeLabel ? ` (${s.sizeLabel})` : '')}
                             </li>
                         ))}
                     </ul>
@@ -220,7 +203,7 @@ export function ImportOptimizerDialog({
                                     checked={importMode === 'preserve'}
                                     onChange={() => setImportMode('preserve')}
                                 />
-                                {' '}Preserve styling and embedded assets (default)
+                                {' '}Preserve styling
                             </label>
                             <label className="text-xs" style={{ display: 'block' }}>
                                 <input
@@ -229,7 +212,7 @@ export function ImportOptimizerDialog({
                                     checked={importMode === 'gis'}
                                     onChange={() => setImportMode('gis')}
                                 />
-                                {' '}Import as simplified GIS layer (strips styling, icons, long descriptions — reduces memory)
+                                {' '}Simplified GIS layer
                             </label>
                         </div>
                     ) : null}
@@ -240,9 +223,6 @@ export function ImportOptimizerDialog({
                             fields={fieldNames}
                             selected={selectedFields}
                             onChange={setSelectedFields}
-                            hint={reductionNotice
-                                ? 'Uncheck fields you do not need — only selected attributes are stored (part of the size reduction plan).'
-                                : 'Uncheck fields you do not need — deselected attributes are not stored.'}
                         />
                     </div>
 
@@ -268,17 +248,6 @@ export function ImportOptimizerDialog({
                             onClearFence={handleClearFence}
                         />
                     ) : null}
-
-                    <ImportEstimateGauge
-                        estimate={storeEstimate.estimate}
-                        estimateState={storeEstimate.estimateState}
-                        estimateProgress={storeEstimate.estimateProgress}
-                        estimateMessage={storeEstimate.estimateMessage}
-                        waitingOnRecount={storeEstimate.waitingOnRecount}
-                        readyToImport={storeEstimate.readyToImport}
-                        blockReason={storeEstimate.blockReason}
-                        sourceBytes={storeEstimate.estimate.sourceBytes || 0}
-                    />
                 </>
             )}
 
@@ -286,11 +255,7 @@ export function ImportOptimizerDialog({
                 <button className="btn btn-secondary" onClick={() => onCancel?.()} disabled={loading}>Cancel</button>
                 <button
                     className="btn btn-primary"
-                    disabled={
-                        loading
-                        || !storeEstimate.readyToImport
-                    }
-                    title={!storeEstimate.readyToImport ? (storeEstimate.blockReason || undefined) : undefined}
+                    disabled={loading || !storeEstimate.readyToImport}
                     onClick={() => void handleConfirm()}
                 >
                     Import

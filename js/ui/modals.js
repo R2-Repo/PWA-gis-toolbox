@@ -1,7 +1,6 @@
 /**
  * Modal + Bottom Sheet helpers
  */
-import { buildArcgisLargeLayerNotice } from '../import/import-size-notices.js';
 
 const _modalSubscribers = new Set();
 const _modalResolvers = new Map();
@@ -83,15 +82,10 @@ export function confirm(title, message, options = {}) {
  * @returns {Promise<{ proceed: boolean, update?: (percent: number, step?: string) => void, close?: () => void, onCancel?: (fn: () => void) => void }>}
  */
 export function confirmArcgisLargeImport(featureCount, progressTitle) {
-    const notice = buildArcgisLargeLayerNotice(featureCount);
-    const bulletsHtml = notice.bullets.map((b) => `<li>${b}</li>`).join('');
+    const countLabel = Number(featureCount).toLocaleString();
     const contentHtml = `
         <div class="arcgis-import-confirm-body">
-            <p><strong>${notice.heading}</strong></p>
-            <p>${notice.intro}</p>
-            ${notice.planIntro ? `<p>${notice.planIntro}</p>` : ''}
-            ${bulletsHtml ? `<ul style="margin:8px 0;padding-left:20px;line-height:1.45">${bulletsHtml}</ul>` : ''}
-            ${notice.footer ? `<p class="text-xs text-muted" style="margin-top:8px">${notice.footer}</p>` : ''}
+            <p class="text-xs text-muted" style="margin:0">Layer has ${countLabel} features.</p>
         </div>
         <div class="arcgis-import-progress-body" style="display:none;text-align:center;padding-top:8px">
             <div class="spinner" style="margin:0 auto 12px"></div>
@@ -116,7 +110,7 @@ export function confirmArcgisLargeImport(featureCount, progressTitle) {
             resolve(result);
         };
 
-        showModal('Large ArcGIS layer', contentHtml, {
+        showModal('Import ArcGIS layer', contentHtml, {
             footer,
             onMount: (overlay, close) => {
                 const confirmBody = overlay.querySelector('.arcgis-import-confirm-body');

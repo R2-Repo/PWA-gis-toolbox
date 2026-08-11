@@ -44,21 +44,21 @@ export function describeImportBlockReason({
     waitingOnRecount = false,
     estimateState = 'idle',
     estimatedFeatures = null,
-    limitFeatures = STORED_FEATURE_LIMIT,
-    estimateMessage = null
+    limitFeatures = STORED_FEATURE_LIMIT
 } = {}) {
     if (readyToImport) return null;
     if (waitingOnRecount || estimateState === 'scanning') {
         return 'Updating estimate…';
     }
-    if (estimateState === 'error' || estimateState === 'unsupported') {
-        return estimateMessage || 'Estimate unavailable — adjust filters or try again.';
-    }
     if (estimatedFeatures != null && Number.isFinite(estimatedFeatures) && estimatedFeatures > limitFeatures) {
         return `Still ~${estimatedFeatures.toLocaleString()} features — filter or fence until ≤ ${limitFeatures.toLocaleString()}.`;
     }
+    // Failed / unsupported estimates no longer block import.
+    if (estimateState === 'error' || estimateState === 'unsupported') {
+        return null;
+    }
     if (estimatedFeatures == null) {
-        return `Need a feature estimate under ${limitFeatures.toLocaleString()} before import.`;
+        return null;
     }
     return `Import unlocks at ≤ ${limitFeatures.toLocaleString()} stored features.`;
 }

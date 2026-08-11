@@ -4618,12 +4618,9 @@ export async function openArcGISImporter() {
 
                                 if (allFieldNames.length > 0) {
                                     dismissArcgisShell();
-                                    const { buildArcgisFieldPickerNotice } = await import('../import/import-size-notices.js');
                                     const { pickImportFieldsModal } = await import('../../react/tools/mountImportFieldPickerDialog.jsx');
                                     const picked = await pickImportFieldsModal({
                                         title: 'ArcGIS attributes',
-                                        subtitle: `${meta.name}${meta.totalCount != null ? ` · ${meta.totalCount.toLocaleString()} features` : ''}`,
-                                        planNotice: buildArcgisFieldPickerNotice(meta.totalCount),
                                         fields: allFieldNames,
                                         onImport: async (fields, ui) => {
                                             applyFieldSelection(fields);

@@ -90,6 +90,8 @@ export function isActiveFenceBbox(fenceBbox) {
 
 /**
  * Whether Gate B import may proceed given estimated stored feature count.
+ * Unknown / missing estimates do **not** block — only a known over-limit count does.
+ * Stream SAFETY (`STREAM_MAX_FEATURES`) still aborts during import if needed.
  * @param {{
  *   estimatedFeatures?: number|null,
  *   hasFieldReduction?: boolean,
@@ -102,6 +104,9 @@ export function isActiveFenceBbox(fenceBbox) {
  */
 export function canAdmitStoredImport(input = {}) {
     const limit = input.limitFeatures ?? STORED_FEATURE_LIMIT;
+    if (input.estimatedFeatures == null || !Number.isFinite(input.estimatedFeatures)) {
+        return true;
+    }
     return isUnderStoredFeatureLimit(input.estimatedFeatures, limit);
 }
 
