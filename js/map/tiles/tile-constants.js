@@ -39,8 +39,22 @@ export const MAX_CHUNKS_PER_TILE = 64;
  */
 export const HIGH_ZOOM_CHUNK_SCAN_ZOOM = 12;
 
-/** Max chunks to load per tile at {@link HIGH_ZOOM_CHUNK_SCAN_ZOOM}+. */
+/** Max chunks to load per tile at {@link HIGH_ZOOM_CHUNK_SCAN_ZOOM}+ (soft budget). */
 export const MAX_CHUNKS_PER_TILE_HIGH_ZOOM = 512;
+
+/**
+ * After the soft high-zoom chunk budget, keep scanning while in-tile candidates
+ * stay below this floor — statewide long-line chunk bboxes often fill the soft
+ * budget with zero-yield chunks before the real crossing lines are reached.
+ */
+export const HIGH_ZOOM_SPARSE_CANDIDATE_FLOOR = 64;
+
+/**
+ * Absolute ceiling on chunks loaded per tile at close zoom (pathological
+ * statewide index fan-out). Prefer exhausting ranked chunks when under the
+ * sparse floor, but never unbounded.
+ */
+export const MAX_CHUNKS_PER_TILE_HIGH_ZOOM_HARD = 4096;
 
 /** geojson-vt simplification tolerance below high-detail zoom. */
 export const TILE_SIMPLIFY_TOLERANCE = 3;
@@ -60,6 +74,8 @@ export default {
     MAX_CHUNKS_PER_TILE,
     HIGH_ZOOM_CHUNK_SCAN_ZOOM,
     MAX_CHUNKS_PER_TILE_HIGH_ZOOM,
+    HIGH_ZOOM_SPARSE_CANDIDATE_FLOOR,
+    MAX_CHUNKS_PER_TILE_HIGH_ZOOM_HARD,
     TILE_SIMPLIFY_TOLERANCE,
     HIGH_DETAIL_SIMPLIFY_ZOOM
 };

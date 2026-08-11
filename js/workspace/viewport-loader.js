@@ -8,7 +8,11 @@
  */
 import { queryWorkspaceChunks, loadWorkspaceChunks } from './workspace-store.js';
 import { RENDER_LIMITS } from '../map/render-limits.js';
-import { bboxIntersects, featureBBox } from '../map/tiles/tile-math.js';
+import { bboxIntersects, featureBBox, geometryIntersectsBBox } from '../map/tiles/tile-math.js';
+import { TILE_BUFFER, TILE_EXTENT } from '../map/tiles/tile-constants.js';
+
+/** Default view edge pad so lines that only clip the viewport still draw. */
+export const VIEWPORT_PAD_FRACTION = TILE_BUFFER / TILE_EXTENT;
 
 /**
  * @param {string} layerId
@@ -23,8 +27,9 @@ import { bboxIntersects, featureBBox } from '../map/tiles/tile-math.js';
 export async function buildViewportGeoJSON(layerId, bounds, options = {}) {
     const maxFeatures = options.maxFeatures ?? RENDER_LIMITS.maxFeaturesPerSource;
     const maxVertices = options.maxVertices ?? RENDER_LIMITS.maxVerticesPerViewport;
-    const queryBounds = options.padFraction
-        ? _padBounds(bounds, options.padFraction)
+    const padFraction = options.padFraction ?? VIEWPORT_PAD_FRACTION;
+    const queryBounds = padFraction > 0
+        ? _padBounds(bounds, padFraction)
         : bounds;
 
     const chunkIds = await queryWorkspaceChunks(queryBounds, layerId);
@@ -82,7 +87,11 @@ export function featureIntersectsViewport(feature, bounds) {
     if (!feature?.geometry) return false;
     const bbox = featureBBox(feature);
     if (!bbox) return false;
-    return bboxIntersects(bbox, bounds);
+    // Fast reject on envelope, then require real geometry∩view (parity with
+    // tiled featureBelongsInTile) so long lines whose bbox covers the view
+    // but miss it do not crowd the render cap.
+    if (!bboxIntersects(bbox, bounds)) return false;
+    return geometryIntersectsBBox(feature.geometry, bounds);
 }
 
 /**
@@ -110,4 +119,9 @@ function _padBounds(bounds, fraction) {
     return [w - dx, s - dy, e + dx, n + dy];
 }
 
-export default { buildViewportGeoJSON, featureIntersectsViewport, countGeometryVertices };
+export default {
+    buildViewportGeoJSON,
+    featureIntersectsViewport,
+    countGeometryVertices,
+    VIEWPORT_PAD_FRACTION
+};
