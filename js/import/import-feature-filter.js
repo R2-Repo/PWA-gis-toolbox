@@ -67,6 +67,20 @@ export function normalizeGeometryTypes(geometryTypes) {
 }
 
 /**
+ * Rule is ready to apply (not an empty draft row).
+ * @param {{ field?: string, operator?: string, value?: unknown }|null|undefined} rule
+ * @returns {boolean}
+ */
+export function isCompleteImportFilterRule(rule) {
+    if (!rule?.field || !rule?.operator) return false;
+    if (rule.operator === 'is_null' || rule.operator === 'is_not_null') return true;
+    const v = rule.value;
+    if (v == null || v === '') return false;
+    if (Array.isArray(v) && v.length === 0) return false;
+    return true;
+}
+
+/**
  * @param {object|null|undefined} featureFilter
  * @returns {boolean}
  */
@@ -75,7 +89,7 @@ export function hasActiveFeatureFilter(featureFilter) {
     const g = normalizeGeometryTypes(featureFilter.geometryTypes);
     const allGeom = g.point && g.line && g.polygon;
     const rules = Array.isArray(featureFilter.rules)
-        ? featureFilter.rules.filter((r) => r?.field && r?.operator)
+        ? featureFilter.rules.filter(isCompleteImportFilterRule)
         : [];
     return !allGeom || rules.length > 0;
 }
@@ -134,7 +148,7 @@ export function featureMatchesImportFilters(feature, featureFilter) {
     // Features with no geometry still pass geometry-type filter (counted separately).
 
     const rules = Array.isArray(featureFilter.rules)
-        ? featureFilter.rules.filter((r) => r?.field && r?.operator)
+        ? featureFilter.rules.filter(isCompleteImportFilterRule)
         : [];
     if (!rules.length) return true;
 
@@ -178,6 +192,10 @@ export function validateFeatureFilter(featureFilter) {
     }
     const rules = Array.isArray(featureFilter.rules) ? featureFilter.rules : [];
     for (const rule of rules) {
+        if (!isCompleteImportFilterRule(rule) && rule?.field && rule?.operator) {
+            // Incomplete draft row (empty value) — ignore, do not block import.
+            continue;
+        }
         if (!rule?.field || !rule?.operator) continue;
         if (rule.operator === 'is_null' || rule.operator === 'is_not_null') continue;
         const v = rule.value;

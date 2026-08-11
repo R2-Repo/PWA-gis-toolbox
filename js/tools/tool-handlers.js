@@ -1292,8 +1292,9 @@ function _pickProjectKitFile() {
 function _openImportFlowModal(flowProps = {}) {
     const rootId = `import-flow-react-${Date.now()}`;
     showModal('Import', `<div id="${rootId}"></div>`, {
-        width: '680px',
+        width: '920px',
         onMount: async (overlay, close) => {
+            overlay.querySelector('.modal')?.classList.add('modal--import');
             const root = overlay.querySelector(`#${rootId}`);
             if (!root) return;
             try {

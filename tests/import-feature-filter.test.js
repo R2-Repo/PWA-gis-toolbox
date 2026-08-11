@@ -88,18 +88,18 @@ describe('import-feature-filter', () => {
         expect(result.filtered).toBe(1);
     });
 
-    it('validateFeatureFilter blocks empty geometry types and empty rule values', () => {
+    it('validateFeatureFilter blocks empty geometry types; ignores empty draft rules', () => {
         expect(validateFeatureFilter({
             geometryTypes: { point: false, line: false, polygon: false }
         })).toMatch(/geometry type/i);
         expect(validateFeatureFilter({
             geometryTypes: { point: true, line: true, polygon: true },
             rules: [{ field: 'kind', operator: 'equals', value: '' }]
-        })).toMatch(/value/i);
+        })).toBe(null);
         expect(validateFeatureFilter(createEmptyFeatureFilter())).toBe(null);
     });
 
-    it('hasActiveFeatureFilter detects geom or rules', () => {
+    it('hasActiveFeatureFilter detects geom or complete rules', () => {
         expect(hasActiveFeatureFilter(createEmptyFeatureFilter())).toBe(false);
         expect(hasActiveFeatureFilter({
             geometryTypes: { point: true, line: false, polygon: true }
@@ -107,6 +107,10 @@ describe('import-feature-filter', () => {
         expect(hasActiveFeatureFilter({
             rules: [{ field: 'a', operator: 'equals', value: '1' }]
         })).toBe(true);
+        expect(hasActiveFeatureFilter({
+            geometryTypes: { point: true, line: true, polygon: true },
+            rules: [{ field: 'a', operator: 'equals', value: '' }]
+        })).toBe(false);
     });
 
     it('hasAllowedGeometryType and normalizeRuleValue helpers', () => {
