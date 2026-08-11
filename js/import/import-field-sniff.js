@@ -1,29 +1,230 @@
 /**
  * Sniff attribute / column names before full import.
+ *
+ * GeoJSON long-line files often put multi-MB geometries before properties.
+ * A fixed head byte sample (old 384KB) never reaches attribute keys — use a
+ * streaming feature pass for geojson/json instead.
  */
 import { detectFormat } from './importer.js';
 import { loadPapaParse } from '../core/libs.js';
 import { loadJSZip } from '../core/libs.js';
+import { GeoJSONFeatureStreamParser } from './stream/geojson-stream-parser.js';
 
-const SAMPLE_BYTES = 384 * 1024;
+/** Head sample for CSV / KML / GPX / zip entry heads. */
+export const SAMPLE_BYTES = 1024 * 1024;
+
+/** GeoJSON streaming field sniff — enough features to union sparse schemas. */
+export const GEOJSON_FIELD_SNIFF_MAX_FEATURES = 500;
+
+/** Safety stop so one pathological feature cannot hang the sniff forever. */
+export const GEOJSON_FIELD_SNIFF_MAX_BYTES = 64 * 1024 * 1024;
 
 /**
+ * Extract property keys from a properties object text with nested braces.
+ * @param {string} inner
+ * @returns {string[]}
+ */
+export function propertyKeysFromObjectText(inner) {
+    const keys = [];
+    if (!inner) return keys;
+    let i = 0;
+    const n = inner.length;
+    while (i < n) {
+        while (i < n && /\s|,/.test(inner[i])) i++;
+        if (i >= n) break;
+        if (inner[i] !== '"') {
+            // Skip unexpected token
+            i++;
+            continue;
+        }
+        i++;
+        let key = '';
+        while (i < n) {
+            if (inner[i] === '\\' && i + 1 < n) {
+                key += inner[i + 1];
+                i += 2;
+                continue;
+            }
+            if (inner[i] === '"') {
+                i++;
+                break;
+            }
+            key += inner[i++];
+        }
+        while (i < n && /\s/.test(inner[i])) i++;
+        if (inner[i] !== ':') continue;
+        i++;
+        while (i < n && /\s/.test(inner[i])) i++;
+        if (key) keys.push(key);
+        // Skip value (string / number / object / array / literal).
+        if (inner[i] === '"') {
+            i++;
+            while (i < n) {
+                if (inner[i] === '\\' && i + 1 < n) {
+                    i += 2;
+                    continue;
+                }
+                if (inner[i] === '"') {
+                    i++;
+                    break;
+                }
+                i++;
+            }
+        } else if (inner[i] === '{' || inner[i] === '[') {
+            const open = inner[i];
+            const close = open === '{' ? '}' : ']';
+            let depth = 0;
+            let inStr = false;
+            for (; i < n; i++) {
+                const ch = inner[i];
+                if (inStr) {
+                    if (ch === '\\' && i + 1 < n) {
+                        i++;
+                        continue;
+                    }
+                    if (ch === '"') inStr = false;
+                    continue;
+                }
+                if (ch === '"') {
+                    inStr = true;
+                    continue;
+                }
+                if (ch === open) depth++;
+                else if (ch === close) {
+                    depth--;
+                    if (depth === 0) {
+                        i++;
+                        break;
+                    }
+                }
+            }
+        } else {
+            while (i < n && inner[i] !== ',' && inner[i] !== '}') i++;
+        }
+    }
+    return keys;
+}
+
+/**
+ * Regex / brace-match fallback when streaming sniff is unavailable.
  * @param {string} text
  * @returns {string[]}
  */
 export function sniffPropertyKeysFromGeoJsonText(text) {
     const keys = new Set();
-    const propBlocks = text.matchAll(/"properties"\s*:\s*\{([^}]*)\}/g);
-    let count = 0;
-    for (const match of propBlocks) {
-        if (count++ > 50) break;
-        const inner = match[1] || '';
-        for (const km of inner.matchAll(/"([^"\\]+)"\s*:/g)) {
-            keys.add(km[1]);
+    let searchFrom = 0;
+    const marker = '"properties"';
+    let blocks = 0;
+    while (blocks < 200 && searchFrom < text.length && keys.size < 500) {
+        const idx = text.indexOf(marker, searchFrom);
+        if (idx < 0) break;
+        let i = idx + marker.length;
+        while (i < text.length && /\s/.test(text[i])) i++;
+        if (text[i] !== ':') {
+            searchFrom = idx + marker.length;
+            continue;
+        }
+        i++;
+        while (i < text.length && /\s/.test(text[i])) i++;
+        if (text[i] !== '{') {
+            searchFrom = idx + marker.length;
+            continue;
+        }
+        const start = i + 1;
+        let depth = 0;
+        let inStr = false;
+        for (; i < text.length; i++) {
+            const ch = text[i];
+            if (inStr) {
+                if (ch === '\\' && i + 1 < text.length) {
+                    i++;
+                    continue;
+                }
+                if (ch === '"') inStr = false;
+                continue;
+            }
+            if (ch === '"') {
+                inStr = true;
+                continue;
+            }
+            if (ch === '{') depth++;
+            else if (ch === '}') {
+                depth--;
+                if (depth === 0) {
+                    i++;
+                    break;
+                }
+            }
+        }
+        const inner = text.slice(start, i - 1);
+        for (const key of propertyKeysFromObjectText(inner)) {
+            keys.add(key);
             if (keys.size >= 500) break;
         }
+        blocks++;
+        searchFrom = i;
     }
     return [...keys].sort((a, b) => a.localeCompare(b));
+}
+
+/**
+ * Stream GeoJSON features and union property keys (ignores geometry size).
+ * @param {File} file
+ * @param {{ maxFeatures?: number, maxBytes?: number }} [opts]
+ * @returns {Promise<string[]>}
+ */
+export async function sniffGeoJsonFieldsStreaming(file, opts = {}) {
+    const maxFeatures = opts.maxFeatures ?? GEOJSON_FIELD_SNIFF_MAX_FEATURES;
+    const maxBytes = opts.maxBytes ?? GEOJSON_FIELD_SNIFF_MAX_BYTES;
+    const keys = new Set();
+    let featuresSeen = 0;
+    let bytesProcessed = 0;
+    let stop = false;
+
+    const parser = new GeoJSONFeatureStreamParser({
+        onFeature: (feature) => {
+            if (stop) return;
+            featuresSeen++;
+            const props = feature?.properties;
+            if (props && typeof props === 'object') {
+                for (const key of Object.keys(props)) {
+                    if (key) keys.add(key);
+                }
+            }
+            if (featuresSeen >= maxFeatures || keys.size >= 500) stop = true;
+        }
+    });
+
+    const reader = file.stream().getReader();
+    const decoder = new TextDecoder();
+    try {
+        while (!stop) {
+            const { done, value } = await reader.read();
+            if (done) {
+                try {
+                    parser.push(decoder.decode());
+                    parser.finish();
+                } catch { /* truncated / non-FC — keep keys found so far */ }
+                break;
+            }
+            bytesProcessed += value.byteLength;
+            parser.push(decoder.decode(value, { stream: true }));
+            if (bytesProcessed >= maxBytes) break;
+        }
+    } finally {
+        try {
+            await reader.cancel();
+        } catch { /* ignore */ }
+    }
+
+    if (keys.size) return [...keys].sort((a, b) => a.localeCompare(b));
+    // Fallback: head text brace-match if stream found nothing (odd payloads).
+    try {
+        const head = await file.slice(0, Math.min(file.size, SAMPLE_BYTES)).text();
+        return sniffPropertyKeysFromGeoJsonText(head);
+    } catch {
+        return [];
+    }
 }
 
 /**
@@ -141,7 +342,20 @@ export async function sniffFieldsFromFile(file) {
         return [];
     }
 
-    if (['geojson', 'json', 'csv', 'tsv', 'txt', 'kml', 'gpx', 'xml'].includes(format)) {
+    if (format === 'geojson' || format === 'json') {
+        try {
+            return await sniffGeoJsonFieldsStreaming(file);
+        } catch {
+            try {
+                const head = await file.slice(0, Math.min(file.size, SAMPLE_BYTES)).text();
+                return sniffPropertyKeysFromGeoJsonText(head);
+            } catch {
+                return [];
+            }
+        }
+    }
+
+    if (['csv', 'tsv', 'txt', 'kml', 'gpx', 'xml'].includes(format)) {
         let head;
         try {
             head = await file.slice(0, Math.min(file.size, SAMPLE_BYTES)).text();
@@ -158,23 +372,6 @@ export async function sniffFieldsFromFile(file) {
         }
         if (format === 'gpx') {
             return sniffGpxFieldNames(head);
-        }
-        if (format === 'geojson' || format === 'json') {
-            try {
-                const data = JSON.parse(head);
-                if (data.type === 'FeatureCollection' && data.features?.[0]?.properties) {
-                    return Object.keys(data.features[0].properties).sort();
-                }
-                if (data.type === 'Feature' && data.properties) {
-                    return Object.keys(data.properties).sort();
-                }
-                if (Array.isArray(data) && data[0] && typeof data[0] === 'object') {
-                    return Object.keys(data[0]).sort();
-                }
-            } catch {
-                /* truncated JSON */
-            }
-            return sniffPropertyKeysFromGeoJsonText(head);
         }
     }
 
@@ -202,8 +399,13 @@ export async function sniffFieldsFromFile(file) {
 
 export default {
     sniffFieldsFromFile,
+    sniffGeoJsonFieldsStreaming,
     sniffPropertyKeysFromGeoJsonText,
+    propertyKeysFromObjectText,
     sniffKmlFieldNames,
     sniffGpxFieldNames,
-    sniffCsvFieldNames
+    sniffCsvFieldNames,
+    SAMPLE_BYTES,
+    GEOJSON_FIELD_SNIFF_MAX_FEATURES,
+    GEOJSON_FIELD_SNIFF_MAX_BYTES
 };

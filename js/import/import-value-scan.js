@@ -185,7 +185,7 @@ export function scanImportFieldValues(file, options = {}) {
                         supported: true,
                         sampled: msg.sampled === true,
                         message: msg.sampled
-                            ? `Sampled the first ${(msg.rowCount || 0).toLocaleString()} features for filter suggestions.`
+                            ? `Sampled ${ (msg.rowCount || 0).toLocaleString() } features for filter suggestions — uncommon values deeper in the file may be missing. You can still type values manually.`
                             : undefined
                     };
                     if (!cancelled) setImportScanCache(cacheKey, result);

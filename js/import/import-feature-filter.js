@@ -3,10 +3,12 @@
  * Shared by stream worker and standard post-import path.
  */
 import { evaluateRule, FILTER_OPERATORS } from '../dataprep/transforms.js';
+import { VALUE_SCAN_VALUE_CAP } from './import-scan-cache.js';
 
 /** @typedef {'Point'|'MultiPoint'|'LineString'|'MultiLineString'|'Polygon'|'MultiPolygon'} GeomType */
 
-export const IMPORT_VALUE_SCAN_CAP = 2000;
+/** Distinct values kept per field in the filter UI scan. */
+export const IMPORT_VALUE_SCAN_CAP = VALUE_SCAN_VALUE_CAP;
 
 export const DEFAULT_GEOMETRY_TYPES = Object.freeze({
     point: true,

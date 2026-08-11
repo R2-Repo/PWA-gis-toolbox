@@ -7,13 +7,21 @@
  */
 
 /** Distinct values kept per field in the filter UI scan. */
-export const VALUE_SCAN_VALUE_CAP = 2000;
+export const VALUE_SCAN_VALUE_CAP = 5_000;
 
-/** Stop value sampling after this many features/rows. */
-export const VALUE_SCAN_MAX_FEATURES = 10_000;
+/**
+ * Stop value sampling after this many features/rows.
+ * Raised for dense attribute catalogs; geometry-heavy files still need a high
+ * byte budget because long LineStrings are multi-MB each.
+ */
+export const VALUE_SCAN_MAX_FEATURES = 50_000;
 
-/** Stop value sampling after this many decoded/read bytes. */
-export const VALUE_SCAN_MAX_BYTES = 16 * 1024 * 1024;
+/**
+ * Stop value sampling after this many decoded/read bytes.
+ * Long-line GeoJSON burns through 16MB in only a handful of features — keep
+ * the budget high enough to reach attribute diversity.
+ */
+export const VALUE_SCAN_MAX_BYTES = 256 * 1024 * 1024;
 
 const DEFAULT_CACHE_LIMIT = 32;
 
