@@ -200,6 +200,20 @@ export function streamImportFile(file, options = {}) {
             const resumed = resumeClasses.find((entry) => entry.clsKey === clsKey);
             const layerId = resumed?.layerId || _generateId();
             const initialIndex = Math.max(0, Number(resumed?.featureCount) || 0);
+            let initialChunkSerial = initialIndex;
+            if (resumed?.layerId) {
+                try {
+                    const existing = await getWorkspaceLayer(resumed.layerId);
+                    const prefix = `${resumed.layerId}:c:`;
+                    let maxSerial = -1;
+                    for (const id of existing?.chunkIds || []) {
+                        if (!String(id).startsWith(prefix)) continue;
+                        const n = Number(String(id).slice(prefix.length));
+                        if (Number.isFinite(n) && n > maxSerial) maxSerial = n;
+                    }
+                    if (maxSerial >= 0) initialChunkSerial = maxSerial + 1;
+                } catch { /* fresh serial from feature count */ }
+            }
             cls = {
                 layerId,
                 count: initialIndex,
@@ -209,12 +223,13 @@ export function streamImportFile(file, options = {}) {
             cls.writer = createSpatialChunkWriter({
                 chunkSize: WORKSPACE_CHUNK_SIZE,
                 initialIndex,
+                initialChunkSerial,
                 onFlush: async (batch, startIndex) => {
                     if (cancelled) {
                         throw Object.assign(new Error('Import cancelled'), { cancelled: true });
                     }
                     await appendWorkspaceBatch(layerId, batch, startIndex);
-                    cls.count = startIndex + batch.length;
+                    cls.count = cls.writer.writtenCount;
                 }
             });
             classes.set(clsKey, cls);

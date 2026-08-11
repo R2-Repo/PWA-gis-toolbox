@@ -224,27 +224,59 @@ describe('selectChunksForTile (overlap ranking)', () => {
         expect(high.useMassBudget).toBe(false);
         expect(high.maxChunks).toBe(400);
         expect(high.hardMaxChunks).toBe(400);
+        expect(high.localOverlapFloor).toBeGreaterThan(0);
+        expect(high.lowOverlapBudget).toBe(256);
 
-        const capped = chunkLoadBudgetForZoom(16, 2000);
+        const capped = chunkLoadBudgetForZoom(16, 8000);
         expect(capped.maxChunks).toBe(512);
-        expect(capped.hardMaxChunks).toBe(2000);
+        expect(capped.hardMaxChunks).toBe(2048);
         expect(capped.sparseCandidateFloor).toBe(64);
     });
 
-    it('at close zoom keeps scanning all ranked chunks until the feature cap', () => {
-        // Soft budget exhausted with some local hits — still continue (v1 stopped
-        // here and missed later long lines).
+    it('at close zoom finishes local chunks then caps low-overlap fan-out', () => {
+        // Still on high-overlap (local) chunk — always continue.
         expect(shouldContinueChunkScan({
             highZoom: true,
-            loadedCount: 512,
+            loadedCount: 10,
             rankedCount: 8000,
             candidateCount: 80,
             maxChunks: 512,
-            hardMaxChunks: 8000,
-            sparseCandidateFloor: 64
+            hardMaxChunks: 2048,
+            nextChunkScore: 0.5,
+            localOverlapFloor: 0.02,
+            lowOverlapLoaded: 0,
+            lowOverlapBudget: 256
         })).toBe(true);
 
-        // Only stop when every ranked chunk was tried.
+        // Low-overlap remaining under budget — continue (crossing lines).
+        expect(shouldContinueChunkScan({
+            highZoom: true,
+            loadedCount: 100,
+            rankedCount: 8000,
+            candidateCount: 80,
+            maxChunks: 512,
+            hardMaxChunks: 2048,
+            nextChunkScore: 0.001,
+            localOverlapFloor: 0.02,
+            lowOverlapLoaded: 100,
+            lowOverlapBudget: 256
+        })).toBe(true);
+
+        // Low-overlap budget exhausted — stop (do not scan thousands of statewide chunks).
+        expect(shouldContinueChunkScan({
+            highZoom: true,
+            loadedCount: 400,
+            rankedCount: 8000,
+            candidateCount: 80,
+            maxChunks: 512,
+            hardMaxChunks: 2048,
+            nextChunkScore: 0.001,
+            localOverlapFloor: 0.02,
+            lowOverlapLoaded: 256,
+            lowOverlapBudget: 256
+        })).toBe(false);
+
+        // Ranked list exhausted.
         expect(shouldContinueChunkScan({
             highZoom: true,
             loadedCount: 8000,
@@ -253,17 +285,25 @@ describe('selectChunksForTile (overlap ranking)', () => {
             maxChunks: 512,
             hardMaxChunks: 8000
         })).toBe(false);
+    });
 
-        // Or when the ranked list is exhausted (feature-cap does not stop the scan).
-        expect(shouldContinueChunkScan({
-            highZoom: true,
-            loadedCount: 100,
-            rankedCount: 8000,
-            candidateCount: 20_000,
-            maxChunks: 512,
-            hardMaxChunks: 8000,
-            maxFeatures: 20_000
-        })).toBe(true);
+    it('dedupes multi-cell copies of the same _featureIndex', () => {
+        const tileBbox = [-111.1, 40.0, -111.0, 40.1];
+        const line = {
+            type: 'Feature',
+            properties: { id: 'road', _featureIndex: 42 },
+            geometry: {
+                type: 'LineString',
+                coordinates: [[-111.08, 40.05], [-111.02, 40.05]]
+            }
+        };
+        const { features, candidateCount } = selectTileFeatures(
+            [{ features: [line] }, { features: [{ ...line }] }],
+            tileBbox,
+            14
+        );
+        expect(candidateCount).toBe(1);
+        expect(features).toHaveLength(1);
     });
 
     it('keeps multi-tile spanning lines when truncating an oversized tile', () => {

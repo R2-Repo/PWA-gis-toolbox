@@ -40,23 +40,35 @@ export const MAX_CHUNKS_PER_TILE = 64;
 export const HIGH_ZOOM_CHUNK_SCAN_ZOOM = 12;
 
 /**
- * Soft overview-style budget at high zoom (used only when the tile is already
- * dense with in-tile hits). Sparse / long-line tiles ignore this and scan all
- * ranked chunks — a fixed hard cap still misses Build-11 long-line fan-out.
+ * Soft overview-style budget at high zoom for low-overlap (statewide) chunks
+ * after all high-overlap local chunks are loaded.
  */
 export const MAX_CHUNKS_PER_TILE_HIGH_ZOOM = 512;
 
 /**
- * @deprecated Kept for tests/compat. High-zoom sparse scans now exhaust ranked
- * chunks instead of stopping at a hard ceiling.
+ * Chunk overlap ratio at/above this counts as "local" for close-zoom scans.
+ * Statewide long-line envelopes score near 0; street chunks score near 1.
+ */
+export const HIGH_ZOOM_LOCAL_OVERLAP_FLOOR = 0.02;
+
+/**
+ * After local chunks are exhausted, load at most this many additional
+ * low-overlap chunks (crossing long lines). Prevents hanging on thousands
+ * of statewide bboxes from first-vertex-era imports.
+ */
+export const HIGH_ZOOM_LOW_OVERLAP_CHUNK_BUDGET = 256;
+
+/**
+ * @deprecated Kept for tests/compat. High-zoom sparse scans use local floor +
+ * low-overlap budget instead of a candidate floor.
  */
 export const HIGH_ZOOM_SPARSE_CANDIDATE_FLOOR = 64;
 
 /**
- * @deprecated High-zoom hard ceiling removed — use rankedCount. Kept so older
- * tests/imports of the name still resolve.
+ * Hard ceiling for high-zoom chunk loads (local + low-overlap budget).
+ * Prefer rankedCount when smaller.
  */
-export const MAX_CHUNKS_PER_TILE_HIGH_ZOOM_HARD = Number.MAX_SAFE_INTEGER;
+export const MAX_CHUNKS_PER_TILE_HIGH_ZOOM_HARD = 2048;
 
 /** geojson-vt simplification tolerance below high-detail zoom. */
 export const TILE_SIMPLIFY_TOLERANCE = 3;
@@ -76,6 +88,8 @@ export default {
     MAX_CHUNKS_PER_TILE,
     HIGH_ZOOM_CHUNK_SCAN_ZOOM,
     MAX_CHUNKS_PER_TILE_HIGH_ZOOM,
+    HIGH_ZOOM_LOCAL_OVERLAP_FLOOR,
+    HIGH_ZOOM_LOW_OVERLAP_CHUNK_BUDGET,
     HIGH_ZOOM_SPARSE_CANDIDATE_FLOOR,
     MAX_CHUNKS_PER_TILE_HIGH_ZOOM_HARD,
     TILE_SIMPLIFY_TOLERANCE,

@@ -267,8 +267,14 @@ export async function appendWorkspaceBatch(
     const bbox = bboxFromFeatures(features);
 
     const attrRecords = [];
+    let maxFeatureIndex = -1;
     const mapFeatures = features.map((f, i) => {
-        const globalIndex = startIndex + i;
+        const globalIndex = Number.isFinite(f?.__featureIndex)
+            ? f.__featureIndex
+            : (Number.isFinite(f?.properties?._featureIndex)
+                ? f.properties._featureIndex
+                : startIndex + i);
+        maxFeatureIndex = Math.max(maxFeatureIndex, globalIndex);
         const lgid = ensureFeatureLgid(f);
         const fid = _featureId(layerId, globalIndex);
         attrRecords.push({
@@ -324,13 +330,16 @@ export async function appendWorkspaceBatch(
                 layerStore.put({
                     id: layerId,
                     chunkIds: [chunkId],
-                    featureCount: features.length
+                    // Unique logical features — max index + 1 (multi-cell copies share indices)
+                    featureCount: Math.max(features.length, maxFeatureIndex + 1)
                 });
                 return;
             }
             layer.chunkIds = layer.chunkIds || [];
-            layer.chunkIds.push(chunkId);
-            layer.featureCount = (layer.featureCount || 0) + features.length;
+            if (!layer.chunkIds.includes(chunkId)) layer.chunkIds.push(chunkId);
+            // Multi-cell copies re-put the same indices — never inflate by batch length.
+            const prevCount = layer.featureCount || 0;
+            layer.featureCount = Math.max(prevCount, maxFeatureIndex + 1);
             layerStore.put(layer);
         };
         layerReq.onerror = () => reject(layerReq.error);
@@ -490,6 +499,7 @@ export async function iterateWorkspaceFeatures(layerId, offset = 0, limit = 1000
     if (!layer?.chunkIds?.length) return [];
 
     const features = [];
+    const seenIndices = new Set();
     let skipped = 0;
     for (const chunkId of layer.chunkIds) {
         if (features.length >= limit) break;
@@ -499,20 +509,35 @@ export async function iterateWorkspaceFeatures(layerId, offset = 0, limit = 1000
         const chunkFeatures = fc.features || [];
         if (!chunkFeatures.length) continue;
 
-        const startIndex = chunk.startIndex ?? chunkFeatures[0]?.properties?._featureIndex ?? 0;
-        const attrByIndex = await _loadAttributeRecordsRange(layerId, startIndex, chunkFeatures.length);
+        const indexList = chunkFeatures.map((f, i) => (
+            Number.isFinite(f?.properties?._featureIndex)
+                ? f.properties._featureIndex
+                : (chunk.startIndex ?? 0) + i
+        ));
+        const minIdx = Math.min(...indexList);
+        const maxIdx = Math.max(...indexList);
+        const attrByIndex = await _loadAttributeRecordsRange(
+            layerId,
+            minIdx,
+            Math.max(1, maxIdx - minIdx + 1)
+        );
         let coldByLgid = null;
         if (options.includeCold) {
             const lgids = [...attrByIndex.values()].map((r) => r.lgid).filter(Boolean);
             coldByLgid = await _loadColdPropertiesByLgids(layerId, lgids);
         }
 
-        for (const f of chunkFeatures) {
+        for (let fi = 0; fi < chunkFeatures.length; fi++) {
+            const f = chunkFeatures[fi];
+            const idx = indexList[fi];
+            // Multi-cell copies share _featureIndex — export/iterate once.
+            if (seenIndices.has(idx)) continue;
+            seenIndices.add(idx);
+
             if (skipped < offset) {
                 skipped++;
                 continue;
             }
-            const idx = f.properties?._featureIndex ?? (startIndex + features.length);
             const rec = attrByIndex.get(idx);
             let props = rec?.properties ? { ...rec.properties } : {};
             const lgid = rec?.lgid || f.properties?.[LGID_PROP];
@@ -1069,13 +1094,6 @@ export async function getWorkspaceFeaturesByIndices(layerId, indices = [], optio
         if (found.size >= wanted.length) break;
         const chunk = await _idbGet(STORE_CHUNKS, chunkId);
         if (!chunk?.geojson) continue;
-        const startIndex = chunk.startIndex ?? 0;
-        const featureCount = chunk.featureCount ?? 0;
-        if (featureCount > 0) {
-            const endIndex = startIndex + featureCount - 1;
-            const touches = wanted.some((idx) => idx >= startIndex && idx <= endIndex);
-            if (!touches) continue;
-        }
 
         let fc;
         try {
@@ -1086,13 +1104,19 @@ export async function getWorkspaceFeaturesByIndices(layerId, indices = [], optio
         const chunkFeatures = fc?.features || [];
         if (!chunkFeatures.length) continue;
 
-        const resolvedStart = chunk.startIndex
-            ?? chunkFeatures[0]?.properties?._featureIndex
-            ?? startIndex;
+        const indexList = chunkFeatures.map((f, i) => (
+            Number.isFinite(f?.properties?._featureIndex)
+                ? Number(f.properties._featureIndex)
+                : (chunk.startIndex ?? 0) + i
+        ));
+        if (!indexList.some((idx) => wantedSet.has(idx))) continue;
+
+        const minIdx = Math.min(...indexList);
+        const maxIdx = Math.max(...indexList);
         const attrByIndex = await _loadAttributeRecordsRange(
             layerId,
-            resolvedStart,
-            chunkFeatures.length
+            minIdx,
+            Math.max(1, maxIdx - minIdx + 1)
         );
         let coldByLgid = null;
         if (includeCold) {
@@ -1102,7 +1126,7 @@ export async function getWorkspaceFeaturesByIndices(layerId, indices = [], optio
 
         for (let i = 0; i < chunkFeatures.length; i++) {
             const f = chunkFeatures[i];
-            const idx = Number(f.properties?._featureIndex ?? (resolvedStart + i));
+            const idx = Number(indexList[i]);
             if (!wantedSet.has(idx) || found.has(idx)) continue;
             const rec = attrByIndex.get(idx);
             let props = rec?.properties ? { ...rec.properties } : {};

@@ -119,14 +119,17 @@ async function buildTile(layerId, z, x, y) {
     const ranked = rankChunksByOverlap(chunkRecords, tileBbox);
     if (!ranked.length) return null;
 
-    const { highZoom, maxChunks, hardMaxChunks, sparseCandidateFloor, useMassBudget } =
+    const { highZoom, maxChunks, hardMaxChunks, sparseCandidateFloor, useMassBudget,
+        localOverlapFloor, lowOverlapBudget } =
         chunkLoadBudgetForZoom(z, ranked.length);
     const targetMass = MAX_TILE_FEATURES * 2;
     const loaded = [];
     let estimate = 0;
     const candidates = [];
+    let lowOverlapLoaded = 0;
 
-    for (const rec of ranked) {
+    for (let ri = 0; ri < ranked.length; ri++) {
+        const rec = ranked[ri];
         if (!shouldContinueChunkScan({
             highZoom,
             loadedCount: loaded.length,
@@ -138,7 +141,11 @@ async function buildTile(layerId, z, x, y) {
             sparseCandidateFloor,
             useMassBudget,
             estimatedFeatureMass: estimate,
-            targetMass
+            targetMass,
+            nextChunkScore: rec.score,
+            localOverlapFloor,
+            lowOverlapLoaded,
+            lowOverlapBudget
         })) {
             break;
         }
@@ -148,6 +155,7 @@ async function buildTile(layerId, z, x, y) {
         estimate += rec.featureCount || features.length;
 
         if (highZoom) {
+            if (rec.score < localOverlapFloor) lowOverlapLoaded += 1;
             for (let i = 0; i < features.length; i++) {
                 const feature = features[i];
                 if (!featureBelongsInTile(feature, tileBbox, z)) continue;

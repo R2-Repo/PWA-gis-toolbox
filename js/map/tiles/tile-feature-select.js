@@ -16,7 +16,9 @@ import {
     HIGH_ZOOM_CHUNK_SCAN_ZOOM,
     MAX_CHUNKS_PER_TILE_HIGH_ZOOM,
     HIGH_ZOOM_SPARSE_CANDIDATE_FLOOR,
-    MAX_CHUNKS_PER_TILE_HIGH_ZOOM_HARD
+    MAX_CHUNKS_PER_TILE_HIGH_ZOOM_HARD,
+    HIGH_ZOOM_LOCAL_OVERLAP_FLOOR,
+    HIGH_ZOOM_LOW_OVERLAP_CHUNK_BUDGET
 } from './tile-constants.js';
 
 const POINTY = new Set(['Point', 'MultiPoint']);
@@ -58,12 +60,19 @@ export function rankChunksByOverlap(chunkRecords, tileBbox) {
 }
 
 /**
- * Chunk-load budget for a tile zoom. High zooms scan far more chunks and skip
- * feature-mass early-stop (mass is a bad proxy when every chunk bbox is huge).
+ * Chunk-load budget for a tile zoom. High zooms load all high-overlap (local)
+ * chunks, then a capped number of low-overlap chunks for crossing long lines.
  *
  * @param {number} z
  * @param {number} rankedCount
- * @param {{ maxChunks?: number, maxChunksHighZoom?: number, highZoomScanZoom?: number }} [opts]
+ * @param {{
+ *   maxChunks?: number,
+ *   maxChunksHighZoom?: number,
+ *   highZoomScanZoom?: number,
+ *   localOverlapFloor?: number,
+ *   lowOverlapBudget?: number,
+ *   maxChunksHighZoomHard?: number
+ * }} [opts]
  */
 export function chunkLoadBudgetForZoom(z, rankedCount, opts = {}) {
     const highZoomScanZoom = opts.highZoomScanZoom ?? HIGH_ZOOM_CHUNK_SCAN_ZOOM;
@@ -71,16 +80,16 @@ export function chunkLoadBudgetForZoom(z, rankedCount, opts = {}) {
     const maxChunksCap = highZoom
         ? (opts.maxChunksHighZoom ?? MAX_CHUNKS_PER_TILE_HIGH_ZOOM)
         : (opts.maxChunks ?? MAX_CHUNKS_PER_TILE);
-    // Close zoom: always allow exhausting the ranked list. A fixed hard cap
-    // (even 4k) still misses Build-11 long-line layers with huge bbox fan-out.
-    const hardMaxChunksCap = highZoom
-        ? (opts.maxChunksHighZoomHard ?? rankedCount)
+    const hardCap = highZoom
+        ? (opts.maxChunksHighZoomHard ?? MAX_CHUNKS_PER_TILE_HIGH_ZOOM_HARD)
         : maxChunksCap;
     return {
         highZoom,
         maxChunks: Math.min(Math.max(0, rankedCount), maxChunksCap),
-        hardMaxChunks: Math.min(Math.max(0, rankedCount), Math.max(0, hardMaxChunksCap)),
+        hardMaxChunks: Math.min(Math.max(0, rankedCount), Math.max(0, hardCap)),
         sparseCandidateFloor: opts.sparseCandidateFloor ?? HIGH_ZOOM_SPARSE_CANDIDATE_FLOOR,
+        localOverlapFloor: opts.localOverlapFloor ?? HIGH_ZOOM_LOCAL_OVERLAP_FLOOR,
+        lowOverlapBudget: opts.lowOverlapBudget ?? HIGH_ZOOM_LOW_OVERLAP_CHUNK_BUDGET,
         useMassBudget: !highZoom
     };
 }
@@ -88,9 +97,9 @@ export function chunkLoadBudgetForZoom(z, rankedCount, opts = {}) {
 /**
  * Progressive chunk scan stop condition.
  *
- * High zoom: keep loading until every ranked chunk is tried or the per-tile
- * feature cap is full. Do NOT stop just because a few local features were
- * found — that hid long multi-tile lines sitting later in the ranked list.
+ * High zoom: always finish high-overlap (local) chunks, then continue through
+ * low-overlap chunks only up to lowOverlapBudget / hardMaxChunks. Do not scan
+ * thousands of statewide fan-out chunks forever.
  *
  * Overview: soft chunk + feature-mass budgets (unchanged).
  *
@@ -105,7 +114,11 @@ export function chunkLoadBudgetForZoom(z, rankedCount, opts = {}) {
  *   sparseCandidateFloor?: number,
  *   useMassBudget?: boolean,
  *   estimatedFeatureMass?: number,
- *   targetMass?: number
+ *   targetMass?: number,
+ *   nextChunkScore?: number,
+ *   localOverlapFloor?: number,
+ *   lowOverlapLoaded?: number,
+ *   lowOverlapBudget?: number
  * }} state
  * @returns {boolean}
  */
@@ -121,9 +134,14 @@ export function shouldContinueChunkScan(state = {}) {
     if (loadedCount >= hardMaxChunks) return false;
 
     if (state.highZoom) {
-        // Do not stop when candidateCount hits maxFeatures mid-scan — later
-        // ranked chunks often hold the multi-tile spanning lines. Truncate
-        // after the full scan with preferCrossingThenLocalFeatures.
+        const floor = state.localOverlapFloor ?? HIGH_ZOOM_LOCAL_OVERLAP_FLOOR;
+        const nextScore = state.nextChunkScore;
+        const stillLocal = nextScore == null || nextScore >= floor;
+        if (stillLocal) return true;
+
+        const lowLoaded = state.lowOverlapLoaded || 0;
+        const lowBudget = state.lowOverlapBudget ?? HIGH_ZOOM_LOW_OVERLAP_CHUNK_BUDGET;
+        if (lowLoaded >= lowBudget) return false;
         return true;
     }
 
@@ -288,9 +306,17 @@ export function selectTileFeatures(chunks, tileBbox, z, opts = {}) {
     const preferLocal = opts.preferLocal ?? (!preferCrossing && highZoom);
 
     const candidates = [];
+    const seen = new Set();
     for (const chunk of chunks) {
         for (const feature of chunk.features || []) {
             if (!featureBelongsInTile(feature, tileBbox, z, minSpanDeg)) continue;
+            // Multi-cell imports store the same logical feature in several
+            // chunks — keep one copy per tile.
+            const key = feature.properties?._featureIndex ?? feature.id ?? feature.__featureIndex;
+            if (key != null) {
+                if (seen.has(key)) continue;
+                seen.add(key);
+            }
             candidates.push(feature);
         }
     }

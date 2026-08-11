@@ -228,6 +228,13 @@ MapLibre requests gis-tiles://<layerId>/{z}/{x}/{y}.pbf
 - Known limits: selection highlight overlays are not drawn for tiled layers
   (popups and identify work); overview tiles above the per-tile cap show an
   evenly-sampled subset by design.
+- **Close-zoom long lines:** stream import places each line into every 1°
+  spatial cell it crosses (not only the first-vertex cell), so chunk bboxes
+  stay local and high-zoom tiles do not fan out across statewide envelopes.
+  High-zoom tile scans still load local (high-overlap) chunks fully, then a
+  capped number of low-overlap chunks for crossing lines.
+  **Re-import required** for layers imported before this change — existing
+  IndexedDB chunks keep first-vertex placement until rewritten.
 
 **DuckDB-WASM note:** the original plan named DuckDB as the tile query engine.
 The workspace store + grid index already answer "features by tile bbox"
