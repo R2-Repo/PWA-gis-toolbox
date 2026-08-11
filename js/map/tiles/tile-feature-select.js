@@ -14,7 +14,9 @@ import {
     MIN_FEATURE_PIXELS,
     MAX_CHUNKS_PER_TILE,
     HIGH_ZOOM_CHUNK_SCAN_ZOOM,
-    MAX_CHUNKS_PER_TILE_HIGH_ZOOM
+    MAX_CHUNKS_PER_TILE_HIGH_ZOOM,
+    HIGH_ZOOM_SPARSE_CANDIDATE_FLOOR,
+    MAX_CHUNKS_PER_TILE_HIGH_ZOOM_HARD
 } from './tile-constants.js';
 
 const POINTY = new Set(['Point', 'MultiPoint']);
@@ -69,11 +71,63 @@ export function chunkLoadBudgetForZoom(z, rankedCount, opts = {}) {
     const maxChunksCap = highZoom
         ? (opts.maxChunksHighZoom ?? MAX_CHUNKS_PER_TILE_HIGH_ZOOM)
         : (opts.maxChunks ?? MAX_CHUNKS_PER_TILE);
+    const hardMaxChunksCap = highZoom
+        ? (opts.maxChunksHighZoomHard ?? MAX_CHUNKS_PER_TILE_HIGH_ZOOM_HARD)
+        : maxChunksCap;
     return {
         highZoom,
         maxChunks: Math.min(Math.max(0, rankedCount), maxChunksCap),
+        hardMaxChunks: Math.min(Math.max(0, rankedCount), hardMaxChunksCap),
+        sparseCandidateFloor: opts.sparseCandidateFloor ?? HIGH_ZOOM_SPARSE_CANDIDATE_FLOOR,
         useMassBudget: !highZoom
     };
+}
+
+/**
+ * Progressive high-zoom chunk scan: after the soft budget, keep loading while
+ * in-tile candidates remain sparse (common for long lines spanning many tiles).
+ *
+ * @param {{
+ *   highZoom?: boolean,
+ *   loadedCount: number,
+ *   rankedCount: number,
+ *   candidateCount: number,
+ *   maxChunks: number,
+ *   hardMaxChunks?: number,
+ *   maxFeatures?: number,
+ *   sparseCandidateFloor?: number,
+ *   useMassBudget?: boolean,
+ *   estimatedFeatureMass?: number,
+ *   targetMass?: number
+ * }} state
+ * @returns {boolean}
+ */
+export function shouldContinueChunkScan(state = {}) {
+    const loadedCount = state.loadedCount || 0;
+    const rankedCount = state.rankedCount || 0;
+    const candidateCount = state.candidateCount || 0;
+    const maxChunks = state.maxChunks ?? MAX_CHUNKS_PER_TILE;
+    const hardMaxChunks = state.hardMaxChunks ?? maxChunks;
+    const maxFeatures = state.maxFeatures ?? MAX_TILE_FEATURES;
+    const sparseFloor = state.sparseCandidateFloor ?? HIGH_ZOOM_SPARSE_CANDIDATE_FLOOR;
+
+    if (loadedCount >= rankedCount) return false;
+    if (candidateCount >= maxFeatures) return false;
+    if (loadedCount >= hardMaxChunks) return false;
+
+    if (state.highZoom) {
+        if (loadedCount < maxChunks) return true;
+        // Soft budget exhausted: only stop once we have enough real geometry.
+        return candidateCount < sparseFloor;
+    }
+
+    if (loadedCount >= maxChunks) return false;
+    if (state.useMassBudget
+        && (state.estimatedFeatureMass || 0) >= (state.targetMass ?? maxFeatures * 2)
+        && loadedCount > 0) {
+        return false;
+    }
+    return true;
 }
 
 /**
@@ -259,6 +313,7 @@ export default {
     bboxOverlapRatio,
     rankChunksByOverlap,
     chunkLoadBudgetForZoom,
+    shouldContinueChunkScan,
     selectChunksForTile,
     featureBelongsInTile,
     preferLocalFeatures,

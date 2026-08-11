@@ -46,6 +46,19 @@ describe('viewport-loader feature selection', () => {
         expect(featureIntersectsViewport(pt, view)).toBe(true);
     });
 
+    it('rejects envelope-only lines that miss the viewport geometrically', () => {
+        const view = [-111.1, 40.0, -111.0, 40.1];
+        const miss = {
+            type: 'Feature',
+            geometry: {
+                type: 'LineString',
+                coordinates: [[-112, 40.05], [-110, 39.5]]
+            },
+            properties: { id: 'miss' }
+        };
+        expect(featureIntersectsViewport(miss, view)).toBe(false);
+    });
+
     it('counts line vertices', () => {
         expect(countGeometryVertices({
             type: 'LineString',

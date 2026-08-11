@@ -12,6 +12,7 @@ import {
     selectTileFeatures,
     rankChunksByOverlap,
     chunkLoadBudgetForZoom,
+    shouldContinueChunkScan,
     featureBelongsInTile
 } from '../map/tiles/tile-feature-select.js';
 import { buildTileFromFeatures, simplifyToleranceForZoom } from '../map/tiles/tile-builder.js';
@@ -118,16 +119,29 @@ async function buildTile(layerId, z, x, y) {
     const ranked = rankChunksByOverlap(chunkRecords, tileBbox);
     if (!ranked.length) return null;
 
-    const { highZoom, maxChunks, useMassBudget } = chunkLoadBudgetForZoom(z, ranked.length);
+    const { highZoom, maxChunks, hardMaxChunks, sparseCandidateFloor, useMassBudget } =
+        chunkLoadBudgetForZoom(z, ranked.length);
     const targetMass = MAX_TILE_FEATURES * 2;
     const loaded = [];
     let estimate = 0;
     const candidates = [];
 
     for (const rec of ranked) {
-        if (loaded.length >= maxChunks) break;
-        if (useMassBudget && estimate >= targetMass && loaded.length > 0) break;
-        if (highZoom && candidates.length >= MAX_TILE_FEATURES) break;
+        if (!shouldContinueChunkScan({
+            highZoom,
+            loadedCount: loaded.length,
+            rankedCount: ranked.length,
+            candidateCount: candidates.length,
+            maxChunks,
+            hardMaxChunks,
+            maxFeatures: MAX_TILE_FEATURES,
+            sparseCandidateFloor,
+            useMassBudget,
+            estimatedFeatureMass: estimate,
+            targetMass
+        })) {
+            break;
+        }
 
         const features = await loadChunkFeatures(rec.chunkId);
         loaded.push({ features });
@@ -143,8 +157,12 @@ async function buildTile(layerId, z, x, y) {
         }
     }
 
+    // Prefer local features at close zoom when over the per-tile cap.
     const features = highZoom
-        ? candidates
+        ? selectTileFeatures(loaded, tileBbox, z, {
+            maxFeatures: MAX_TILE_FEATURES,
+            preferLocal: true
+        }).features
         : selectTileFeatures(loaded, tileBbox, z).features;
 
     return buildTileFromFeatures(features, z, x, y, {

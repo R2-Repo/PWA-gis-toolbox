@@ -16,6 +16,7 @@ import {
     bboxOverlapRatio,
     selectChunksForTile,
     chunkLoadBudgetForZoom,
+    shouldContinueChunkScan,
     preferLocalFeatures,
     featureBelongsInTile
 } from '../js/map/tiles/tile-feature-select.js';
@@ -215,14 +216,53 @@ describe('selectChunksForTile (overlap ranking)', () => {
         expect(low.highZoom).toBe(false);
         expect(low.useMassBudget).toBe(true);
         expect(low.maxChunks).toBe(64);
+        expect(low.hardMaxChunks).toBe(64);
 
         const high = chunkLoadBudgetForZoom(14, 400);
         expect(high.highZoom).toBe(true);
         expect(high.useMassBudget).toBe(false);
         expect(high.maxChunks).toBe(400);
+        expect(high.hardMaxChunks).toBe(400);
 
         const capped = chunkLoadBudgetForZoom(16, 2000);
         expect(capped.maxChunks).toBe(512);
+        expect(capped.hardMaxChunks).toBe(2000);
+        expect(capped.sparseCandidateFloor).toBe(64);
+    });
+
+    it('keeps scanning past the soft high-zoom budget while candidates are sparse', () => {
+        // Soft budget exhausted, zero real hits → continue.
+        expect(shouldContinueChunkScan({
+            highZoom: true,
+            loadedCount: 512,
+            rankedCount: 2000,
+            candidateCount: 0,
+            maxChunks: 512,
+            hardMaxChunks: 4096,
+            sparseCandidateFloor: 64
+        })).toBe(true);
+
+        // Soft budget exhausted but enough in-tile geometry → stop.
+        expect(shouldContinueChunkScan({
+            highZoom: true,
+            loadedCount: 512,
+            rankedCount: 2000,
+            candidateCount: 80,
+            maxChunks: 512,
+            hardMaxChunks: 4096,
+            sparseCandidateFloor: 64
+        })).toBe(false);
+
+        // Hard ceiling always stops.
+        expect(shouldContinueChunkScan({
+            highZoom: true,
+            loadedCount: 4096,
+            rankedCount: 8000,
+            candidateCount: 0,
+            maxChunks: 512,
+            hardMaxChunks: 4096,
+            sparseCandidateFloor: 64
+        })).toBe(false);
     });
 
     it('selectChunksForTile can ignore mass budget so late local chunks are reached', () => {
