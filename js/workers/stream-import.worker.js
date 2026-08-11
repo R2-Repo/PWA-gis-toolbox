@@ -819,7 +819,7 @@ async function scanGeoJSONValues(msg) {
             bytesProcessed += value.byteLength;
             parser.push(decoder.decode(value, { stream: true }));
             for (const props of pending) {
-                state.acc.addProperties(props, state.fieldNames);
+                state.acc.addProperties(props, null);
                 if (state.shouldStop(bytesProcessed)) break;
             }
             pending.length = 0;
@@ -831,7 +831,7 @@ async function scanGeoJSONValues(msg) {
             if (tail) parser.push(tail);
             parser.finish();
             for (const props of pending) {
-                state.acc.addProperties(props, state.fieldNames);
+                state.acc.addProperties(props, null);
                 if (state.shouldStop(bytesProcessed)) break;
             }
         }
@@ -866,7 +866,7 @@ async function scanCsvValues(msg) {
                 const meta = results.meta;
                 const cursor = meta?.cursor ?? 0;
                 for (let i = 0; i < rows.length; i++) {
-                    state.acc.addProperties(rows[i], state.fieldNames);
+                    state.acc.addProperties(rows[i], null);
                     if (state.shouldStop(cursor)) {
                         parser.abort();
                         break;
@@ -920,7 +920,7 @@ async function scanKmlValues(msg) {
     let bytesProcessed = 0;
     const parser = new KmlPlacemarkStreamParser({
         onPlacemark: (text) => {
-            state.acc.addProperties(extractKmlPlacemarkProperties(text), state.fieldNames);
+            state.acc.addProperties(extractKmlPlacemarkProperties(text), null);
         }
     });
     const reader = byteStream.getReader();
@@ -990,7 +990,7 @@ async function scanShapefileDbfValues(msg, entries, shpEntries) {
     const byteReader = createByteReader(dbfStream);
     for await (const props of iterateDbfRecords(byteReader, decoderFromCpg(cpgText))) {
         if (cancelled) throw _cancelError();
-        state.acc.addProperties(props, state.fieldNames);
+        state.acc.addProperties(props, null);
         state.progress(byteReader.bytesConsumed, totalBytes);
         if (state.shouldStop(byteReader.bytesConsumed)) break;
     }

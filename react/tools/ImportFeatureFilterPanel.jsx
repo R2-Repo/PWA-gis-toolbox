@@ -56,6 +56,23 @@ export function ImportFeatureFilterPanel({
         return map;
     }, [valueCatalog]);
 
+    // Prefer sniffed fields, then any extra keys discovered during the value scan.
+    const fields = useMemo(() => {
+        const seen = new Set();
+        const out = [];
+        for (const name of fieldNames || []) {
+            if (!name || seen.has(name)) continue;
+            seen.add(name);
+            out.push(name);
+        }
+        for (const name of valuesByField.keys()) {
+            if (seen.has(name)) continue;
+            seen.add(name);
+            out.push(name);
+        }
+        return out;
+    }, [fieldNames, valuesByField]);
+
     const patch = (next) => {
         onChange?.({
             geometryTypes,
@@ -71,7 +88,7 @@ export function ImportFeatureFilterPanel({
     };
 
     const addRule = () => {
-        patch({ rules: [...rules, emptyRule(fieldNames)] });
+        patch({ rules: [...rules, emptyRule(fields)] });
     };
 
     const removeRule = (index) => {
@@ -199,10 +216,10 @@ export function ImportFeatureFilterPanel({
                             <select
                                 className="rule-field"
                                 style={{ flex: 1, minWidth: 120 }}
-                                value={rule.field || fieldNames[0] || ''}
+                                value={rule.field || fields[0] || ''}
                                 onChange={(e) => updateRule(index, { field: e.target.value, value: '' })}
                             >
-                                {fieldNames.map((f) => (
+                                {fields.map((f) => (
                                     <option key={f} value={f}>{f}</option>
                                 ))}
                             </select>
@@ -337,7 +354,7 @@ export function ImportFeatureFilterPanel({
                     type="button"
                     className="btn btn-secondary btn-sm"
                     onClick={addRule}
-                    disabled={!fieldNames.length || scanning}
+                    disabled={!fields.length || scanning}
                     title={scanning ? 'Wait for the value scan to finish' : undefined}
                 >
                     Add attribute filter

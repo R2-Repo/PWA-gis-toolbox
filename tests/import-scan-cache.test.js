@@ -25,8 +25,8 @@ describe('import-scan-cache', () => {
     });
 
     it('documents sampled value-scan caps', () => {
-        expect(VALUE_SCAN_MAX_FEATURES).toBe(10_000);
-        expect(VALUE_SCAN_MAX_BYTES).toBe(16 * 1024 * 1024);
+        expect(VALUE_SCAN_MAX_FEATURES).toBe(50_000);
+        expect(VALUE_SCAN_MAX_BYTES).toBe(256 * 1024 * 1024);
     });
 
     it('builds stable file / scan keys', () => {
