@@ -195,6 +195,7 @@ function applyViewport(payload) {
 }
 
 function syncBasemapToggle(basemap) {
+    if (!basemap) return;
     syncBasemapToggleActive(basemap);
 }
 

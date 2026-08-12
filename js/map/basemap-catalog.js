@@ -141,6 +141,8 @@ export function getBasemapRegistry() {
 }
 
 /**
+ * Sync header basemap segment + dropdown item active states for a key.
+ * Safe to call from React (segments) and vanilla dual-screen mounts.
  * @param {string} key
  * @returns {boolean}
  */
@@ -150,6 +152,15 @@ export function syncBasemapToggleActive(key) {
 
     document.querySelectorAll('#basemap-toggle .header-toggle-segment').forEach((segment) => {
         segment.classList.toggle('active', segment.dataset.category === category);
+    });
+
+    document.querySelectorAll('#basemap-toggle .header-basemap-item').forEach((item) => {
+        const value = item.dataset.value;
+        if (!value) return;
+        const isActive = value === key;
+        item.classList.toggle('active', isActive);
+        const name = getBasemapConfig(value)?.name || value;
+        item.textContent = `${isActive ? '●' : '○'} ${name}`;
     });
     return true;
 }

@@ -55,6 +55,7 @@ function BasemapSegment({ category, config, currentBasemap, openCategory, onOpen
                         key={option.key}
                         type="button"
                         className={`header-print-item header-basemap-item${currentBasemap === option.key ? ' active' : ''}`}
+                        data-value={option.key}
                         onClick={() => {
                             onOpenChange(null);
                             onBasemapChange?.(option.key);
