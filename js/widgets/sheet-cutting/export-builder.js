@@ -8,6 +8,7 @@
 import { lineSliceAlongRoute } from '../../tools/line-geojson.js';
 import { extractLineStringGeometries, getLocalTangentBearing } from '../project-stationing/engine.js';
 import { buildSheetLabelCollection } from './sheet-labels.js';
+import { buildMatchlineSeeLabelFeatures } from './sheet-matchline-labels.js';
 import {
     buildSheetContinuationLabels,
     resolveSheetPdfBearing
@@ -948,6 +949,8 @@ export function buildPerSheetLayerExports(
     const frameBySheetId = new Map(
         sheetFrames.features.map((feature) => [feature.properties?.sheet_id, feature])
     );
+    const matchLineRegistry = buildCorridorMatchLineRegistry(detailSheets, routeLine);
+    const totalSheets = detailSheets.length;
 
     return detailSheets.map((sheet) => {
         const frameFeature = frameBySheetId.get(sheet.sheetId);
@@ -979,12 +982,24 @@ export function buildPerSheetLayerExports(
             )
             : null;
 
+        const seeLabels = frameFeature
+            ? buildMatchlineSeeLabelFeatures(
+                sheet,
+                frameFeature,
+                totalSheets,
+                matchLineRegistry,
+                stationKey,
+                routeLine
+            )
+            : [];
+
         const contents = {
             type: 'FeatureCollection',
             features: [
                 ...(outlineFeature ? [outlineFeature] : []),
                 ...(clippedRoute ? [clippedRoute] : []),
-                ...clippedFeatures
+                ...clippedFeatures,
+                ...seeLabels
             ]
         };
 

@@ -32,8 +32,12 @@ import {
     buildOverviewGeoJson,
     clipFeatureToSheetFrame,
     clipFeaturesToSheetFrame,
-    featureIntersectsSheetFrame
+    featureIntersectsSheetFrame,
+    buildPerSheetLayerExports
 } from '../js/widgets/sheet-cutting/export-builder.js';
+import {
+    buildMatchlineSeeLabelFeatures
+} from '../js/widgets/sheet-cutting/sheet-matchline-labels.js';
 import { getLocalTangentBearing } from '../js/widgets/project-stationing/engine.js';
 
 globalThis.turf = turf;
@@ -510,5 +514,88 @@ describe('sheet cutting geometry', () => {
         const next = selectRouteSource(createSheetCuttingSession(), layers, 'stationing-1');
         expect(next.stationingRoute.layerId).toBe('stationing-1');
         expect(next.routeLine.geometry).toEqual(stationingLine.geometry);
+    });
+});
+
+describe('matchline SEE SHEET labels', () => {
+    const routeLine = turf.lineString([
+        [-111.9, 40.75],
+        [-111.89, 40.75],
+        [-111.88, 40.751],
+        [-111.87, 40.752]
+    ]);
+
+    it('places outward probes outside the sheet polygon on both match lines', () => {
+        const sheets = generateSheetFramesAlongRoute({
+            routeLine,
+            mapFrameWidthFt: 1100,
+            sheetTemplate: { mapFrameHeightFt: 350 }
+        }).map((sheet) => ({
+            ...sheet,
+            mapFrameWidthFt: 1100,
+            mapFrameHeightFt: 350
+        }));
+
+        expect(sheets.length).toBeGreaterThan(2);
+        const frames = buildSheetFramesGeoJson(sheets, routeLine);
+        const registry = buildCorridorMatchLineRegistry(sheets, routeLine);
+        const middle = sheets[1];
+        const frame = frames.features[1];
+        const labels = buildMatchlineSeeLabelFeatures(
+            middle,
+            frame,
+            sheets.length,
+            registry,
+            stationKey,
+            routeLine
+        );
+
+        expect(labels).toHaveLength(2);
+        expect(labels.map((feature) => feature.properties.text).sort()).toEqual([
+            `SEE SHEET ${String(middle.sheetNumber - 1).padStart(2, '0')}`,
+            `SEE SHEET ${String(middle.sheetNumber + 1).padStart(2, '0')}`
+        ].sort());
+
+        for (const label of labels) {
+            expect(turf.booleanPointInPolygon(
+                turf.point(label.properties.outward),
+                frame,
+                { ignoreBoundary: true }
+            )).toBe(false);
+            const mid = turf.point(label.geometry.coordinates);
+            const inwardBearing = turf.bearing(turf.point(label.properties.outward), mid);
+            const inside = turf.destination(mid, 8, inwardBearing, { units: 'feet' });
+            expect(turf.booleanPointInPolygon(inside, frame, { ignoreBoundary: true })).toBe(true);
+        }
+
+        const firstLabels = buildMatchlineSeeLabelFeatures(
+            sheets[0],
+            frames.features[0],
+            sheets.length,
+            registry,
+            stationKey,
+            routeLine
+        );
+        expect(firstLabels).toHaveLength(1);
+        expect(firstLabels[0].properties.text).toBe('SEE SHEET 02');
+    });
+
+    it('includes matchline labels in per-sheet PDF contents', () => {
+        const sheets = generateSheetFramesAlongRoute({
+            routeLine,
+            mapFrameWidthFt: 1100,
+            sheetTemplate: { mapFrameHeightFt: 350 }
+        }).map((sheet) => ({
+            ...sheet,
+            mapFrameWidthFt: 1100,
+            mapFrameHeightFt: 350
+        }));
+
+        const perSheet = buildPerSheetLayerExports(sheets, routeLine, []);
+        const middle = perSheet[1];
+        const labels = middle.contents.features.filter(
+            (feature) => feature.properties?.feature_type === 'matchline_see_label'
+        );
+        expect(labels.length).toBe(2);
     });
 });

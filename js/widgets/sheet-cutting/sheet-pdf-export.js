@@ -1222,21 +1222,6 @@ export async function buildHybridPagePdfBlob({
 
     const mapBearing = pageOptions.exportBearingDeg ?? 0;
     if (isDetail && pageOptions.sheet) {
-        if (pageOptions.routeLine && transform && map) {
-            drawSheetEdgeSeeLabels(doc, {
-                sheet: pageOptions.sheet,
-                totalSheets: pageOptions.totalSheets ?? 1,
-                detailSheets: pageOptions.detailSheets ?? [],
-                routeLine: pageOptions.routeLine,
-                transform,
-                map,
-                captureScale,
-                exportBearingDeg: mapBearing,
-                matchLineRegistry: pageOptions.matchLineRegistry ?? matchLineRegistry,
-                pixelRing,
-                frameRing: pageOptions.frameRing ?? null
-            });
-        }
         drawNorthArrowOnPdf(
             doc,
             pageW - layoutMargins.right - NORTH_ARROW_SIZE_PT * 0.6,

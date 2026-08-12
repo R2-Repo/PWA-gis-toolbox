@@ -2,11 +2,15 @@ import { describe, expect, it } from 'vitest';
 import {
     buildSheetPageTransform,
     computeClipBBoxFromPixelRing,
-    computeSheetImagePlacement
+    computeSheetImagePlacement,
+    pointInPdfRing
 } from '../js/widgets/sheet-cutting/sheet-pdf-placement.js';
 import {
     parseHexColor,
-    resolveVectorFeatureStyle
+    resolveVectorFeatureStyle,
+    computeMatchlineSeeLabelPdfPlacement,
+    placeMatchlineLabelOnGoldOutline,
+    MATCHLINE_SEE_LABEL_FONT_PT
 } from '../js/widgets/sheet-cutting/sheet-pdf-vector.js';
 
 describe('sheet PDF placement', () => {
@@ -153,5 +157,136 @@ describe('sheet PDF vector styles', () => {
         });
         expect(outline.strokeColor).toBe('#d4a24e');
         expect(outline.fillOpacity).toBe(0);
+    });
+
+    it('offsets matchline text outside along the projected outward vector', () => {
+        const placed = computeMatchlineSeeLabelPdfPlacement(
+            { x: 500, y: 300 },
+            { x: 520, y: 300 },
+            { x: 500, y: 200 },
+            { x: 500, y: 400 },
+            MATCHLINE_SEE_LABEL_FONT_PT
+        );
+        expect(placed.x).toBeCloseTo(500 + MATCHLINE_SEE_LABEL_FONT_PT * 0.5, 5);
+        expect(placed.y).toBeCloseTo(300, 5);
+        expect(placed.x).toBeGreaterThan(500);
+    });
+
+    it('flips matchline text outside when the outward vector points into the cutout', () => {
+        const pdfRing = [
+            { x: 100, y: 200 },
+            { x: 500, y: 200 },
+            { x: 500, y: 400 },
+            { x: 100, y: 400 }
+        ];
+        const placed = computeMatchlineSeeLabelPdfPlacement(
+            { x: 500, y: 300 },
+            { x: 480, y: 300 },
+            { x: 500, y: 200 },
+            { x: 500, y: 400 },
+            MATCHLINE_SEE_LABEL_FONT_PT,
+            pdfRing
+        );
+        expect(placed.x).toBeGreaterThan(500);
+    });
+
+    it('styles matchline SEE SHEET labels as rotated overlay text', () => {
+        const style = resolveVectorFeatureStyle({
+            properties: { feature_type: 'matchline_see_label', text: 'SEE SHEET 07' },
+            geometry: { type: 'Point' }
+        });
+        expect(style.kind).toBe('matchline_see_label');
+        expect(style.fontSize).toBe(MATCHLINE_SEE_LABEL_FONT_PT);
+    });
+});
+
+function glyphCapSample(x, y, angleDeg, fontPt = MATCHLINE_SEE_LABEL_FONT_PT) {
+    const rad = (angleDeg * Math.PI) / 180;
+    const capH = fontPt * 0.7;
+    return { x: x + Math.sin(rad) * capH, y: y - Math.cos(rad) * capH };
+}
+
+describe('matchline labels on the gold outline', () => {
+    it('keeps right-edge glyphs outside a rectangle (not just the baseline)', () => {
+        const pdfRing = [
+            { x: 100, y: 200 },
+            { x: 500, y: 200 },
+            { x: 500, y: 400 },
+            { x: 100, y: 400 }
+        ];
+        const placed = placeMatchlineLabelOnGoldOutline(
+            { x: 500, y: 300 },
+            { x: 500, y: 200 },
+            { x: 500, y: 400 },
+            MATCHLINE_SEE_LABEL_FONT_PT,
+            pdfRing
+        );
+        const cap = glyphCapSample(placed.x, placed.y, placed.angle);
+        expect(placed.x).toBeGreaterThan(500);
+        expect(pointInPdfRing(placed.x, placed.y, pdfRing)).toBe(false);
+        expect(pointInPdfRing(cap.x, cap.y, pdfRing)).toBe(false);
+        expect(cap.x).toBeGreaterThan(placed.x);
+    });
+
+    it('keeps left-edge glyphs outside a rectangle', () => {
+        const pdfRing = [
+            { x: 100, y: 200 },
+            { x: 500, y: 200 },
+            { x: 500, y: 400 },
+            { x: 100, y: 400 }
+        ];
+        const placed = placeMatchlineLabelOnGoldOutline(
+            { x: 100, y: 300 },
+            { x: 100, y: 400 },
+            { x: 100, y: 200 },
+            MATCHLINE_SEE_LABEL_FONT_PT,
+            pdfRing
+        );
+        const cap = glyphCapSample(placed.x, placed.y, placed.angle);
+        expect(placed.x).toBeLessThan(100);
+        expect(pointInPdfRing(placed.x, placed.y, pdfRing)).toBe(false);
+        expect(pointInPdfRing(cap.x, cap.y, pdfRing)).toBe(false);
+        expect(cap.x).toBeLessThan(placed.x);
+    });
+
+    it('keeps glyphs outside a parallelogram right edge, not the page-right bbox', () => {
+        const pdfRing = [
+            { x: 150, y: 100 },
+            { x: 450, y: 100 },
+            { x: 500, y: 400 },
+            { x: 200, y: 400 }
+        ];
+        const placed = placeMatchlineLabelOnGoldOutline(
+            { x: 475, y: 250 },
+            { x: 450, y: 100 },
+            { x: 500, y: 400 },
+            MATCHLINE_SEE_LABEL_FONT_PT,
+            pdfRing
+        );
+        const cap = glyphCapSample(placed.x, placed.y, placed.angle);
+        expect(pointInPdfRing(placed.x, placed.y, pdfRing)).toBe(false);
+        expect(pointInPdfRing(cap.x, cap.y, pdfRing)).toBe(false);
+        const edgeXAtY = 450 + (placed.y - 100) / 6;
+        expect(placed.x).toBeGreaterThan(edgeXAtY);
+        expect(cap.x).toBeGreaterThan(edgeXAtY);
+    });
+
+    it('keeps glyphs outside a 20° rotated rectangle right edge', () => {
+        const pdfRing = [
+            { x: 146.26, y: 137.63 },
+            { x: 522.14, y: 274.43 },
+            { x: 453.74, y: 462.37 },
+            { x: 77.86, y: 325.57 }
+        ];
+        const placed = placeMatchlineLabelOnGoldOutline(
+            { x: 487.94, y: 368.4 },
+            { x: 522.14, y: 274.43 },
+            { x: 453.74, y: 462.37 },
+            MATCHLINE_SEE_LABEL_FONT_PT,
+            pdfRing
+        );
+        const cap = glyphCapSample(placed.x, placed.y, placed.angle);
+        expect(pointInPdfRing(placed.x, placed.y, pdfRing)).toBe(false);
+        expect(pointInPdfRing(cap.x, cap.y, pdfRing)).toBe(false);
     });
 });

@@ -1,5 +1,14 @@
 import { SHEET_FRAME_PREVIEW_COLOR } from './sheet-preview.js';
 import { resolveFeatureStyle } from '../../map/style-engine.js';
+import {
+    closestPdfRingEdge,
+    pickTextAngleWithBottomTowardInterior,
+    pointInPdfRing,
+    probeOutwardUnitNormal
+} from './sheet-pdf-placement.js';
+
+/** Matchline SEE SHEET label size (PDF points). Inner glyph edge sits on the cutout border. */
+export const MATCHLINE_SEE_LABEL_FONT_PT = 7.5;
 
 /**
  * @param {string} hex
@@ -111,6 +120,16 @@ export function resolveVectorFeatureStyle(feature, layerStyle = null) {
             strokeWidth: 1.25,
             strokeOpacity: 1,
             dash: [5, 3]
+        };
+    }
+
+    if (featureType === 'matchline_see_label') {
+        return {
+            kind: 'matchline_see_label',
+            fontSize: MATCHLINE_SEE_LABEL_FONT_PT,
+            color: '#141414',
+            haloColor: '#ffffff',
+            haloWidth: 0.8
         };
     }
 
@@ -379,11 +398,270 @@ function drawLabel(doc, point, text, style) {
 }
 
 /**
+ * jsPDF left/middle anchor so rotated text is visually centered on (cx, cy).
+ * @param {number} cx
+ * @param {number} cy
+ * @param {number} widthPt
+ * @param {number} angleDeg
+ * @returns {{ x: number, y: number }}
+ */
+function computeRotatedTextAnchor(cx, cy, widthPt, angleDeg) {
+    const rad = ((Number(angleDeg) || 0) * Math.PI) / 180;
+    const half = Math.max(0, Number(widthPt) || 0) / 2;
+    return {
+        x: cx - half * Math.cos(rad),
+        y: cy - half * Math.sin(rad)
+    };
+}
+
+/**
+ * jsPDF rotates in PDF y-up. Text caps ("up") in jsPDF y-down is approximately (sin, -cos).
+ * Pick the parallel edge angle whose caps point along `outward`.
+ *
+ * @param {number} edgeAngleDeg
+ * @param {{ x: number, y: number }} outward
+ * @returns {number}
+ */
+export function pickJsPdfAngleWithCapsOutward(edgeAngleDeg, outward) {
+    const a = -Number(edgeAngleDeg) || 0;
+    const b = a + (a > 0 ? -180 : 180);
+    const capDot = (angleDeg) => {
+        const rad = (angleDeg * Math.PI) / 180;
+        const upX = Math.sin(rad);
+        const upY = -Math.cos(rad);
+        return upX * outward.x + upY * outward.y;
+    };
+    return capDot(a) >= capDot(b) ? a : b;
+}
+
+/**
+ * Place the alphabetic baseline on the gold outline, just outside, caps facing out.
+ *
+ * @param {{ x: number, y: number }} borderPdf
+ * @param {{ x: number, y: number }} capLeftPdf
+ * @param {{ x: number, y: number }} capRightPdf
+ * @param {number} fontPt
+ * @param {Array<{ x: number, y: number }>} [pdfRing]
+ * @returns {{ x: number, y: number, angle: number, edgeAngleDeg: number }}
+ */
+export function placeMatchlineLabelOnGoldOutline(
+    borderPdf,
+    capLeftPdf,
+    capRightPdf,
+    fontPt = MATCHLINE_SEE_LABEL_FONT_PT,
+    pdfRing = null
+) {
+    let edgeAngleDeg = (Math.atan2(
+        capRightPdf.y - capLeftPdf.y,
+        capRightPdf.x - capLeftPdf.x
+    ) * 180) / Math.PI;
+    let midX = borderPdf.x;
+    let midY = borderPdf.y;
+    if (pdfRing?.length) {
+        const edge = closestPdfRingEdge(pdfRing, midX, midY, edgeAngleDeg);
+        if (edge) {
+            midX = edge.point.x;
+            midY = edge.point.y;
+            const dx = edge.to.x - edge.from.x;
+            const dy = edge.to.y - edge.from.y;
+            if (Math.hypot(dx, dy) > 1e-6) {
+                edgeAngleDeg = (Math.atan2(dy, dx) * 180) / Math.PI;
+            }
+        }
+    }
+
+    let outward = probeOutwardUnitNormal(midX, midY, edgeAngleDeg, pdfRing);
+    const size = Math.max(4, Number(fontPt) || MATCHLINE_SEE_LABEL_FONT_PT);
+    const capH = size * 0.7;
+    const standoff = Math.max(2, size * 0.22);
+    let x = midX + outward.x * standoff;
+    let y = midY + outward.y * standoff;
+    if (pdfRing?.length && pointInPdfRing(x, y, pdfRing)) {
+        outward = { x: -outward.x, y: -outward.y };
+        x = midX + outward.x * standoff;
+        y = midY + outward.y * standoff;
+    }
+
+    let angle = pickJsPdfAngleWithCapsOutward(edgeAngleDeg, outward);
+    const capSample = (px, py, ang) => {
+        const rad = (ang * Math.PI) / 180;
+        return { x: px + Math.sin(rad) * capH, y: py - Math.cos(rad) * capH };
+    };
+    let cap = capSample(x, y, angle);
+    if (pdfRing?.length && pointInPdfRing(cap.x, cap.y, pdfRing)) {
+        angle += angle > 0 ? -180 : 180;
+        cap = capSample(x, y, angle);
+    }
+    if (pdfRing?.length) {
+        const samplesOutside = (px, py, ang) => {
+            const c = capSample(px, py, ang);
+            return !pointInPdfRing(px, py, pdfRing) && !pointInPdfRing(c.x, c.y, pdfRing);
+        };
+        if (!samplesOutside(x, y, angle)) {
+            for (let dist = standoff + 1; dist <= 48; dist += 1) {
+                const tx = midX + outward.x * dist;
+                const ty = midY + outward.y * dist;
+                if (samplesOutside(tx, ty, angle)) {
+                    x = tx;
+                    y = ty;
+                    break;
+                }
+            }
+        }
+    }
+
+    return { x, y, angle, edgeAngleDeg, outward };
+}
+
+/**
+ * PDF draw position: border midpoint projected, then half a glyph outside along
+ * the geographic outward vector (same projector as the gold outline).
+ *
+ * @param {{ x: number, y: number }} borderPdf
+ * @param {{ x: number, y: number }} outwardPdf
+ * @param {{ x: number, y: number }} capLeftPdf
+ * @param {{ x: number, y: number }} capRightPdf
+ * @param {number} [fontPt]
+ * @returns {{ x: number, y: number, angle: number, edgeAngleDeg: number }}
+ */
+export function computeMatchlineSeeLabelPdfPlacement(
+    borderPdf,
+    outwardPdf,
+    capLeftPdf,
+    capRightPdf,
+    fontPt = MATCHLINE_SEE_LABEL_FONT_PT,
+    pdfRing = null
+) {
+    const ox = outwardPdf.x - borderPdf.x;
+    const oy = outwardPdf.y - borderPdf.y;
+    const len = Math.hypot(ox, oy) || 1;
+    let nx = ox / len;
+    let ny = oy / len;
+    const offset = Math.max(0, Number(fontPt) || 0) * 0.5;
+    let x = borderPdf.x + nx * offset;
+    let y = borderPdf.y + ny * offset;
+    if (pdfRing?.length && pointInPdfRing(x, y, pdfRing)) {
+        nx = -nx;
+        ny = -ny;
+        x = borderPdf.x + nx * offset;
+        y = borderPdf.y + ny * offset;
+    }
+    if (pdfRing?.length && pointInPdfRing(x, y, pdfRing)) {
+        for (let dist = offset + 2; dist <= 64; dist += 2) {
+            const tx = borderPdf.x + nx * dist;
+            const ty = borderPdf.y + ny * dist;
+            if (!pointInPdfRing(tx, ty, pdfRing)) {
+                x = tx;
+                y = ty;
+                break;
+            }
+            const fx = borderPdf.x - nx * dist;
+            const fy = borderPdf.y - ny * dist;
+            if (!pointInPdfRing(fx, fy, pdfRing)) {
+                x = fx;
+                y = fy;
+                nx = -nx;
+                ny = -ny;
+                break;
+            }
+        }
+    }
+    const edgeAngleDeg = (Math.atan2(
+        capRightPdf.y - capLeftPdf.y,
+        capRightPdf.x - capLeftPdf.x
+    ) * 180) / Math.PI;
+    const interior = { x: borderPdf.x - nx, y: borderPdf.y - ny };
+    return {
+        x,
+        y,
+        edgeAngleDeg,
+        angle: pickTextAngleWithBottomTowardInterior(edgeAngleDeg, x, y, interior)
+    };
+}
+
+/**
+ * @param {import('jspdf').jsPDF} doc
+ * @param {string} text
+ * @param {number} cx
+ * @param {number} cy
+ * @param {number} angleDeg
+ * @param {object} style
+ */
+function drawRotatedHaloText(doc, text, cx, cy, angleDeg, style) {
+    const label = String(text ?? '');
+    if (!label) return;
+
+    const fontSize = style.fontSize || MATCHLINE_SEE_LABEL_FONT_PT;
+    doc.setFontSize(fontSize);
+    const width = typeof doc.getTextWidth === 'function'
+        ? doc.getTextWidth(label)
+        : label.length * fontSize * 0.45;
+    const angle = Number(angleDeg) || 0;
+    const { x: anchorX, y: anchorY } = computeRotatedTextAnchor(cx, cy, width, angle);
+    // Alphabetic baseline: jsPDF applies `middle` in unrotated page Y *before*
+    // rotation, which pulls right-edge / skewed labels into the cutout.
+    const options = { align: 'left', baseline: 'alphabetic', angle };
+
+    if (style.haloColor) {
+        const halo = parseHexColor(style.haloColor);
+        const step = style.haloWidth ?? 0.8;
+        doc.setTextColor(halo.r, halo.g, halo.b);
+        for (const [dx, dy] of [
+            [-step, 0], [step, 0], [0, -step], [0, step],
+            [-step * 0.7, -step * 0.7], [step * 0.7, step * 0.7],
+            [-step * 0.7, step * 0.7], [step * 0.7, -step * 0.7]
+        ]) {
+            doc.text(label, anchorX + dx, anchorY + dy, options);
+        }
+    }
+
+    const { r, g, b } = parseHexColor(style.color || '#141414');
+    doc.setTextColor(r, g, b);
+    doc.text(label, anchorX, anchorY, options);
+}
+
+/**
+ * @param {import('jspdf').jsPDF} doc
+ * @param {import('geojson').Feature<import('geojson').Point>} feature
+ * @param {import('maplibre-gl').Map} map
+ * @param {object} transform
+ * @param {number} captureScale
+ * @param {object} style
+ */
+function drawMatchlineSeeLabel(doc, feature, map, transform, captureScale, style, pdfRing = null) {
+    const props = feature?.properties || {};
+    const coords = feature?.geometry?.coordinates;
+    if (!coords?.length || !props.cap_left?.length || !props.cap_right?.length) {
+        return;
+    }
+    if (!transform?.projectLngLat || !map) return;
+
+    const borderPdf = transform.projectLngLat(map, coords[0], coords[1], captureScale);
+    const capLeftPdf = transform.projectLngLat(map, props.cap_left[0], props.cap_left[1], captureScale);
+    const capRightPdf = transform.projectLngLat(map, props.cap_right[0], props.cap_right[1], captureScale);
+    const fontPt = style.fontSize || MATCHLINE_SEE_LABEL_FONT_PT;
+    const placed = pdfRing?.length
+        ? placeMatchlineLabelOnGoldOutline(borderPdf, capLeftPdf, capRightPdf, fontPt, pdfRing)
+        : computeMatchlineSeeLabelPdfPlacement(
+            borderPdf,
+            props.outward?.length
+                ? transform.projectLngLat(map, props.outward[0], props.outward[1], captureScale)
+                : borderPdf,
+            capLeftPdf,
+            capRightPdf,
+            fontPt,
+            null
+        );
+    drawRotatedHaloText(doc, props.text, placed.x, placed.y, placed.angle, style);
+}
+
+/**
  * @param {object} feature
  * @returns {number}
  */
 function featureDrawOrder(feature) {
     const props = feature?.properties || {};
+    if (props.feature_type === 'matchline_see_label') return 210;
     if (props.feature_type === 'overview_sheet_label') return 200;
     if (props.feature_type === 'sheet_outline') return 100;
     if (props._preview === 'station_label' || props._preview === 'begin_end_marker') return 90;
@@ -401,11 +679,17 @@ function featureDrawOrder(feature) {
  * @param {number} captureScale
  * @param {object} style
  */
-function renderFeature(doc, feature, map, transform, captureScale, style) {
+function renderFeature(doc, feature, map, transform, captureScale, style, pdfRing = null) {
     const geometry = feature?.geometry;
     if (!geometry) return;
 
     const pxPerPt = transform.pxPerPt;
+    const props = feature.properties || {};
+
+    if (props.feature_type === 'matchline_see_label' || style.kind === 'matchline_see_label') {
+        drawMatchlineSeeLabel(doc, feature, map, transform, captureScale, style, pdfRing);
+        return;
+    }
 
     if (geometry.type === 'LineString') {
         const points = projectRing(map, geometry.coordinates, transform, captureScale);
@@ -494,12 +778,20 @@ export function renderFeatureCollectionToPdf(doc, collection, map, transform, ca
         (a, b) => featureDrawOrder(a) - featureDrawOrder(b)
     );
 
+    const outline = features.find((feature) => feature.properties?.feature_type === 'sheet_outline');
+    const outlineRing = outline?.geometry?.type === 'Polygon'
+        ? outline.geometry.coordinates[0]
+        : (outline?.geometry?.type === 'MultiPolygon' ? outline.geometry.coordinates[0]?.[0] : null);
+    const pdfRing = outlineRing?.length && map && transform?.projectLngLat
+        ? projectRing(map, outlineRing, transform, captureScale)
+        : null;
+
     for (const feature of features) {
         try {
             const layerId = feature.properties?._sourceLayerId;
             const layerStyle = resolveStyle.layerStyleFor?.(layerId) ?? null;
             const style = resolveVectorFeatureStyle(feature, layerStyle);
-            renderFeature(doc, feature, map, transform, captureScale, style);
+            renderFeature(doc, feature, map, transform, captureScale, style, pdfRing);
         } catch (_) {
             // Skip features that fail to project or render.
         }
