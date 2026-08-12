@@ -398,25 +398,23 @@ function drawLabel(doc, point, text, style) {
 }
 
 /**
- * jsPDF left/middle anchor so rotated text is visually centered on (cx, cy).
- * @param {number} cx
- * @param {number} cy
- * @param {number} widthPt
- * @param {number} angleDeg
- * @returns {{ x: number, y: number }}
+ * jsPDF left-align anchor so rotated text is visually centered on (cx, cy).
+ * jsPDF Tm run direction in page y-down is (cos θ, −sin θ) — not (cos, sin).
+ * Do not use align:'center' with angle; do not use baseline:'middle' (applied in
+ * unrotated page Y before rotation, which pulls right-edge / skewed labels in).
  */
 function computeRotatedTextAnchor(cx, cy, widthPt, angleDeg) {
     const rad = ((Number(angleDeg) || 0) * Math.PI) / 180;
     const half = Math.max(0, Number(widthPt) || 0) / 2;
     return {
         x: cx - half * Math.cos(rad),
-        y: cy - half * Math.sin(rad)
+        y: cy + half * Math.sin(rad)
     };
 }
 
 /**
- * jsPDF rotates in PDF y-up. Text caps ("up") in jsPDF y-down is approximately (sin, -cos).
- * Pick the parallel edge angle whose caps point along `outward`.
+ * Pick the parallel jsPDF angle whose glyph caps point along `outward`.
+ * jsPDF Tm (y-up) maps caps to page y-down (−sin θ, −cos θ). Never use (sin, −cos).
  *
  * @param {number} edgeAngleDeg
  * @param {{ x: number, y: number }} outward
@@ -427,7 +425,7 @@ export function pickJsPdfAngleWithCapsOutward(edgeAngleDeg, outward) {
     const b = a + (a > 0 ? -180 : 180);
     const capDot = (angleDeg) => {
         const rad = (angleDeg * Math.PI) / 180;
-        const upX = Math.sin(rad);
+        const upX = -Math.sin(rad);
         const upY = -Math.cos(rad);
         return upX * outward.x + upY * outward.y;
     };
@@ -435,7 +433,8 @@ export function pickJsPdfAngleWithCapsOutward(edgeAngleDeg, outward) {
 }
 
 /**
- * Place the alphabetic baseline on the gold outline, just outside, caps facing out.
+ * Place the alphabetic baseline just outside the gold outline, caps facing out.
+ * Origin is the match-line cap edge (not the page bbox). See docs/SHEET_CUTTING.md.
  *
  * @param {{ x: number, y: number }} borderPdf
  * @param {{ x: number, y: number }} capLeftPdf
@@ -485,7 +484,7 @@ export function placeMatchlineLabelOnGoldOutline(
     let angle = pickJsPdfAngleWithCapsOutward(edgeAngleDeg, outward);
     const capSample = (px, py, ang) => {
         const rad = (ang * Math.PI) / 180;
-        return { x: px + Math.sin(rad) * capH, y: py - Math.cos(rad) * capH };
+        return { x: px - Math.sin(rad) * capH, y: py - Math.cos(rad) * capH };
     };
     let cap = capSample(x, y, angle);
     if (pdfRing?.length && pointInPdfRing(cap.x, cap.y, pdfRing)) {
@@ -598,8 +597,6 @@ function drawRotatedHaloText(doc, text, cx, cy, angleDeg, style) {
         : label.length * fontSize * 0.45;
     const angle = Number(angleDeg) || 0;
     const { x: anchorX, y: anchorY } = computeRotatedTextAnchor(cx, cy, width, angle);
-    // Alphabetic baseline: jsPDF applies `middle` in unrotated page Y *before*
-    // rotation, which pulls right-edge / skewed labels into the cutout.
     const options = { align: 'left', baseline: 'alphabetic', angle };
 
     if (style.haloColor) {

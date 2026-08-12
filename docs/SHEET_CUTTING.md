@@ -169,12 +169,53 @@ Detail pages default to **landscape-align**: each sheet polygon is rotated so it
 |------|----------|
 | **North arrow** | Top-right margin; rotated **−exportBearingDeg** from page up so it shows true north relative to the map. |
 | **Title-block footer** | Flush to the bottom of the page (within side margins): bordered 5-cell bar — **Project** (wizard name), **Date** (export `MM/DD/YYYY`), two empty spare cells for post-export edits, and **Sheet NN of N**. Station range and continuation arrows are not drawn on the PDF. |
-| **Edge SEE SHEET labels** | Detail pages only: `SEE SHEET NN` on start/end polygon caps pointing to the previous/next sheet (no match-line station text). Labels are tied to a **fixed standoff from the match-line cap midpoint** (not the sheet’s page bounding box). Both sides offset −X / +X from that edge, stepping farther only if still inside the cutout. **Draw path:** left/middle jsPDF anchors with half-width compensation (`computeRotatedTextAnchor`) — never `align:'center'` with `angle`. |
+| **Edge SEE SHEET labels** | Detail pages only. See **PDF matchline SEE SHEET labels** below. |
 | **Overview** | Always north-up. |
 
 Landscape-align picks between two bearings 180° apart (`tangent − 90°` and `tangent + 90°`), keeps the one where north points up, and prefers left → right when both qualify.
 
 Key functions: `resolveSheetPdfBearing()`, `resolveLandscapeAlignBearing()`, `resolveSheetPdfBearings()`, `buildSheetTitleBlockFooterModel()`, `buildSheetContinuationLabels()` in `sheet-pdf-orientation.js`.
+
+---
+
+## PDF matchline SEE SHEET labels
+
+Detail pages draw `SEE SHEET NN` on each interior match-line cap (previous sheet at start, next sheet at end). The label must sit **just outside the gold cutout**, parallel to that cap, on **every** sheet — including the right-hand cap and non-rectangular (parallelogram / curved-corridor) cutouts.
+
+**Live draw path** (do not revive `drawSheetEdgeSeeLabels` for this):
+
+1. `buildMatchlineSeeLabelFeatures()` stores a point at the cap midpoint plus `cap_left` / `cap_right`.
+2. `renderFeatureCollectionToPdf()` projects the gold `sheet_outline` to a PDF ring.
+3. `placeMatchlineLabelOnGoldOutline()` puts the alphabetic baseline ~2 pt outside that cap edge, caps facing out.
+4. `drawRotatedHaloText()` draws with `align:'left'`, `baseline:'alphabetic'`, and `computeRotatedTextAnchor()`.
+
+### jsPDF rotation (the part that breaks right-side / skewed labels)
+
+jsPDF builds `Tm` as `Matrix(cos θ, sin θ, −sin θ, cos θ)` in **PDF y-up**. In **page y-down** that means:
+
+| Quantity | Page y-down vector | Code |
+|----------|--------------------|------|
+| Text run (along the string) | `(cos θ, −sin θ)` | `computeRotatedTextAnchor`: `x − half·cos`, `y + half·sin` |
+| Glyph caps (up from the baseline) | `(−sin θ, −cos θ)` | `pickJsPdfAngleWithCapsOutward` |
+
+**Do not** use `(sin θ, −cos θ)` for caps, `(cos θ, sin θ)` for the half-width Y shift, `align:'center'` with `angle`, or `baseline:'middle'`. Those look fine on a vertical **left** edge and pull **right-hand and diagonal** labels into the cutout.
+
+`baseline:'middle'` is applied in unrotated page Y **before** rotation — same right-edge failure.
+
+### Placement rules
+
+- Origin is the **match-line cap edge** (projected `cap_left` → `cap_right`), not the page bounding box and not “page-right = +X”.
+- Outward is the perpendicular that leaves the gold outline (`probeOutwardUnitNormal`).
+- Text stays parallel to that edge; pick the 180° that makes **actual** jsPDF caps follow outward.
+- Standoff is a few points along that normal so the inner glyph edge sits on the gold stroke.
+
+### Tests (must keep passing)
+
+`tests/sheet-pdf-vector.test.js` — rectangle left/right, parallelogram right edge, 20° rotated right edge, and `pickJsPdfAngleWithCapsOutward` on a diagonal outward.
+
+`tests/sheet-pdf-export.test.js` — `computeRotatedTextAnchor` uses `(cos, −sin)` run direction.
+
+If a future change makes right-side or skewed labels drift again, check the jsPDF vectors in the table before changing snap / walk-out logic.
 
 ---
 
@@ -187,7 +228,8 @@ Key functions: `resolveSheetPdfBearing()`, `resolveLandscapeAlignBearing()`, `re
 | `js/widgets/sheet-cutting/controller.js` | Preview wiring |
 | `react/widgets/SheetCuttingDialog.jsx` | Wizard UI |
 | `js/widgets/sheet-cutting/sheet-pdf-export.js` | Hybrid PDF export to folder |
-| `js/widgets/sheet-cutting/sheet-pdf-vector.js` | Vector GeoJSON → jsPDF renderer |
+| `js/widgets/sheet-cutting/sheet-pdf-vector.js` | Vector GeoJSON → jsPDF renderer; **matchline SEE SHEET draw** (`placeMatchlineLabelOnGoldOutline`) |
+| `js/widgets/sheet-cutting/sheet-matchline-labels.js` | Geographic SEE SHEET point features (cap midpoint + outward probe) |
 | `js/widgets/sheet-cutting/sheet-pdf-placement.js` | Shared map-pixel → PDF-point placement |
 | `js/widgets/sheet-cutting/sheet-pdf-orientation.js` | PDF export bearing + continuation labels |
 | `js/export/folder-export.js` | File System Access API folder writer |

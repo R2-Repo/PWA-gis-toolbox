@@ -99,9 +99,9 @@ export function measureSeeLabelWidthPt(doc, text) {
 }
 
 /**
- * jsPDF left/middle anchor so rotated text is visually centered on (cx, cy).
- * Do not use align:'center' with angle — jsPDF does not reliably rotate about the
- * visual midpoint, and right-hand SEE SHEET labels land inside the cutout.
+ * jsPDF left-align anchor so rotated text is visually centered on (cx, cy).
+ * jsPDF Tm run direction in page y-down is (cos θ, −sin θ). See docs/SHEET_CUTTING.md.
+ * Do not use align:'center' with angle.
  *
  * @param {number} cx
  * @param {number} cy
@@ -114,7 +114,7 @@ export function computeRotatedTextAnchor(cx, cy, widthPt, angleDeg) {
     const half = Math.max(0, Number(widthPt) || 0) / 2;
     return {
         x: cx - half * Math.cos(rad),
-        y: cy - half * Math.sin(rad)
+        y: cy + half * Math.sin(rad)
     };
 }
 

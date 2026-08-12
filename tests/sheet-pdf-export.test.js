@@ -853,16 +853,16 @@ describe('sheet PDF edge SEE SHEET labels', () => {
 
         const vertical = computeRotatedTextAnchor(cx, cy, width, 90);
         expect(vertical.x).toBeCloseTo(cx, 5);
-        expect(vertical.y).toBeCloseTo(cy - width / 2, 5);
+        expect(vertical.y).toBeCloseTo(cy + width / 2, 5);
 
         const tilted = computeRotatedTextAnchor(cx, cy, width, 75);
         const rad = (75 * Math.PI) / 180;
         expect(tilted.x).toBeCloseTo(cx - (width / 2) * Math.cos(rad), 5);
-        expect(tilted.y).toBeCloseTo(cy - (width / 2) * Math.sin(rad), 5);
+        expect(tilted.y).toBeCloseTo(cy + (width / 2) * Math.sin(rad), 5);
 
-        // After compensation, the string midpoint is back at (cx, cy).
+        // jsPDF run direction in page y-down is (cos, -sin).
         expect(tilted.x + (width / 2) * Math.cos(rad)).toBeCloseTo(cx, 5);
-        expect(tilted.y + (width / 2) * Math.sin(rad)).toBeCloseTo(cy, 5);
+        expect(tilted.y - (width / 2) * Math.sin(rad)).toBeCloseTo(cy, 5);
     });
 
     it('keeps tilted right-hand glyph boxes outside the cutout', () => {

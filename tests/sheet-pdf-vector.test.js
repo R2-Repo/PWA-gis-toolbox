@@ -10,6 +10,7 @@ import {
     resolveVectorFeatureStyle,
     computeMatchlineSeeLabelPdfPlacement,
     placeMatchlineLabelOnGoldOutline,
+    pickJsPdfAngleWithCapsOutward,
     MATCHLINE_SEE_LABEL_FONT_PT
 } from '../js/widgets/sheet-cutting/sheet-pdf-vector.js';
 
@@ -203,10 +204,11 @@ describe('sheet PDF vector styles', () => {
 function glyphCapSample(x, y, angleDeg, fontPt = MATCHLINE_SEE_LABEL_FONT_PT) {
     const rad = (angleDeg * Math.PI) / 180;
     const capH = fontPt * 0.7;
-    return { x: x + Math.sin(rad) * capH, y: y - Math.cos(rad) * capH };
+    return { x: x - Math.sin(rad) * capH, y: y - Math.cos(rad) * capH };
 }
 
 describe('matchline labels on the gold outline', () => {
+    // Caps in page y-down are (−sin θ, −cos θ). See docs/SHEET_CUTTING.md.
     it('keeps right-edge glyphs outside a rectangle (not just the baseline)', () => {
         const pdfRing = [
             { x: 100, y: 200 },
@@ -269,6 +271,7 @@ describe('matchline labels on the gold outline', () => {
         const edgeXAtY = 450 + (placed.y - 100) / 6;
         expect(placed.x).toBeGreaterThan(edgeXAtY);
         expect(cap.x).toBeGreaterThan(edgeXAtY);
+        expect(placed.outward.x * (cap.x - placed.x) + placed.outward.y * (cap.y - placed.y)).toBeGreaterThan(0);
     });
 
     it('keeps glyphs outside a 20° rotated rectangle right edge', () => {
@@ -288,5 +291,16 @@ describe('matchline labels on the gold outline', () => {
         const cap = glyphCapSample(placed.x, placed.y, placed.angle);
         expect(pointInPdfRing(placed.x, placed.y, pdfRing)).toBe(false);
         expect(pointInPdfRing(cap.x, cap.y, pdfRing)).toBe(false);
+    });
+});
+
+describe('jsPDF matchline cap direction', () => {
+    // Regression: (sin, −cos) looked fine on vertical left edges and failed on diagonals.
+    it('picks the parallel angle whose jsPDF caps follow the outward normal', () => {
+        const outward = { x: 0.654, y: -0.756 };
+        const angle = pickJsPdfAngleWithCapsOutward(40.86, outward);
+        const rad = (angle * Math.PI) / 180;
+        const capDot = (-Math.sin(rad)) * outward.x + (-Math.cos(rad)) * outward.y;
+        expect(capDot).toBeGreaterThan(0.9);
     });
 });
