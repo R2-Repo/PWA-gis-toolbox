@@ -92,12 +92,19 @@ function getLayerLists(ctx) {
     };
 }
 
+function getLayerFeatures(ctx, layerId) {
+    const layer = ctx.getLayerById?.(layerId) || ctx.getLayers().find((entry) => entry.id === layerId);
+    const fromDataset = layer?.geojson?.features;
+    if (fromDataset?.length) return fromDataset;
+    const fromMap = ctx.mapService?.getLayerRecord?.(layerId)?.geojson?.features;
+    return fromMap?.length ? fromMap : [];
+}
+
 function collectFeaturesFromLayers(ctx, layerIds = []) {
     const features = [];
     for (const layerId of layerIds) {
-        const layer = ctx.getLayerById?.(layerId) || ctx.getLayers().find((entry) => entry.id === layerId);
-        if (!layer?.geojson?.features?.length) continue;
-        for (const feature of layer.geojson.features) {
+        for (const feature of getLayerFeatures(ctx, layerId)) {
+            if (!feature?.geometry) continue;
             features.push({
                 ...feature,
                 properties: {
@@ -108,6 +115,11 @@ function collectFeaturesFromLayers(ctx, layerIds = []) {
         }
     }
     return features;
+}
+
+function applyDesignLayerSelection(ctx, session, layerIds = []) {
+    const next = selectDesignLayersForSheets(session, layerIds);
+    return setSheetDesignFeatures(next, collectFeaturesFromLayers(ctx, layerIds));
 }
 
 /**
@@ -163,9 +175,7 @@ export async function openSheetCutting(ctx, { restoreState = null } = {}) {
                 return session;
             },
             onSelectDesignLayers: (layerIds) => {
-                session = selectDesignLayersForSheets(session, layerIds);
-                const features = collectFeaturesFromLayers(ctx, layerIds);
-                session = setSheetDesignFeatures(session, features);
+                session = applyDesignLayerSelection(ctx, session, layerIds);
                 persistSession(session);
                 return session;
             },
@@ -177,6 +187,12 @@ export async function openSheetCutting(ctx, { restoreState = null } = {}) {
             },
             onValidate: () => validateSheetSession(session),
             onExportPdf: async () => {
+                session = applyDesignLayerSelection(
+                    ctx,
+                    session,
+                    session.sheets?.designLayerIds || []
+                );
+                persistSession(session);
                 const exportPackage = buildSessionExport(session);
                 const abortController = new AbortController();
                 const progress = showProgressModal('Exporting Sheet PDFs');
@@ -220,6 +236,12 @@ export async function openSheetCutting(ctx, { restoreState = null } = {}) {
                 }
             },
             onExportPackage: () => {
+                session = applyDesignLayerSelection(
+                    ctx,
+                    session,
+                    session.sheets?.designLayerIds || []
+                );
+                persistSession(session);
                 const exportPackage = buildSessionExport(session);
                 const base = (session.project.projectName || 'sheet_cutting').replace(/\s+/g, '_');
                 const combined = buildCombinedSheetGeoJson(exportPackage);

@@ -124,7 +124,7 @@ import {
     startQueryResultPulse
 } from './query-result-overlay.js';
 import { getBasemapConfig, getBasemapRegistry, isSatelliteBasemap } from './basemap-catalog.js';
-import { DEFAULT_BASEMAP_TONE, normalizeBasemapTone } from './basemap-tone.js';
+import { DEFAULT_BASEMAP_TONE, DEFAULT_RASTER_TONE, normalizeBasemapTone } from './basemap-tone.js';
 
 const LAYER_COLORS = ['#2563eb', '#dc2626', '#16a34a', '#d97706', '#7c3aed', '#0891b2', '#be185d', '#65a30d'];
 
@@ -512,10 +512,12 @@ class MapManager {
     // Style builder
     // ==========================================
 
-    _getBasemapRasterPaint() {
+    _getBasemapRasterPaint({ applyTint = true } = {}) {
+        const tone = normalizeBasemapTone(this._basemapTone);
         return {
             ...BASEMAP_RASTER_PAINT,
-            'raster-opacity': this._basemapTone.opacity
+            'raster-opacity': tone.opacity,
+            ...(applyTint ? tone.raster : DEFAULT_RASTER_TONE)
         };
     }
 
@@ -561,7 +563,7 @@ class MapManager {
                     source: 'basemap-overlay',
                     minzoom: 0,
                     maxzoom: 22,
-                    paint: this._getBasemapRasterPaint()
+                    paint: this._getBasemapRasterPaint({ applyTint: false })
                 });
             }
         }
@@ -666,6 +668,16 @@ class MapManager {
         return this.getBasemapTone();
     }
 
+    _setBasemapRasterPaint(layerId, { opacity, raster }) {
+        const map = this.map;
+        if (!map.getLayer?.(layerId)) return;
+        map.setPaintProperty(layerId, 'raster-opacity', opacity);
+        if (!raster) return;
+        for (const [prop, value] of Object.entries(raster)) {
+            map.setPaintProperty(layerId, prop, value);
+        }
+    }
+
     _applyBasemapToneToMap(tone = this.getBasemapTone()) {
         const map = this.map;
         if (!map?.getStyle?.()) return;
@@ -673,12 +685,14 @@ class MapManager {
             if (map.getLayer('basemap-backdrop')) {
                 map.setPaintProperty('basemap-backdrop', 'background-color', tone.backdrop);
             }
-            if (map.getLayer('basemap-layer')) {
-                map.setPaintProperty('basemap-layer', 'raster-opacity', tone.opacity);
-            }
-            if (map.getLayer('basemap-overlay-layer')) {
-                map.setPaintProperty('basemap-overlay-layer', 'raster-opacity', tone.opacity);
-            }
+            this._setBasemapRasterPaint('basemap-layer', {
+                opacity: tone.opacity,
+                raster: tone.raster
+            });
+            this._setBasemapRasterPaint('basemap-overlay-layer', {
+                opacity: tone.opacity,
+                raster: DEFAULT_RASTER_TONE
+            });
         } catch (err) {
             logger.warn('Map', 'Failed to apply basemap tone', { message: err?.message });
         }

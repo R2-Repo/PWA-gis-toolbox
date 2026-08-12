@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef } from 'react';
 import { BASEMAP_OPACITY_MAX, BASEMAP_OPACITY_MIN } from '../../js/map/basemap-tone.js';
 
 const TINT_OPTIONS = [
@@ -14,21 +14,22 @@ function formatOpacity(value) {
 export function BasemapToneMenu({
     tone = { tint: 'default', opacity: 1 },
     onToneChange,
+    open = false,
+    onOpenChange,
     disabled = false
 }) {
-    const [open, setOpen] = useState(false);
     const wrapperRef = useRef(null);
 
     useEffect(() => {
         if (!open) return undefined;
         const closeDropdown = (e) => {
             if (!wrapperRef.current?.contains(e.target)) {
-                setOpen(false);
+                onOpenChange?.(false);
             }
         };
         document.addEventListener('click', closeDropdown);
         return () => document.removeEventListener('click', closeDropdown);
-    }, [open]);
+    }, [open, onOpenChange]);
 
     const handleTintChange = (tint) => {
         onToneChange?.({ tint, opacity: tone.opacity });
@@ -38,24 +39,43 @@ export function BasemapToneMenu({
         onToneChange?.({ tint: tone.tint, opacity });
     };
 
+    const toggleOpen = (e) => {
+        e.stopPropagation();
+        onOpenChange?.(!open);
+    };
+
     return (
-        <div className="header-print-menu header-basemap-tone-menu" ref={wrapperRef}>
+        <div
+            className="header-toggle-segment header-basemap-tone-segment"
+            ref={wrapperRef}
+        >
             <button
                 type="button"
-                className="btn btn-ghost btn-sm"
+                className="header-toggle-option-main header-basemap-tone-trigger"
                 id="btn-basemap-tone"
                 title="Adjust basemap brightness"
                 disabled={disabled}
-                onClick={(e) => {
-                    e.stopPropagation();
-                    setOpen((value) => !value);
-                }}
+                aria-expanded={open}
+                aria-haspopup="dialog"
+                onClick={toggleOpen}
             >
-                Tone ▾
+                Tone
+            </button>
+            <button
+                type="button"
+                className="header-toggle-caret"
+                title="Adjust basemap brightness"
+                disabled={disabled}
+                aria-expanded={open}
+                aria-haspopup="dialog"
+                onClick={toggleOpen}
+            >
+                ▾
             </button>
             <div className={`header-print-dropdown header-basemap-tone-panel${open ? ' open' : ''}`} id="basemap-tone-dropdown">
                 <div className="header-basemap-tone-section">
                     <span className="header-basemap-tone-label">Map tone</span>
+                    <p className="header-basemap-tone-hint">Brightens or darkens tiles at any opacity.</p>
                     <div className="header-toggle header-basemap-tone-toggle">
                         {TINT_OPTIONS.map((option) => (
                             <button

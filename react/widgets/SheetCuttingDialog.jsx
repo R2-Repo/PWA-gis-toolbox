@@ -203,6 +203,21 @@ export function SheetCuttingDialog({
         return onSubscribeLayerRefresh(refreshLayerLists);
     }, [onSubscribeLayerRefresh, refreshLayerLists]);
 
+    useEffect(() => {
+        let cancelled = false;
+        (async () => {
+            const next = await onSelectDesignLayers?.(selectedLayerIds);
+            if (cancelled || !next) return;
+            setSession(next);
+            if ((next.sheets?.sheets || []).length) {
+                setValidation(onValidate?.() || null);
+            }
+        })();
+        return () => {
+            cancelled = true;
+        };
+    }, [selectedLayerIds, onSelectDesignLayers, onValidate]);
+
     const toggleLayer = (layerId) => {
         setSelectedLayerIds((current) =>
             current.includes(layerId)
@@ -380,6 +395,7 @@ export function SheetCuttingDialog({
                 {selectedLayerIds.length > 0 ? (
                     <p className="text-xs" style={{ marginTop: 0, marginBottom: 6, color: 'var(--text-muted)' }}>
                         {selectedLayerIds.length} of {designLayerOptions.length} selected
+                        {featureCount > 0 ? ` · ${featureCount} feature${featureCount === 1 ? '' : 's'} ready for sheets` : ''}
                     </p>
                 ) : null}
                 {designLayerOptions.length ? (

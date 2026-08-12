@@ -4,11 +4,12 @@ import {
     getBasemapCategory,
     getCategoryDefaultKey
 } from '../../js/map/basemap-catalog.js';
+import { BasemapToneMenu } from './BasemapToneMenu.jsx';
 
-function BasemapSegment({ category, config, currentBasemap, openCategory, onOpenChange, onBasemapChange }) {
+function BasemapSegment({ category, config, currentBasemap, openMenu, onOpenChange, onBasemapChange }) {
     const wrapperRef = useRef(null);
     const isActive = getBasemapCategory(currentBasemap) === category;
-    const isOpen = openCategory === category;
+    const isOpen = openMenu === category;
 
     useEffect(() => {
         if (!isOpen) return undefined;
@@ -70,8 +71,13 @@ function BasemapSegment({ category, config, currentBasemap, openCategory, onOpen
     );
 }
 
-export function BasemapToggle({ basemap = 'voyager', onBasemapChange }) {
-    const [openCategory, setOpenCategory] = useState(null);
+export function BasemapToggle({
+    basemap = 'voyager',
+    onBasemapChange,
+    tone = { tint: 'default', opacity: 1 },
+    onToneChange
+}) {
+    const [openMenu, setOpenMenu] = useState(null);
 
     return (
         <div className="header-toggle header-basemap-toggle" id="basemap-toggle">
@@ -81,11 +87,17 @@ export function BasemapToggle({ basemap = 'voyager', onBasemapChange }) {
                     category={category}
                     config={config}
                     currentBasemap={basemap}
-                    openCategory={openCategory}
-                    onOpenChange={setOpenCategory}
+                    openMenu={openMenu}
+                    onOpenChange={setOpenMenu}
                     onBasemapChange={onBasemapChange}
                 />
             ))}
+            <BasemapToneMenu
+                tone={tone}
+                onToneChange={onToneChange}
+                open={openMenu === 'tone'}
+                onOpenChange={(nextOpen) => setOpenMenu(nextOpen ? 'tone' : null)}
+            />
         </div>
     );
 }

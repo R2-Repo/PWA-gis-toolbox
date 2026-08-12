@@ -1007,9 +1007,16 @@ html, body {
     background: rgba(255, 255, 255, 0.04);
 }
 
+.header-basemap-tone-segment:has([aria-expanded="true"]) {
+    background: rgba(255, 255, 255, 0.1);
+}
+
 .header-basemap-tone-panel {
     min-width: 220px;
     padding: 10px 12px;
+    left: auto;
+    right: 0;
+    z-index: 1300;
 }
 
 .header-basemap-tone-section {
@@ -1021,7 +1028,14 @@ html, body {
     font-size: 11px;
     font-weight: 600;
     color: var(--text-muted);
-    margin-bottom: 6px;
+    margin-bottom: 4px;
+}
+
+.header-basemap-tone-hint {
+    margin: 0 0 6px;
+    font-size: 10px;
+    line-height: 1.35;
+    color: var(--text-muted);
 }
 
 .header-basemap-tone-toggle {

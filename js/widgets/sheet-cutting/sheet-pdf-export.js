@@ -41,6 +41,7 @@ import {
 } from './engine.js';
 import {
     PDF_DETAIL_FOOTER_BAND_IN,
+    PDF_DETAIL_FOOTER_GAP_IN,
     PDF_MAP_BEARING_MODES,
     DEFAULT_PDF_MAP_BEARING_MODE,
     buildSheetEdgeSeeLabelSpecs,
@@ -49,6 +50,7 @@ import {
     resolveSheetPdfBearings
 } from './sheet-pdf-orientation.js';
 import {
+    buildPdfRingFromGeoRing,
     buildPdfRingFromPixelRing,
     buildSheetPageTransform,
     computeCapEdgePdfPlacement,
@@ -56,7 +58,7 @@ import {
     computePdfRingCentroid,
     computeSheetImagePlacement,
     isRightHandCapMidpoint,
-    pickTextAngleWithBottomTowardInterior,
+    placeLabelOutsidePdfCutout,
     pointInPdfRing
 } from './sheet-pdf-placement.js';
 import { renderFeatureCollectionToPdf } from './sheet-pdf-vector.js';
@@ -70,12 +72,12 @@ const CAMERA_SETTLE_OPTIONS = { maxWaitMs: 5000, stableFrames: 0, styleTimeoutMs
 /** Single tile pass before reading pixels from the GL canvas. */
 const CAPTURE_READY_OPTIONS = { maxWaitMs: 8000, stableFrames: 1 };
 const NORTH_ARROW_SIZE_PT = 28;
-/** PDF standoff from cap edge to SEE SHEET label center (points). */
-export const EDGE_SEE_LABEL_OFFSET_PT = 5;
 const EDGE_SEE_LABEL_FONT_PT = 7.5;
+/** Extra gap from the cutout border to the inner edge of matchline text. 0 = touching. */
+export const EDGE_SEE_LABEL_GAP_PT = 0;
+/** Distance from cutout border to the label visual center so the inner glyph edge sits on the border. */
+export const EDGE_SEE_LABEL_OFFSET_PT = EDGE_SEE_LABEL_GAP_PT + EDGE_SEE_LABEL_FONT_PT * 0.5;
 const EDGE_SEE_LABEL_INTERIOR_EPS_FT = 2;
-/** Extra clearance so rotated glyph boxes clear the dashed match line. */
-const EDGE_SEE_LABEL_GLYPH_CLEAR_PT = 6;
 
 /**
  * Measure SEE SHEET text width in PDF points at the label font size.
@@ -146,9 +148,8 @@ function drawRotatedTextWithHalo(doc, text, cx, cy, angleDeg) {
 }
 
 /**
- * Visual center for a matchline label: fixed standoff from the cap midpoint
- * (the match-line edge), not from the sheet's page bounding box.
- * Steps farther only while the center is still inside the cutout.
+ * Visual center for a matchline label: midpoint of the cutout border edge,
+ * then a fixed perpendicular standoff outside the polygon.
  *
  * @param {import('jspdf').jsPDF} doc
  * @param {{ x: number, y: number, midX?: number, midY?: number, text: string, angle: number, edgeAngleDeg?: number }} placement
@@ -162,47 +163,26 @@ export function resolveSeeLabelVisualCenterOutside(doc, placement, pdfRing, ring
         return placement;
     }
 
-    const midX = placement.midX;
-    const midY = placement.midY;
-    const sign = side === 'left' ? -1 : 1;
-    const interior = ringCentroid ?? {
-        x: side === 'left' ? midX + 1 : midX - 1,
-        y: midY
-    };
-    const textWidth = measureSeeLabelWidthPt(doc, placement.text);
-    const provisionalX = midX + sign * EDGE_SEE_LABEL_OFFSET_PT;
-    const provisionalAngle = pickTextAngleWithBottomTowardInterior(
-        placement.edgeAngleDeg ?? 0,
-        provisionalX,
-        midY,
+    const fallbackAngle = side === 'left' ? -90 : 90;
+    const edgeAngle = placement.edgeAngleDeg ?? fallbackAngle;
+    const interior = placement.interiorRefPdf ?? ringCentroid;
+    const placed = placeLabelOutsidePdfCutout(
+        placement.midX,
+        placement.midY,
+        edgeAngle,
+        EDGE_SEE_LABEL_OFFSET_PT,
+        pdfRing,
         interior
     );
-    const rad = (provisionalAngle * Math.PI) / 180;
-    // Keep the whole rotated string (and glyph height) past the dashed cutout edge.
-    const halfSpanX = Math.abs((textWidth / 2) * Math.cos(rad)) + EDGE_SEE_LABEL_FONT_PT * 0.55;
-    const clearance = EDGE_SEE_LABEL_OFFSET_PT + EDGE_SEE_LABEL_GLYPH_CLEAR_PT + halfSpanX;
-
-    let distance = clearance;
-    let x = midX + sign * distance;
-    const y = midY;
-    if (pdfRing?.length) {
-        for (let attempt = 0; attempt < 40; attempt++) {
-            if (!pointInPdfRing(x, y, pdfRing)) break;
-            distance += EDGE_SEE_LABEL_OFFSET_PT;
-            x = midX + sign * distance;
-        }
-    }
 
     return {
         ...placement,
-        x,
-        y,
-        angle: pickTextAngleWithBottomTowardInterior(
-            placement.edgeAngleDeg ?? 0,
-            x,
-            y,
-            interior
-        )
+        x: placed.x,
+        y: placed.y,
+        angle: placed.angle,
+        midX: placed.midX,
+        midY: placed.midY,
+        edgeAngleDeg: placed.edgeAngleDeg
     };
 }
 
@@ -261,9 +241,11 @@ export function drawSheetEdgeSeeLabels(doc, options = {}) {
         frameRing
     );
 
-    const pdfRing = pixelRing?.length && transform?.toPdf
-        ? buildPdfRingFromPixelRing(pixelRing, transform)
-        : null;
+    const pdfRing = frameRing?.length && transform?.projectLngLat && map
+        ? buildPdfRingFromGeoRing(frameRing, transform, map, captureScale)
+        : (pixelRing?.length && transform?.toPdf
+            ? buildPdfRingFromPixelRing(pixelRing, transform)
+            : null);
     const ringCentroid = pdfRing?.length ? computePdfRingCentroid(pdfRing) : null;
     const ringMinX = pdfRing?.length ? Math.min(...pdfRing.map((p) => p.x)) : null;
     const ringMaxX = pdfRing?.length ? Math.max(...pdfRing.map((p) => p.x)) : null;
@@ -690,19 +672,20 @@ export function clipMapCanvasToPolygonRing(sourceCanvas, pixelRing) {
 
 /**
  * Detail pages reserve the bottom of the page for the title-block footer.
- * The footer sits flush to the page bottom; map content ends above that band.
+ * Map content ends above the footer, with a gap so the two do not touch.
  * @param {object} marginsPt
  * @param {boolean} [includeFooterBand]
  * @returns {object}
  */
 export function resolveDetailPageMarginsPt(marginsPt, includeFooterBand = true) {
     const footerPt = includeFooterBand ? PDF_DETAIL_FOOTER_BAND_IN * 72 : 0;
+    const gapPt = includeFooterBand ? PDF_DETAIL_FOOTER_GAP_IN * 72 : 0;
     return {
         top: marginsPt.top,
         right: marginsPt.right,
-        // Occupy (at least) the footer band at the page bottom — do not stack
-        // extra space under the title block.
-        bottom: includeFooterBand ? Math.max(marginsPt.bottom, footerPt) : marginsPt.bottom,
+        bottom: includeFooterBand
+            ? Math.max(marginsPt.bottom, footerPt + gapPt)
+            : marginsPt.bottom,
         left: marginsPt.left
     };
 }
@@ -760,11 +743,11 @@ export function drawSheetTitleBlockFooter(doc, sheet, totalSheets, marginsPt, op
     });
     const pageW = doc.internal.pageSize.getWidth();
     const pageH = doc.internal.pageSize.getHeight();
-    const footerBandPt = Math.max(PDF_DETAIL_FOOTER_BAND_IN * 72, marginsPt.bottom || 0);
+    const boxHeight = PDF_DETAIL_FOOTER_BAND_IN * 72;
     const boxLeft = marginsPt.left;
     const boxWidth = Math.max(1, pageW - marginsPt.left - marginsPt.right);
-    const boxHeight = Math.max(18, footerBandPt);
-    // Pin the title block to the bottom of the page (within side margins).
+    // Pin the title block to the page bottom; map content uses a larger bottom
+    // margin so a gap remains above this box.
     const boxTop = pageH - boxHeight;
     const ratios = model.cellRatios;
     const cellXs = [boxLeft];
@@ -784,26 +767,28 @@ export function drawSheetTitleBlockFooter(doc, sheet, totalSheets, marginsPt, op
     }
 
     doc.setTextColor(20, 20, 20);
-    // Project / Date: label on first line, value on second (stacked, not inline).
-    const labelBaseline = boxTop + padY + 6.5;
-    const valueBaseline = labelBaseline + 9;
+    // Project / Date: bold label, then bold value with extra line spacing.
+    const labelBaseline = boxTop + padY + 7;
+    const valueBaseline = labelBaseline + 13;
     const projectMaxW = Math.max(8, cellWidths[0] - padX * 2);
     const dateMaxW = Math.max(8, cellWidths[1] - padX * 2);
 
+    doc.setFont('helvetica', 'bold');
     doc.setFontSize(7.5);
     doc.text(model.projectLabel, cellXs[0] + padX, labelBaseline, { align: 'left' });
     doc.text(model.dateLabel, cellXs[1] + padX, labelBaseline, { align: 'left' });
 
-    doc.setFontSize(8.5);
+    doc.setFontSize(10);
     const projectLines = doc.splitTextToSize(model.projectValue, projectMaxW);
     const dateLines = doc.splitTextToSize(model.dateValue, dateMaxW);
     doc.text(projectLines[0] || '', cellXs[0] + padX, valueBaseline, { align: 'left' });
     doc.text(dateLines[0] || '', cellXs[1] + padX, valueBaseline, { align: 'left' });
 
-    doc.setFontSize(9);
+    doc.setFontSize(11);
     const sheetCenterX = cellXs[4] + cellWidths[4] / 2;
-    const sheetCenterY = boxTop + boxHeight / 2 + 2.5;
+    const sheetCenterY = boxTop + boxHeight / 2 + 3;
     doc.text(model.sheetLabel, sheetCenterX, sheetCenterY, { align: 'center' });
+    doc.setFont('helvetica', 'normal');
 }
 
 /**
@@ -873,7 +858,8 @@ export function computeSheetEdgeSeeLabelPlacement(
         text: spec.text,
         midX: placement.midX,
         midY: placement.midY,
-        edgeAngleDeg: placement.edgeAngleDeg
+        edgeAngleDeg: placement.edgeAngleDeg,
+        interiorRefPdf
     };
 }
 

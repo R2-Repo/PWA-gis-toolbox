@@ -46,6 +46,7 @@ export {
     DEFAULT_PDF_MAP_BEARING_MODE,
     PDF_EXPORT_STATION_EPS_FT,
     PDF_DETAIL_FOOTER_BAND_IN,
+    PDF_DETAIL_FOOTER_GAP_IN,
     resolveSheetPdfBearing,
     resolveSheetPdfBearings,
     formatRouteStationFt,

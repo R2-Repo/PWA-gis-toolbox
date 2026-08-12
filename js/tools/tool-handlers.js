@@ -1216,64 +1216,6 @@ export function openImportFlow() {
     _openImportFlowModal();
 }
 
-/**
- * @param {File[]} files
- * @param {{
- *   selectedFields?: string[],
- *   featureFilter?: object|null,
- *   importMode?: string
- * }} [session]
- */
-function _openImportOptimizerModal(files, session = {}) {
-    const optRootId = `import-opt-${Date.now()}`;
-    showModal('Import Optimizer', `<div id="${optRootId}"></div>`, {
-        width: '560px',
-        onMount: async (optOverlay, optClose) => {
-            const optRoot = optOverlay.querySelector(`#${optRootId}`);
-            const { mountImportOptimizerDialog } = await import('../../react/tools/mountImportOptimizerDialog.jsx');
-            const optMounted = mountImportOptimizerDialog(optRoot, {
-                files,
-                initialSelectedFields: session.selectedFields,
-                initialFeatureFilter: session.featureFilter ?? null,
-                initialImportMode: session.importMode,
-                hasActiveFence: hasActiveImportFence(),
-                fenceBbox: _fenceBbox,
-                onCancel: () => optClose(),
-                onPlaceFence: (snapshot = {}) => {
-                    optClose();
-                    void startImportFence(() => {
-                        _openImportOptimizerModal(files, {
-                            selectedFields: snapshot.selectedFields,
-                            featureFilter: snapshot.featureFilter ?? null,
-                            importMode: snapshot.importMode
-                        });
-                    });
-                },
-                onClearFence: () => {
-                    clearImportFenceState();
-                },
-                onConfirm: async (opts, ui) => {
-                    await handleFileImport(files, _fenceBbox, {
-                        preflightConfirmed: true,
-                        importMode: opts.importMode,
-                        useWorkspace: opts.useWorkspace,
-                        selectedFields: opts.selectedFields,
-                        featureFilter: opts.featureFilter || null,
-                        onProgress: ui?.onProgress,
-                        onCancelReady: ui?.onCancelReady,
-                        onAborted: ui?.onAborted,
-                        onComplete: () => {
-                            ui?.close?.();
-                            optClose();
-                        }
-                    });
-                }
-            });
-            watchOverlayUnmount(optOverlay, () => optMounted.unmount?.());
-        }
-    });
-}
-
 function _pickProjectKitFile() {
     const input = document.createElement('input');
     input.type = 'file';
@@ -1327,10 +1269,6 @@ function _openImportFlowModal(flowProps = {}) {
                         onComplete: () => ui.close?.(),
                         platform: platformBundle.platform
                     });
-                },
-                onOptimizeImport: (files) => {
-                    close();
-                    _openImportOptimizerModal(files);
                 },
                 onStreamImport: (files, streamOpts = {}) => {
                     close();
@@ -1489,7 +1427,10 @@ export async function openImportForFiles(files, fenceBbox = null, options = {}) 
     const assessment = await assessImportRoute(memoryFiles, { scans });
 
     if (assessment.route === 'optimizer') {
-        _openImportOptimizerModal(memoryFiles);
+        _openImportFlowModal({
+            initialFiles: memoryFiles,
+            startAtFieldPick: true
+        });
         return;
     }
 

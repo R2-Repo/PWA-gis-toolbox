@@ -3,14 +3,11 @@ import { createPortal } from 'react-dom';
 
 import {
     preflightFiles,
-    formatBytes,
-    preflightFile,
-    PREFLIGHT_LEVEL
+    formatBytes
 } from '../../js/import/import-preflight.js';
 import { scanFilesForImport } from '../../js/import/import-scan.js';
 import { mergeScanFieldNames } from '../../js/import/import-field-filter.js';
-import { detectFormat } from '../../js/import/importer.js';
-import { assessImportRoute, assessImportRouteFromScans } from '../../js/import/import-routing.js';
+import { assessImportRouteFromScans } from '../../js/import/import-routing.js';
 import { isProjectKitFile } from '../../js/core/project-kit.js';
 import { ImportFieldSelector } from './ImportFieldSelector.jsx';
 import { ImportOptionCard } from './ImportOptionCard.jsx';
@@ -88,7 +85,6 @@ export function ImportFlowDialog({
     onOpenDraw,
     catalogLiveLayers = [],
     onAddCatalogLiveLayer,
-    onOptimizeImport,
     onStreamImport = null,
     hasActiveFence = false,
     fenceBbox = null,
@@ -217,8 +213,9 @@ export function ImportFlowDialog({
         enabled: readyToImport && pendingFiles.length > 0 && !importing
     });
 
-    /** Large-file stream path: unlock unless we know stored features exceed the soft ceiling. */
-    const streamImportReady = streamFiles.length === 0 || storeEstimate.readyToImport;
+    /** Stream / optimizer files stay in this dialog — unlock unless stored features exceed the soft ceiling. */
+    const needsLargeFileControls = streamFiles.length > 0 || routeAssessment?.route === 'optimizer';
+    const configureImportReady = !needsLargeFileControls || storeEstimate.readyToImport;
 
     const predictedDisplayMode = useMemo(() => {
         if (!readyToImport || scanning || importing || !pendingFiles.length) return null;
@@ -344,15 +341,16 @@ export function ImportFlowDialog({
 
         const activeFeatureFilter = hasActiveFeatureFilter(featureFilter) ? featureFilter : null;
 
-        // Streaming path — only block when estimate is known over the soft ceiling.
+        if (needsLargeFileControls && !storeEstimate.readyToImport) {
+            setError(
+                storeEstimate.blockReason
+                || `Estimated features are over the ${(storeEstimate.estimate?.limitFeatures ?? STORED_FEATURE_LIMIT).toLocaleString()} stored-feature limit. Tighten your filter or fence.`
+            );
+            return;
+        }
+
+        // Streaming path — confirmed in this dialog; parent runs the worker.
         if (streamFiles.length > 0 && onStreamImport) {
-            if (!storeEstimate.readyToImport) {
-                setError(
-                    storeEstimate.blockReason
-                    || `Estimated features are over the ${(storeEstimate.estimate?.limitFeatures ?? STORED_FEATURE_LIMIT).toLocaleString()} stored-feature limit. Tighten your filter or fence.`
-                );
-                return;
-            }
             const fieldsReduced = fieldNames.length > 0
                 && fields?.length > 0
                 && fields.length < fieldNames.length;
@@ -497,37 +495,7 @@ export function ImportFlowDialog({
             return;
         }
 
-        const shouldPreScan = files.some((f) => {
-            const pf = preflightFile(f);
-            const fmt = detectFormat(f);
-            return pf.level === PREFLIGHT_LEVEL.SOFT || fmt === 'zip' || fmt === 'kmz';
-        });
-
-        let scans = [];
-        if (shouldPreScan) {
-            try {
-                scans = await scanFilesForImport(files);
-            } catch (err) {
-                setScanning(false);
-                setPendingFiles([]);
-                setError(err?.message || 'Could not scan files.');
-                return;
-            }
-        }
-
-        const assessment = await assessImportRoute(files, { scans });
-        if (assessment.route === 'optimizer' && onOptimizeImport) {
-            setScanning(false);
-            onOptimizeImport(files);
-            return;
-        }
-
-        if (scans.length) {
-            setScanning(false);
-            applyScans(files, scans);
-        } else {
-            await prepareImportOptions(files);
-        }
+        await prepareImportOptions(files);
     };
 
     const handleKitDrop = (fileList) => {
@@ -805,7 +773,7 @@ export function ImportFlowDialog({
                                         />
                                     ) : null}
 
-                                    {streamFiles.length > 0 && onOpenFence ? (
+                                    {needsLargeFileControls && onOpenFence ? (
                                         <ImportFencePlaceControl
                                             hasActiveFence={fenceActive}
                                             disabled={scanning || valueScan.scanState === 'scanning'}
@@ -826,7 +794,7 @@ export function ImportFlowDialog({
 
                                     <button
                                         className="btn btn-primary btn-sm mt-8"
-                                        disabled={streamFiles.length > 0 ? !streamImportReady : false}
+                                        disabled={!configureImportReady}
                                         onClick={() => void startImport(pendingFiles, { selectedFields })}
                                     >
                                         Import selected

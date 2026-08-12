@@ -169,6 +169,29 @@ export function buildPdfRingFromPixelRing(pixelRing, transform) {
 }
 
 /**
+ * Project a geographic sheet ring with the same transform as the gold outline.
+ *
+ * @param {number[][]} ring
+ * @param {object} transform
+ * @param {import('maplibre-gl').Map} map
+ * @param {number} captureScale
+ * @returns {Array<{ x: number, y: number }>}
+ */
+export function buildPdfRingFromGeoRing(ring, transform, map, captureScale) {
+    if (!ring?.length || !transform?.projectLngLat || !map) return [];
+    const limit = ring.length;
+    const isClosed = limit > 1 && coordsEqual(ring[0], ring[limit - 1]);
+    const vertexCount = isClosed ? limit - 1 : limit;
+    const pdfRing = [];
+    for (let i = 0; i < vertexCount; i++) {
+        const coord = ring[i];
+        if (!Array.isArray(coord) || coord.length < 2) continue;
+        pdfRing.push(transform.projectLngLat(map, coord[0], coord[1], captureScale));
+    }
+    return pdfRing;
+}
+
+/**
  * @param {number} x
  * @param {number} y
  * @param {Array<{ x: number, y: number }>} pdfRing
@@ -214,6 +237,301 @@ export function findDirectedCapEdgeIndices(ring, cap) {
 }
 
 /**
+ * Smallest angle between two directions, treating opposites as parallel.
+ * @param {number} aDeg
+ * @param {number} bDeg
+ * @returns {number}
+ */
+function parallelAngleDeltaDeg(aDeg, bDeg) {
+    const diff = Math.abs(((Number(aDeg) - Number(bDeg) + 180) % 360) - 180);
+    return Math.min(diff, Math.abs(diff - 180));
+}
+
+/**
+ * Closest point on a segment to (px, py).
+ * @param {number} px
+ * @param {number} py
+ * @param {{ x: number, y: number }} a
+ * @param {{ x: number, y: number }} b
+ * @returns {{ x: number, y: number }}
+ */
+function closestPointOnSegment(px, py, a, b) {
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const len2 = dx * dx + dy * dy;
+    if (len2 < 1e-12) return { x: a.x, y: a.y };
+    const t = Math.max(0, Math.min(1, ((px - a.x) * dx + (py - a.y) * dy) / len2));
+    return { x: a.x + t * dx, y: a.y + t * dy };
+}
+
+/**
+ * Distance from a point to a segment.
+ * @param {number} px
+ * @param {number} py
+ * @param {{ x: number, y: number }} a
+ * @param {{ x: number, y: number }} b
+ * @returns {number}
+ */
+function distancePointToSegment(px, py, a, b) {
+    const point = closestPointOnSegment(px, py, a, b);
+    return Math.hypot(px - point.x, py - point.y);
+}
+
+/**
+ * Ring edge closest to a point, preferring edges parallel to `preferredAngleDeg`.
+ *
+ * @param {Array<{ x: number, y: number }>} pdfRing
+ * @param {number} x
+ * @param {number} y
+ * @param {number} [preferredAngleDeg]
+ * @returns {{ from: { x: number, y: number }, to: { x: number, y: number }, point: { x: number, y: number } }|null}
+ */
+export function closestPdfRingEdge(pdfRing, x, y, preferredAngleDeg = null) {
+    if (!pdfRing?.length) return null;
+    const PARALLEL_MAX_DEG = 35;
+
+    const search = (requireParallel) => {
+        let best = null;
+        let bestDist = Infinity;
+        for (let i = 0; i < pdfRing.length; i++) {
+            const from = pdfRing[i];
+            const to = pdfRing[(i + 1) % pdfRing.length];
+            const edgeAngleDeg = (Math.atan2(to.y - from.y, to.x - from.x) * 180) / Math.PI;
+            if (requireParallel && preferredAngleDeg != null
+                && parallelAngleDeltaDeg(edgeAngleDeg, preferredAngleDeg) > PARALLEL_MAX_DEG) {
+                continue;
+            }
+            const dist = distancePointToSegment(x, y, from, to);
+            if (dist < bestDist) {
+                bestDist = dist;
+                best = { from, to, point: closestPointOnSegment(x, y, from, to) };
+            }
+        }
+        return best;
+    };
+
+    return search(preferredAngleDeg != null) ?? search(false);
+}
+
+/**
+ * Unit perpendicular for an edge angle in PDF points (y-down).
+ * @param {number} edgeAngleDeg
+ * @returns {{ x: number, y: number }}
+ */
+function unitPerpFromEdgeAngle(edgeAngleDeg) {
+    const rad = (Number(edgeAngleDeg) || 0) * Math.PI / 180;
+    const nx = -Math.sin(rad);
+    const ny = Math.cos(rad);
+    const len = Math.hypot(nx, ny) || 1;
+    return { x: nx / len, y: ny / len };
+}
+
+/**
+ * Perpendicular that points away from a known interior point.
+ * @param {number} midX
+ * @param {number} midY
+ * @param {number} edgeAngleDeg
+ * @param {{ x: number, y: number }} interior
+ * @returns {{ x: number, y: number }}
+ */
+function outwardAwayFromInterior(midX, midY, edgeAngleDeg, interior) {
+    const n = unitPerpFromEdgeAngle(edgeAngleDeg);
+    const toIx = interior.x - midX;
+    const toIy = interior.y - midY;
+    if (toIx * n.x + toIy * n.y > 0) {
+        return { x: -n.x, y: -n.y };
+    }
+    return n;
+}
+
+/**
+ * Outward unit normal from a cutout edge, by probing which perpendicular
+ * enters the polygon. A mid that is already outside must not walk back in.
+ *
+ * @param {number} midX
+ * @param {number} midY
+ * @param {number} edgeAngleDeg
+ * @param {Array<{ x: number, y: number }>} [pdfRing]
+ * @returns {{ x: number, y: number }}
+ */
+export function probeOutwardUnitNormal(midX, midY, edgeAngleDeg, pdfRing = null) {
+    const n = unitPerpFromEdgeAngle(edgeAngleDeg);
+    if (!pdfRing?.length) {
+        return n;
+    }
+
+    const firstInsideDistance = (dirX, dirY) => {
+        for (const d of [3, 6, 10, 16, 24, 40, 64, 100, 160]) {
+            if (pointInPdfRing(midX + dirX * d, midY + dirY * d, pdfRing)) {
+                return d;
+            }
+        }
+        return Infinity;
+    };
+
+    const aIn = firstInsideDistance(n.x, n.y);
+    const bIn = firstInsideDistance(-n.x, -n.y);
+    if (aIn !== bIn) {
+        return aIn > bIn ? n : { x: -n.x, y: -n.y };
+    }
+
+    const aEsc = offsetPointAlongNormalOutsidePdfRing(midX, midY, n.x, n.y, 4, pdfRing);
+    const bEsc = offsetPointAlongNormalOutsidePdfRing(midX, midY, -n.x, -n.y, 4, pdfRing);
+    if (aEsc && bEsc) {
+        return aEsc.distance <= bEsc.distance
+            ? { x: aEsc.normX, y: aEsc.normY }
+            : { x: bEsc.normX, y: bEsc.normY };
+    }
+    if (aEsc) return { x: aEsc.normX, y: aEsc.normY };
+    if (bEsc) return { x: bEsc.normX, y: bEsc.normY };
+    return n;
+}
+
+/**
+ * Outward normal: away from a point that actually sits inside the cutout,
+ * otherwise probe the polygon.
+ *
+ * @param {number} midX
+ * @param {number} midY
+ * @param {number} edgeAngleDeg
+ * @param {Array<{ x: number, y: number }>} [pdfRing]
+ * @param {{ x: number, y: number }} [interiorRefPdf]
+ * @returns {{ x: number, y: number }}
+ */
+export function resolveOutwardUnitNormal(midX, midY, edgeAngleDeg, pdfRing = null, interiorRefPdf = null) {
+    const interiorIsInside = interiorRefPdf
+        && pdfRing?.length
+        && pointInPdfRing(interiorRefPdf.x, interiorRefPdf.y, pdfRing);
+    if (interiorIsInside) {
+        return outwardAwayFromInterior(midX, midY, edgeAngleDeg, interiorRefPdf);
+    }
+    return probeOutwardUnitNormal(midX, midY, edgeAngleDeg, pdfRing);
+}
+
+/**
+ * Place a label at the midpoint of the nearest cutout border edge, always outside.
+ *
+ * @param {number} midX
+ * @param {number} midY
+ * @param {number} edgeAngleDeg
+ * @param {number} offsetPt
+ * @param {Array<{ x: number, y: number }>} [pdfRing]
+ * @param {{ x: number, y: number }} [interiorRefPdf]
+ * @returns {{ midX: number, midY: number, x: number, y: number, angle: number, edgeAngleDeg: number }}
+ */
+export function placeLabelOutsidePdfCutout(
+    midX,
+    midY,
+    edgeAngleDeg,
+    offsetPt,
+    pdfRing = null,
+    interiorRefPdf = null
+) {
+    let useMidX = midX;
+    let useMidY = midY;
+    let useAngle = Number(edgeAngleDeg) || 0;
+    const MAX_SNAP_PT = 24;
+    if (pdfRing?.length) {
+        const edge = closestPdfRingEdge(pdfRing, midX, midY, useAngle);
+        if (edge) {
+            const snapDist = Math.hypot(edge.point.x - midX, edge.point.y - midY);
+            if (snapDist <= MAX_SNAP_PT) {
+                useMidX = edge.point.x;
+                useMidY = edge.point.y;
+                const dx = edge.to.x - edge.from.x;
+                const dy = edge.to.y - edge.from.y;
+                if (Math.hypot(dx, dy) > 1e-6) {
+                    useAngle = (Math.atan2(dy, dx) * 180) / Math.PI;
+                }
+            }
+        }
+    }
+
+    const outward = resolveOutwardUnitNormal(
+        useMidX,
+        useMidY,
+        useAngle,
+        pdfRing,
+        interiorRefPdf
+    );
+    const dist = Math.max(0, Number(offsetPt) || 0);
+    let x = useMidX + outward.x * dist;
+    let y = useMidY + outward.y * dist;
+    if (pdfRing?.length && pointInPdfRing(x, y, pdfRing)) {
+        const flippedX = useMidX - outward.x * dist;
+        const flippedY = useMidY - outward.y * dist;
+        if (!pointInPdfRing(flippedX, flippedY, pdfRing)) {
+            x = flippedX;
+            y = flippedY;
+        } else {
+            const escaped = offsetPointAlongNormalOutsidePdfRing(
+                useMidX,
+                useMidY,
+                outward.x,
+                outward.y,
+                Math.max(8, dist),
+                pdfRing
+            );
+            x = escaped.x;
+            y = escaped.y;
+        }
+    }
+
+    const interior = interiorRefPdf
+        ?? computePdfRingCentroid(pdfRing)
+        ?? { x: useMidX - outward.x, y: useMidY - outward.y };
+    return {
+        midX: useMidX,
+        midY: useMidY,
+        x,
+        y,
+        edgeAngleDeg: useAngle,
+        angle: pickTextAngleWithBottomTowardInterior(useAngle, x, y, interior)
+    };
+}
+
+/**
+ * Outward unit normal (away from interior) for an edge at `edgeAngleDeg`.
+ *
+ * @param {number} edgeAngleDeg
+ * @param {{ x: number, y: number }} mid
+ * @param {{ x: number, y: number }} interior
+ * @returns {{ x: number, y: number }}
+ */
+export function outwardUnitNormalFromEdgeAngle(edgeAngleDeg, mid, interior) {
+    const rad = (Number(edgeAngleDeg) || 0) * Math.PI / 180;
+    let nx = -Math.sin(rad);
+    let ny = Math.cos(rad);
+    const toInteriorX = (interior?.x ?? mid.x) - mid.x;
+    const toInteriorY = (interior?.y ?? mid.y) - mid.y;
+    if (toInteriorX * nx + toInteriorY * ny > 0) {
+        nx = -nx;
+        ny = -ny;
+    }
+    const len = Math.hypot(nx, ny) || 1;
+    return { x: nx / len, y: ny / len };
+}
+
+/**
+ * Outward unit normal for the edge pFrom → pTo.
+ *
+ * @param {{ x: number, y: number }} pFrom
+ * @param {{ x: number, y: number }} pTo
+ * @param {{ x: number, y: number }} interior
+ * @returns {{ x: number, y: number }|null}
+ */
+export function outwardUnitNormalFromEdge(pFrom, pTo, interior) {
+    if (!pFrom || !pTo) return null;
+    const dx = pTo.x - pFrom.x;
+    const dy = pTo.y - pFrom.y;
+    const edgeLen = Math.hypot(dx, dy);
+    if (edgeLen < 1e-6) return null;
+    const mid = { x: (pFrom.x + pTo.x) / 2, y: (pFrom.y + pTo.y) / 2 };
+    const edgeAngleDeg = (Math.atan2(dy, dx) * 180) / Math.PI;
+    return outwardUnitNormalFromEdgeAngle(edgeAngleDeg, mid, interior);
+}
+
+/**
  * Outward unit normal from a cap edge midpoint (away from polygon interior).
  *
  * @param {number} midX
@@ -242,7 +560,8 @@ export function computeOutwardNormalFromPdfRing(midX, midY, pdfRing) {
 }
 
 /**
- * Step outward along a fixed normal until the point clears the PDF ring (no direction flip).
+ * Step along a ring-edge normal until the point is outside the cutout.
+ * If the preferred normal points into the sheet, use the opposite direction.
  *
  * @param {number} midX
  * @param {number} midY
@@ -253,20 +572,32 @@ export function computeOutwardNormalFromPdfRing(midX, midY, pdfRing) {
  * @returns {{ x: number, y: number, distance: number, normX: number, normY: number }}
  */
 export function offsetPointAlongNormalOutsidePdfRing(midX, midY, normX, normY, offsetPt, pdfRing) {
-    let distance = Math.max(0, offsetPt);
-    for (let attempt = 0; attempt < 40; attempt++) {
-        const x = midX + normX * distance;
-        const y = midY + normY * distance;
-        if (!pdfRing?.length || !pointInPdfRing(x, y, pdfRing)) {
-            return { x, y, distance, normX, normY };
+    const step = Math.max(1, offsetPt);
+    const tryDir = (nx, ny) => {
+        let distance = step;
+        for (let attempt = 0; attempt < 40; attempt++) {
+            const x = midX + nx * distance;
+            const y = midY + ny * distance;
+            if (!pdfRing?.length || !pointInPdfRing(x, y, pdfRing)) {
+                return { x, y, distance, normX: nx, normY: ny };
+            }
+            distance += step;
         }
-        distance += offsetPt;
+        return null;
+    };
+
+    const preferred = tryDir(normX, normY);
+    const flipped = tryDir(-normX, -normY);
+    if (preferred && flipped) {
+        return preferred.distance <= flipped.distance ? preferred : flipped;
     }
+    if (preferred) return preferred;
+    if (flipped) return flipped;
 
     return {
-        x: midX + normX * distance,
-        y: midY + normY * distance,
-        distance,
+        x: midX + normX * step,
+        y: midY + normY * step,
+        distance: step,
         normX,
         normY
     };
@@ -434,24 +765,22 @@ export function placePageSideCapSeeLabel(
     fallbackInteriorRefPdf,
     offsetPt
 ) {
-    const { x, y } = offsetPageSideLabelOutsidePdfRing(side, midX, midY, offsetPt, pdfRing);
-    const interiorRefPdf = computePdfRingCentroid(pdfRing)
-        ?? fallbackInteriorRefPdf
+    const interiorRefPdf = fallbackInteriorRefPdf
+        ?? computePdfRingCentroid(pdfRing)
         ?? {
             x: placedRect
                 ? placedRect.x + placedRect.width / 2
                 : (side === 'left' ? midX + 1 : midX - 1),
             y: midY
         };
-
-    return {
+    return placeLabelOutsidePdfCutout(
         midX,
         midY,
-        x,
-        y,
-        angle: pickTextAngleWithBottomTowardInterior(edgeAngleDeg, x, y, interiorRefPdf),
-        edgeAngleDeg
-    };
+        edgeAngleDeg,
+        offsetPt,
+        pdfRing,
+        interiorRefPdf
+    );
 }
 
 /**

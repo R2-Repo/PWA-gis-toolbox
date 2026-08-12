@@ -150,7 +150,7 @@ export function syncBasemapToggleActive(key) {
     const category = getBasemapCategory(key);
     if (!category) return false;
 
-    document.querySelectorAll('#basemap-toggle .header-toggle-segment').forEach((segment) => {
+    document.querySelectorAll('#basemap-toggle .header-toggle-segment[data-category]').forEach((segment) => {
         segment.classList.toggle('active', segment.dataset.category === category);
     });
 

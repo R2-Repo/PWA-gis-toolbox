@@ -23,6 +23,9 @@ export const PDF_EXPORT_STATION_EPS_FT = 2;
 /** Bottom-of-page height reserved for the title-block footer (inches). */
 export const PDF_DETAIL_FOOTER_BAND_IN = 0.5;
 
+/** Gap between the map sheet and the title-block footer (inches). */
+export const PDF_DETAIL_FOOTER_GAP_IN = 0.2;
+
 /** Cell width ratios: Project / Date / Spare / Spare / Sheet. */
 export const TITLE_BLOCK_CELL_RATIOS = [0.35, 0.12, 0.22, 0.18, 0.13];
 
