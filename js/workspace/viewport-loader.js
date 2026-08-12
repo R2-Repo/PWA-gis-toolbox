@@ -39,8 +39,50 @@ export function centerFocusBounds(bounds, fraction = VIEWPORT_CENTER_FOCUS_FRACT
 }
 
 /**
+ * Sort features south→north, west→east by envelope center for even sampling.
+ * @param {object[]} features
+ * @returns {object[]}
+ */
+export function sortFeaturesSpatially(features) {
+    return [...(features || [])].sort((a, b) => {
+        const ab = featureBBox(a);
+        const bb = featureBBox(b);
+        const ax = ab ? (ab[0] + ab[2]) / 2 : 0;
+        const ay = ab ? (ab[1] + ab[3]) / 2 : 0;
+        const bx = bb ? (bb[0] + bb[2]) / 2 : 0;
+        const by = bb ? (bb[1] + bb[3]) / 2 : 0;
+        const aIdx = Number(a?.properties?._featureIndex);
+        const bIdx = Number(b?.properties?._featureIndex);
+        return ay - by || ax - bx
+            || (Number.isFinite(aIdx) && Number.isFinite(bIdx) ? aIdx - bIdx : 0);
+    });
+}
+
+/**
+ * Even stride pick after spatial sort — avoids chunk/import-order clustering
+ * when the viewport render cap truncates a dense view.
+ * @param {object[]} features
+ * @param {number} keepCount
+ * @returns {object[]}
+ */
+export function spreadFeaturesSpatially(features, keepCount) {
+    if (!features?.length || keepCount <= 0) return [];
+    if (keepCount >= features.length) return features.slice();
+    const sorted = sortFeaturesSpatially(features);
+    const stride = sorted.length / keepCount;
+    const out = new Array(keepCount);
+    for (let i = 0; i < keepCount; i++) {
+        out[i] = sorted[Math.min(sorted.length - 1, Math.floor(i * stride))];
+    }
+    return out;
+}
+
+/**
  * Fill a feature list up to feature/vertex budgets (center list first).
  * Pure helper for tests and {@link buildViewportGeoJSON}.
+ *
+ * When a tier exceeds the feature cap, it is spatially spread first so dense
+ * views do not keep only the first chunks from IndexedDB query order.
  *
  * @param {object[]} centerFeatures
  * @param {object[]} edgeFeatures
@@ -50,9 +92,26 @@ export function centerFocusBounds(bounds, fraction = VIEWPORT_CENTER_FOCUS_FRACT
 export function selectViewportFeaturesCenterFirst(centerFeatures, edgeFeatures, opts = {}) {
     const maxFeatures = opts.maxFeatures ?? RENDER_LIMITS.maxFeaturesPerSource;
     const maxVertices = opts.maxVertices ?? RENDER_LIMITS.maxVerticesPerViewport;
+
+    let center = centerFeatures || [];
+    let edge = edgeFeatures || [];
+    let preTruncated = false;
+
+    if (center.length > maxFeatures) {
+        center = spreadFeaturesSpatially(center, maxFeatures);
+        edge = [];
+        preTruncated = true;
+    } else if (center.length + edge.length > maxFeatures) {
+        const room = Math.max(0, maxFeatures - center.length);
+        if (edge.length > room) {
+            edge = spreadFeaturesSpatially(edge, room);
+            preTruncated = true;
+        }
+    }
+
     const features = [];
     let vertices = 0;
-    let truncated = false;
+    let truncated = preTruncated;
 
     const take = (list) => {
         for (const f of list) {
@@ -70,9 +129,9 @@ export function selectViewportFeaturesCenterFirst(centerFeatures, edgeFeatures, 
         }
     };
 
-    take(centerFeatures || []);
-    if (features.length < maxFeatures) take(edgeFeatures || []);
-    else if ((edgeFeatures || []).length) truncated = true;
+    take(center);
+    if (features.length < maxFeatures) take(edge);
+    else if (edge.length) truncated = true;
 
     return { features, truncated, vertices };
 }
@@ -209,6 +268,8 @@ export default {
     featureIntersectsViewport,
     countGeometryVertices,
     centerFocusBounds,
+    sortFeaturesSpatially,
+    spreadFeaturesSpatially,
     selectViewportFeaturesCenterFirst,
     VIEWPORT_PAD_FRACTION,
     VIEWPORT_CENTER_FOCUS_FRACTION

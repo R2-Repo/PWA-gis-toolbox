@@ -173,7 +173,9 @@ export function getLayerInfoSummary(layer) {
                 id: 'displayMode',
                 label: 'Map display',
                 value: display.shortLabel,
-                warning: display.summary
+                warning: layer._viewportTruncated
+                    ? 'Current view is capped at render limits — zoom in for denser areas. ' + display.summary
+                    : display.summary
             });
         }
     }

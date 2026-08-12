@@ -1,7 +1,7 @@
 /**
- * Store-backed selection helpers for workspace / tiled layers.
- * Box-select and highlights must not depend on the empty in-memory GeoJSON
- * FeatureCollection used by vector-tile map entries.
+ * Store-backed selection helpers for workspace / tiled / viewport layers.
+ * Box-select and highlights must not depend only on the current in-memory
+ * GeoJSON packet (empty for tiles; capped/partial for viewport draw).
  */
 import { buildViewportGeoJSON } from '../workspace/viewport-loader.js';
 import { getWorkspaceFeaturesByIndices, getWorkspaceFeatureByIndex } from '../workspace/workspace-store.js';
@@ -19,8 +19,8 @@ export const SELECTION_HIGHLIGHT_MAX_FEATURES = 5_000;
  */
 export function mapEntryNeedsStoreSelection(mapEntry) {
     if (!mapEntry) return false;
-    if (mapEntry.tiled) return true;
-    if (mapEntry.workspace && !(mapEntry.geojson?.features?.length > 0)) return true;
+    // All workspace-backed map entries — tiled or viewport — select from IndexedDB.
+    if (mapEntry.tiled || mapEntry.workspace) return true;
     return false;
 }
 

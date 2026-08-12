@@ -4,6 +4,7 @@ import {
     featureIntersectsViewport,
     centerFocusBounds,
     selectViewportFeaturesCenterFirst,
+    spreadFeaturesSpatially,
     VIEWPORT_CENTER_FOCUS_FRACTION
 } from '../js/workspace/viewport-loader.js';
 import { tileFocusScore, setGisTileFocus, getGisTileFocus } from '../js/map/tiles/tile-protocol.js';
@@ -159,6 +160,48 @@ describe('viewport center focus', () => {
         expect(features[0].properties.id).toBe('center-main');
         expect(features).toHaveLength(5);
         expect(features.filter((f) => String(f.properties.id).startsWith('edge-'))).toHaveLength(4);
+    });
+
+    it('spatially spreads an oversized center tier instead of chunk-order prefix', () => {
+        const center = [];
+        for (let x = 0; x < 10; x++) {
+            for (let y = 0; y < 10; y++) {
+                center.push({
+                    type: 'Feature',
+                    properties: { id: `${x}-${y}`, _featureIndex: x * 10 + y },
+                    geometry: { type: 'Point', coordinates: [x, y] }
+                });
+            }
+        }
+        const { features, truncated } = selectViewportFeaturesCenterFirst(center, [], {
+            maxFeatures: 8,
+            maxVertices: 250_000
+        });
+        expect(truncated).toBe(true);
+        expect(features).toHaveLength(8);
+        const xs = features.map((f) => f.geometry.coordinates[0]);
+        const ys = features.map((f) => f.geometry.coordinates[1]);
+        expect(Math.max(...xs) - Math.min(...xs)).toBeGreaterThan(4);
+        expect(Math.max(...ys) - Math.min(...ys)).toBeGreaterThan(4);
+    });
+
+    it('spreadFeaturesSpatially covers the envelope', () => {
+        const features = [];
+        for (let x = 0; x < 10; x++) {
+            for (let y = 0; y < 10; y++) {
+                features.push({
+                    type: 'Feature',
+                    properties: { id: `${x}-${y}` },
+                    geometry: { type: 'Point', coordinates: [x * 10, y * 10] }
+                });
+            }
+        }
+        const picked = spreadFeaturesSpatially(features, 8);
+        expect(picked).toHaveLength(8);
+        const xs = picked.map((f) => f.geometry.coordinates[0]);
+        const ys = picked.map((f) => f.geometry.coordinates[1]);
+        expect(Math.max(...xs) - Math.min(...xs)).toBeGreaterThan(40);
+        expect(Math.max(...ys) - Math.min(...ys)).toBeGreaterThan(40);
     });
 });
 

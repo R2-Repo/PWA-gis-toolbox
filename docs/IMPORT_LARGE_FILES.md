@@ -118,6 +118,7 @@ Do **not** say the app’s max is “2 GB / 1M” as if those were one product g
 | `MATERIALIZE_FEATURE_LIMIT` / `MAX_IMPORT_FEATURES` | 250,000 | Gate A + materialize / heavy tools |
 | `STREAM_MAX_BYTES` | 2 GB | Source-open SAFETY |
 | Streaming trigger | text ≥ 4 MB / binary ≥ 5 MB | ROUTING Gate A → B |
+| Viewport display | Workspace layers below tile threshold | ROUTING display (≤10k features / 250k vertices per view) |
 | Tiled rendering | ≥ 50,000 features | ROUTING display |
 | Toolbox Kit in-memory pack | 250,000 | OPERATION |
 
@@ -216,8 +217,10 @@ MapLibre requests gis-tiles://<layerId>/{z}/{x}/{y}.pbf
 - Workspace layers with **≥ 50,000 features** (`TILED_RENDER_THRESHOLD`)
   render as vector tiles: the whole layer is visible at every zoom instead of
   a 10k-feature viewport packet, with flat memory and no `setData` churn.
-  Layers below the threshold keep the existing viewport path unchanged, and
-  any tile-path failure falls back to viewport rendering automatically.
+  Layers below the threshold keep the viewport path (current-view GeoJSON
+  packet, center-first + spatial spread under the 10k/250k-vertex cap, stale
+  refresh ignored, store-backed box-select), and any tile-path failure falls
+  back to viewport rendering automatically.
 - Feature identity (`_featureIndex`/`_datasetId`) rides in tile properties, so
   the existing click/popup path (attributes fetched from IndexedDB) works
   unchanged.

@@ -1113,13 +1113,15 @@ class MapManager {
             logger.warn('Map', 'Tiled rendering unavailable — using viewport rendering', { id: dataset.id });
         }
 
+        const wsId = dataset.workspaceLayerId || dataset.id;
         const bounds = this.map.getBounds();
         const west = bounds.getWest();
         const south = bounds.getSouth();
         const east = bounds.getEast();
         const north = bounds.getNorth();
-        const viewportFc = await buildViewportGeoJSON(dataset.workspaceLayerId || dataset.id, [west, south, east, north]);
+        const viewportFc = await buildViewportGeoJSON(wsId, [west, south, east, north]);
         dataset.geojson = viewportFc;
+        dataset._viewportTruncated = !!viewportFc.truncated;
 
         const taggedFeatures = _tagFeaturesForMap(dataset);
         const sourceId = `src-${dataset.id}`;
@@ -1135,18 +1137,19 @@ class MapManager {
             colorIndex,
             workspace: true,
             geojson,
+            truncated: !!viewportFc.truncated,
             scaleRange: normalizeScaleRange(dataset)
         });
         this._storeLayerScaleRange(dataset);
         this._layerNames.set(dataset.id, dataset.name);
 
-        if (fit && viewportFc.features.length) {
+        // Fit to the full workspace extent (not just the current view packet).
+        if (fit) {
             try {
-                const turf = await import('@turf/turf');
-                const bbox = turf.bbox(viewportFc);
-                if (bbox && isFinite(bbox[0])) {
+                const layerBounds = await getWorkspaceLayerBounds(wsId);
+                if (layerBounds && isFinite(layerBounds[0])) {
                     this.scheduleMapFit({
-                        bounds: [[bbox[0], bbox[1]], [bbox[2], bbox[3]]]
+                        bounds: [[layerBounds[0], layerBounds[1]], [layerBounds[2], layerBounds[3]]]
                     });
                 }
             } catch (e) {
@@ -1337,9 +1340,15 @@ class MapManager {
 
     async _refreshAllWorkspaceLayers() {
         if (!this._workspaceDatasets?.size || !this.map) return;
-        for (const [id] of this._workspaceDatasets) {
-            await this.refreshWorkspaceLayerViewport(id);
-        }
+        const ids = [...this._workspaceDatasets.keys()].filter((id) => {
+            const entry = this.dataLayers.get(id);
+            return entry && !entry.tiled;
+        });
+        if (!ids.length) return;
+        // Prefer the active layer so the layer the user is working on updates first.
+        const active = this._activeLayerId;
+        ids.sort((a, b) => (a === active ? -1 : b === active ? 1 : 0));
+        await Promise.all(ids.map((id) => this.refreshWorkspaceLayerViewport(id)));
     }
 
     async refreshWorkspaceLayerViewport(layerId) {
@@ -1348,17 +1357,30 @@ class MapManager {
         if (!dataset || !entry || !this.map) return;
         if (entry.tiled) return; // vector tiles refresh themselves per tile
 
+        if (!this._viewportRefreshGen) this._viewportRefreshGen = new Map();
+        const token = (this._viewportRefreshGen.get(layerId) || 0) + 1;
+        this._viewportRefreshGen.set(layerId, token);
+
         const bounds = this.map.getBounds();
         const viewportFc = await buildViewportGeoJSON(
             dataset.workspaceLayerId || layerId,
             [bounds.getWest(), bounds.getSouth(), bounds.getEast(), bounds.getNorth()]
         );
+        // A newer pan/zoom refresh started — drop this stale packet.
+        if (this._viewportRefreshGen.get(layerId) !== token) return;
+
         dataset.geojson = viewportFc;
+        dataset._viewportTruncated = !!viewportFc.truncated;
         const tagged = _tagFeaturesForMap(dataset);
         const geojson = { type: 'FeatureCollection', features: tagged };
         const source = this.map.getSource(entry.sourceId);
         if (source) source.setData(geojson);
         entry.geojson = geojson;
+        entry.truncated = !!viewportFc.truncated;
+
+        if (this.getSelectionCount(layerId) > 0) {
+            void this._renderSelectionHighlights(layerId);
+        }
     }
 
     /** Append a new GeoJSON source chunk (incremental import — no full setData). */
