@@ -53,8 +53,9 @@ const IMPORT_DISPLAY_MODE_CARDS = [
             'The full layer is stored on this device (workspace / IndexedDB). The map draws features that intersect the current view, up to a render cap, then updates as you pan and zoom.',
         infoDetails: [
             'Features outside the view stay in the layer — they appear when you move the map.',
-            'In dense views, features nearer the center of the screen are preferred before edge features.',
+            'In dense views, features nearer the center of the screen are preferred before edge features, with even spatial sampling inside the draw cap.',
             'Very dense views may still omit some intersecting features so drawing stays fast; zoom in or export for the complete set.',
+            'Click, identify, and box-select work from the full workspace store; cyan highlights load selected geometries on demand.',
             'Export still includes the full layer.'
         ]
     },

@@ -27,6 +27,17 @@ describe('resolveLayerDisplayMode', () => {
         expect(display.badge).toBe('VIEWPORT');
         expect(display.toastMessage).toMatch(/VIEWPORT badge/i);
         expect(display.details.some((line) => line.includes(String(RENDER_LIMITS.maxFeaturesPerSource.toLocaleString())))).toBe(true);
+        expect(display.details.some((line) => /box-select/i.test(line))).toBe(true);
+    });
+
+    it('calls out truncation when the current viewport packet is capped', () => {
+        const layer = workspaceLayer(20_000);
+        layer._viewportTruncated = true;
+        const display = resolveLayerDisplayMode(layer, { tiled: false, truncated: true });
+        expect(display.mode).toBe('viewport');
+        expect(display.truncated).toBe(true);
+        expect(display.toastMessage).toMatch(/capped/i);
+        expect(display.summary).toMatch(/draw cap|thinned/i);
     });
 
     it('uses tiled mode when map entry is tiled', () => {

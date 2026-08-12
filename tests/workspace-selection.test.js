@@ -54,13 +54,14 @@ import { buildViewportGeoJSON } from '../js/workspace/viewport-loader.js';
 import { getWorkspaceFeaturesByIndices } from '../js/workspace/workspace-store.js';
 
 describe('workspace-selection', () => {
-    it('detects tiled / empty workspace map entries', () => {
+    it('uses store-backed selection for all workspace / tiled map entries', () => {
         expect(mapEntryNeedsStoreSelection({ tiled: true, geojson: { features: [] } })).toBe(true);
         expect(mapEntryNeedsStoreSelection({ workspace: true, geojson: { features: [] } })).toBe(true);
+        // Viewport packets are partial — still select from IndexedDB.
         expect(mapEntryNeedsStoreSelection({
             workspace: true,
             geojson: { features: [{ type: 'Feature', geometry: null, properties: {} }] }
-        })).toBe(false);
+        })).toBe(true);
         expect(mapEntryNeedsStoreSelection({ geojson: { features: [{ type: 'Feature' }] } })).toBe(false);
     });
 
