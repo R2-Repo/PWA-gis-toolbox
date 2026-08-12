@@ -182,6 +182,11 @@ export function installDualScreenMapServiceDecorator(mapApi, coordinator) {
     mapApi.setBasemap = function setBasemap(key) {
         if (!coordinator.isActive) return originals.setBasemap?.(key);
         mapApi.setCurrentBasemap?.(key);
+        bus.emit('map:chrome', {
+            basemap: key,
+            is3d: mapApi.is3DEnabled?.(),
+            basemapTone: mapApi.getBasemapTone?.()
+        });
         coordinator.syncLayersChanged();
         return undefined;
     };
