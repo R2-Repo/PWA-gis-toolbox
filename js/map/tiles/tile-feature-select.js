@@ -156,8 +156,52 @@ export function shouldContinueChunkScan(state = {}) {
 }
 
 /**
- * Decide which chunks to load for a tile. Prefers high tile-overlap chunks and
- * stops once enough feature mass is queued for the per-tile cap (overview only).
+ * Chunk bbox center [lon, lat] for spatial ordering.
+ * @param {number[]|null|undefined} bbox
+ * @returns {[number, number]}
+ */
+export function chunkCentroid(bbox) {
+    if (!bbox || bbox.length < 4) return [0, 0];
+    return [(bbox[0] + bbox[2]) / 2, (bbox[1] + bbox[3]) / 2];
+}
+
+/**
+ * Even stride pick preserving order (geographic spread when input is sorted).
+ * @template T
+ * @param {T[]} items
+ * @param {number} keepCount
+ * @returns {T[]}
+ */
+export function stridePickItems(items, keepCount) {
+    if (!items?.length || keepCount <= 0) return [];
+    if (keepCount >= items.length) return items.slice();
+    const stride = items.length / keepCount;
+    const out = new Array(keepCount);
+    for (let i = 0; i < keepCount; i++) {
+        out[i] = items[Math.min(items.length - 1, Math.floor(i * stride))];
+    }
+    return out;
+}
+
+/**
+ * Sort chunks south→north, west→east so stride sampling covers the tile.
+ * @param {Array<{ chunkId: string, bbox?: number[] }>} records
+ */
+export function sortChunksSpatially(records) {
+    return [...(records || [])].sort((a, b) => {
+        const [ax, ay] = chunkCentroid(a.bbox);
+        const [bx, by] = chunkCentroid(b.bbox);
+        return ay - by || ax - bx || String(a.chunkId).localeCompare(String(b.chunkId));
+    });
+}
+
+/**
+ * Decide which chunks to load for a tile.
+ *
+ * Prefers high tile-overlap chunks (local geometry over statewide envelopes).
+ * When the overview budget is exceeded, spatially stride-samples those chunks
+ * so coverage spreads across the tile instead of import-order / score-prefix
+ * clustering (which left visible holes at far zoom).
  *
  * @param {Array<{ chunkId: string, bbox: number[], featureCount?: number }>} chunkRecords
  * @param {[number,number,number,number]} tileBbox
@@ -182,24 +226,41 @@ export function selectChunksForTile(chunkRecords, tileBbox, opts = {}) {
         };
     }
 
-    const selected = [];
-    let estimate = 0;
     const targetMass = maxFeatures * 2;
-    for (const rec of ranked) {
-        if (selected.length >= maxChunks) break;
-        if (useMassBudget && estimate >= targetMass && selected.length > 0) break;
-        selected.push(rec.chunkId);
-        estimate += rec.featureCount;
+    let keepCount = Math.min(maxChunks, ranked.length);
+    if (useMassBudget && totalEstimate > targetMass) {
+        const massKeep = Math.max(1, Math.round(ranked.length * (targetMass / totalEstimate)));
+        keepCount = Math.min(keepCount, massKeep);
+    }
+    keepCount = Math.max(1, keepCount);
+
+    // Prefer chunks near the best overlap score; fill remainder from the rest.
+    const bestScore = ranked[0].score || 0;
+    const primaryFloor = Math.max(bestScore * 0.25, 1e-9);
+    const primary = ranked.filter((rec) => rec.score >= primaryFloor);
+    const secondary = ranked.filter((rec) => rec.score < primaryFloor);
+
+    const selected = [];
+    const primaryKeep = Math.min(keepCount, primary.length);
+    if (primary.length <= primaryKeep) {
+        selected.push(...primary);
+    } else {
+        selected.push(...stridePickItems(sortChunksSpatially(primary), primaryKeep));
     }
 
-    // Long-line layers: every chunk can score similarly low. Still take the
-    // top-ranked maxChunks so crossing lines have a chance to appear.
+    const room = keepCount - selected.length;
+    if (room > 0 && secondary.length) {
+        selected.push(...stridePickItems(sortChunksSpatially(secondary), room));
+    }
+
+    // Long-line layers: every chunk can score similarly low. Still take a
+    // spatially spread set so crossing lines have a chance to appear.
     if (!selected.length) {
-        selected.push(...ranked.slice(0, Math.min(maxChunks, ranked.length)).map((r) => r.chunkId));
+        selected.push(...stridePickItems(sortChunksSpatially(ranked), keepCount));
     }
 
     return {
-        chunkIds: selected,
+        chunkIds: selected.map((rec) => rec.chunkId),
         sampled: selected.length < ranked.length,
         rankedCount: ranked.length
     };
@@ -399,6 +460,9 @@ export default {
     rankChunksByOverlap,
     chunkLoadBudgetForZoom,
     shouldContinueChunkScan,
+    chunkCentroid,
+    stridePickItems,
+    sortChunksSpatially,
     selectChunksForTile,
     featureBelongsInTile,
     featureCrossesTile,

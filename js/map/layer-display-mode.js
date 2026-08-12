@@ -44,7 +44,7 @@ export function resolveLayerDisplayMode(layer, mapEntry = null) {
                 'Zoom in for denser local detail; tiles prefer geometry that actually falls in the current view.',
                 'While tiles are building, squares nearer the center of the screen are preferred over the edges.',
                 'Export still includes the full layer.',
-                'Click or identify still works; selection highlights on tiled layers are limited.'
+                'Click, identify, and box-select work from the full workspace store; cyan highlights load selected geometries on demand.'
             ],
             featureCount
         };

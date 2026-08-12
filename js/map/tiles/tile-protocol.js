@@ -3,8 +3,9 @@
  * which builds MVT bytes from the local IndexedDB workspace on demand.
  *
  * Tile builds are queued and prefer tiles whose centers are nearer the current
- * map focus (updated from the map camera). That does not change tile contents —
- * only which squares finish first when the worker is busy.
+ * map focus (updated from the map camera). Scores are live (not frozen at
+ * enqueue). Far / superseded jobs are pruned when the queue backs up so pans
+ * do not stall on stale edge tiles.
  */
 import logger from '../../core/logger.js';
 import { GIS_TILE_PROTOCOL } from './tile-constants.js';
@@ -14,7 +15,10 @@ const URL_RE = /^gis-tiles:\/\/([^/]+)\/(\d+)\/(\d+)\/(\d+)\.pbf$/;
 const EMPTY_TILE = new ArrayBuffer(0);
 
 /** How many tile builds may be in flight on the worker at once. */
-const MAX_TILE_INFLIGHT = 2;
+const MAX_TILE_INFLIGHT = 4;
+
+/** Soft cap on waiting jobs — farther-from-focus tiles are dropped first. */
+const MAX_TILE_QUEUE = 48;
 
 let worker = null;
 let registered = false;
@@ -35,7 +39,7 @@ let focusCenter = null;
  *   y: number,
  *   resolve: Function,
  *   reject: Function,
- *   score: number
+ *   abortHandler: ((ev?: Event) => void)|null
  * }} TileQueueJob
  */
 
@@ -51,6 +55,7 @@ let inflight = 0;
 export function setGisTileFocus(lon, lat) {
     if (!Number.isFinite(lon) || !Number.isFinite(lat)) return;
     focusCenter = { lon, lat };
+    _pruneStaleQueue();
 }
 
 /** @returns {{ lon: number, lat: number }|null} */
@@ -74,6 +79,40 @@ export function tileFocusScore(z, x, y, focus = focusCenter) {
     const dlon = cx - focus.lon;
     const dlat = cy - focus.lat;
     return dlon * dlon + dlat * dlat;
+}
+
+function _liveScore(job) {
+    return tileFocusScore(job.z, job.x, job.y);
+}
+
+function _rejectJob(job, message) {
+    job.reject(Object.assign(new Error(message), { cancelled: true }));
+}
+
+/**
+ * Drop farthest waiting jobs when the queue is backed up after a pan/zoom.
+ * MapLibre will re-request tiles that are still needed.
+ */
+function _pruneStaleQueue() {
+    if (waitQueue.length <= MAX_TILE_QUEUE) return;
+    waitQueue.sort((a, b) => {
+        const sa = _liveScore(a);
+        const sb = _liveScore(b);
+        return sa - sb || a.reqId - b.reqId;
+    });
+    const dropped = waitQueue.splice(MAX_TILE_QUEUE);
+    for (const job of dropped) {
+        _detachAbort(job);
+        _rejectJob(job, 'Tile superseded by newer view');
+    }
+}
+
+function _detachAbort(job) {
+    if (!job?.abortHandler || !job.signal) return;
+    try {
+        job.signal.removeEventListener('abort', job.abortHandler);
+    } catch { /* ignore */ }
+    job.abortHandler = null;
 }
 
 function _ensureWorker() {
@@ -100,6 +139,7 @@ function _ensureWorker() {
         }
         pending.clear();
         for (const job of waitQueue) {
+            _detachAbort(job);
             job.reject(new Error(event?.message || 'Tile worker crashed'));
         }
         waitQueue.length = 0;
@@ -115,16 +155,23 @@ function _ensureWorker() {
 function _pumpQueue() {
     if (!worker && waitQueue.length) _ensureWorker();
     while (inflight < MAX_TILE_INFLIGHT && waitQueue.length) {
-        // Pick nearest to focus (stable: lower score, then earlier reqId).
+        // Live score vs current focus (not frozen enqueue score).
         let bestIdx = 0;
+        let bestScore = _liveScore(waitQueue[0]);
         for (let i = 1; i < waitQueue.length; i++) {
-            const a = waitQueue[i];
-            const b = waitQueue[bestIdx];
-            if (a.score < b.score || (a.score === b.score && a.reqId < b.reqId)) {
+            const score = _liveScore(waitQueue[i]);
+            const best = waitQueue[bestIdx];
+            if (score < bestScore || (score === bestScore && waitQueue[i].reqId < best.reqId)) {
                 bestIdx = i;
+                bestScore = score;
             }
         }
         const [job] = waitQueue.splice(bestIdx, 1);
+        _detachAbort(job);
+        if (job.signal?.aborted) {
+            _rejectJob(job, 'Tile request aborted');
+            continue;
+        }
         inflight += 1;
         pending.set(job.reqId, { resolve: job.resolve, reject: job.reject });
         worker.postMessage({
@@ -138,12 +185,19 @@ function _pumpQueue() {
     }
 }
 
-function _requestTile(layerId, z, x, y) {
+/**
+ * @param {string} layerId
+ * @param {number} z
+ * @param {number} x
+ * @param {number} y
+ * @param {AbortSignal|null} [signal]
+ */
+function _requestTile(layerId, z, x, y, signal = null) {
     _ensureWorker();
     const reqId = nextReqId++;
-    const score = tileFocusScore(z, x, y);
     return new Promise((resolve, reject) => {
-        waitQueue.push({
+        /** @type {TileQueueJob} */
+        const job = {
             reqId,
             layerId,
             z,
@@ -151,8 +205,30 @@ function _requestTile(layerId, z, x, y) {
             y,
             resolve,
             reject,
-            score
-        });
+            abortHandler: null,
+            signal: signal || null
+        };
+
+        if (signal) {
+            if (signal.aborted) {
+                reject(Object.assign(new Error('Tile request aborted'), { cancelled: true }));
+                return;
+            }
+            job.abortHandler = () => {
+                const idx = waitQueue.indexOf(job);
+                if (idx >= 0) {
+                    waitQueue.splice(idx, 1);
+                    _detachAbort(job);
+                    reject(Object.assign(new Error('Tile request aborted'), { cancelled: true }));
+                }
+                // In-flight builds are allowed to finish; result is ignored if
+                // MapLibre already abandoned the request (pending cleared below).
+            };
+            signal.addEventListener('abort', job.abortHandler, { once: true });
+        }
+
+        waitQueue.push(job);
+        _pruneStaleQueue();
         _pumpQueue();
     });
 }
@@ -172,14 +248,22 @@ export function ensureGisTileProtocol() {
         return false;
     }
 
-    maplibre.addProtocol(GIS_TILE_PROTOCOL, async (params) => {
+    maplibre.addProtocol(GIS_TILE_PROTOCOL, async (params, abortController) => {
         const match = URL_RE.exec(params.url || '');
         if (!match) {
             throw new Error(`Bad gis-tiles URL: ${params.url}`);
         }
         const [, layerId, z, x, y] = match;
-        const buffer = await _requestTile(layerId, Number(z), Number(x), Number(y));
-        return { data: buffer || EMPTY_TILE };
+        const signal = abortController?.signal || params?.signal || null;
+        try {
+            const buffer = await _requestTile(layerId, Number(z), Number(x), Number(y), signal);
+            return { data: buffer || EMPTY_TILE };
+        } catch (err) {
+            if (err?.cancelled || signal?.aborted) {
+                return { data: EMPTY_TILE };
+            }
+            throw err;
+        }
     });
 
     registered = true;
@@ -212,6 +296,7 @@ export function disposeGisTileWorker() {
     }
     pending.clear();
     for (const job of waitQueue) {
+        _detachAbort(job);
         job.reject(Object.assign(new Error('Tile worker disposed'), { cancelled: true }));
     }
     waitQueue.length = 0;
@@ -222,6 +307,11 @@ export function disposeGisTileWorker() {
     worker = null;
 }
 
+/** Test helper — waiting queue depth. */
+export function getGisTileQueueLength() {
+    return waitQueue.length;
+}
+
 export default {
     ensureGisTileProtocol,
     gisTileUrlTemplate,
@@ -229,5 +319,6 @@ export default {
     disposeGisTileWorker,
     setGisTileFocus,
     getGisTileFocus,
-    tileFocusScore
+    tileFocusScore,
+    getGisTileQueueLength
 };

@@ -19,6 +19,12 @@ import { MAP_CHUNK_BATCH_SIZE, RENDER_LIMITS } from './render-limits.js';
 import { buildViewportGeoJSON } from '../workspace/viewport-loader.js';
 import { getWorkspaceFeatureAttributes, getWorkspaceLayerBounds, iterateWorkspaceFeatures } from '../workspace/workspace-store.js';
 import {
+    mapEntryNeedsStoreSelection,
+    queryWorkspaceIndicesInBbox,
+    loadWorkspaceSelectionFeatures,
+    resolveWorkspaceHighlightFeature
+} from './workspace-selection.js';
+import {
     resolveMapLibreZoomRange,
     normalizeScaleRange,
     MAPLIBRE_MIN_ZOOM,
@@ -1651,7 +1657,7 @@ class MapManager {
                     const latlng = { lat: e.lngLat.lat, lng: e.lngLat.lng };
                     let nearby = this._findFeaturesNearClick(latlng, dataset.id, featureIndex, e.point);
                     nearby = await this._enrichPopupHitsWithWorkspaceAttrs(nearby);
-                    this.highlightFeature(dataset.id, featureIndex, styFlat.strokeColor);
+                    void this.highlightFeature(dataset.id, featureIndex, styFlat.strokeColor, feature);
                     this._popupHits = nearby.length > 0 ? nearby : [{
                         feature: this._stripInternalProps(feature), featureIndex,
                         layerId: dataset.id, layerName: dataset.name,
@@ -2108,10 +2114,18 @@ class MapManager {
 
             const info = this.dataLayers.get(layerId);
             let feature = null;
-            if (info?.geojson?.features) {
+            if (info?.geojson?.features?.length) {
                 feature = info.geojson.features.find(
                     (f) => Number(f.properties?._featureIndex) === featureIndex
                 );
+            }
+            // Tiled / empty in-memory FC — use the rendered vector-tile geometry.
+            if (!feature && rf.geometry) {
+                feature = {
+                    type: 'Feature',
+                    geometry: rf.geometry,
+                    properties: { ...props, _featureIndex: featureIndex, _datasetId: layerId }
+                };
             }
             if (!feature) continue;
 
@@ -2233,18 +2247,49 @@ class MapManager {
     // Feature highlighting
     // ==========================================
 
-    highlightFeature(layerId, featureIndex, originalColor) {
+    /**
+     * @param {string} layerId
+     * @param {number} featureIndex
+     * @param {string} [originalColor]
+     * @param {object|null} [featureHint] geometry/attrs when the map entry has no in-memory FC
+     */
+    async highlightFeature(layerId, featureIndex, originalColor, featureHint = null) {
         if (isLayerLocked(layerId)) return;
+        const gen = (this._highlightGen = (this._highlightGen || 0) + 1);
         this.clearHighlight();
         const info = this.dataLayers.get(layerId);
         if (!info) return;
         const idx = Number(featureIndex);
-        const matches = info.geojson.features.filter(
+        let matches = (info.geojson?.features || []).filter(
             (f) => Number(f.properties?._featureIndex) === idx
         );
+        if (!matches.length && featureHint?.geometry) {
+            matches = [{
+                type: 'Feature',
+                geometry: featureHint.geometry,
+                properties: { ...(featureHint.properties || {}), _featureIndex: idx }
+            }];
+        }
+        if (!matches.length && (info.tiled || info.workspace)) {
+            const wsId = this._workspaceDatasets?.get(layerId)?.workspaceLayerId || layerId;
+            const fetched = await resolveWorkspaceHighlightFeature(
+                wsId,
+                idx,
+                featureHint?.geometry || null
+            );
+            if (fetched) matches = [fetched];
+        }
         if (matches.length === 0) return;
+        // A newer highlight may have started while we awaited IndexedDB.
+        if (gen !== this._highlightGen) return;
 
         this._highlightedInfo = { layerId, featureIndex: idx };
+        this._paintHighlightFeatures(matches);
+    }
+
+    /** @param {object[]} matches */
+    _paintHighlightFeatures(matches) {
+        if (!this.map || !matches?.length) return;
         const hlSrcId = 'highlight-source';
 
         if (this.map.getSource(hlSrcId)) {
@@ -4641,7 +4686,7 @@ class MapManager {
             this._selections.set(layerId, new Set([idx]));
         }
 
-        this._renderSelectionHighlights(layerId);
+        void this._renderSelectionHighlights(layerId);
         bus.emit('selection:changed', { layerId, count: this.getSelectionCount(layerId), totalCount: this.getTotalSelectionCount() });
         void this._refreshPresentationAnchorFromSelection(layerId);
     }
@@ -4775,25 +4820,26 @@ class MapManager {
             }
             const bbox = [w, s, east, n];
             this._lastSelectionBbox = bbox;
-            this._selectFeaturesInBounds(bbox, addToExisting);
-            const layerId = this._activeLayerId;
-            const count = layerId ? this.getSelectionCount(layerId) : 0;
             // Keep outline; fill goes transparent via mode:'done'
             showCompletedRect(bbox);
             // Prevent the trailing click (after Shift+drag) from clearing selection
             this._suppressMapClickClear = true;
-            if (count > 0) {
-                bus.emit('selection:boxComplete', {
-                    layerId,
-                    count,
-                    bbox,
-                    screenBbox: geographicBboxToClientRect(this.map, bbox),
-                    clientX: clientPoint?.clientX ?? 0,
-                    clientY: clientPoint?.clientY ?? 0
-                });
-            } else {
-                bus.emit('selection:boxEmpty', { layerId, bbox });
-            }
+            void this._selectFeaturesInBounds(bbox, addToExisting).then(() => {
+                const layerId = this._activeLayerId;
+                const count = layerId ? this.getSelectionCount(layerId) : 0;
+                if (count > 0) {
+                    bus.emit('selection:boxComplete', {
+                        layerId,
+                        count,
+                        bbox,
+                        screenBbox: geographicBboxToClientRect(this.map, bbox),
+                        clientX: clientPoint?.clientX ?? 0,
+                        clientY: clientPoint?.clientY ?? 0
+                    });
+                } else {
+                    bus.emit('selection:boxEmpty', { layerId, bbox });
+                }
+            });
         };
 
         const onMouseDown = (e) => {
@@ -4946,7 +4992,7 @@ class MapManager {
         return { x: clientX - rect.left, y: clientY - rect.top };
     }
 
-    _selectFeaturesInBounds(bbox, addToExisting) {
+    async _selectFeaturesInBounds(bbox, addToExisting) {
         const layerId = this._activeLayerId;
         if (!layerId || isLayerLocked(layerId)) return;
         const info = this.dataLayers.get(layerId);
@@ -4962,16 +5008,28 @@ class MapManager {
         }
         const sel = this._selections.get(layerId);
 
-        // Geographic coordinates only — ignore rendered circle size at the current zoom
-        const turfLib = typeof turf !== 'undefined' ? turf : globalThis.turf;
-        for (const f of info.geojson?.features || []) {
-            if (!f.geometry) continue;
-            if (f.properties?._featureIndex === undefined) continue;
-            const idx = Number(f.properties._featureIndex);
-            if (!Number.isFinite(idx)) continue;
-            if (featureIntersectsGeographicBbox(f, bbox, turfLib)) sel.add(idx);
+        if (mapEntryNeedsStoreSelection(info)) {
+            const wsId = this._workspaceDatasets?.get(layerId)?.workspaceLayerId || layerId;
+            const turfLib = typeof turf !== 'undefined' ? turf : globalThis.turf;
+            try {
+                const { indices } = await queryWorkspaceIndicesInBbox(wsId, bbox, { turfLib });
+                for (const idx of indices) sel.add(idx);
+            } catch (err) {
+                logger.warn('Map', 'Workspace box-select failed', { layerId, error: err?.message });
+            }
+        } else {
+            // Geographic coordinates only — ignore rendered circle size at the current zoom
+            const turfLib = typeof turf !== 'undefined' ? turf : globalThis.turf;
+            for (const f of info.geojson?.features || []) {
+                if (!f.geometry) continue;
+                if (f.properties?._featureIndex === undefined) continue;
+                const idx = Number(f.properties._featureIndex);
+                if (!Number.isFinite(idx)) continue;
+                if (featureIntersectsGeographicBbox(f, bbox, turfLib)) sel.add(idx);
+            }
         }
-        this._renderSelectionHighlights(layerId);
+
+        await this._renderSelectionHighlights(layerId);
 
         const count = sel.size;
         bus.emit('selection:changed', {
@@ -4982,7 +5040,7 @@ class MapManager {
         if (count > 0) logger.debug('Map', `Box selected ${count} feature(s) on ${layerId}`);
     }
 
-    _renderSelectionHighlights(layerId) {
+    async _renderSelectionHighlights(layerId) {
         if (!this.map) return;
         const selSrcId = `selection-${layerId}`;
         for (const lid of [`${selSrcId}-fill`, `${selSrcId}-outline`, `${selSrcId}-line`, `${selSrcId}-circle`]) {
@@ -4995,9 +5053,24 @@ class MapManager {
         const info = this.dataLayers.get(layerId);
         if (!info) return;
 
-        const selectedFeatures = info.geojson.features.filter(
+        const gen = (this._selectionHighlightGen = (this._selectionHighlightGen || 0) + 1);
+        let selectedFeatures = (info.geojson?.features || []).filter(
             (f) => sel.has(Number(f.properties?._featureIndex))
         );
+
+        if ((!selectedFeatures.length || mapEntryNeedsStoreSelection(info)) && sel.size) {
+            const wsId = this._workspaceDatasets?.get(layerId)?.workspaceLayerId || layerId;
+            try {
+                selectedFeatures = await loadWorkspaceSelectionFeatures(wsId, sel);
+            } catch (err) {
+                logger.warn('Map', 'Selection highlight load failed', { layerId, error: err?.message });
+                selectedFeatures = [];
+            }
+            if (gen !== this._selectionHighlightGen) return;
+            // Selection may have cleared while awaiting.
+            if (!this._selections.get(layerId)?.size) return;
+        }
+
         if (selectedFeatures.length === 0) return;
 
         this.map.addSource(selSrcId, { type: 'geojson', data: { type: 'FeatureCollection', features: selectedFeatures } });
@@ -5046,7 +5119,7 @@ class MapManager {
         if (isLayerLocked(layerId)) return;
         const normalized = (indices || []).map((i) => Number(i)).filter(Number.isFinite);
         this._selections.set(layerId, new Set(normalized));
-        this._renderSelectionHighlights(layerId);
+        void this._renderSelectionHighlights(layerId);
         bus.emit('selection:changed', { layerId, count: normalized.length, totalCount: this.getTotalSelectionCount() });
     }
     selectAll(layerId, geojson) {
@@ -5077,10 +5150,23 @@ class MapManager {
     showQueryResults(layerId, indices = []) {
         if (!this.map || isLayerLocked(layerId)) return;
         this._stopQueryResultPulse();
-        const features = buildQueryResultFeatures(this.dataLayers, layerId, indices);
-        renderQueryResultLayers(this.map, features);
         this._queryResultLayerId = layerId;
         this._queryResultIndices = [...indices];
+        const info = this.dataLayers.get(layerId);
+        const features = buildQueryResultFeatures(this.dataLayers, layerId, indices);
+        if (features.length || !mapEntryNeedsStoreSelection(info)) {
+            renderQueryResultLayers(this.map, features);
+            return;
+        }
+        const wsId = this._workspaceDatasets?.get(layerId)?.workspaceLayerId || layerId;
+        const gen = (this._queryResultGen = (this._queryResultGen || 0) + 1);
+        void loadWorkspaceSelectionFeatures(wsId, indices).then((loaded) => {
+            if (gen !== this._queryResultGen) return;
+            if (this._queryResultLayerId !== layerId) return;
+            renderQueryResultLayers(this.map, loaded);
+        }).catch((err) => {
+            logger.warn('Map', 'Query result load failed', { layerId, error: err?.message });
+        });
     }
 
     clearQueryResults() {

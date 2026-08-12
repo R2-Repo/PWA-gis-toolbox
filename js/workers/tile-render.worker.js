@@ -10,6 +10,7 @@ import { GridSpatialIndex } from '../workspace/spatial-index.js';
 import { tileToBBox, padBBox } from '../map/tiles/tile-math.js';
 import {
     selectTileFeatures,
+    selectChunksForTile,
     rankChunksByOverlap,
     chunkLoadBudgetForZoom,
     shouldContinueChunkScan,
@@ -98,9 +99,8 @@ function invalidate(layerId) {
 }
 
 /**
- * Progressive chunk load: at close zoom keep scanning ranked chunks until
- * real in-tile geometry is found (or the high-zoom budget is exhausted).
- * Overview zooms still stop early on feature-mass estimates.
+ * Progressive chunk load at close zoom; geographically spread chunk sampling
+ * at overview zooms (avoids import-order holes when the mass/chunk budget bites).
  */
 async function buildTile(layerId, z, x, y) {
     const index = await getSpatialIndex();
@@ -122,6 +122,28 @@ async function buildTile(layerId, z, x, y) {
     const { highZoom, maxChunks, hardMaxChunks, sparseCandidateFloor, useMassBudget,
         localOverlapFloor, lowOverlapBudget } =
         chunkLoadBudgetForZoom(z, ranked.length);
+
+    // Overview: spatially spread sample — do not take a score/import-order prefix.
+    if (!highZoom) {
+        const { chunkIds: selectedIds } = selectChunksForTile(chunkRecords, tileBbox, {
+            maxFeatures: MAX_TILE_FEATURES,
+            maxChunks,
+            useMassBudget: true
+        });
+        const loaded = [];
+        for (let i = 0; i < selectedIds.length; i++) {
+            loaded.push({ features: await loadChunkFeatures(selectedIds[i]) });
+        }
+        const features = selectTileFeatures(loaded, tileBbox, z, {
+            maxFeatures: MAX_TILE_FEATURES,
+            preferCrossing: false,
+            preferLocal: false
+        }).features;
+        return buildTileFromFeatures(features, z, x, y, {
+            tolerance: simplifyToleranceForZoom(z)
+        });
+    }
+
     const targetMass = MAX_TILE_FEATURES * 2;
     const loaded = [];
     let estimate = 0;
@@ -154,21 +176,18 @@ async function buildTile(layerId, z, x, y) {
         loaded.push({ features });
         estimate += rec.featureCount || features.length;
 
-        if (highZoom) {
-            if (rec.score < localOverlapFloor) lowOverlapLoaded += 1;
-            for (let i = 0; i < features.length; i++) {
-                const feature = features[i];
-                if (!featureBelongsInTile(feature, tileBbox, z)) continue;
-                candidates.push(feature);
-            }
+        if (rec.score < localOverlapFloor) lowOverlapLoaded += 1;
+        for (let i = 0; i < features.length; i++) {
+            const feature = features[i];
+            if (!featureBelongsInTile(feature, tileBbox, z)) continue;
+            candidates.push(feature);
         }
     }
 
-    // Close zoom: keep multi-tile spanning lines when over the per-tile cap
-    // (preferLocal alone demoted them). Overview keeps stride/local sampling.
+    // Close zoom: keep multi-tile spanning lines when over the per-tile cap.
     const features = selectTileFeatures(loaded, tileBbox, z, {
         maxFeatures: MAX_TILE_FEATURES,
-        preferCrossing: highZoom,
+        preferCrossing: true,
         preferLocal: false
     }).features;
 

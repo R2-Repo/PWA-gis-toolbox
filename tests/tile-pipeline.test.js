@@ -182,6 +182,42 @@ describe('selectChunksForTile (overlap ranking)', () => {
         expect(chunkIds).toContain('local-streets');
     });
 
+    it('spatially spreads overview chunks instead of import-order prefix clustering', () => {
+        // Simulate a far-zoom tile covering many equal-overlap 1° cells.
+        const overviewBbox = [-115, 37, -109, 42];
+        const records = [];
+        for (let x = 0; x < 6; x++) {
+            for (let y = 0; y < 5; y++) {
+                const west = -115 + x;
+                const south = 37 + y;
+                records.push({
+                    // Import-order ids — old prefix sampling would keep only the first rows.
+                    chunkId: `layer:c:${x * 5 + y}`,
+                    bbox: [west, south, west + 1, south + 1],
+                    featureCount: 2000
+                });
+            }
+        }
+        const { chunkIds, sampled } = selectChunksForTile(records, overviewBbox, {
+            maxFeatures: 20_000,
+            maxChunks: 8,
+            useMassBudget: true
+        });
+        expect(sampled).toBe(true);
+        expect(chunkIds.length).toBeLessThanOrEqual(8);
+        expect(chunkIds.length).toBeGreaterThan(1);
+
+        const centers = chunkIds.map((id) => {
+            const rec = records.find((r) => r.chunkId === id);
+            return [(rec.bbox[0] + rec.bbox[2]) / 2, (rec.bbox[1] + rec.bbox[3]) / 2];
+        });
+        const lons = centers.map((c) => c[0]);
+        const lats = centers.map((c) => c[1]);
+        // Must span a meaningful portion of the overview tile, not one corner.
+        expect(Math.max(...lons) - Math.min(...lons)).toBeGreaterThan(2);
+        expect(Math.max(...lats) - Math.min(...lats)).toBeGreaterThan(1.5);
+    });
+
     it('keeps a line that crosses the tile even when endpoints are outside', () => {
         const line = {
             type: 'Feature',

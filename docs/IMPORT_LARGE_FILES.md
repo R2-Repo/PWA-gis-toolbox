@@ -225,9 +225,11 @@ MapLibre requests gis-tiles://<layerId>/{z}/{x}/{y}.pbf
   `tile-feature-select.js`, `tile-builder.js`, `tile-protocol.js`) and
   `js/workers/tile-render.worker.js`; map integration in
   `_installTiledWorkspaceLayer` / `_installVectorTileLayerSet`.
-- Known limits: selection highlight overlays are not drawn for tiled layers
-  (popups and identify work); overview tiles above the per-tile cap show an
-  evenly-sampled subset by design.
+- Overview tiles above the per-tile / chunk budget show a spatially spread
+  sampled subset by design (denser as you zoom in). Box-select, click
+  highlight, and cyan selection overlays resolve geometries from IndexedDB
+  for tiled layers (same workflow intent as memory layers, within selection
+  caps).
 - **Close-zoom long lines:** stream import places each line into every 1°
   spatial cell it crosses (not only the first-vertex cell), so chunk bboxes
   stay local and high-zoom tiles do not fan out across statewide envelopes.
