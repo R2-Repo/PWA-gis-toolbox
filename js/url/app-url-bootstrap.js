@@ -4,6 +4,15 @@ import { resolveAppUrlMapInit } from './app-url-builder.js';
 import { isCameraAlreadyAt } from '../map/map-interaction-utils.js';
 
 /**
+ * True when the URL actually asked for a camera (not just chrome defaults).
+ * Re-applying default Utah/zoom-7 after style-ready fights the first user zoom.
+ * @param {import('./app-url-schema.js').AppUrlConfig | null | undefined} config
+ */
+export function shouldApplyUrlViewport(config) {
+    return !!(config?.view || config?.bounds);
+}
+
+/**
  * @typedef {object} AppUrlBootstrapDeps
  * @property {import('../map/map-service.js').default} mapService
  * @property {(side: 'left' | 'right', collapsed: boolean) => void} setPanelCollapsed
@@ -187,7 +196,9 @@ async function applyAfterMapReady(deps, config, init) {
     if (!map) return;
 
     await applyChromeFromConfig({ mapService: deps.mapService }, config);
+    if (!shouldApplyUrlViewport(config)) return;
     await waitForMapStyleReady(map);
+    if (deps.mapService.userHasMovedCamera?.()) return;
     applyViewportConfig(map, init);
 }
 

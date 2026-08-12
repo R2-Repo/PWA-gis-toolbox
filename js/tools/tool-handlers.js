@@ -220,10 +220,14 @@ export async function restoreSessionIfAvailable() {
                 setActiveLayer(session.meta.activeLayerId);
             }
 
-            // Fit map to all restored spatial layers
+            // Fit map to all restored spatial layers unless the user already zoomed.
             if (restored > 0) {
                 mapService.syncLayerOrder(getMapLayerOrderIds());
-                mapService.fitToAll();
+                if (mapService.userHasMovedCamera?.()) {
+                    logger.info('Session', 'Skipped fit-to-all — user already moved the map');
+                } else {
+                    mapService.fitToAll();
+                }
             }
 
             showToast(`Restored ${restored} layer${restored !== 1 ? 's' : ''} from previous session`, 'success');
@@ -423,7 +427,7 @@ async function applyProjectKitSnapshot(snapshot, { sections, mode = 'replace' })
         }
 
         refreshUI();
-        if (selected.includes('layers')) {
+        if (selected.includes('layers') && !mapService.userHasMovedCamera?.()) {
             mapService.fitToAll();
         }
 
@@ -1137,7 +1141,7 @@ export async function handleFileImport(files, fenceBbox = null, options = {}) {
         throwIfTaskCancelled();
 
         if (batchLayerIds.length > 0) {
-            await mapService.scheduleFitToLayers(batchLayerIds);
+            await mapService.scheduleFitToLayers(batchLayerIds, { allowZoomOut: false });
         }
 
         if (allExpanded.length > 0) {
@@ -4555,7 +4559,7 @@ export async function openArcGISImporter() {
                                     progressUi?.onProgress?.({ percent: 98, step: 'Adding layer to map...' });
 
                                     const { ids } = await _addImportedDatasets([dataset], { useWorkspace: false });
-                                    await mapService.scheduleFitToLayers(ids);
+                                    await mapService.scheduleFitToLayers(ids, { allowZoomOut: false });
                                     const count = isWorkspaceLayer(dataset)
                                         ? (dataset.schema?.featureCount || 0)
                                         : dataset.type === 'spatial'

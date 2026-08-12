@@ -221,6 +221,30 @@ export function isCameraAlreadyFittingBounds(map, bounds, options = {}) {
 }
 
 /**
+ * True when applying cameraForBounds would zoom the camera out.
+ * Used so import auto-fit cannot yank a user who already zoomed in closer.
+ * @param {import('maplibre-gl').Map | null | undefined} map
+ * @param {[[number, number], [number, number]]} bounds
+ * @param {{ padding?: number | object, maxZoom?: number }} [options]
+ * @returns {boolean}
+ */
+export function wouldFitZoomOut(map, bounds, options = {}) {
+    if (!map || !bounds || typeof map.cameraForBounds !== 'function') return false;
+    try {
+        const cam = map.cameraForBounds(bounds, {
+            padding: options.padding ?? 30,
+            maxZoom: options.maxZoom ?? 16
+        });
+        const zoom = typeof map.getZoom === 'function' ? map.getZoom() : null;
+        const targetZoom = cam?.zoom;
+        if (!Number.isFinite(zoom) || !Number.isFinite(targetZoom)) return false;
+        return zoom > targetZoom + 0.08;
+    } catch {
+        return false;
+    }
+}
+
+/**
  * True when jumpTo/center+zoom would be a no-op for the current camera.
  * @param {import('maplibre-gl').Map | null | undefined} map
  * @param {{ center?: [number, number]|{lng:number,lat:number}, zoom?: number, pitch?: number, bearing?: number }} target

@@ -1,15 +1,20 @@
+import { reprojectCoordinate } from '../crs/reproject.js';
 import { UGRC_API_BASE, UGRC_REVERSE_MILEPOST_DEFAULTS } from './config.js';
 
+function roundMeters(value) {
+    return Math.round(Number(value) * 100) / 100;
+}
+
 /**
- * @param {{ lng: number, lat: number, apiKey: string, buffer?: number, spatialReference?: number, includeRampSystem?: boolean, suggest?: number }} opts
+ * @param {{ x: number, y: number, apiKey: string, buffer?: number, spatialReference?: number, includeRampSystem?: boolean, suggest?: number }} opts
  * @returns {string}
  */
 export function buildReverseMilepostUrl(opts) {
-    const lng = Number(opts.lng);
-    const lat = Number(opts.lat);
+    const x = roundMeters(opts.x);
+    const y = roundMeters(opts.y);
     const apiKey = String(opts.apiKey || '').trim();
-    if (!Number.isFinite(lng) || !Number.isFinite(lat)) {
-        throw new Error('Valid longitude and latitude are required');
+    if (!Number.isFinite(x) || !Number.isFinite(y)) {
+        throw new Error('Valid UTM easting and northing are required');
     }
     if (!apiKey) {
         throw new Error('UGRC API key is required');
@@ -17,19 +22,17 @@ export function buildReverseMilepostUrl(opts) {
 
     const buffer = opts.buffer ?? UGRC_REVERSE_MILEPOST_DEFAULTS.buffer;
     const spatialReference = opts.spatialReference ?? UGRC_REVERSE_MILEPOST_DEFAULTS.spatialReference;
+    const includeRampSystem = opts.includeRampSystem ?? UGRC_REVERSE_MILEPOST_DEFAULTS.includeRampSystem;
+    const suggest = opts.suggest ?? UGRC_REVERSE_MILEPOST_DEFAULTS.suggest;
     const params = new URLSearchParams({
-        buffer: String(buffer),
+        apiKey,
         spatialReference: String(spatialReference),
-        apiKey
+        buffer: String(buffer),
+        suggest: String(suggest),
+        includeRampSystem: includeRampSystem ? 'true' : 'false'
     });
-    if (opts.includeRampSystem != null) {
-        params.set('includeRampSystem', opts.includeRampSystem ? 'true' : 'false');
-    }
-    if (opts.suggest != null) {
-        params.set('suggest', String(opts.suggest));
-    }
 
-    return `${UGRC_API_BASE}/reverse/milepost/${encodeURIComponent(String(lng))}/${encodeURIComponent(String(lat))}?${params}`;
+    return `${UGRC_API_BASE}/geocode/reversemilepost/${encodeURIComponent(String(x))}/${encodeURIComponent(String(y))}?${params}`;
 }
 
 /**
@@ -103,6 +106,7 @@ function buildUgrcHttpError(response, body) {
 
 /**
  * Reverse route/milepost geocode via UGRC.
+ * Map clicks are WGS84; the API expects NAD83 UTM zone 12N meters (EPSG:26912).
  * @param {{ lat: number, lng: number, apiKey: string, buffer?: number, spatialReference?: number, includeRampSystem?: boolean, suggest?: number, fetchImpl?: typeof fetch }} opts
  * @returns {Promise<{ ok: true, result: object } | { ok: false, reason: 'no_match'|'http'|'network'|'invalid', error?: Error, status?: number }>}
  */
@@ -114,7 +118,18 @@ export async function reverseMilepost(opts) {
 
     let url;
     try {
-        url = buildReverseMilepostUrl(opts);
+        const lng = Number(opts.lng);
+        const lat = Number(opts.lat);
+        if (!Number.isFinite(lng) || !Number.isFinite(lat)) {
+            throw new Error('Valid longitude and latitude are required');
+        }
+        const [x, y] = await reprojectCoordinate([lng, lat], 'EPSG:4326', 'EPSG:26912');
+        url = buildReverseMilepostUrl({
+            ...opts,
+            x,
+            y,
+            spatialReference: UGRC_REVERSE_MILEPOST_DEFAULTS.spatialReference
+        });
     } catch (error) {
         return { ok: false, reason: 'invalid', error };
     }

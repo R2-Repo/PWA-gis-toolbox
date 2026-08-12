@@ -89,7 +89,8 @@ import {
     resizeMapIfNeeded,
     shouldStartBoxSelectDrag,
     stopMapCamera,
-    suspendDoubleClickZoom
+    suspendDoubleClickZoom,
+    wouldFitZoomOut
 } from './map-interaction-utils.js';
 
 const PROGRAMMATIC_FIT_OPTIONS = { padding: 30, maxZoom: 16, duration: 0 };
@@ -251,6 +252,10 @@ class MapManager {
         this._scheduleFitTimer = null;
         this._pendingFitRequest = null;
         this._fitGeneration = 0;
+        this._fitRunActive = false;
+        this._onUserCameraGesture = null;
+        this._onNativeWheel = null;
+        this._userHasMovedCamera = false;
     }
 
     _layerAddSpec(baseSpec, zoomRange) {
@@ -444,6 +449,14 @@ class MapManager {
             }, 100);
         });
 
+        // A late startup jumpTo / session fit must not undo the first user zoom.
+        this._onUserCameraGesture = (e) => this._noteUserCameraGesture(e);
+        for (const evt of ['wheel', 'zoomstart', 'dragstart', 'pitchstart', 'rotatestart', 'touchstart']) {
+            this.map.on(evt, this._onUserCameraGesture);
+        }
+        this._onNativeWheel = () => this._noteUserCameraGesture({ type: 'wheel' });
+        this.map.getCanvas?.()?.addEventListener?.('wheel', this._onNativeWheel, { capture: true, passive: true });
+
         this._annotationOverlay = new AnnotationOverlayManager(this.map);
         this._annotationOverlay.setGeojsonProvider((datasetId) => this.dataLayers.get(datasetId)?.geojson);
         this._annotationOverlay.bind();
@@ -489,10 +502,22 @@ class MapManager {
         window.clearTimeout(this._scheduleFitTimer);
         this._scheduleFitTimer = null;
         this._fitGeneration += 1;
+        this._fitRunActive = false;
         if (this._pendingFitRequest?.resolve) {
             this._pendingFitRequest.resolve();
         }
         this._pendingFitRequest = null;
+        if (this.map && this._onNativeWheel) {
+            this.map.getCanvas?.()?.removeEventListener?.('wheel', this._onNativeWheel, { capture: true });
+        }
+        if (this.map && this._onUserCameraGesture) {
+            for (const evt of ['wheel', 'zoomstart', 'dragstart', 'pitchstart', 'rotatestart', 'touchstart']) {
+                this.map.off(evt, this._onUserCameraGesture);
+            }
+        }
+        this._onNativeWheel = null;
+        this._onUserCameraGesture = null;
+        this._userHasMovedCamera = false;
         this._annotationOverlay?.destroy();
         this._annotationOverlay = null;
         if (this._rectSelectCleanup) { this._rectSelectCleanup(); this._rectSelectCleanup = null; }
@@ -987,7 +1012,8 @@ class MapManager {
                 const bbox = turf.bbox(geojson);
                 if (bbox && isFinite(bbox[0])) {
                     this.scheduleMapFit({
-                        bounds: [[bbox[0], bbox[1]], [bbox[2], bbox[3]]]
+                        bounds: [[bbox[0], bbox[1]], [bbox[2], bbox[3]]],
+                        options: { allowZoomOut: false }
                     });
                 }
             } catch (e) {
@@ -1089,7 +1115,8 @@ class MapManager {
                 }, null);
                 if (bbox && isFinite(bbox[0])) {
                     this.scheduleMapFit({
-                        bounds: [[bbox[0], bbox[1]], [bbox[2], bbox[3]]]
+                        bounds: [[bbox[0], bbox[1]], [bbox[2], bbox[3]]],
+                        options: { allowZoomOut: false }
                     });
                 }
             } catch (e) {
@@ -1166,7 +1193,8 @@ class MapManager {
                     const layerBounds = await getWorkspaceLayerBounds(wsId);
                     if (layerBounds && isFinite(layerBounds[0])) {
                         this.scheduleMapFit({
-                            bounds: [[layerBounds[0], layerBounds[1]], [layerBounds[2], layerBounds[3]]]
+                            bounds: [[layerBounds[0], layerBounds[1]], [layerBounds[2], layerBounds[3]]],
+                            options: { allowZoomOut: false }
                         });
                     }
                 } catch (e) {
@@ -1229,7 +1257,8 @@ class MapManager {
 
             if (fit && layerBounds && isFinite(layerBounds[0])) {
                 this.scheduleMapFit({
-                    bounds: [[layerBounds[0], layerBounds[1]], [layerBounds[2], layerBounds[3]]]
+                    bounds: [[layerBounds[0], layerBounds[1]], [layerBounds[2], layerBounds[3]]],
+                    options: { allowZoomOut: false }
                 });
             }
 
@@ -1775,7 +1804,8 @@ class MapManager {
                     const bbox = turf.bbox({ type: 'FeatureCollection', features: savedFeatures });
                     if (bbox && isFinite(bbox[0])) {
                         this.scheduleMapFit({
-                            bounds: [[bbox[0], bbox[1]], [bbox[2], bbox[3]]]
+                            bounds: [[bbox[0], bbox[1]], [bbox[2], bbox[3]]],
+                            options: { allowZoomOut: false }
                         });
                     }
                 } catch (e) {
@@ -2629,6 +2659,7 @@ class MapManager {
                 const pending = this._pendingFitRequest;
                 this._pendingFitRequest = null;
                 if (!pending) return;
+                this._fitRunActive = true;
                 const generation = this._fitGeneration;
                 void this._runScheduledFit(pending, generation);
             }, SCHEDULE_FIT_DEBOUNCE_MS);
@@ -2638,6 +2669,34 @@ class MapManager {
     scheduleFitToLayers(layerIds, options = {}) {
         if (!layerIds?.length) return Promise.resolve();
         return this.scheduleMapFit({ layerIds, options });
+    }
+
+    userHasMovedCamera() {
+        return !!this._userHasMovedCamera;
+    }
+
+    _noteUserCameraGesture(e) {
+        if (e?.originalEvent || e?.type === 'wheel' || e?.type === 'touchstart') {
+            this._userHasMovedCamera = true;
+            this._cancelScheduledFitFromUser();
+        }
+    }
+
+    /**
+     * Drop a pending or in-flight programmatic fit when the user takes the camera.
+     * Prevents stop() + fitBounds from yanking a zoom-in back to maxZoom 16.
+     */
+    _cancelScheduledFitFromUser() {
+        const hasPending = !!(this._pendingFitRequest || this._scheduleFitTimer);
+        const hasInFlight = !!this._fitRunActive;
+        if (!hasPending && !hasInFlight) return;
+
+        this._fitGeneration += 1;
+        window.clearTimeout(this._scheduleFitTimer);
+        this._scheduleFitTimer = null;
+        const pending = this._pendingFitRequest;
+        this._pendingFitRequest = null;
+        pending?.resolve?.();
     }
 
     async _computeLayersBounds(layerIds) {
@@ -2696,6 +2755,7 @@ class MapManager {
 
     async _runScheduledFit({ layerIds, bounds, options, resolve }, generation) {
         const isStale = () => !this.map || generation !== this._fitGeneration;
+        this._fitRunActive = true;
         try {
             if (isStale()) return;
 
@@ -2707,10 +2767,14 @@ class MapManager {
             }
             if (isStale() || !fitBounds) return;
 
-            const fitOpts = { ...PROGRAMMATIC_FIT_OPTIONS, ...options };
-            if (isCameraAlreadyFittingBounds(this.map, fitBounds, fitOpts)) {
+            const { allowZoomOut = true, ...mapFitOpts } = { ...PROGRAMMATIC_FIT_OPTIONS, ...options };
+            if (isCameraAlreadyFittingBounds(this.map, fitBounds, mapFitOpts)) {
                 return;
             }
+            if (!allowZoomOut && wouldFitZoomOut(this.map, fitBounds, mapFitOpts)) {
+                return;
+            }
+            if (isStale()) return;
 
             stopMapCamera(this.map);
             await new Promise((r) => requestAnimationFrame(r));
@@ -2722,14 +2786,19 @@ class MapManager {
                 if (isStale()) return;
             }
 
-            if (isCameraAlreadyFittingBounds(this.map, fitBounds, fitOpts)) {
+            if (isCameraAlreadyFittingBounds(this.map, fitBounds, mapFitOpts)) {
                 return;
             }
+            if (!allowZoomOut && wouldFitZoomOut(this.map, fitBounds, mapFitOpts)) {
+                return;
+            }
+            if (isStale()) return;
 
-            this.map.fitBounds(fitBounds, fitOpts);
+            this.map.fitBounds(fitBounds, mapFitOpts);
         } catch (e) {
             logger.warn('Map', 'Scheduled fit failed', { error: e.message });
         } finally {
+            this._fitRunActive = false;
             resolve?.();
         }
     }

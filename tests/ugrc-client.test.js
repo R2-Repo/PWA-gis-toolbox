@@ -17,16 +17,18 @@ import { UGRC_KEY_STORAGE_KEY } from '../js/ugrc/config.js';
 import { noStateRouteMessage, runReverseMilepostLookup } from '../js/ugrc/lookup.js';
 
 describe('ugrc client URL + normalize', () => {
-    it('builds reverse milepost URL with WGS84 defaults', () => {
+    it('builds reverse milepost URL with UTM 12N defaults', () => {
         const url = buildReverseMilepostUrl({
-            lng: -111.891,
-            lat: 40.7608,
+            x: 425000.12,
+            y: 4510000.34,
             apiKey: 'test-key'
         });
-        expect(url).toContain('/api/v1/reverse/milepost/-111.891/40.7608?');
+        expect(url).toContain('/api/v1/geocode/reversemilepost/425000.12/4510000.34?');
         expect(url).toContain('buffer=100');
-        expect(url).toContain('spatialReference=4326');
+        expect(url).toContain('spatialReference=26912');
         expect(url).toContain('apiKey=test-key');
+        expect(url).toContain('suggest=0');
+        expect(url).toContain('includeRampSystem=false');
     });
 
     it('normalizes a successful reverse milepost payload', () => {
@@ -78,6 +80,10 @@ describe('reverseMilepost fetch', () => {
         expect(outcome.ok).toBe(true);
         expect(outcome.result.route).toBe('89');
         expect(fetchImpl).toHaveBeenCalledOnce();
+        const calledUrl = String(fetchImpl.mock.calls[0][0]);
+        expect(calledUrl).toContain('/api/v1/geocode/reversemilepost/');
+        expect(calledUrl).toContain('spatialReference=26912');
+        expect(calledUrl).not.toContain('/-111.5/');
     });
 
     it('maps empty/404 responses to no_match', async () => {

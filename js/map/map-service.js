@@ -150,6 +150,9 @@ export function createMapService({ mapAdapter = mapManager } = {}) {
         fitToAll() {
             return mapAdapter.fitToAll();
         },
+        userHasMovedCamera() {
+            return !!mapAdapter.userHasMovedCamera?.();
+        },
         fitToLayers(layerIds) {
             return mapAdapter.fitToLayers(layerIds);
         },

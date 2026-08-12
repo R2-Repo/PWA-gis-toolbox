@@ -130,6 +130,52 @@ describe('MapManager.scheduleMapFit', () => {
         );
     });
 
+    it('cancels an in-flight fit when the user zooms or pans', async () => {
+        const manager = new MapManager();
+        manager.map = mockMap;
+
+        let releaseBounds;
+        const boundsGate = new Promise((resolve) => {
+            releaseBounds = resolve;
+        });
+        manager._computeLayersBounds = vi.fn(async () => {
+            await boundsGate;
+            return [[0, 0], [1, 1]];
+        });
+
+        const pending = manager.scheduleFitToLayers(['layer-a']);
+        await vi.advanceTimersByTimeAsync(80);
+
+        manager._cancelScheduledFitFromUser();
+        releaseBounds();
+        await pending;
+
+        expect(mockMap.stop).not.toHaveBeenCalled();
+        expect(mockMap.fitBounds).not.toHaveBeenCalled();
+    });
+
+    it('skips auto-fit when it would zoom the camera out', async () => {
+        mockMap = createMockMap({
+            getZoom: () => 18,
+            cameraForBounds: () => ({
+                center: { lng: 0.5, lat: 0.5 },
+                zoom: 16
+            })
+        });
+        const manager = new MapManager();
+        manager.map = mockMap;
+
+        const pending = manager.scheduleMapFit({
+            bounds: [[0, 0], [1, 1]],
+            options: { allowZoomOut: false }
+        });
+        await vi.advanceTimersByTimeAsync(80);
+        await pending;
+
+        expect(mockMap.stop).not.toHaveBeenCalled();
+        expect(mockMap.fitBounds).not.toHaveBeenCalled();
+    });
+
     it('skips fitBounds when the camera already matches the target bounds', async () => {
         mockMap = createMockMap({
             getCenter: () => ({ lng: 0.5, lat: 0.5 }),
@@ -150,6 +196,17 @@ describe('MapManager.scheduleMapFit', () => {
 
         expect(mockMap.fitBounds).not.toHaveBeenCalled();
         expect(mockMap.resize).not.toHaveBeenCalled();
+    });
+
+    it('marks the camera as user-moved on wheel and user zoomstart', () => {
+        const manager = new MapManager();
+        expect(manager.userHasMovedCamera()).toBe(false);
+
+        manager._noteUserCameraGesture({ type: 'zoomstart' });
+        expect(manager.userHasMovedCamera()).toBe(false);
+
+        manager._noteUserCameraGesture({ type: 'zoomstart', originalEvent: { type: 'wheel' } });
+        expect(manager.userHasMovedCamera()).toBe(true);
     });
 
     it('skips resize when canvas already matches container size', async () => {

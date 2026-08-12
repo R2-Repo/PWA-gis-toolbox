@@ -5,7 +5,8 @@ GIS Toolbox uses the [Utah Geospatial Resource Center (UGRC) API](https://api.ma
 ## v1 behavior
 
 - Map right-click → **Get route & milepost**
-- Calls `GET /api/v1/reverse/milepost/{lng}/{lat}` with `spatialReference=4326` and `buffer=100`
+- Projects the click from WGS84 to NAD83 UTM zone 12N (`EPSG:26912`)
+- Calls `GET /api/v1/geocode/reversemilepost/{x}/{y}` with `spatialReference=26912`, `buffer=100`, `suggest=0`, `includeRampSystem=false`
 - Copies a compact label (e.g. `Route 15P · MP 299.312`) and shows a toast with offset distance when available
 
 **Important:** This endpoint only matches **UDOT highways and state routes**. City streets and local roads usually return no match. The UI states this in the menu tooltip and in the no-match toast — we do not hard-block clicks.

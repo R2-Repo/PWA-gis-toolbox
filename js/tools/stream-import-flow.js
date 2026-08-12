@@ -250,7 +250,7 @@ export async function runStreamingImportFlow(files, options = {}) {
         progress.close();
 
         if (addedDatasets.length) {
-            await mapService.scheduleFitToLayers(addedDatasets.map((ds) => ds.id));
+            await mapService.scheduleFitToLayers(addedDatasets.map((ds) => ds.id), { allowZoomOut: false });
             const layerWord = addedDatasets.length === 1 ? 'layer' : 'layers';
             const fenceNote = fenceBbox && totalFenceFiltered > 0
                 ? ` (${totalFenceFiltered.toLocaleString()} features outside fence excluded)`

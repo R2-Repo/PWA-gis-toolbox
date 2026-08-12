@@ -57,7 +57,9 @@ export async function runReverseMilepostLookup(latlng, deps = {}) {
         lng: latlng.lng,
         apiKey,
         buffer: UGRC_REVERSE_MILEPOST_DEFAULTS.buffer,
-        spatialReference: UGRC_REVERSE_MILEPOST_DEFAULTS.spatialReference
+        spatialReference: UGRC_REVERSE_MILEPOST_DEFAULTS.spatialReference,
+        includeRampSystem: UGRC_REVERSE_MILEPOST_DEFAULTS.includeRampSystem,
+        suggest: UGRC_REVERSE_MILEPOST_DEFAULTS.suggest
     });
 
     if (outcome.ok) {

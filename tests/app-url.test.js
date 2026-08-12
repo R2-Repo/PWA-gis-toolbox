@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { parseAppUrl, hasRecognizedAppUrlConfig } from '../js/url/app-url-parser.js';
 import { buildAppUrl, encodeLiveUrlEntry, parseLiveEntry, resolveAppUrlMapInit } from '../js/url/app-url-builder.js';
 import { _resetAppUrlDetectorCache } from '../js/url/app-url-detector.js';
+import { shouldApplyUrlViewport } from '../js/url/app-url-bootstrap.js';
 
 describe('app-url parser', () => {
     it('parses compact view param', () => {
@@ -80,6 +81,19 @@ describe('app-url builder', () => {
         expect(init.enable3D).toBe(true);
         expect(init.basemap).toBe('satellite');
         expect(init.bounds).toEqual([-112, 39, -111, 40]);
+    });
+});
+
+describe('shouldApplyUrlViewport', () => {
+    it('ignores empty URL and chrome-only params', () => {
+        expect(shouldApplyUrlViewport({})).toBe(false);
+        expect(shouldApplyUrlViewport({ basemap: 'satellite', panel: 'none' })).toBe(false);
+        expect(shouldApplyUrlViewport(null)).toBe(false);
+    });
+
+    it('applies camera only when view or bounds is present', () => {
+        expect(shouldApplyUrlViewport({ view: { zoom: 10, center: [-111, 40] } })).toBe(true);
+        expect(shouldApplyUrlViewport({ bounds: [-112, 39, -111, 40] })).toBe(true);
     });
 });
 
