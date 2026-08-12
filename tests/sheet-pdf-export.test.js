@@ -23,6 +23,7 @@ import {
     pixelRingInsideCanvas,
     pixelRingOverlapsCanvas,
     polygonRingFitsViewport,
+    measureNominalSheetClipPx,
     placeSheetCanvasOnPdfPage,
     resolveDetailPageMarginsPt,
     resolveExportLayerIds,
@@ -1485,6 +1486,44 @@ describe('sheet PDF placement', () => {
         const availW = 1224 - 72;
         expect(placed.width).toBeCloseTo(availW, 0);
         expect(placed.height).toBeLessThan(availW);
+    });
+});
+
+describe('nominal sheet clip measurement', () => {
+    function mockMap(bearing = 0) {
+        const center = { lng: -111.89, lat: 40.76 };
+        const latRad = center.lat * Math.PI / 180;
+        const metersPerDegLat = 111320;
+        const metersPerDegLng = 111320 * Math.cos(latRad);
+        const pxPerM = 2;
+        return {
+            getCenter: () => center,
+            getBearing: () => bearing,
+            project: ([lng, lat]) => ({
+                x: (lng - center.lng) * metersPerDegLng * pxPerM,
+                y: (center.lat - lat) * metersPerDegLat * pxPerM
+            })
+        };
+    }
+
+    it('returns a landscape nominal window from sheet length and corridor width', () => {
+        const measured = measureNominalSheetClipPx(mockMap(0), {
+            sheetLengthFt: 1100,
+            corridorWidthFt: 350
+        }, 1);
+
+        expect(measured).not.toBeNull();
+        expect(measured.widthPx).toBeGreaterThan(measured.heightPx);
+        expect(measured.widthPx / measured.heightPx).toBeCloseTo(1100 / 350, 1);
+    });
+
+    it('scales with captureScale', () => {
+        const map = mockMap(0);
+        const template = { sheetLengthFt: 1100, corridorWidthFt: 350 };
+        const at1 = measureNominalSheetClipPx(map, template, 1);
+        const at2 = measureNominalSheetClipPx(map, template, 2);
+        expect(at2.widthPx).toBeCloseTo(at1.widthPx * 2, 5);
+        expect(at2.heightPx).toBeCloseTo(at1.heightPx * 2, 5);
     });
 });
 

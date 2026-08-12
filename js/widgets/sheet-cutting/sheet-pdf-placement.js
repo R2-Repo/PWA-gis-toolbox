@@ -5,6 +5,10 @@
 import { coordsEqual } from './export-builder.js';
 
 /**
+ * Fit a clipped sheet image into the printable page.
+ * When `referenceWidthPx` / `referenceHeightPx` are set (nominal full-sheet clip),
+ * scale is taken from that window so a short remnant is not blown up to fill the page.
+ *
  * @param {number} pageW
  * @param {number} pageH
  * @param {object} marginsPt
@@ -19,15 +23,19 @@ export function computeSheetImagePlacement(pageW, pageH, marginsPt, contentWidth
     const preferLandscapeFlow = options.preferLandscapeFlow !== false;
     const widthPx = Math.max(1, contentWidthPx);
     const heightPx = Math.max(1, contentHeightPx);
+    const refW = Number(options.referenceWidthPx);
+    const refH = Number(options.referenceHeightPx);
+    const fitW = Math.max(widthPx, Number.isFinite(refW) && refW > 0 ? refW : widthPx);
+    const fitH = Math.max(heightPx, Number.isFinite(refH) && refH > 0 ? refH : heightPx);
 
     let scale;
-    if (preferLandscapeFlow && widthPx >= heightPx) {
-        scale = availW / widthPx;
-        if (heightPx * scale > availH) {
-            scale = availH / heightPx;
+    if (preferLandscapeFlow && fitW >= fitH) {
+        scale = availW / fitW;
+        if (fitH * scale > availH) {
+            scale = availH / fitH;
         }
     } else {
-        scale = Math.min(availW / widthPx, availH / heightPx);
+        scale = Math.min(availW / fitW, availH / fitH);
     }
 
     const width = widthPx * scale;

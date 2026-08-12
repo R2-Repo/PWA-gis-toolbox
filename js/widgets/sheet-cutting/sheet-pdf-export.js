@@ -37,7 +37,8 @@ import {
     computePdfPageSizePt,
     computeSheetExportPixelDimensions,
     DEFAULT_BASEMAP_DPI,
-    resolveBasemapDpi
+    resolveBasemapDpi,
+    resolveSheetFrameDimensions
 } from './engine.js';
 import {
     PDF_DETAIL_FOOTER_BAND_IN,
@@ -919,6 +920,48 @@ export function resolveSheetEdgeSeeLabelPlacements(
 }
 
 /**
+ * Device pixels for a ground length at the current map zoom (along a geographic bearing).
+ * @param {import('maplibre-gl').Map} map
+ * @param {number} feet
+ * @param {number} geographicBearingDeg
+ * @param {number} [captureScale]
+ * @returns {number}
+ */
+export function projectGroundFeetToDevicePixels(map, feet, geographicBearingDeg, captureScale = 1) {
+    if (!map || !Number.isFinite(feet) || feet <= 0 || typeof turf === 'undefined') {
+        return 0;
+    }
+
+    const center = map.getCenter();
+    const origin = [center.lng, center.lat];
+    const dest = turf.destination(turf.point(origin), feet, geographicBearingDeg, { units: 'feet' });
+    const a = map.project(origin);
+    const b = map.project(dest.geometry.coordinates);
+    return Math.hypot(b.x - a.x, b.y - a.y) * Math.max(1, captureScale);
+}
+
+/**
+ * Pixel size of a full-length sheet at the current camera, used so remnant pages
+ * keep the same PDF scale and corridor height as every other sheet.
+ * Screen +X is along-route for landscape-align (map bearing + 90°).
+ *
+ * @param {import('maplibre-gl').Map} map
+ * @param {object} template
+ * @param {number} [captureScale]
+ * @returns {{ widthPx: number, heightPx: number }|null}
+ */
+export function measureNominalSheetClipPx(map, template, captureScale = 1) {
+    if (!map) return null;
+
+    const { mapFrameWidthFt, mapFrameHeightFt } = resolveSheetFrameDimensions(template);
+    const bearing = Number(map.getBearing?.()) || 0;
+    const widthPx = projectGroundFeetToDevicePixels(map, mapFrameWidthFt, bearing + 90, captureScale);
+    const heightPx = projectGroundFeetToDevicePixels(map, mapFrameHeightFt, bearing + 180, captureScale);
+    if (widthPx < 1 || heightPx < 1) return null;
+    return { widthPx, heightPx };
+}
+
+/**
  * @param {import('jspdf').jsPDF} doc
  * @param {HTMLCanvasElement} canvas
  * @param {object} marginsPt
@@ -1179,6 +1222,15 @@ export async function buildHybridPagePdfBlob({
     let transform = null;
 
     if (basemapCanvas) {
+        const placementOptions = { preferLandscapeFlow: isDetail && Boolean(pixelRing?.length) };
+        if (isDetail && pixelRing?.length && map) {
+            const nominal = measureNominalSheetClipPx(map, template, captureScale);
+            if (nominal) {
+                placementOptions.referenceWidthPx = nominal.widthPx;
+                placementOptions.referenceHeightPx = nominal.heightPx;
+            }
+        }
+
         if (overviewPlacement || !pixelRing?.length) {
             placeSheetCanvasOnPdfPage(doc, basemapCanvas, layoutMargins, {
                 preferLandscapeFlow: false
@@ -1195,14 +1247,12 @@ export async function buildHybridPagePdfBlob({
                 { preferLandscapeFlow: false }
             );
         } else {
-            placeSheetCanvasOnPdfPage(doc, basemapCanvas, layoutMargins, {
-                preferLandscapeFlow: isDetail
-            });
+            placeSheetCanvasOnPdfPage(doc, basemapCanvas, layoutMargins, placementOptions);
             transform = buildSheetPageTransform(
                 pixelRing,
                 layoutMargins,
                 { width: pageW, height: pageH },
-                { preferLandscapeFlow: isDetail }
+                placementOptions
             );
         }
     }

@@ -149,6 +149,8 @@ Sheet PDFs combine a **modest-resolution basemap image** (whatever basemap is ac
 
 **Basemap quality** (`basemapDpi`, default 150) affects only the background image and file size. Linework and labels are vector regardless of this setting.
 
+**Remnant (short last) sheets** keep the **same map scale and corridor height** as full-length sheets. Placement fits a **nominal** frame (`sheetLengthFt` × `corridorWidthFt` at the current zoom), then draws the actual clip at that scale — a shorter remnant is a shorter image, not a zoomed-up fill of the page. Without that reference, a square leftover would scale to page height.
+
 **Design layers must be selected** in the Sheet Cutter wizard for their features to appear in vector export. Layer styles are resolved from `mapService.getLayerStyle()` using `_sourceLayerId` stamped at collection time.
 
 Implementation: `js/widgets/sheet-cutting/sheet-pdf-export.js`, `js/widgets/sheet-cutting/sheet-pdf-vector.js`, `js/widgets/sheet-cutting/sheet-pdf-placement.js`, `js/widgets/sheet-cutting/sheet-pdf-orientation.js`, `js/export/folder-export.js`

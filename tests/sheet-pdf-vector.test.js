@@ -28,6 +28,52 @@ describe('sheet PDF placement', () => {
         expect(placement.x).toBe(36);
     });
 
+    it('keeps a short remnant at the same scale as a full-length sheet', () => {
+        const margins = { left: 36, right: 36, top: 36, bottom: 36 };
+        const full = computeSheetImagePlacement(1224, 792, margins, 4800, 1500, {
+            preferLandscapeFlow: true
+        });
+        const remnant = computeSheetImagePlacement(1224, 792, margins, 1600, 1500, {
+            preferLandscapeFlow: true,
+            referenceWidthPx: 4800,
+            referenceHeightPx: 1500
+        });
+        const blownUp = computeSheetImagePlacement(1224, 792, margins, 1600, 1500, {
+            preferLandscapeFlow: true
+        });
+
+        expect(remnant.scale).toBeCloseTo(full.scale, 8);
+        expect(remnant.height).toBeCloseTo(full.height, 5);
+        expect(remnant.width).toBeCloseTo(full.width * (1600 / 4800), 5);
+        expect(remnant.height).toBeLessThan(blownUp.height);
+        expect(blownUp.height).toBeCloseTo(720, 0);
+    });
+
+    it('maps a remnant clip to the same PDF height as a full sheet when referenced', () => {
+        const margins = { left: 36, right: 36, top: 36, bottom: 36 };
+        const pageSize = { width: 1224, height: 792 };
+        const fullRing = [
+            [0, 0],
+            [4800, 0],
+            [4800, 1500],
+            [0, 1500]
+        ];
+        const remnantRing = [
+            [0, 0],
+            [1600, 0],
+            [1600, 1500],
+            [0, 1500]
+        ];
+        const reference = { preferLandscapeFlow: true, referenceWidthPx: 4800, referenceHeightPx: 1500 };
+        const full = buildSheetPageTransform(fullRing, margins, pageSize, { preferLandscapeFlow: true });
+        const remnant = buildSheetPageTransform(remnantRing, margins, pageSize, reference);
+
+        expect(remnant.placedRect.scale).toBeCloseTo(full.placedRect.scale, 8);
+        expect(remnant.placedRect.height).toBeCloseTo(full.placedRect.height, 5);
+        expect(remnant.placedRect.width).toBeCloseTo(full.placedRect.width * (1600 / 4800), 5);
+        expect(remnant.toPdf(1600, 1500).y - remnant.toPdf(0, 0).y).toBeCloseTo(full.placedRect.height, 5);
+    });
+
     it('builds a device-pixel to PDF-point transform from a clip ring', () => {
         const pixelRing = [
             [100, 200],
