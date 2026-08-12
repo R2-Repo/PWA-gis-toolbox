@@ -135,8 +135,8 @@
 .map-window-header .header-basemap-toggle {
     overflow: visible;
     align-items: stretch;
-    gap: 3px;
-    padding: 2px;
+    gap: 4px;
+    padding: 3px;
     border-radius: 8px;
     border: 1px solid #3d3d42;
 }
@@ -147,6 +147,8 @@
     align-items: stretch;
     border-radius: 6px;
     isolation: isolate;
+    background: rgba(255, 255, 255, 0.04);
+    transition: background 0.2s, color 0.2s;
 }
 
 .map-window-header .header-toggle-segment + .header-toggle-segment {
@@ -176,15 +178,22 @@
     line-height: 1;
 }
 
+.map-window-header .header-toggle-segment:hover:not(.active) {
+    background: #3d3d42;
+}
+
 .map-window-header .header-toggle-segment:hover:not(.active) .header-toggle-option-main,
 .map-window-header .header-toggle-segment:hover:not(.active) .header-toggle-caret {
-    background: #3d3d42;
     color: #e8eaed;
+}
+
+.map-window-header .header-toggle-segment.active {
+    background: #2563eb;
 }
 
 .map-window-header .header-toggle-segment.active .header-toggle-option-main,
 .map-window-header .header-toggle-segment.active .header-toggle-caret {
-    background: #2563eb;
+    background: transparent;
     color: #fff;
 }
 

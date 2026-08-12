@@ -859,8 +859,8 @@ html, body {
 .header-basemap-toggle {
     overflow: visible;
     align-items: stretch;
-    gap: 3px;
-    padding: 2px;
+    gap: 4px;
+    padding: 3px;
     border-radius: 8px;
 }
 
@@ -870,6 +870,8 @@ html, body {
     align-items: stretch;
     border-radius: 6px;
     isolation: isolate;
+    background: rgba(255, 255, 255, 0.04);
+    transition: background 0.2s, color 0.2s;
 }
 
 .header-toggle-segment + .header-toggle-segment {
@@ -885,7 +887,7 @@ html, body {
     font-size: 12px;
     font-weight: 500;
     cursor: pointer;
-    transition: background 0.2s, color 0.2s;
+    transition: color 0.2s, background 0.2s;
     white-space: nowrap;
     font-family: var(--font);
     letter-spacing: -0.1px;
@@ -904,15 +906,22 @@ html, body {
     line-height: 1;
 }
 
+.header-toggle-segment:hover:not(.active) {
+    background: rgba(255, 255, 255, 0.1);
+}
+
 .header-toggle-segment:hover:not(.active) .header-toggle-option-main,
 .header-toggle-segment:hover:not(.active) .header-toggle-caret {
-    background: rgba(255,255,255,0.08);
-    color: rgba(255,255,255,0.85);
+    color: rgba(255,255,255,0.9);
+}
+
+.header-toggle-segment.active {
+    background: var(--gold-light);
 }
 
 .header-toggle-segment.active .header-toggle-option-main,
 .header-toggle-segment.active .header-toggle-caret {
-    background: var(--gold-light);
+    background: transparent;
     color: #1c1c1e;
     font-weight: 600;
 }
