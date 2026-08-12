@@ -1,5 +1,6 @@
 import bus from '../../core/event-bus.js';
 import { openReactIsland } from '../../ui/open-react-island.js';
+import { withActivity } from '../../ui/app-activity.js';
 import { getSpatialLayerOptions } from '../widget-context.js';
 import {
     UNIT_LABELS,
@@ -68,65 +69,67 @@ export async function openProximityJoin(ctx) {
                 });
             },
             onRun: async (config, handlers = {}) => {
-                const sourceLayer = ctx.getLayers().find((layer) => layer.id === config.sourceLayerId);
-                const targetLayer = ctx.getLayers().find((layer) => layer.id === config.targetLayerId);
-                const validation = validateProximityJoinConfig({
-                    sourceLayer,
-                    targetLayer,
-                    fieldMappings: config.fieldMappings,
-                    maxRadius: config.maxRadius,
-                    writeDistance: config.writeDistance,
-                    writeMatchId: config.writeMatchId,
-                    writeMatchLayer: config.writeMatchLayer,
-                    matchIdField: config.matchIdField
+                return withActivity('Proximity join…', async () => {
+                    const sourceLayer = ctx.getLayers().find((layer) => layer.id === config.sourceLayerId);
+                    const targetLayer = ctx.getLayers().find((layer) => layer.id === config.targetLayerId);
+                    const validation = validateProximityJoinConfig({
+                        sourceLayer,
+                        targetLayer,
+                        fieldMappings: config.fieldMappings,
+                        maxRadius: config.maxRadius,
+                        writeDistance: config.writeDistance,
+                        writeMatchId: config.writeMatchId,
+                        writeMatchLayer: config.writeMatchLayer,
+                        matchIdField: config.matchIdField
+                    });
+                    if (validation.errors.length > 0) {
+                        throw new Error(validation.errors[0]);
+                    }
+
+                    const featureIndices = config.selectionOnly
+                        ? (ctx.mapService.getSelectedIndices?.(sourceLayer.id) || [])
+                        : sourceLayer.geojson.features.map((_, index) => index);
+
+                    if (featureIndices.length === 0) {
+                        throw new Error(config.selectionOnly
+                            ? 'No selected features found on the layer to update.'
+                            : 'The layer to update has no features.');
+                    }
+
+                    const result = await runProximityJoin({
+                        allSourceFeatures: sourceLayer.geojson.features,
+                        featureIndices,
+                        targetFeatures: targetLayer.geojson.features,
+                        fieldMappings: validation.validMappings,
+                        units: config.units,
+                        maxRadius: config.maxRadius,
+                        writeDistance: config.writeDistance,
+                        writeMatchId: config.writeMatchId,
+                        matchIdField: config.matchIdField,
+                        writeMatchLayer: config.writeMatchLayer,
+                        targetLayerName: targetLayer.name,
+                        onProgress: handlers.onProgress,
+                        isCancelled: handlers.isCancelled
+                    });
+
+                    if (result.cancelled) {
+                        ctx.showToast('Proximity join cancelled', 'warning');
+                        return result;
+                    }
+
+                    sourceLayer.schema = ctx.analyzeSchema?.(sourceLayer.geojson);
+                    ctx.mapService.refreshLayerData?.(sourceLayer);
+                    ctx.refreshUI();
+                    ctx.showToast(
+                        `Proximity join complete: ${result.matched} matched, ${result.unmatched} unmatched`,
+                        result.unmatched === 0 ? 'success' : 'info'
+                    );
+
+                    return {
+                        ...result,
+                        unitsLabel: unitAbbr(config.units)
+                    };
                 });
-                if (validation.errors.length > 0) {
-                    throw new Error(validation.errors[0]);
-                }
-
-                const featureIndices = config.selectionOnly
-                    ? (ctx.mapService.getSelectedIndices?.(sourceLayer.id) || [])
-                    : sourceLayer.geojson.features.map((_, index) => index);
-
-                if (featureIndices.length === 0) {
-                    throw new Error(config.selectionOnly
-                        ? 'No selected features found on the layer to update.'
-                        : 'The layer to update has no features.');
-                }
-
-                const result = await runProximityJoin({
-                    allSourceFeatures: sourceLayer.geojson.features,
-                    featureIndices,
-                    targetFeatures: targetLayer.geojson.features,
-                    fieldMappings: validation.validMappings,
-                    units: config.units,
-                    maxRadius: config.maxRadius,
-                    writeDistance: config.writeDistance,
-                    writeMatchId: config.writeMatchId,
-                    matchIdField: config.matchIdField,
-                    writeMatchLayer: config.writeMatchLayer,
-                    targetLayerName: targetLayer.name,
-                    onProgress: handlers.onProgress,
-                    isCancelled: handlers.isCancelled
-                });
-
-                if (result.cancelled) {
-                    ctx.showToast('Proximity join cancelled', 'warning');
-                    return result;
-                }
-
-                sourceLayer.schema = ctx.analyzeSchema?.(sourceLayer.geojson);
-                ctx.mapService.refreshLayerData?.(sourceLayer);
-                ctx.refreshUI();
-                ctx.showToast(
-                    `Proximity join complete: ${result.matched} matched, ${result.unmatched} unmatched`,
-                    result.unmatched === 0 ? 'success' : 'info'
-                );
-
-                return {
-                    ...result,
-                    unitsLabel: unitAbbr(config.units)
-                };
             }
         })
     });

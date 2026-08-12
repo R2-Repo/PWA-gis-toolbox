@@ -15,7 +15,9 @@ import {
     validateSheetCoverage,
     validateSheetTiling,
     validateClippedSheetOverlap,
-    validateCenterlinePolygonCoverage
+    validateCenterlinePolygonCoverage,
+    createSheetCuttingSession,
+    selectRouteSource
 } from '../js/widgets/sheet-cutting/engine.js';
 import {
     buildClippedSheetPolygon,
@@ -445,5 +447,68 @@ describe('sheet cutting geometry', () => {
         const clipped = clipFeaturesToSheetFrame(frame, [centerline, tick]);
         expect(clipped).toHaveLength(2);
         expect(clipped.every((feature) => feature.properties?.clipped_to_sheet)).toBe(true);
+    });
+
+    it('selects a plain line layer as the route without falling back to stationing', () => {
+        const stationingLine = turf.lineString([
+            [-111.9, 40.75],
+            [-111.88, 40.75]
+        ], { created_by_widget: 'project-stationing', route_geometry_hash: 'abc123' });
+        const centerlineLine = turf.lineString([
+            [-111.87, 40.75],
+            [-111.86, 40.751]
+        ]);
+        const layers = [
+            {
+                id: 'stationing-1',
+                name: 'Stationed Route',
+                type: 'spatial',
+                _stationingProfile: {
+                    route_id: 'r1',
+                    route_name: 'I-15',
+                    start_station_feet: 0,
+                    end_station_feet: 1000
+                },
+                geojson: { type: 'FeatureCollection', features: [stationingLine] }
+            },
+            {
+                id: 'centerline-1',
+                name: 'Route Centerline',
+                type: 'spatial',
+                geojson: { type: 'FeatureCollection', features: [centerlineLine] }
+            }
+        ];
+
+        const session = createSheetCuttingSession();
+        const next = selectRouteSource(session, layers, 'centerline-1');
+
+        expect(next.routeLine.geometry).toEqual(centerlineLine.geometry);
+        expect(next.stationingRoute.layerId).toBe('centerline-1');
+        expect(next.project.stationingRouteLayerId).toBe('centerline-1');
+    });
+
+    it('still selects a Project Stationing centerline by id', () => {
+        const stationingLine = turf.lineString([
+            [-111.9, 40.75],
+            [-111.88, 40.75]
+        ], { created_by_widget: 'project-stationing', route_geometry_hash: 'abc123' });
+        const layers = [
+            {
+                id: 'stationing-1',
+                name: 'Stationed Route',
+                type: 'spatial',
+                _stationingProfile: {
+                    route_id: 'r1',
+                    route_name: 'I-15',
+                    start_station_feet: 0,
+                    end_station_feet: 1000
+                },
+                geojson: { type: 'FeatureCollection', features: [stationingLine] }
+            }
+        ];
+
+        const next = selectRouteSource(createSheetCuttingSession(), layers, 'stationing-1');
+        expect(next.stationingRoute.layerId).toBe('stationing-1');
+        expect(next.routeLine.geometry).toEqual(stationingLine.geometry);
     });
 });

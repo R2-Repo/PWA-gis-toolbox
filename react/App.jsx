@@ -66,6 +66,7 @@ import { resolveLayerDisplayMode } from '../js/map/layer-display-mode.js';
 import { AppStoreProvider, createAppStore, useAppStore } from './providers/AppStore.jsx';
 import { MobileGate } from './shell/MobileGate.jsx';
 import { HeaderBar } from './header/HeaderBar.jsx';
+import { ActivityIndicator } from './header/ActivityIndicator.jsx';
 import { MapView } from './map/MapView.jsx';
 import { MapContextMenu } from './map/MapContextMenu.jsx';
 import { SelectionActionsMenu } from './map/SelectionActionsMenu.jsx';
@@ -302,6 +303,7 @@ function AppShell() {
                     popupMode={popupMode}
                     onPopupModeChange={onPopupModeChange}
                 />
+                <ActivityIndicator />
             </header>
 
             <SaveIndicator />

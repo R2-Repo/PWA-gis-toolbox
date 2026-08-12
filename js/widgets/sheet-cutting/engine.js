@@ -588,6 +588,13 @@ export function updateSheetProject(session, patch = {}) {
     };
 }
 
+function findLineFeature(layer) {
+    return (layer?.geojson?.features || []).find((feature) => {
+        const type = feature?.geometry?.type;
+        return type === 'LineString' || type === 'MultiLineString';
+    }) || null;
+}
+
 /**
  * @param {object} session
  * @param {object[]} layers
@@ -595,26 +602,54 @@ export function updateSheetProject(session, patch = {}) {
  * @returns {object}
  */
 export function selectRouteSource(session, layers = [], stationingLayerId = '') {
-    const routes = getStationingRoutes(layers);
-    const route = routes.find((entry) => entry.layerId === stationingLayerId) || routes[0] || null;
-    if (!route) {
-        throw new Error('Select a Project Stationing centerline layer.');
+    if (!stationingLayerId) {
+        throw new Error('Select a route centerline layer.');
     }
 
-    const routeLine = route.lineFeature || route.feature || {
-        type: 'Feature',
-        geometry: route.geometry,
-        properties: route.properties || {}
-    };
+    const layer = layers.find((entry) => entry.id === stationingLayerId);
+    if (!layer) {
+        throw new Error('Select a route centerline layer.');
+    }
+
+    const routes = getStationingRoutes(layers);
+    const route = routes.find((entry) => entry.layerId === stationingLayerId);
+    if (route) {
+        const routeLine = route.lineFeature || route.feature || {
+            type: 'Feature',
+            geometry: route.geometry,
+            properties: route.properties || {}
+        };
+        return {
+            ...session,
+            project: updatePlanProject(session.project, {
+                stationingRouteLayerId: route.layerId,
+                stationingProjectId: route.projectId || ''
+            }),
+            stationingRoute: route,
+            routeLine
+        };
+    }
+
+    const lineFeature = findLineFeature(layer);
+    if (!lineFeature) {
+        throw new Error('Selected layer has no line geometry.');
+    }
 
     return {
         ...session,
         project: updatePlanProject(session.project, {
-            stationingRouteLayerId: route.layerId,
-            stationingProjectId: route.projectId || ''
+            stationingRouteLayerId: layer.id,
+            stationingProjectId: ''
         }),
-        stationingRoute: route,
-        routeLine
+        stationingRoute: {
+            routeId: layer.id,
+            routeName: layer.name || 'Route',
+            layerId: layer.id,
+            geometry: lineFeature.geometry,
+            lineFeature,
+            profile: null
+        },
+        routeLine: lineFeature
     };
 }
 

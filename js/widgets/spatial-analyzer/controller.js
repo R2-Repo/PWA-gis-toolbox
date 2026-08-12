@@ -1,4 +1,5 @@
 import { openReactIsland } from '../../ui/open-react-island.js';
+import { withActivity } from '../../ui/app-activity.js';
 import { getSpatialLayerOptions } from '../widget-context.js';
 import { createAreaDrawHandlers } from '../map-draw-helpers.js';
 import { SPATIAL_RELATIONS, runSpatialAnalysis } from './engine.js';
@@ -18,33 +19,35 @@ export async function openSpatialAnalyzer(ctx) {
             onDrawArea: areaHandlers.draw,
             onUseLayerArea: areaHandlers.useLayerArea,
             onRun: async ({ targetLayerId, analysisArea, spatialRelation }) => {
-                const targetLayer = ctx.getLayers().find((layer) => layer.id === targetLayerId);
-                if (!targetLayer) {
-                    throw new Error('Target layer not found.');
-                }
+                return withActivity('Analyzing features…', async () => {
+                    const targetLayer = ctx.getLayers().find((layer) => layer.id === targetLayerId);
+                    if (!targetLayer) {
+                        throw new Error('Target layer not found.');
+                    }
 
-                if (!targetLayer?.geojson?.features?.length) {
-                    throw new Error('Target layer has no features.');
-                }
+                    if (!targetLayer?.geojson?.features?.length) {
+                        throw new Error('Target layer has no features.');
+                    }
 
-                const { matchedFeatures, stats } = await runSpatialAnalysis({
-                    features: targetLayer.geojson.features,
-                    analysisArea,
-                    spatialRelation
+                    const { matchedFeatures, stats } = await runSpatialAnalysis({
+                        features: targetLayer.geojson.features,
+                        analysisArea,
+                        spatialRelation
+                    });
+
+                    ctx.mapService.showTempFeature(
+                        { type: 'FeatureCollection', features: matchedFeatures },
+                        15000
+                    );
+
+                    return {
+                        matched: matchedFeatures.length,
+                        total: targetLayer.geojson.features.length,
+                        features: matchedFeatures,
+                        stats,
+                        targetLayerName: targetLayer.name
+                    };
                 });
-
-                ctx.mapService.showTempFeature(
-                    { type: 'FeatureCollection', features: matchedFeatures },
-                    15000
-                );
-
-                return {
-                    matched: matchedFeatures.length,
-                    total: targetLayer.geojson.features.length,
-                    features: matchedFeatures,
-                    stats,
-                    targetLayerName: targetLayer.name
-                };
             },
             onAddResults: (result) => {
                 if (!result?.features?.length) {

@@ -2,6 +2,7 @@
  * Sheet Cutting controller.
  */
 
+import bus from '../../core/event-bus.js';
 import { openReactIsland } from '../../ui/open-react-island.js';
 import { showProgressModal } from '../../ui/modals.js';
 import { createLayerGroup, assignLayersToGroup } from '../../core/layer-groups.js';
@@ -70,11 +71,25 @@ function renderSheetPreview(ctx, session) {
     showSheetPreview(ctx.mapService, exportPackage.layers || {});
 }
 
-function getStationingLayerOptions(ctx) {
-    return getSpatialLayerOptions(ctx).filter((layer) => {
+function getRouteLayerOptions(ctx) {
+    const byId = new Map();
+    for (const layer of getSpatialLayerOptions(ctx, { requireLines: true })) {
+        byId.set(layer.id, layer);
+    }
+    for (const layer of getSpatialLayerOptions(ctx)) {
         const full = ctx.getLayerById?.(layer.id) || ctx.getLayers().find((entry) => entry.id === layer.id);
-        return isProjectStationingCenterline(full);
-    });
+        if (isProjectStationingCenterline(full)) {
+            byId.set(layer.id, layer);
+        }
+    }
+    return [...byId.values()];
+}
+
+function getLayerLists(ctx) {
+    return {
+        routeLayers: getRouteLayerOptions(ctx),
+        designLayers: getSpatialLayerOptions(ctx)
+    };
 }
 
 function collectFeaturesFromLayers(ctx, layerIds = []) {
@@ -113,10 +128,12 @@ export async function openSheetCutting(ctx, { restoreState = null } = {}) {
             clearPreviewLayers(ctx);
             markWidgetClosed(WIDGET_ID);
         },
-        getProps: (close) => ({
-            defaultTemplate: DEFAULT_SHEET_TEMPLATE,
-            stationingLayers: getStationingLayerOptions(ctx),
-            designLayers: getSpatialLayerOptions(ctx),
+        getProps: (close) => {
+            const lists = getLayerLists(ctx);
+            return {
+                defaultTemplate: DEFAULT_SHEET_TEMPLATE,
+                stationingLayers: lists.routeLayers,
+                designLayers: lists.designLayers,
             initialSession: session,
             onCancel: () => {
                 clearPreviewLayers(ctx);
@@ -266,7 +283,13 @@ export async function openSheetCutting(ctx, { restoreState = null } = {}) {
             onOpenProjectStationing: () => {
                 openProjectStationing(ctx);
             },
-            onRefreshStationingLayers: () => getStationingLayerOptions(ctx)
-        })
+            onRefreshLayers: () => getLayerLists(ctx),
+            onSubscribeLayerRefresh: (onLayerListRefresh) => {
+                bus.on('layers:changed', onLayerListRefresh);
+                onLayerListRefresh?.();
+                return () => bus.off('layers:changed', onLayerListRefresh);
+            }
+            };
+        }
     });
 }

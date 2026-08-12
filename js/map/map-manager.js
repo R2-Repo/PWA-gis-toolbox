@@ -14,6 +14,7 @@ import {
 } from '../core/data-model.js';
 import { TILED_RENDER_THRESHOLD, TILE_SOURCE_MAX_ZOOM, TILE_SOURCE_LAYER } from './tiles/tile-constants.js';
 import { profileSuggestsTiledDisplay } from '../import/dataset-profile.js';
+import { beginActivity, endActivity } from '../ui/app-activity.js';
 import { getCoverageRasters, isCoverageRasterLayer } from '../core/coverage-raster-layer.js';
 import { MAP_CHUNK_BATCH_SIZE, RENDER_LIMITS } from './render-limits.js';
 import { buildViewportGeoJSON } from '../workspace/viewport-loader.js';
@@ -1095,71 +1096,76 @@ class MapManager {
     async addWorkspaceLayer(dataset, colorIndex = 0, { fit = false } = {}) {
         if (!this.map || !isWorkspaceLayer(dataset)) return;
 
-        this.removeLayer(dataset.id);
-        this._workspaceDatasets = this._workspaceDatasets || new Map();
-        this._workspaceDatasets.set(dataset.id, dataset);
+        const activity = beginActivity('Adding layer…');
+        try {
+            this.removeLayer(dataset.id);
+            this._workspaceDatasets = this._workspaceDatasets || new Map();
+            this._workspaceDatasets.set(dataset.id, dataset);
 
-        const defaultColor = LAYER_COLORS[colorIndex % LAYER_COLORS.length];
-        const stored = this._layerStyles.get(dataset.id);
-        const layerStyle = normalizeStyle(stored, defaultColor);
-        if (!stored) this._layerStyles.set(dataset.id, { ...layerStyle });
+            const defaultColor = LAYER_COLORS[colorIndex % LAYER_COLORS.length];
+            const stored = this._layerStyles.get(dataset.id);
+            const layerStyle = normalizeStyle(stored, defaultColor);
+            if (!stored) this._layerStyles.set(dataset.id, { ...layerStyle });
 
-        // Heavy layers render as locally generated vector tiles — the whole
-        // layer stays visible at every zoom instead of a viewport packet.
-        const featureCount = getLayerFeatureCount(dataset);
-        if (profileSuggestsTiledDisplay(dataset, featureCount, TILED_RENDER_THRESHOLD)) {
-            const installed = await this._installTiledWorkspaceLayer(dataset, colorIndex, layerStyle, { fit });
-            if (installed) return;
-            logger.warn('Map', 'Tiled rendering unavailable — using viewport rendering', { id: dataset.id });
-        }
-
-        const wsId = dataset.workspaceLayerId || dataset.id;
-        const bounds = this.map.getBounds();
-        const west = bounds.getWest();
-        const south = bounds.getSouth();
-        const east = bounds.getEast();
-        const north = bounds.getNorth();
-        const viewportFc = await buildViewportGeoJSON(wsId, [west, south, east, north]);
-        dataset.geojson = viewportFc;
-        dataset._viewportTruncated = !!viewportFc.truncated;
-
-        const taggedFeatures = _tagFeaturesForMap(dataset);
-        const sourceId = `src-${dataset.id}`;
-        const layerIds = this._installGeoJsonChunk(
-            dataset, taggedFeatures, 0, layerStyle, { styFlat: getBaseFlatStyle(layerStyle, 'polygon') }
-        );
-        const geojson = { type: 'FeatureCollection', features: taggedFeatures };
-
-        this.dataLayers.set(dataset.id, {
-            sourceId,
-            layerIds,
-            chunkSources: [{ sourceId, layerIds }],
-            colorIndex,
-            workspace: true,
-            geojson,
-            truncated: !!viewportFc.truncated,
-            scaleRange: normalizeScaleRange(dataset)
-        });
-        this._storeLayerScaleRange(dataset);
-        this._layerNames.set(dataset.id, dataset.name);
-
-        // Fit to the full workspace extent (not just the current view packet).
-        if (fit) {
-            try {
-                const layerBounds = await getWorkspaceLayerBounds(wsId);
-                if (layerBounds && isFinite(layerBounds[0])) {
-                    this.scheduleMapFit({
-                        bounds: [[layerBounds[0], layerBounds[1]], [layerBounds[2], layerBounds[3]]]
-                    });
-                }
-            } catch (e) {
-                logger.warn('Map', 'Could not fit workspace layer bounds', { error: e.message });
+            // Heavy layers render as locally generated vector tiles — the whole
+            // layer stays visible at every zoom instead of a viewport packet.
+            const featureCount = getLayerFeatureCount(dataset);
+            if (profileSuggestsTiledDisplay(dataset, featureCount, TILED_RENDER_THRESHOLD)) {
+                const installed = await this._installTiledWorkspaceLayer(dataset, colorIndex, layerStyle, { fit });
+                if (installed) return;
+                logger.warn('Map', 'Tiled rendering unavailable — using viewport rendering', { id: dataset.id });
             }
-        }
 
-        this._applyDatasetVisibility(dataset);
-        this._applyDatasetLock(dataset);
-        bus.emit('map:layerAdded', { id: dataset.id, name: dataset.name });
+            const wsId = dataset.workspaceLayerId || dataset.id;
+            const bounds = this.map.getBounds();
+            const west = bounds.getWest();
+            const south = bounds.getSouth();
+            const east = bounds.getEast();
+            const north = bounds.getNorth();
+            const viewportFc = await buildViewportGeoJSON(wsId, [west, south, east, north]);
+            dataset.geojson = viewportFc;
+            dataset._viewportTruncated = !!viewportFc.truncated;
+
+            const taggedFeatures = _tagFeaturesForMap(dataset);
+            const sourceId = `src-${dataset.id}`;
+            const layerIds = this._installGeoJsonChunk(
+                dataset, taggedFeatures, 0, layerStyle, { styFlat: getBaseFlatStyle(layerStyle, 'polygon') }
+            );
+            const geojson = { type: 'FeatureCollection', features: taggedFeatures };
+
+            this.dataLayers.set(dataset.id, {
+                sourceId,
+                layerIds,
+                chunkSources: [{ sourceId, layerIds }],
+                colorIndex,
+                workspace: true,
+                geojson,
+                truncated: !!viewportFc.truncated,
+                scaleRange: normalizeScaleRange(dataset)
+            });
+            this._storeLayerScaleRange(dataset);
+            this._layerNames.set(dataset.id, dataset.name);
+
+            // Fit to the full workspace extent (not just the current view packet).
+            if (fit) {
+                try {
+                    const layerBounds = await getWorkspaceLayerBounds(wsId);
+                    if (layerBounds && isFinite(layerBounds[0])) {
+                        this.scheduleMapFit({
+                            bounds: [[layerBounds[0], layerBounds[1]], [layerBounds[2], layerBounds[3]]]
+                        });
+                    }
+                } catch (e) {
+                    logger.warn('Map', 'Could not fit workspace layer bounds', { error: e.message });
+                }
+            }
+
+            this._applyDatasetVisibility(dataset);
+            this._applyDatasetLock(dataset);
+            bus.emit('map:layerAdded', { id: dataset.id, name: dataset.name });
+        } finally {
+            endActivity(activity);
+        }
     }
 
     /**
@@ -1170,6 +1176,7 @@ class MapManager {
      */
     async _installTiledWorkspaceLayer(dataset, colorIndex, layerStyle, { fit = false } = {}) {
         const sourceId = `src-${dataset.id}`;
+        const activity = beginActivity('Adding tiled layer…');
         try {
             const tiles = await import('./tiles/tile-protocol.js');
             if (!tiles.ensureGisTileProtocol()) return false;
@@ -1232,6 +1239,8 @@ class MapManager {
                 if (this.map.getSource(sourceId)) this.map.removeSource(sourceId);
             } catch { /* best effort */ }
             return false;
+        } finally {
+            endActivity(activity);
         }
     }
 
@@ -1731,37 +1740,42 @@ class MapManager {
             return;
         }
 
-        const savedFeatures = allFeatures;
-        dataset.geojson = { type: 'FeatureCollection', features: savedFeatures.slice(0, batchSize) };
-        this.addLayer(dataset, colorIndex, { fit: false });
-        dataset.geojson = { type: 'FeatureCollection', features: savedFeatures };
+        const activity = beginActivity('Adding layer…');
+        try {
+            const savedFeatures = allFeatures;
+            dataset.geojson = { type: 'FeatureCollection', features: savedFeatures.slice(0, batchSize) };
+            this.addLayer(dataset, colorIndex, { fit: false });
+            dataset.geojson = { type: 'FeatureCollection', features: savedFeatures };
 
-        let loaded = batchSize;
-        while (loaded < savedFeatures.length) {
-            await new Promise((resolve) => setTimeout(resolve, 0));
-            const end = Math.min(loaded + batchSize, savedFeatures.length);
-            this.appendFeaturesToLayer(dataset.id, dataset, savedFeatures.slice(loaded, end), loaded);
-            loaded = end;
-        }
-
-        if (fit) {
-            try {
-                const turf = await import('@turf/turf');
-                const bbox = turf.bbox({ type: 'FeatureCollection', features: savedFeatures });
-                if (bbox && isFinite(bbox[0])) {
-                    this.scheduleMapFit({
-                        bounds: [[bbox[0], bbox[1]], [bbox[2], bbox[3]]]
-                    });
-                }
-            } catch (e) {
-                logger.warn('Map', 'Could not fit bounds after incremental load', { error: e.message });
+            let loaded = batchSize;
+            while (loaded < savedFeatures.length) {
+                await new Promise((resolve) => setTimeout(resolve, 0));
+                const end = Math.min(loaded + batchSize, savedFeatures.length);
+                this.appendFeaturesToLayer(dataset.id, dataset, savedFeatures.slice(loaded, end), loaded);
+                loaded = end;
             }
-        }
 
-        logger.info('Map', 'Layer added incrementally', {
-            name: dataset.name,
-            featureCount: savedFeatures.length
-        });
+            if (fit) {
+                try {
+                    const turf = await import('@turf/turf');
+                    const bbox = turf.bbox({ type: 'FeatureCollection', features: savedFeatures });
+                    if (bbox && isFinite(bbox[0])) {
+                        this.scheduleMapFit({
+                            bounds: [[bbox[0], bbox[1]], [bbox[2], bbox[3]]]
+                        });
+                    }
+                } catch (e) {
+                    logger.warn('Map', 'Could not fit bounds after incremental load', { error: e.message });
+                }
+            }
+
+            logger.info('Map', 'Layer added incrementally', {
+                name: dataset.name,
+                featureCount: savedFeatures.length
+            });
+        } finally {
+            endActivity(activity);
+        }
     }
 
     _ensureSymbolImage(shape, color, fillColor, size, opacity) {

@@ -20,6 +20,7 @@ import {
     formatOperationBlockMessage,
     resolveWorkingSet
 } from './operation-budget.js';
+import { withActivity } from '../ui/app-activity.js';
 
 /**
  * Workspace layers above this cannot be fully loaded into memory for GIS
@@ -45,31 +46,33 @@ export function isGisToolLayer(layer) {
  * @returns {Promise<object|null>}
  */
 export async function materializeSpatialLayer(layer) {
-    if (isLiveVectorLayer(layer)) {
+    return withActivity('Loading layer…', async () => {
+        if (isLiveVectorLayer(layer)) {
+            return {
+                ...layer,
+                geojson: layer.geojson || { type: 'FeatureCollection', features: [] }
+            };
+        }
+
+        if (!isSpatialLayer(layer)) return null;
+        if (!isWorkspaceLayer(layer)) return layer;
+
+        const featureCount = getLayerFeatureCount(layer);
+        const materializeLimit = getAdaptiveMaterializeLimit([layer]);
+        if (featureCount > materializeLimit) {
+            throw new AppError(
+                `"${layer.name}" has ${featureCount.toLocaleString()} features — too many to load into memory for this operation (limit ${materializeLimit.toLocaleString()}). Work with a selection or a smaller subset instead.`,
+                ErrorCategory.OUT_OF_MEMORY,
+                { layerId: layer.id, featureCount, materializeLimit }
+            );
+        }
+
+        const features = await loadAllWorkspaceFeatures(layer.workspaceLayerId || layer.id);
         return {
             ...layer,
-            geojson: layer.geojson || { type: 'FeatureCollection', features: [] }
+            geojson: { type: 'FeatureCollection', features }
         };
-    }
-
-    if (!isSpatialLayer(layer)) return null;
-    if (!isWorkspaceLayer(layer)) return layer;
-
-    const featureCount = getLayerFeatureCount(layer);
-    const materializeLimit = getAdaptiveMaterializeLimit([layer]);
-    if (featureCount > materializeLimit) {
-        throw new AppError(
-            `"${layer.name}" has ${featureCount.toLocaleString()} features — too many to load into memory for this operation (limit ${materializeLimit.toLocaleString()}). Work with a selection or a smaller subset instead.`,
-            ErrorCategory.OUT_OF_MEMORY,
-            { layerId: layer.id, featureCount, materializeLimit }
-        );
-    }
-
-    const features = await loadAllWorkspaceFeatures(layer.workspaceLayerId || layer.id);
-    return {
-        ...layer,
-        geojson: { type: 'FeatureCollection', features }
-    };
+    });
 }
 
 /**
@@ -91,87 +94,89 @@ export async function materializeSpatialLayer(layer) {
 export async function materializeForOperation(layer, options = {}) {
     if (!layer) return null;
 
-    const evaluation = evaluateOperation({
-        operation: options.operation || 'generic',
-        layer,
-        applyTo: options.applyTo || 'auto',
-        mapApi: options.mapApi || {},
-        limitFeatures: options.limitFeatures,
-        projectLayers: options.projectLayers
-    });
+    return withActivity('Loading layer…', async () => {
+        const evaluation = evaluateOperation({
+            operation: options.operation || 'generic',
+            layer,
+            applyTo: options.applyTo || 'auto',
+            mapApi: options.mapApi || {},
+            limitFeatures: options.limitFeatures,
+            projectLayers: options.projectLayers
+        });
 
-    if (!evaluation.ok) {
-        throw new AppError(
-            formatOperationBlockMessage(evaluation) || evaluation.reason,
-            ErrorCategory.OUT_OF_MEMORY,
-            {
-                layerId: layer.id,
-                evaluation
+        if (!evaluation.ok) {
+            throw new AppError(
+                formatOperationBlockMessage(evaluation) || evaluation.reason,
+                ErrorCategory.OUT_OF_MEMORY,
+                {
+                    layerId: layer.id,
+                    evaluation
+                }
+            );
+        }
+
+        const { mode } = evaluation.workingSet;
+
+        if (isLiveVectorLayer(layer)) {
+            if (mode === 'selection') {
+                const geojson = layer.geojson || { type: 'FeatureCollection', features: [] };
+                const selected = options.mapApi?.getSelectedFeatures?.(layer.id, geojson);
+                return {
+                    ...layer,
+                    geojson: selected || { type: 'FeatureCollection', features: [] },
+                    _operationWorkingSet: 'selection'
+                };
             }
-        );
-    }
-
-    const { mode } = evaluation.workingSet;
-
-    if (isLiveVectorLayer(layer)) {
-        if (mode === 'selection') {
-            const geojson = layer.geojson || { type: 'FeatureCollection', features: [] };
-            const selected = options.mapApi?.getSelectedFeatures?.(layer.id, geojson);
             return {
                 ...layer,
-                geojson: selected || { type: 'FeatureCollection', features: [] },
-                _operationWorkingSet: 'selection'
+                geojson: layer.geojson || { type: 'FeatureCollection', features: [] },
+                _operationWorkingSet: mode
             };
         }
-        return {
-            ...layer,
-            geojson: layer.geojson || { type: 'FeatureCollection', features: [] },
-            _operationWorkingSet: mode
-        };
-    }
 
-    if (!isSpatialLayer(layer)) return null;
-    if (!isWorkspaceLayer(layer)) {
+        if (!isSpatialLayer(layer)) return null;
+        if (!isWorkspaceLayer(layer)) {
+            if (mode === 'selection') {
+                const geojson = layer.geojson || { type: 'FeatureCollection', features: [] };
+                const selected = options.mapApi?.getSelectedFeatures?.(layer.id, geojson);
+                return {
+                    ...layer,
+                    geojson: selected || { type: 'FeatureCollection', features: [] },
+                    _operationWorkingSet: 'selection'
+                };
+            }
+            return { ...layer, _operationWorkingSet: mode };
+        }
+
+        const wsId = layer.workspaceLayerId || layer.id;
+
         if (mode === 'selection') {
-            const geojson = layer.geojson || { type: 'FeatureCollection', features: [] };
-            const selected = options.mapApi?.getSelectedFeatures?.(layer.id, geojson);
+            const indices = options.mapApi?.getSelectedIndices?.(layer.id) || [];
+            const features = await getWorkspaceFeaturesByIndices(wsId, indices);
             return {
                 ...layer,
-                geojson: selected || { type: 'FeatureCollection', features: [] },
-                _operationWorkingSet: 'selection'
+                geojson: { type: 'FeatureCollection', features },
+                _operationWorkingSet: 'selection',
+                _selectionCount: features.length
             };
         }
-        return { ...layer, _operationWorkingSet: mode };
-    }
 
-    const wsId = layer.workspaceLayerId || layer.id;
+        if (mode === 'viewport') {
+            const features = Array.isArray(layer.geojson?.features) ? layer.geojson.features : [];
+            return {
+                ...layer,
+                geojson: { type: 'FeatureCollection', features },
+                _operationWorkingSet: 'viewport'
+            };
+        }
 
-    if (mode === 'selection') {
-        const indices = options.mapApi?.getSelectedIndices?.(layer.id) || [];
-        const features = await getWorkspaceFeaturesByIndices(wsId, indices);
+        const features = await loadAllWorkspaceFeatures(wsId);
         return {
             ...layer,
             geojson: { type: 'FeatureCollection', features },
-            _operationWorkingSet: 'selection',
-            _selectionCount: features.length
+            _operationWorkingSet: 'layer'
         };
-    }
-
-    if (mode === 'viewport') {
-        const features = Array.isArray(layer.geojson?.features) ? layer.geojson.features : [];
-        return {
-            ...layer,
-            geojson: { type: 'FeatureCollection', features },
-            _operationWorkingSet: 'viewport'
-        };
-    }
-
-    const features = await loadAllWorkspaceFeatures(wsId);
-    return {
-        ...layer,
-        geojson: { type: 'FeatureCollection', features },
-        _operationWorkingSet: 'layer'
-    };
+    });
 }
 
 /**

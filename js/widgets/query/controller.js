@@ -1,4 +1,5 @@
 import { openReactIsland } from '../../ui/open-react-island.js';
+import { withActivity } from '../../ui/app-activity.js';
 import { getSpatialLayerOptions } from '../widget-context.js';
 import { DATAPREP_CHUNK_THRESHOLD } from '../../dataprep/transforms.js';
 import {
@@ -53,58 +54,60 @@ export async function openQuery(ctx, { restoreState = null } = {}) {
                     clearQueryResultOverlay(ctx);
                 },
                 onRun: async ({ layerId, conditions, logic, resultBehavior, zoomMode }) => {
-                    const layer = getLayerById(ctx, layerId);
-                    if (!layer?.geojson?.features?.length) {
-                        throw new Error('Selected layer has no features.');
-                    }
+                    return withActivity('Running query…', async () => {
+                        const layer = getLayerById(ctx, layerId);
+                        if (!layer?.geojson?.features?.length) {
+                            throw new Error('Selected layer has no features.');
+                        }
 
-                    const features = layer.geojson.features;
-                    let matchingIndices;
-                    if (features.length >= DATAPREP_CHUNK_THRESHOLD) {
-                        const { TaskRunner } = await import('../../core/task-runner.js');
-                        const task = new TaskRunner('Query', 'QueryWidget');
-                        const queryResult = await task.run((t) =>
-                            runAttributeQueryAsync({ features, conditions, logic, task: t })
-                        );
-                        matchingIndices = queryResult.matchingIndices;
-                    } else {
-                        matchingIndices = runAttributeQuery({ features, conditions, logic }).matchingIndices;
-                    }
+                        const features = layer.geojson.features;
+                        let matchingIndices;
+                        if (features.length >= DATAPREP_CHUNK_THRESHOLD) {
+                            const { TaskRunner } = await import('../../core/task-runner.js');
+                            const task = new TaskRunner('Query', 'QueryWidget');
+                            const queryResult = await task.run((t) =>
+                                runAttributeQueryAsync({ features, conditions, logic, task: t })
+                            );
+                            matchingIndices = queryResult.matchingIndices;
+                        } else {
+                            matchingIndices = runAttributeQuery({ features, conditions, logic }).matchingIndices;
+                        }
 
-                    const effects = applyQueryResultEffects(ctx, {
-                        layerId,
-                        layer,
-                        matchingIndices,
-                        resultBehavior,
-                        zoomMode
+                        const effects = applyQueryResultEffects(ctx, {
+                            layerId,
+                            layer,
+                            matchingIndices,
+                            resultBehavior,
+                            zoomMode
+                        });
+
+                        if (!effects.hasMatches) {
+                            ctx.showToast?.('No matching features found', 'info');
+                        }
+
+                        const result = {
+                            matchingIndices,
+                            total: features.length,
+                            layerId,
+                            layerName: layer.name,
+                            message: effects.message,
+                            lastResultLayerId: effects.lastResultLayerId
+                        };
+
+                        syncWidgetState({
+                            selectedLayerIds: [layerId],
+                            queryMode: 'attribute',
+                            conditions,
+                            logic,
+                            resultBehavior,
+                            zoomMode,
+                            lastResultLayerId: effects.lastResultLayerId,
+                            lastMatchingIndices: matchingIndices,
+                            lastTotal: features.length
+                        }, true);
+
+                        return result;
                     });
-
-                    if (!effects.hasMatches) {
-                        ctx.showToast?.('No matching features found', 'info');
-                    }
-
-                    const result = {
-                        matchingIndices,
-                        total: features.length,
-                        layerId,
-                        layerName: layer.name,
-                        message: effects.message,
-                        lastResultLayerId: effects.lastResultLayerId
-                    };
-
-                    syncWidgetState({
-                        selectedLayerIds: [layerId],
-                        queryMode: 'attribute',
-                        conditions,
-                        logic,
-                        resultBehavior,
-                        zoomMode,
-                        lastResultLayerId: effects.lastResultLayerId,
-                        lastMatchingIndices: matchingIndices,
-                        lastTotal: features.length
-                    }, true);
-
-                    return result;
                 },
                 onReapplyEffects: async ({ layerId, matchingIndices, resultBehavior, zoomMode }) => {
                     const layer = getLayerById(ctx, layerId);

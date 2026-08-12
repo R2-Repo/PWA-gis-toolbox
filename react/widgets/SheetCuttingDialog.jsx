@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { WidgetPanelShell } from './shared/WidgetPanelShell.jsx';
 import { LayerSelect } from './shared/LayerSelect.jsx';
 
@@ -14,6 +14,25 @@ const DEFAULT_CORRIDOR_WIDTH_FT = 350;
 const BASEMAP_DPI_OPTIONS = [120, 150, 200];
 const SHEET_LENGTH_LABEL = 'Sheet length along route (ft)';
 const CORRIDOR_WIDTH_LABEL = 'Corridor width (ft)';
+
+function RefreshLayersIcon() {
+    return (
+        <svg
+            viewBox="0 0 24 24"
+            width="14"
+            height="14"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+        >
+            <path d="M1 4v6h6" />
+            <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" />
+        </svg>
+    );
+}
 
 function DimensionFieldIcon({ title, children }) {
     return (
@@ -89,10 +108,12 @@ export function SheetCuttingDialog({
     onAddResultLayers,
     onOpenRouteCenterline,
     onOpenProjectStationing,
-    onRefreshStationingLayers
+    onRefreshLayers,
+    onSubscribeLayerRefresh
 }) {
     const [session, setSession] = useState(initialSession);
     const [stationingLayerOptions, setStationingLayerOptions] = useState(stationingLayers);
+    const [designLayerOptions, setDesignLayerOptions] = useState(designLayers);
     const [projectName, setProjectName] = useState(initialSession?.project?.projectName || '');
     const [stationingLayerId, setStationingLayerId] = useState(initialSession?.project?.stationingRouteLayerId || '');
     const [sheetLengthFt, setSheetLengthFt] = useState(
@@ -110,6 +131,20 @@ export function SheetCuttingDialog({
     const [error, setError] = useState('');
     const [validation, setValidation] = useState(null);
     const routeRequestRef = useRef(0);
+
+    const applyLayerLists = useCallback((next) => {
+        if (!next) return;
+        if (Array.isArray(next)) {
+            setStationingLayerOptions(next);
+            return;
+        }
+        if (next.routeLayers) setStationingLayerOptions(next.routeLayers);
+        if (next.designLayers) setDesignLayerOptions(next.designLayers);
+    }, []);
+
+    const refreshLayerLists = useCallback(() => {
+        applyLayerLists(onRefreshLayers?.());
+    }, [applyLayerLists, onRefreshLayers]);
 
     const sheets = (session?.sheets?.sheets || []).filter((entry) => entry.sheetType !== 'overview');
     const frameDims = session?.sheets?.frameDimensions;
@@ -163,6 +198,11 @@ export function SheetCuttingDialog({
         };
     }, [stationingLayerId, onSelectRoute]);
 
+    useEffect(() => {
+        if (!onSubscribeLayerRefresh) return undefined;
+        return onSubscribeLayerRefresh(refreshLayerLists);
+    }, [onSubscribeLayerRefresh, refreshLayerLists]);
+
     const toggleLayer = (layerId) => {
         setSelectedLayerIds((current) =>
             current.includes(layerId)
@@ -172,11 +212,11 @@ export function SheetCuttingDialog({
     };
 
     const handleSelectAllLayers = () => {
-        setSelectedLayerIds(designLayers.map((layer) => layer.id));
+        setSelectedLayerIds(designLayerOptions.map((layer) => layer.id));
     };
 
-    const allLayersSelected = designLayers.length > 0
-        && designLayers.every((layer) => selectedLayerIds.includes(layer.id));
+    const allLayersSelected = designLayerOptions.length > 0
+        && designLayerOptions.every((layer) => selectedLayerIds.includes(layer.id));
 
     const handleGenerate = async () => {
         const next = await run(async () => {
@@ -234,7 +274,7 @@ export function SheetCuttingDialog({
                 layers={stationingLayerOptions}
                 value={stationingLayerId}
                 onChange={setStationingLayerId}
-                emptyLabel="No Project Stationing centerline layers found"
+                placeholder="- select a centerline or stationing layer -"
                 selectExtra={(
                     <button
                         type="button"
@@ -242,25 +282,9 @@ export function SheetCuttingDialog({
                         disabled={busy}
                         title="Refresh layer list"
                         aria-label="Refresh layer list"
-                        onClick={() => {
-                            const next = onRefreshStationingLayers?.();
-                            if (next) setStationingLayerOptions(next);
-                        }}
+                        onClick={refreshLayerLists}
                     >
-                        <svg
-                            viewBox="0 0 24 24"
-                            width="14"
-                            height="14"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="2"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            aria-hidden="true"
-                        >
-                            <path d="M1 4v6h6" />
-                            <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" />
-                        </svg>
+                        <RefreshLayersIcon />
                     </button>
                 )}
             />
@@ -326,32 +350,44 @@ export function SheetCuttingDialog({
                 </p>
             ) : null}
 
-            {designLayers.length > 0 ? (
-                <div className="form-group">
-                    <div
-                        className="gis-widget__row"
-                        style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}
-                    >
-                        <span className="gis-widget__section-title" style={{ marginBottom: 0 }}>Current map layers</span>
+            <div className="form-group">
+                <div
+                    className="gis-widget__row"
+                    style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}
+                >
+                    <span className="gis-widget__section-title" style={{ marginBottom: 0 }}>Add Current map layers to sheets</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <button
+                            type="button"
+                            className="btn-icon"
+                            disabled={busy}
+                            title="Refresh layer list"
+                            aria-label="Refresh layer list"
+                            onClick={refreshLayerLists}
+                        >
+                            <RefreshLayersIcon />
+                        </button>
                         <button
                             type="button"
                             className="btn btn-secondary btn-sm"
-                            disabled={busy || allLayersSelected}
+                            disabled={busy || allLayersSelected || !designLayerOptions.length}
                             onClick={handleSelectAllLayers}
                         >
                             Select all
                         </button>
                     </div>
-                    {selectedLayerIds.length > 0 ? (
-                        <p className="text-xs" style={{ marginTop: 0, marginBottom: 6, color: 'var(--text-muted)' }}>
-                            {selectedLayerIds.length} of {designLayers.length} selected
-                        </p>
-                    ) : null}
+                </div>
+                {selectedLayerIds.length > 0 ? (
+                    <p className="text-xs" style={{ marginTop: 0, marginBottom: 6, color: 'var(--text-muted)' }}>
+                        {selectedLayerIds.length} of {designLayerOptions.length} selected
+                    </p>
+                ) : null}
+                {designLayerOptions.length ? (
                     <details className="gis-widget__details">
-                        <summary>Layers ({designLayers.length})</summary>
+                        <summary>Layers ({designLayerOptions.length})</summary>
                         <div className="gis-widget__details-body">
                             <div className="text-xs">
-                                {designLayers.map((layer) => (
+                                {designLayerOptions.map((layer) => (
                                     <label key={layer.id} style={{ display: 'block', marginBottom: 4 }}>
                                         <input
                                             type="checkbox"
@@ -364,8 +400,12 @@ export function SheetCuttingDialog({
                             </div>
                         </div>
                     </details>
-                </div>
-            ) : null}
+                ) : (
+                    <p className="text-xs" style={{ margin: 0, color: 'var(--text-muted)' }}>
+                        No map layers yet. Add layers, then refresh this list.
+                    </p>
+                )}
+            </div>
 
             {sheets.length > 0 ? (
                 <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid var(--border)' }}>
