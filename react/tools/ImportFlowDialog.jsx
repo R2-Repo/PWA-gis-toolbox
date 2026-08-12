@@ -70,7 +70,7 @@ const IMPORT_DISPLAY_MODE_CARDS = [
         infoDetails: [
             'Tiles are built from your workspace data — not a remote tile service.',
             'At far zoom, dense tiles may thin some features so the map stays fast; zoom in for denser detail.',
-            'Click or identify still works; selection highlights on tiled layers are more limited.',
+            'Click, identify, and box-select work from the full workspace store; cyan highlights load selected geometries on demand.',
             'Export still includes the full layer.'
         ]
     }
