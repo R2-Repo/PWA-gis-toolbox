@@ -58,7 +58,7 @@ You do not need to switch to or merge `main` locally, and you do not need to ope
 
 **If promotion fails with a merge conflict:** merge `main` into `staging` in GitHub Desktop, resolve conflicts, commit, push `staging`, then run **Promote to Production** again.
 
-**If you re-enable branch protection on `main`:** direct pushes from Actions will be blocked again. Either keep protection off for this two-branch workflow, or merge `staging` → `main` manually in GitHub Desktop instead of using the button.
+**`main` ruleset:** keep **Protect main** limited to block force-pushes and branch deletion. Do **not** require pull requests, signed commits, linear history, or “restrict updates” — those block the Promote to Production workflow (`GITHUB_TOKEN` cannot bypass them on this org). Repo admins can still bypass if needed.
 
 ## AI agents (Cursor)
 

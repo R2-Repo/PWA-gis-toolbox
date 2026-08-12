@@ -63,7 +63,10 @@ jobs:
           git checkout main
           git pull origin main
           git merge origin/staging --no-edit -m "Promote staging to production (run ${{ github.run_id }})"
-          git push origin main
+          if ! git push origin main; then
+            echo "::error::Push to main was rejected. The Protect main ruleset must not require pull requests, signed commits, linear history, or restrict updates — those block this workflow. See docs/DEVELOPMENT.md."
+            exit 1
+          fi
 
       - name: Sync staging with main
         if: steps.diff.outputs.ahead_by != '0'
