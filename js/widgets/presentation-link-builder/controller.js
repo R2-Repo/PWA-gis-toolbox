@@ -1,6 +1,7 @@
 import bus from '../../core/event-bus.js';
 import { openReactIsland } from '../../ui/open-react-island.js';
 import { getActiveLayer } from '../../core/state.js';
+import { getLayerFeatureCount, isWorkspaceLayer } from '../../core/data-model.js';
 import drawManager from '../../map/draw-manager.js';
 import { PresentationAnimationEngine } from '../../presentation/animation-engine.js';
 import {
@@ -85,17 +86,55 @@ function buildPresentationContext(ctx) {
 
 function selectAllLayerFeatures(mapService, layer) {
     if (!layer?.id) return;
-    const mapGeojson = mapService.dataLayers?.get?.(layer.id)?.geojson;
+    const mapEntry = mapService.dataLayers?.get?.(layer.id);
+    const mapGeojson = mapEntry?.geojson;
     const features = mapGeojson?.features || layer.geojson?.features || [];
     const indices = features
         .map((feature) => feature.properties?._featureIndex)
-        .filter((index) => index !== undefined && index !== null);
+        .filter((index) => index !== undefined && index !== null)
+        .map((index) => Number(index))
+        .filter(Number.isFinite);
+
+    // In-memory layers: select every feature present in the packet.
+    if (indices.length && !(mapEntry?.workspace || mapEntry?.tiled || isWorkspaceLayer(layer))) {
+        mapService.selectFeatures(layer.id, indices);
+        return;
+    }
+
+    // Workspace / tiled layers often have an empty or viewport-only geojson packet.
+    // Select a contiguous index range from the store feature count (presentation
+    // caps at SCENE_LIMITS.maxFeatures — selecting millions is useless and expensive).
+    if (mapEntry?.workspace || mapEntry?.tiled || isWorkspaceLayer(layer)) {
+        const total = getLayerFeatureCount(layer) || 0;
+        if (total <= 0) return;
+        const capped = Math.min(total, SCENE_LIMITS.maxFeatures);
+        mapService.selectFeatures(
+            layer.id,
+            Array.from({ length: capped }, (_, index) => index)
+        );
+        return;
+    }
+
     if (indices.length) {
         mapService.selectFeatures(layer.id, indices);
         return;
     }
     if (layer.geojson) {
         mapService.selectAll(layer.id, layer.geojson);
+    }
+}
+
+async function copyTextWithFallback(text, ctx, successToast) {
+    try {
+        if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+            await navigator.clipboard.writeText(text);
+            ctx.showToast(successToast, 'success');
+            return;
+        }
+        throw new Error('clipboard unavailable');
+    } catch {
+        // Non-secure contexts and blocked clipboard APIs still need a usable path.
+        ctx.showToast(text, 'info');
     }
 }
 
@@ -314,6 +353,8 @@ export async function openPresentationLinkBuilder(ctx) {
         teardownPresentationWidget(ctx, { was3d });
     };
 
+    // Cancel any active draw/pick so _interactionCleanup does not block selection.
+    ctx.mapService?.cancelInteraction?.();
     ctx.mapService.enablePresentationMultiSelect?.();
     unsubscribeSceneRefresh = subscribeSceneRebuild();
 
@@ -355,9 +396,15 @@ export async function openPresentationLinkBuilder(ctx) {
                 const layerId = resolveFocusedLayerId(formState);
                 const layer = ctx.getLayers().find((entry) => entry.id === layerId);
                 if (!layer) return;
+                const layerTotal = getLayerFeatureCount(layer) || 0;
                 selectAllLayerFeatures(ctx.mapService, layer);
                 const selectedCount = ctx.mapService.getSelectionCount(layer.id) || 0;
-                if (selectedCount > SCENE_LIMITS.maxFeatures) {
+                if (layerTotal > SCENE_LIMITS.maxFeatures && selectedCount >= SCENE_LIMITS.maxFeatures) {
+                    ctx.showToast(
+                        `Selected first ${selectedCount} of ${layerTotal} features — presentation links allow up to ${SCENE_LIMITS.maxFeatures}.`,
+                        'warning'
+                    );
+                } else if (selectedCount > SCENE_LIMITS.maxFeatures) {
                     ctx.showToast(
                         `Selected all ${selectedCount} features — presentation links allow up to ${SCENE_LIMITS.maxFeatures}.`,
                         'warning'
@@ -383,15 +430,20 @@ export async function openPresentationLinkBuilder(ctx) {
                 return () => bus.off('selection:changed', handler);
             },
             onPreview: async (formState) => {
-                const { engine, scene } = await preparePresentationPlayback(ctx, formState);
-                if (scene.animations?.length) {
-                    await engine.playSequence(scene.animations);
+                try {
+                    const { engine, scene } = await preparePresentationPlayback(ctx, formState);
+                    if (scene.animations?.length) {
+                        await engine.playSequence(scene.animations);
+                    }
+                    ctx.showToast('Preview finished', 'success');
+                } finally {
+                    // Restore source-layer visibility and clear presentation overlays.
+                    // GIF/video already do this; Preview previously left layers hidden.
+                    stopPreview(ctx);
                 }
-                ctx.showToast('Preview finished', 'success');
             },
             onCopyUrl: async (url) => {
-                await navigator.clipboard.writeText(url);
-                ctx.showToast('Presentation URL copied', 'success');
+                await copyTextWithFallback(url, ctx, 'Presentation URL copied');
             },
             onCopyEmbed: async (formState) => {
                 const { bundle } = await buildSceneBundle(ctx, formState);
@@ -399,8 +451,7 @@ export async function openPresentationLinkBuilder(ctx) {
                     throw new Error(bundle.validation.tooLargeMessage || bundle.validation.errors[0]);
                 }
                 const embed = getEmbedCodeForScene(bundle.scene);
-                await navigator.clipboard.writeText(embed);
-                ctx.showToast('Embed code copied', 'success');
+                await copyTextWithFallback(embed, ctx, 'Embed code copied');
             },
             onExportGif: async (formState, onProgress) => {
                 const { map, engine, scene } = await preparePresentationPlayback(ctx, formState);

@@ -112,6 +112,35 @@ describe('presentation source features', () => {
         expect(ctx.mapService.getSelectedFeatures).not.toHaveBeenCalled();
     });
 
+    it('does not treat a partial index resolve as complete', async () => {
+        const layerGeojson = { type: 'FeatureCollection', features: [pointFeature, lineFeature] };
+        const ctx = {
+            getLayers: () => [{
+                id: 'layer-1',
+                type: 'spatial',
+                name: 'Mixed',
+                geojson: layerGeojson
+            }],
+            getDrawnFeature: () => null,
+            mapService: {
+                dataLayers: new Map([['layer-1', { geojson: layerGeojson }]]),
+                getSelectionCount: vi.fn(() => 2),
+                getSelectedIndices: vi.fn(() => [3, 1]),
+                // Incomplete resolve (e.g. only viewport packet hit) must fall through.
+                resolveFeaturesByIndices: vi.fn(async () => [pointFeature]),
+                getSelectedFeatures: vi.fn((_layerId, geojson) => ({
+                    type: 'FeatureCollection',
+                    features: geojson.features
+                })),
+                getPresentationSourceFeatures: vi.fn(async () => ({ type: 'FeatureCollection', features: [] }))
+            }
+        };
+
+        const features = await collectSourceFeaturesForLayer(ctx, 'layer-1');
+        expect(features.features).toHaveLength(2);
+        expect(ctx.mapService.getSelectedFeatures).toHaveBeenCalledWith('layer-1', layerGeojson);
+    });
+
     it('prefers map dataLayers geojson when resolving selected features', async () => {
         const stateGeojson = {
             type: 'FeatureCollection',

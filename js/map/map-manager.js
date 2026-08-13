@@ -18,7 +18,7 @@ import { beginActivity, endActivity } from '../ui/app-activity.js';
 import { getCoverageRasters, isCoverageRasterLayer } from '../core/coverage-raster-layer.js';
 import { MAP_CHUNK_BATCH_SIZE, RENDER_LIMITS } from './render-limits.js';
 import { buildViewportGeoJSON } from '../workspace/viewport-loader.js';
-import { getWorkspaceFeatureAttributes, getWorkspaceLayerBounds, iterateWorkspaceFeatures } from '../workspace/workspace-store.js';
+import { getWorkspaceFeatureAttributes, getWorkspaceLayerBounds, getWorkspaceFeaturesByIndices } from '../workspace/workspace-store.js';
 import {
     mapEntryNeedsStoreSelection,
     queryWorkspaceIndicesInBbox,
@@ -2462,10 +2462,12 @@ class MapManager {
 
     async resolveFeaturesByIndices(layerId, indices = []) {
         if (!indices.length) return [];
-        const wanted = new Set(indices.map((value) => Number(value)));
+        const ordered = indices.map((value) => Number(value)).filter(Number.isFinite);
+        const wanted = new Set(ordered);
         const found = new Map();
         const info = this.dataLayers.get(layerId);
 
+        // Prefer in-memory / viewport packet features when present.
         if (info?.geojson?.features?.length) {
             for (const feature of info.geojson.features) {
                 const idx = Number(feature.properties?._featureIndex);
@@ -2475,26 +2477,30 @@ class MapManager {
             }
         }
 
-        if (wanted.size && info?.workspace) {
+        // Workspace / tiled layers keep an empty or partial geojson packet — resolve
+        // the rest from IndexedDB with the same indices API used by selection highlights.
+        // iterateWorkspaceFeatures does not stamp _featureIndex, so scanning it fails.
+        if (wanted.size && mapEntryNeedsStoreSelection(info)) {
             const wsId = this._workspaceDatasets?.get(layerId)?.workspaceLayerId || layerId;
-            let offset = 0;
-            const batchSize = 1000;
-            while (wanted.size > 0) {
-                const batch = await iterateWorkspaceFeatures(wsId, offset, batchSize);
-                if (!batch.length) break;
-                for (const feature of batch) {
+            try {
+                const resolved = await getWorkspaceFeaturesByIndices(wsId, [...wanted], { includeCold: false });
+                for (const feature of resolved) {
                     const idx = Number(feature.properties?._featureIndex);
-                    if (!wanted.has(idx)) continue;
+                    if (!Number.isFinite(idx) || !wanted.has(idx)) continue;
                     found.set(idx, feature);
                     wanted.delete(idx);
                 }
-                offset += batch.length;
-                if (batch.length < batchSize) break;
+            } catch (error) {
+                logger.warn('Map', 'resolveFeaturesByIndices workspace lookup failed', {
+                    layerId,
+                    wsId,
+                    error: error?.message
+                });
             }
         }
 
-        return indices
-            .map((value) => found.get(Number(value)))
+        return ordered
+            .map((value) => found.get(value))
             .filter(Boolean);
     }
 
