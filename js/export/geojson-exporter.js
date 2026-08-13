@@ -4,6 +4,8 @@
 import { withBakedSimpleStyle } from './style-baker.js';
 import { isWorkspaceLayer } from '../core/data-model.js';
 
+const EXPORT_BATCH_SIZE = 500;
+
 function _cleanFeatureProperties(styled, layerStyle) {
     return Object.fromEntries(
         Object.entries(styled.properties || {}).filter(([k]) => {
