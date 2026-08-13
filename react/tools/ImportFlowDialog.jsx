@@ -23,6 +23,10 @@ import { predictImportDisplayMode } from '../../js/import/predict-import-display
 
 const LOCAL_FILE_ACCEPT = '.geojson,.json,.csv,.tsv,.txt,.xlsx,.xls,.kml,.kmz,.gpx,.zip,.xml,.gis-toolbox,.gtbx';
 
+const importSourceIcon = (src, alt) => (
+    <img src={src} alt={alt} width={96} height={96} draggable={false} />
+);
+
 const IMPORT_DISPLAY_MODE_CARDS = [
     {
         id: 'memory',
@@ -817,7 +821,7 @@ export function ImportFlowDialog({
                 <>
                     <div className="import-option-grid">
                         <ImportOptionCard
-                            icon="📂"
+                            icon={importSourceIcon('/icons/import-source-local.png', '')}
                             title="Local Files"
                             description="GeoJSON, CSV, Excel, KML, Shapefile…"
                             className={localDragOver ? 'import-option-card--dragover' : ''}
@@ -825,25 +829,25 @@ export function ImportFlowDialog({
                             {...localFilesDropHandlers}
                         />
                         <ImportOptionCard
-                            icon="🌐"
+                            icon={importSourceIcon('/icons/import-source-arcgis.png', '')}
                             title="ArcGIS REST"
                             description="Feature services & map layers"
                             onClick={() => onOpenArcGIS?.()}
                         />
                         <ImportOptionCard
-                            icon="🗺️"
+                            icon={importSourceIcon('/icons/import-source-live.png', '')}
                             title="Live Layers"
                             description="Pre-styled live service layers"
                             onClick={() => setImportView('liveLayers')}
                         />
                         <ImportOptionCard
-                            icon="📷"
+                            icon={importSourceIcon('/icons/import-source-photo.png', '')}
                             title="Photo Mapper"
                             description="Geotag photos from EXIF"
                             onClick={() => onOpenPhotoMapper?.()}
                         />
                         <ImportOptionCard
-                            icon="📦"
+                            icon={importSourceIcon('/icons/import-source-toolbox.png', '')}
                             title="Toolbox Kit"
                             description=".gis-toolbox workspace file"
                             className={kitDragOver ? 'import-option-card--dragover' : ''}
@@ -867,13 +871,13 @@ export function ImportFlowDialog({
                             }}
                         />
                         <ImportOptionCard
-                            icon="✏️"
+                            icon={importSourceIcon('/icons/import-source-draw.png', '')}
                             title="Draw Layer"
                             description="Sketch points, lines, and polygons on the map"
                             onClick={() => onOpenDraw?.()}
                         />
                         <ImportOptionCard
-                            icon="⛶"
+                            icon={importSourceIcon('/icons/import-source-fence.png', '')}
                             title="Import Fence"
                             description="Only import features inside this area"
                             active={hasActiveFence}
