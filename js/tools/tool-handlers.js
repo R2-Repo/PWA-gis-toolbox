@@ -5643,7 +5643,7 @@ async function lookupRouteAndMilepostAt(latlng) {
 export function showToolInfo() {
     const rootId = `tool-guide-react-${Date.now()}`;
     return showModal('Guide', `<div id="${rootId}"></div>`, {
-        width: '560px',
+        width: '720px',
         layer: 'splash',
         onMount: async (overlay, close) => {
             const root = overlay.querySelector(`#${rootId}`);

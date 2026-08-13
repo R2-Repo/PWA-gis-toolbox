@@ -2622,8 +2622,18 @@ textarea { resize: vertical; min-height: 60px; }
     background: rgba(219,172,63,0.08);
 }
 .import-option-card__icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
     font-size: 40px;
     line-height: 1;
+}
+.import-option-card__icon img {
+    width: 96px;
+    height: 96px;
+    object-fit: cover;
+    border-radius: 8px;
+    background: #1a1a1d;
 }
 .import-option-card__title {
     font-size: 15px;
@@ -3851,7 +3861,139 @@ textarea { resize: vertical; min-height: 60px; }
     border-bottom-color: rgba(245,158,11,0.4) !important;
 }
 
-/* ————— GUIDE COLLAPSIBLE SECTIONS ————— */
+/* ————— SPLASH / GUIDE (illustration-first) ————— */
+.splash-guide {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+.splash-guide__title {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 6px;
+    flex-wrap: nowrap;
+    max-width: 100%;
+}
+.splash-flow {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+.splash-flow__img {
+    width: 100%;
+    height: auto;
+    border-radius: var(--radius-sm);
+    background: #1a1a1d;
+    border: 1px solid var(--border);
+}
+.splash-flow__steps {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+.splash-flow__steps li {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    text-align: center;
+    min-width: 0;
+}
+.splash-flow__steps strong {
+    font-size: 13px;
+    color: var(--gold-light);
+}
+.splash-flow__steps span {
+    font-size: 11px;
+    color: var(--text-muted);
+    line-height: 1.3;
+}
+.splash-card-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+}
+.splash-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    padding: 12px 10px 10px;
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    text-align: center;
+    min-width: 0;
+}
+.splash-card__img {
+    width: 96px;
+    height: 96px;
+    object-fit: cover;
+    border-radius: 8px;
+    background: #1a1a1d;
+}
+.splash-card__title {
+    margin: 0;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text);
+    line-height: 1.25;
+}
+.splash-card__caption {
+    margin: 0;
+    font-size: 11px;
+    color: var(--text-muted);
+    line-height: 1.35;
+}
+.splash-icon-grid {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 8px 10px;
+    width: 100%;
+    margin-bottom: 2px;
+}
+.splash-icon-grid--compact {
+    gap: 6px 8px;
+}
+.splash-icon-grid__item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 3px;
+    width: 56px;
+}
+.splash-icon-grid__item img {
+    width: 48px;
+    height: 48px;
+    object-fit: cover;
+    border-radius: 6px;
+    background: #1a1a1d;
+}
+.splash-icon-grid--compact .splash-icon-grid__item {
+    width: 48px;
+}
+.splash-icon-grid--compact .splash-icon-grid__item img {
+    width: 40px;
+    height: 40px;
+}
+.splash-icon-grid__item span {
+    font-size: 10px;
+    color: var(--text-muted);
+    line-height: 1.2;
+}
+.splash-guide__actions {
+    margin-top: 4px;
+    padding-top: 12px;
+    border-top: 1px solid var(--border);
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+/* Legacy guide section classes (kept if referenced elsewhere) */
 .guide-section {
     margin-bottom: 6px;
     border: 1px solid var(--border);

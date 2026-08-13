@@ -37,13 +37,46 @@
     margin: 0;
 }
 
+.mobile-gate-howto {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+.mobile-gate-flow-img {
+    width: 100%;
+    height: auto;
+    border-radius: var(--radius-sm);
+    background: #1a1a1d;
+    border: 1px solid var(--border);
+}
 .mobile-gate-howto-title {
     font-weight: 700;
     font-size: 22px;
     color: var(--gold-light);
-    margin-bottom: 8px;
+    margin-bottom: 0;
     border-bottom: 2px solid var(--border);
     padding-bottom: 4px;
+}
+.mobile-gate-howto-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+.mobile-gate-howto-row {
+    display: flex;
+    gap: 10px;
+    align-items: baseline;
+}
+.mobile-gate-howto-name {
+    font-weight: 600;
+    white-space: nowrap;
+    min-width: 110px;
+    color: var(--text);
+    font-size: 16px;
+}
+.mobile-gate-howto-desc {
+    color: var(--text-muted);
+    font-size: 15px;
 }
 
 @media (max-width: 767px) {
