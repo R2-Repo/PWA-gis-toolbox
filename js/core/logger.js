@@ -1,7 +1,7 @@
 /**
  * Structured logging subsystem
  * Levels: DEBUG, INFO, WARN, ERROR
- * Provides filterable log panel, copy/download, error bundles
+ * In-memory entries + optional console mirroring; error bundles for diagnostics
  */
 
 const LOG_LEVELS = { DEBUG: 0, INFO: 1, WARN: 2, ERROR: 3 };

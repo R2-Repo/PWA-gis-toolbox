@@ -11,7 +11,7 @@ import {
     restoreSessionIfAvailable,
     setupAppWiring,
     setupDragDrop,
-    setupLogsPanel,
+    setupTooltipPortal,
     openImportFlow,
     handleUndo,
     handleRedo,
@@ -19,7 +19,6 @@ import {
     applyBasemapHeaderSelection,
     applyBasemapToneSelection,
     applyDimensionHeaderSelection,
-    toggleLogs,
     showToolInfo,
     setActiveLayerAndRefresh,
     moveLayerToIndex,
@@ -288,7 +287,6 @@ function AppShell() {
                     onBasemapChange={onBasemapChange}
                     onBasemapToneChange={onBasemapToneChange}
                     onDimensionChange={onDimensionChange}
-                    onLogs={toggleLogs}
                     onInfo={showToolInfo}
                     onExportMapView={exportMapView}
                     onPresentationLink={openPresentationLinkBuilderWidget}
@@ -421,27 +419,6 @@ function AppShell() {
                 ◀
             </button>
 
-            <div id="logs-panel" className="logs-panel hidden">
-                <div className="logs-header">
-                    <h3>Logs</h3>
-                    <div className="logs-toolbar">
-                        <input type="search" id="logs-search" placeholder="Search logs..." className="input-sm" />
-                        <select id="logs-level" className="input-sm">
-                            <option value="">All Levels</option>
-                            <option value="ERROR">Errors</option>
-                            <option value="WARN">Warnings</option>
-                            <option value="INFO">Info</option>
-                            <option value="DEBUG">Debug</option>
-                        </select>
-                        <button type="button" className="btn btn-ghost btn-sm" id="logs-copy" title="Copy logs">📋</button>
-                        <button type="button" className="btn btn-ghost btn-sm" id="logs-download" title="Download logs">💾</button>
-                        <button type="button" className="btn btn-ghost btn-sm" id="logs-clear" title="Clear">🗑️</button>
-                        <button type="button" className="btn btn-ghost btn-sm" id="logs-close" title="Close logs">✕</button>
-                    </div>
-                </div>
-                <div className="logs-body" id="logs-body" />
-            </div>
-
             <MapContextMenu buildItems={buildMapContextMenuItems} />
             <SelectionActionsMenu buildItems={buildSelectionActionMenuItems} />
         </>
@@ -464,7 +441,7 @@ export function App() {
 
         setupAppWiring();
         setupDragDrop();
-        setupLogsPanel();
+        setupTooltipPortal();
 
         const syncMobileClass = () => {
             const isMobile = window.innerWidth < 768;

@@ -2259,34 +2259,6 @@ function _clearCoordSearchMarker() {
 }
 
 // ============================
-// Logs panel
-// ============================
-export function toggleLogs() {
-    const logsPanel = document.getElementById('logs-panel');
-    if (!logsPanel) return;
-    logsPanel.classList.toggle('hidden');
-    const open = !logsPanel.classList.contains('hidden');
-    logger.setPanelOpen(open);
-    if (open) renderLogs();
-}
-
-function renderLogs(filter = {}) {
-    const body = document.getElementById('logs-body');
-    if (!body) return;
-    const entries = logger.getEntries(filter);
-    body.innerHTML = entries.slice(-200).map(e =>
-        `<div class="log-entry">
-            <span class="ts">${e.ts.slice(11, 23)}</span>
-            <span class="lvl-${e.level}">[${e.level}]</span>
-            <span>[${e.module}]</span>
-            ${e.action} ${e.context && Object.keys(e.context).length ? JSON.stringify(e.context) : ''}
-            ${e.duration != null ? `<span class="text-muted">(${e.duration}ms)</span>` : ''}
-        </div>`
-    ).join('');
-    body.scrollTop = body.scrollHeight;
-}
-
-// ============================
 // Data Prep tool modals
 // ============================
 
@@ -5764,133 +5736,88 @@ const APP_ACTIONS = {
     _coordSearchClear
 };
 
-// Subscribe to logs for panel updates
-logger.subscribe(() => {
-    if (!document.getElementById('logs-panel')?.classList.contains('hidden')) {
-        renderLogs();
-    }
-});
+// Floating tooltip portal for geo tool buttons
+export function setupTooltipPortal() {
+    const portal = document.createElement('div');
+    portal.className = 'geo-tip-portal';
+    const arrow = document.createElement('div');
+    arrow.className = 'tip-arrow';
+    portal.appendChild(arrow);
+    document.body.appendChild(portal);
+    let hideTimeout = null;
+    let activeBtn = null;
 
-// Setup logs toolbar
-export function setupLogsPanel() {
-    const searchInput = document.getElementById('logs-search');
-    const levelSelect = document.getElementById('logs-level');
-    if (searchInput) {
-        searchInput.addEventListener('input', () => {
-            renderLogs({ search: searchInput.value, level: levelSelect?.value });
+    function show(btn) {
+        const tip = btn.querySelector('.geo-tip');
+        if (!tip) return;
+        clearTimeout(hideTimeout);
+        activeBtn = btn;
+
+        // Set text (keep arrow element)
+        // Clear text nodes only, preserve arrow child
+        Array.from(portal.childNodes).forEach(n => {
+            if (n !== arrow) portal.removeChild(n);
         });
+        portal.insertBefore(document.createTextNode(tip.textContent), arrow);
+
+        // Make visible but off-screen for measurement
+        portal.style.left = '-9999px';
+        portal.style.top = '0px';
+        portal.classList.add('visible');
+
+        const rect = btn.getBoundingClientRect();
+        const pw = 240;
+        const ph = portal.offsetHeight;
+        const btnCenterX = rect.left + rect.width / 2;
+
+        // Horizontal: try to center on button, clamp to viewport
+        let left = btnCenterX - pw / 2;
+        if (left < 8) left = 8;
+        if (left + pw > window.innerWidth - 8) left = window.innerWidth - 8 - pw;
+
+        // Arrow: point at button center relative to tooltip left
+        let arrowLeft = btnCenterX - left;
+        arrowLeft = Math.max(12, Math.min(pw - 12, arrowLeft));
+        arrow.style.left = arrowLeft + 'px';
+
+        portal.style.left = left + 'px';
+        portal.style.width = pw + 'px';
+
+        // Vertical: prefer above, fall back to below
+        let top = rect.top - ph - 10;
+        if (top < 4) {
+            top = rect.bottom + 10;
+            portal.classList.add('below');
+        } else {
+            portal.classList.remove('below');
+        }
+        portal.style.top = top + 'px';
     }
-    if (levelSelect) {
-        levelSelect.addEventListener('change', () => {
-            renderLogs({ search: searchInput?.value, level: levelSelect.value });
-        });
+
+    function hideImmediate() {
+        clearTimeout(hideTimeout);
+        portal.classList.remove('visible');
+        activeBtn = null;
     }
-    document.getElementById('logs-copy')?.addEventListener('click', () => {
-        navigator.clipboard?.writeText(logger.toText());
-    });
-    document.getElementById('logs-download')?.addEventListener('click', () => {
-        const blob = new Blob([logger.toJSON()], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `gis-toolbox-logs-${new Date().toISOString().slice(0, 10)}.json`;
-        a.click();
-        URL.revokeObjectURL(url);
-    });
-    document.getElementById('logs-clear')?.addEventListener('click', () => {
-        logger.clear();
-        renderLogs();
-    });
-    document.getElementById('logs-close')?.addEventListener('click', () => {
-        document.getElementById('logs-panel')?.classList.add('hidden');
-        logger.setPanelOpen(false);
-    });
 
-    // ========================
-    // Floating tooltip portal
-    // ========================
-    (function initTooltipPortal() {
-        const portal = document.createElement('div');
-        portal.className = 'geo-tip-portal';
-        const arrow = document.createElement('div');
-        arrow.className = 'tip-arrow';
-        portal.appendChild(arrow);
-        document.body.appendChild(portal);
-        let hideTimeout = null;
-        let activeBtn = null;
+    function hide() {
+        hideTimeout = setTimeout(hideImmediate, 100);
+    }
 
-        function show(btn) {
-            const tip = btn.querySelector('.geo-tip');
-            if (!tip) return;
-            clearTimeout(hideTimeout);
-            activeBtn = btn;
-
-            // Set text (keep arrow element)
-            // Clear text nodes only, preserve arrow child
-            Array.from(portal.childNodes).forEach(n => {
-                if (n !== arrow) portal.removeChild(n);
-            });
-            portal.insertBefore(document.createTextNode(tip.textContent), arrow);
-
-            // Make visible but off-screen for measurement
-            portal.style.left = '-9999px';
-            portal.style.top = '0px';
-            portal.classList.add('visible');
-
-            const rect = btn.getBoundingClientRect();
-            const pw = 240;
-            const ph = portal.offsetHeight;
-            const btnCenterX = rect.left + rect.width / 2;
-
-            // Horizontal: try to center on button, clamp to viewport
-            let left = btnCenterX - pw / 2;
-            if (left < 8) left = 8;
-            if (left + pw > window.innerWidth - 8) left = window.innerWidth - 8 - pw;
-
-            // Arrow: point at button center relative to tooltip left
-            let arrowLeft = btnCenterX - left;
-            arrowLeft = Math.max(12, Math.min(pw - 12, arrowLeft));
-            arrow.style.left = arrowLeft + 'px';
-
-            portal.style.left = left + 'px';
-            portal.style.width = pw + 'px';
-
-            // Vertical: prefer above, fall back to below
-            let top = rect.top - ph - 10;
-            if (top < 4) {
-                top = rect.bottom + 10;
-                portal.classList.add('below');
-            } else {
-                portal.classList.remove('below');
-            }
-            portal.style.top = top + 'px';
+    document.addEventListener('pointerenter', (e) => {
+        const btn = closestFromEvent(e, '.geo-tool-btn');
+        if (btn) {
+            show(btn);
+        } else if (activeBtn) {
+            hideImmediate();
         }
-
-        function hideImmediate() {
-            clearTimeout(hideTimeout);
-            portal.classList.remove('visible');
-            activeBtn = null;
-        }
-
-        function hide() {
-            hideTimeout = setTimeout(hideImmediate, 100);
-        }
-
-        document.addEventListener('pointerenter', (e) => {
-            const btn = closestFromEvent(e, '.geo-tool-btn');
-            if (btn) {
-                show(btn);
-            } else if (activeBtn) {
-                hideImmediate();
-            }
-        }, true);
-        document.addEventListener('pointerleave', (e) => {
-            const btn = closestFromEvent(e, '.geo-tool-btn');
-            if (btn && btn === activeBtn) hide();
-        }, true);
-        document.addEventListener('pointerdown', (e) => {
-            const btn = closestFromEvent(e, '.geo-tool-btn');
-            if (btn && btn === activeBtn) hideImmediate();
-        }, true);
-    })();
+    }, true);
+    document.addEventListener('pointerleave', (e) => {
+        const btn = closestFromEvent(e, '.geo-tool-btn');
+        if (btn && btn === activeBtn) hide();
+    }, true);
+    document.addEventListener('pointerdown', (e) => {
+        const btn = closestFromEvent(e, '.geo-tool-btn');
+        if (btn && btn === activeBtn) hideImmediate();
+    }, true);
 }

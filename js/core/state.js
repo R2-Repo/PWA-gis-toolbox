@@ -16,7 +16,6 @@ const state = {
         activeTab: 'map',      // mobile tabs: map | data | prep | tools | export
         leftPanelOpen: true,
         rightPanelOpen: true,
-        logsOpen: false,
         photoMapperOpen: false,
         arcgisImporterOpen: false,
         coordinatesOpen: false

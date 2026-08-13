@@ -83,7 +83,7 @@ const friendlyMessages = {
     [ErrorCategory.UNKNOWN]: {
         title: 'Unexpected Error',
         message: 'An unexpected error occurred.',
-        guidance: 'Check the Logs panel for details. You can download logs for troubleshooting.'
+        guidance: 'Try again, or reload the page if the problem persists.'
     }
 };
 
