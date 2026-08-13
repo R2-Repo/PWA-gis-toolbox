@@ -19,19 +19,29 @@ async function collectSelectedFeaturesForLayer(ctx, layerId, layer) {
     const indices = ctx.mapService?.getSelectedIndices?.(layerId) || [];
     if (!indices.length) return [];
 
+    let resolved = [];
     if (ctx.mapService?.resolveFeaturesByIndices) {
-        const resolved = await ctx.mapService.resolveFeaturesByIndices(layerId, indices);
-        if (resolved.length) {
+        resolved = await ctx.mapService.resolveFeaturesByIndices(layerId, indices);
+        // Only treat a complete resolve as success — partial results silently drop
+        // off-viewport / store-only selections from the presentation scene.
+        if (resolved.length === indices.length) {
             return resolved;
         }
     }
 
     const geojson = resolveLayerGeojson(ctx, layerId, layer);
-    if (!geojson) {
-        return [];
+    if (geojson) {
+        const selected = ctx.mapService.getSelectedFeatures(layerId, geojson);
+        const fromGeo = selected?.features || [];
+        if (fromGeo.length === indices.length) {
+            return fromGeo;
+        }
+        if (fromGeo.length > resolved.length) {
+            return fromGeo;
+        }
     }
-    const selected = ctx.mapService.getSelectedFeatures(layerId, geojson);
-    return selected?.features || [];
+
+    return resolved;
 }
 
 export function toFeatureCollection(features = []) {
