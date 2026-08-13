@@ -14,7 +14,6 @@ export function HeaderBar({
     onBasemapChange,
     onBasemapToneChange,
     onDimensionChange,
-    onLogs,
     onInfo,
     onExportMapView,
     onPresentationLink,
@@ -83,7 +82,6 @@ export function HeaderBar({
                 </div>
                 <PopupModeMenu mode={popupMode} onModeChange={onPopupModeChange} />
                 <MapPrintMenu onExportMapView={onExportMapView} onPresentationLink={onPresentationLink} />
-                <button className="btn btn-ghost btn-sm" id="btn-logs" title="Logs" onClick={() => onLogs?.()}>📋</button>
                 <button
                     className="btn btn-ghost"
                     id="btn-info"
