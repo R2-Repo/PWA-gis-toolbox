@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { TOOL_GUIDE_SECTIONS } from '../../js/tools/tool-guide-sections.js';
+import { SPLASH_FLOW, SPLASH_HOW_TO } from '../../js/tools/tool-guide-sections.js';
 import { ToolGuideTitle } from '../tools/ToolGuideDialog.jsx';
 
 const MOBILE_BREAKPOINT = 768;
@@ -8,11 +8,11 @@ const GATE_MESSAGE = 'GIS Toolbox works best on a larger screen. Please use a ta
 
 function HowToList({ tools }) {
     return (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <div className="mobile-gate-howto-list">
             {tools.map(([name, desc]) => (
-                <div key={name} style={{ display: 'flex', gap: 10, alignItems: 'baseline' }}>
-                    <span style={{ fontWeight: 600, whiteSpace: 'nowrap', minWidth: 110, color: 'var(--text)', fontSize: 16 }}>{name}</span>
-                    <span style={{ color: 'var(--text-muted)', fontSize: 15 }}>{desc}</span>
+                <div key={name} className="mobile-gate-howto-row">
+                    <span className="mobile-gate-howto-name">{name}</span>
+                    <span className="mobile-gate-howto-desc">{desc}</span>
                 </div>
             ))}
         </div>
@@ -37,8 +37,6 @@ export function MobileGate() {
     const isMobile = useMobileViewport();
     if (!isMobile) return null;
 
-    const howToSection = TOOL_GUIDE_SECTIONS.find((section) => section.title === 'How To');
-
     return (
         <div
             className="mobile-gate"
@@ -51,12 +49,18 @@ export function MobileGate() {
                 <p className="mobile-gate-notice" id="mobile-gate-notice">
                     {GATE_MESSAGE}
                 </p>
-                {howToSection ? (
-                    <div className="mobile-gate-howto">
-                        <div className="mobile-gate-howto-title">{howToSection.title}</div>
-                        <HowToList tools={howToSection.tools} />
-                    </div>
-                ) : null}
+                <div className="mobile-gate-howto">
+                    <img
+                        className="mobile-gate-flow-img"
+                        src={SPLASH_FLOW.image}
+                        alt=""
+                        width={768}
+                        height={432}
+                        draggable={false}
+                    />
+                    <div className="mobile-gate-howto-title">How To</div>
+                    <HowToList tools={SPLASH_HOW_TO} />
+                </div>
             </div>
         </div>
     );
