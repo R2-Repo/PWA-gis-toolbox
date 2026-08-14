@@ -44,7 +44,11 @@ export const HEAVY_OPERATIONS = new Set([
     'summary',
     'spatial-analysis',
     'reproject',
-    'generic'
+    'generic',
+    'polygon-to-line',
+    'fill-holes',
+    'split-by-line',
+    'split-by-polygon'
 ]);
 
 /**

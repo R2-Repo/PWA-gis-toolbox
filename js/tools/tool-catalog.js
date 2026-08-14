@@ -24,6 +24,11 @@ export const MAP_GIS_TOOLS = [
     { id: 'simplify', action: 'openSimplify', category: 'transformation', label: '〰️ Simplify', tip: 'Reduce detail in shapes by removing extra points — creates a new layer.' },
     { id: 'bezier-spline', action: 'openBezierSpline', category: 'transformation', label: '🌊 Spline', tip: 'Smooth jagged lines into gentle, flowing curves (bezier splines).' },
     { id: 'polygon-smooth', action: 'openPolygonSmooth', category: 'transformation', label: '🔵 Smooth', tip: 'Round off rough polygon edges by averaging corner positions.' },
+    { id: 'polygon-to-line', action: 'openPolygonToLine', category: 'transformation', label: '▭ Polygon→Line', tip: 'Turn polygon boundaries into lines (outer rings and holes).' },
+    { id: 'fill-holes', action: 'openFillHoles', category: 'transformation', label: '⬤ Fill Holes', tip: 'Remove interior rings so donut polygons become solid.' },
+    { id: 'split-by-line', action: 'openSplitPolygonByLine', category: 'transformation', label: '✂ Split by Line', tip: 'Cut polygons into pieces using a line layer.' },
+    { id: 'split-by-polygon', action: 'openSplitPolygonByPolygon', category: 'transformation', label: '✂ Split by Polygon', tip: 'Cut polygons into overlap and remainder pieces using another polygon layer.' },
+    { id: 'vertex-reshape', action: 'openVertexReshape', category: 'transformation', label: '✥ Reshape', tip: 'Click a feature and drag vertices to reshape it on the map.' },
     { id: 'line-offset', action: 'openLineOffset', category: 'transformation', label: '↔ Offset', tip: 'Create a parallel copy of a line shifted left or right by a set distance.' },
     { id: 'reproject', action: 'openReproject', category: 'transformation', label: '🗺 Reproject', tip: 'Fix layers that don\'t display on the map — converts coordinates to WGS 84 and creates a new layer.' },
     { id: 'sector', action: 'openSector', category: 'transformation', label: '🥧 Sector', tip: 'Create a pie-slice shaped area from a center point.' },
@@ -66,7 +71,12 @@ export const V1_MAP_TOOL_IDS = new Set([
     'union',
     'kinks',
     'sample',
-    'explode'
+    'explode',
+    'polygon-to-line',
+    'fill-holes',
+    'split-by-line',
+    'split-by-polygon',
+    'vertex-reshape'
 ]);
 
 /** Pipeline nodes matching the map Layer Data Tools panel (see LayerDataToolsPanel.jsx). */
@@ -99,6 +109,10 @@ export const V1_PIPELINE_NODE_TYPES = new Set([
     'union',
     'sample',
     'explode',
+    'polygon-to-line',
+    'fill-holes',
+    'split-by-line',
+    'split-by-polygon',
     'add-to-map',
     'preview'
 ]);

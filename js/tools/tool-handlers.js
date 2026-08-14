@@ -3676,8 +3676,236 @@ async function openExplode() {
                         addResultLayer(result);
                         showToast(`Extracted ${result.geojson.features.length} point(s)`, 'success');
                     } catch (e) {
-                        showErrorToast(handleError(e, 'GISTools', 'Explode'));
+                            showErrorToast(handleError(e, 'GISTools', 'Explode'));
+                        }
                     }
+                });
+                watchOverlayUnmount(overlay, () => mounted.unmount?.());
+            }
+        });
+}
+
+const GEOM_FAMILIES = {
+    Point: ['Point', 'MultiPoint'],
+    LineString: ['LineString', 'MultiLineString'],
+    Polygon: ['Polygon', 'MultiPolygon']
+};
+
+function listSpatialLayerDefs(geomTypes, excludeId = null) {
+    const allowed = new Set();
+    for (const type of geomTypes || []) {
+        (GEOM_FAMILIES[type] || [type]).forEach((item) => allowed.add(item));
+    }
+    return getLayers()
+        .filter((layer) => {
+            if (excludeId && layer.id === excludeId) return false;
+            if (layer.type !== 'spatial' || !layer.geojson?.features) return false;
+            return layer.geojson.features.some((f) => f.geometry && allowed.has(f.geometry.type));
+        })
+        .map((layer) => ({
+            id: layer.id,
+            name: layer.name,
+            count: layer.geojson.features.length
+        }));
+}
+
+async function openPolygonToLine() {
+    const layer = await requireSpatialLayer(['Polygon', 'MultiPolygon'], 'polygon-to-line');
+    if (!layer) return;
+
+    const work = getWorkingFeatures(layer);
+    const rootId = `polygon-to-line-react-${Date.now()}`;
+    openToolDialog('Polygon to Line', rootId, {
+        onMount: async (overlay, close) => {
+            const root = overlay.querySelector(`#${rootId}`);
+            if (!root) return;
+            const { mountApplyToolDialog } = await import('../../react/tools/mountApplyToolDialog.jsx');
+            const mounted = mountApplyToolDialog(root, {
+                selectionCount: mapService.getSelectionCount(layer.id),
+                totalCount: work.totalCount,
+                layerName: layer.name,
+                runLabel: 'Convert',
+                hint: 'Creates a new line layer from polygon boundaries (outer rings and holes).',
+                onCancel: () => close(),
+                onApply: async ({ applyTo }) => {
+                    close();
+                    try {
+                        const result = await runWithTaskProgress('Polygon to Line', () =>
+                            gisTools.polygonToLineFeatures(getWorkingDataset(layer, applyTo))
+                        );
+                        if (!result) return;
+                        addResultLayer(result);
+                        showToast(`Created ${result.geojson.features.length} line(s)`, 'success');
+                    } catch (e) {
+                        showErrorToast(handleError(e, 'GISTools', 'PolygonToLine'));
+                    }
+                }
+            });
+            watchOverlayUnmount(overlay, () => mounted.unmount?.());
+        }
+    });
+}
+
+async function openFillHoles() {
+    const layer = await requireSpatialLayer(['Polygon', 'MultiPolygon'], 'fill-holes');
+    if (!layer) return;
+
+    const work = getWorkingFeatures(layer);
+    const rootId = `fill-holes-react-${Date.now()}`;
+    openToolDialog('Fill Holes', rootId, {
+        onMount: async (overlay, close) => {
+            const root = overlay.querySelector(`#${rootId}`);
+            if (!root) return;
+            const { mountApplyToolDialog } = await import('../../react/tools/mountApplyToolDialog.jsx');
+            const mounted = mountApplyToolDialog(root, {
+                selectionCount: mapService.getSelectionCount(layer.id),
+                totalCount: work.totalCount,
+                layerName: layer.name,
+                runLabel: 'Fill Holes',
+                hint: 'Removes interior rings so donut polygons become solid. Creates a new layer.',
+                onCancel: () => close(),
+                onApply: async ({ applyTo }) => {
+                    close();
+                    try {
+                        const result = await runWithTaskProgress('Fill Holes', () =>
+                            gisTools.fillHolesFeatures(getWorkingDataset(layer, applyTo))
+                        );
+                        if (!result) return;
+                        const holesRemoved = result.source?.holesRemoved || 0;
+                        if (!holesRemoved) {
+                            showToast('No holes found in the selected polygons', 'warning');
+                            return;
+                        }
+                        addResultLayer(result);
+                        showToast(`Removed ${holesRemoved} hole${holesRemoved === 1 ? '' : 's'}`, 'success');
+                    } catch (e) {
+                        showErrorToast(handleError(e, 'GISTools', 'FillHoles'));
+                    }
+                }
+            });
+            watchOverlayUnmount(overlay, () => mounted.unmount?.());
+        }
+    });
+}
+
+async function openSplitPolygonByLine() {
+    const layer = await requireSpatialLayer(['Polygon', 'MultiPolygon'], 'split-by-line');
+    if (!layer) return;
+
+    const cutterLayers = listSpatialLayerDefs(['LineString'], layer.id);
+    if (!cutterLayers.length) return showToast('Need a line layer to cut with', 'warning');
+
+    const work = getWorkingFeatures(layer);
+    const rootId = `split-by-line-react-${Date.now()}`;
+    openToolDialog('Split Polygon by Line', rootId, {
+        onMount: async (overlay, close) => {
+            const root = overlay.querySelector(`#${rootId}`);
+            if (!root) return;
+            const { mountSplitPolygonDialog } = await import('../../react/tools/mountSplitPolygonDialog.jsx');
+            const mounted = mountSplitPolygonDialog(root, {
+                selectionCount: mapService.getSelectionCount(layer.id),
+                totalCount: work.totalCount,
+                layerName: layer.name,
+                cutterLabel: 'Line layer',
+                cutterLayers,
+                runLabel: 'Split',
+                hint: 'Cuts the active polygon layer wherever the chosen line crosses it. Creates a new layer.',
+                onCancel: () => close(),
+                onApply: async ({ applyTo, cutterId }) => {
+                    close();
+                    const cutter = getLayers().find((item) => item.id === cutterId);
+                    if (!cutter) return showToast('Select a line layer', 'warning');
+                    try {
+                        const working = await prepareWorkingDataset(layer, applyTo, 'split-by-line');
+                        const cutterWorking = await prepareWorkingDataset(cutter, 'layer', 'split-by-line');
+                        const result = await runWithTaskProgress('Split by Line', () =>
+                            gisTools.splitPolygonsByLine(working, cutterWorking)
+                        );
+                        if (!result) return;
+                        addResultLayer(result);
+                        showToast(`Split into ${result.geojson.features.length} polygon(s)`, 'success');
+                    } catch (e) {
+                        showErrorToast(handleError(e, 'GISTools', 'SplitByLine'));
+                    }
+                }
+            });
+            watchOverlayUnmount(overlay, () => mounted.unmount?.());
+        }
+    });
+}
+
+async function openSplitPolygonByPolygon() {
+    const layer = await requireSpatialLayer(['Polygon', 'MultiPolygon'], 'split-by-polygon');
+    if (!layer) return;
+
+    const cutterLayers = listSpatialLayerDefs(['Polygon'], layer.id);
+    if (!cutterLayers.length) return showToast('Need another polygon layer to cut with', 'warning');
+
+    const work = getWorkingFeatures(layer);
+    const rootId = `split-by-polygon-react-${Date.now()}`;
+    openToolDialog('Split Polygon by Polygon', rootId, {
+        onMount: async (overlay, close) => {
+            const root = overlay.querySelector(`#${rootId}`);
+            if (!root) return;
+            const { mountSplitPolygonDialog } = await import('../../react/tools/mountSplitPolygonDialog.jsx');
+            const mounted = mountSplitPolygonDialog(root, {
+                selectionCount: mapService.getSelectionCount(layer.id),
+                totalCount: work.totalCount,
+                layerName: layer.name,
+                cutterLabel: 'Splitter polygon layer',
+                cutterLayers,
+                runLabel: 'Split',
+                hint: 'Cuts the active polygons into overlap and remainder pieces using the splitter layer.',
+                onCancel: () => close(),
+                onApply: async ({ applyTo, cutterId }) => {
+                    close();
+                    const cutter = getLayers().find((item) => item.id === cutterId);
+                    if (!cutter) return showToast('Select a splitter layer', 'warning');
+                    try {
+                        const working = await prepareWorkingDataset(layer, applyTo, 'split-by-polygon');
+                        const cutterWorking = await prepareWorkingDataset(cutter, 'layer', 'split-by-polygon');
+                        const result = await runWithTaskProgress('Split by Polygon', () =>
+                            gisTools.splitPolygonsByPolygon(working, cutterWorking)
+                        );
+                        if (!result) return;
+                        addResultLayer(result);
+                        showToast(`Split into ${result.geojson.features.length} polygon(s)`, 'success');
+                    } catch (e) {
+                        showErrorToast(handleError(e, 'GISTools', 'SplitByPolygon'));
+                    }
+                }
+            });
+            watchOverlayUnmount(overlay, () => mounted.unmount?.());
+        }
+    });
+}
+
+async function openVertexReshape() {
+    const layer = getActiveLayer();
+    if (!layer || !isAnalyzableLayer(layer)) return showToast('Need a spatial layer', 'warning');
+    if (isWorkspaceLayer(layer) || isLiveVectorLayer(layer)) {
+        return showToast('Vertex reshape needs an in-memory layer. Copy this layer first.', 'warning');
+    }
+    const hasEditable = layer.geojson?.features?.some((f) => (
+        f.geometry && ['Polygon', 'MultiPolygon', 'LineString', 'MultiLineString'].includes(f.geometry.type)
+    ));
+    if (!hasEditable) return showToast('Need a polygon or line layer', 'warning');
+
+    const rootId = `vertex-reshape-react-${Date.now()}`;
+    openToolDialog('Vertex Reshape', rootId, {
+        onMount: async (overlay, close) => {
+            const root = overlay.querySelector(`#${rootId}`);
+            if (!root) return;
+            const { mountVertexReshapeDialog } = await import('../../react/tools/mountVertexReshapeDialog.jsx');
+            const mounted = mountVertexReshapeDialog(root, {
+                layerName: layer.name,
+                onCancel: () => close(),
+                onStart: () => {
+                    close();
+                    setActiveLayer(layer.id);
+                    refreshUI();
+                    _openDrawToolbarOnMap(layer.id, layer.name, 'select');
+                    showToast('Click a feature, then drag vertices. Close Draw when done.', 'info');
                 }
             });
             watchOverlayUnmount(overlay, () => mounted.unmount?.());
@@ -5703,6 +5931,11 @@ const APP_ACTIONS = {
     openUnion,
     openSample,
     openExplode,
+    openPolygonToLine,
+    openFillHoles,
+    openSplitPolygonByLine,
+    openSplitPolygonByPolygon,
+    openVertexReshape,
     openDissolve,
     openSector,
     openNearestPoint,

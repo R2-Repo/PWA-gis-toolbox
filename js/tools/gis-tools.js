@@ -16,6 +16,13 @@ import {
     minBBoxSeparationMeters,
     NEAREST_JOIN_SORT_THRESHOLD
 } from './spatial-bbox.js';
+import {
+    polygonsToLineFeatures,
+    fillHoleFeatures,
+    splitPolygonFeaturesByLines,
+    splitPolygonFeaturesByPolygons,
+    listPolygonFeatures
+} from './polygon-ops.js';
 
 const LARGE_DATASET_WARNING = 50000;
 
@@ -1121,6 +1128,123 @@ export async function explodeFeatures(dataset) {
     });
 }
 
+/**
+ * Convert polygons to outline lines.
+ * @param {object} dataset
+ * @returns {Promise<object>}
+ */
+export async function polygonToLineFeatures(dataset) {
+    _requireDisplayReady(dataset, 'Polygon to line');
+    if (typeof turf === 'undefined') throw new Error('Turf.js not loaded');
+
+    const features = dataset.geojson.features.filter((f) => f.geometry);
+    if (listPolygonFeatures(features).length === 0) {
+        throw new Error('No polygon features to convert');
+    }
+
+    const task = new TaskRunner('Polygon to Line', 'GISTools');
+    return task.run(async (t) => {
+        t.updateProgress(40, 'Converting polygons to lines');
+        await yieldToUI();
+        const lines = polygonsToLineFeatures(features);
+        if (!lines.length) throw new Error('Could not convert polygons to lines');
+        t.updateProgress(90, 'Building layer');
+        return createSpatialDataset(`${dataset.name}_outlines`, {
+            type: 'FeatureCollection',
+            features: lines
+        }, { format: 'derived' });
+    });
+}
+
+/**
+ * Remove interior rings (holes) from polygons.
+ * @param {object} dataset
+ * @returns {Promise<object>}
+ */
+export async function fillHolesFeatures(dataset) {
+    _requireDisplayReady(dataset, 'Fill holes');
+    if (typeof turf === 'undefined') throw new Error('Turf.js not loaded');
+
+    const features = dataset.geojson.features.filter((f) => f.geometry);
+    if (listPolygonFeatures(features).length === 0) {
+        throw new Error('No polygon features to fill');
+    }
+
+    const task = new TaskRunner('Fill Holes', 'GISTools');
+    return task.run(async (t) => {
+        t.updateProgress(40, 'Removing holes');
+        await yieldToUI();
+        const { features: filled, holesRemoved } = fillHoleFeatures(features);
+        t.updateProgress(90, 'Building layer');
+        return createSpatialDataset(`${dataset.name}_filled`, {
+            type: 'FeatureCollection',
+            features: filled
+        }, { format: 'derived', holesRemoved });
+    });
+}
+
+/**
+ * Split polygons with a line layer.
+ * @param {object} polygonDataset
+ * @param {object} lineDataset
+ * @returns {Promise<object>}
+ */
+export async function splitPolygonsByLine(polygonDataset, lineDataset) {
+    _requireDisplayReady(polygonDataset, 'Split by line');
+    _requireDisplayReady(lineDataset, 'Split by line');
+    if (typeof turf === 'undefined') throw new Error('Turf.js not loaded');
+
+    const polygons = listPolygonFeatures(polygonDataset.geojson.features);
+    if (!polygons.length) throw new Error('Polygon layer has no polygon features');
+    const lines = (lineDataset.geojson.features || []).filter((f) => (
+        f.geometry && (f.geometry.type === 'LineString' || f.geometry.type === 'MultiLineString')
+    ));
+    if (!lines.length) throw new Error('Line layer has no line features');
+
+    const task = new TaskRunner('Split by Line', 'GISTools');
+    return task.run(async (t) => {
+        t.updateProgress(20, `Splitting ${polygons.length} polygon(s)`);
+        await yieldToUI();
+        const pieces = splitPolygonFeaturesByLines(polygons, lines);
+        if (!pieces.length) throw new Error('Split produced no polygons');
+        t.updateProgress(90, 'Building layer');
+        return createSpatialDataset(`${polygonDataset.name}_split_line`, {
+            type: 'FeatureCollection',
+            features: pieces
+        }, { format: 'derived' });
+    });
+}
+
+/**
+ * Split polygons with another polygon layer.
+ * @param {object} polygonDataset
+ * @param {object} splitterDataset
+ * @returns {Promise<object>}
+ */
+export async function splitPolygonsByPolygon(polygonDataset, splitterDataset) {
+    _requireDisplayReady(polygonDataset, 'Split by polygon');
+    _requireDisplayReady(splitterDataset, 'Split by polygon');
+    if (typeof turf === 'undefined') throw new Error('Turf.js not loaded');
+
+    const polygons = listPolygonFeatures(polygonDataset.geojson.features);
+    if (!polygons.length) throw new Error('Polygon layer has no polygon features');
+    const splitters = listPolygonFeatures(splitterDataset.geojson.features);
+    if (!splitters.length) throw new Error('Splitter layer has no polygon features');
+
+    const task = new TaskRunner('Split by Polygon', 'GISTools');
+    return task.run(async (t) => {
+        t.updateProgress(20, `Splitting ${polygons.length} polygon(s)`);
+        await yieldToUI();
+        const pieces = splitPolygonFeaturesByPolygons(polygons, splitters);
+        if (!pieces.length) throw new Error('Split produced no polygons');
+        t.updateProgress(90, 'Building layer');
+        return createSpatialDataset(`${polygonDataset.name}_split_poly`, {
+            type: 'FeatureCollection',
+            features: pieces
+        }, { format: 'derived' });
+    });
+}
+
 export default {
     bufferFeatures, simplifyFeatures, clipFeatures, dissolveFeatures,
     pointAlong, bearing, destination, distance, pointToLineDistance,
@@ -1131,5 +1255,7 @@ export default {
     nearestNeighborAnalysis,
     spatialJoinPointsInPolygons, nearestJoin, intersectLayers,
     mergeLayers, differenceLayers, summarizeWithin,
-    sampleFeatures, explodeFeatures
+    sampleFeatures, explodeFeatures,
+    polygonToLineFeatures, fillHolesFeatures,
+    splitPolygonsByLine, splitPolygonsByPolygon
 };
