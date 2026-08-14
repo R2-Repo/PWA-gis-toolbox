@@ -7,12 +7,14 @@ import bus from '../core/event-bus.js';
 import logger from '../core/logger.js';
 import mapService from './map-service.js';
 import { showModal } from '../ui/modals.js';
+import { collectEditableVertices, applyVertexMove } from './editable-vertices.js';
 import {
     ANNOTATION_TYPES,
     DEFAULT_ANNOTATION_STYLE,
     isAnnotationFeature,
     normalizeAnnotationProperties
 } from './map-annotations.js';
+
 const DRAW_STYLE = {
     lineColor: '#01bcdd',
     lineWidth: 3,
@@ -741,19 +743,26 @@ class DrawManager {
         if (!feature || !feature.geometry) return;
 
         this._editFeatureRef = feature;
-        const coords = this._getEditableCoords(feature.geometry);
+        const vertices = collectEditableVertices(feature.geometry);
 
-        coords.forEach((coord, idx) => {
+        vertices.forEach((item) => {
             const el = document.createElement('div');
             el.className = 'draw-edit-vertex';
 
             const marker = new maplibregl.Marker({ element: el, draggable: true })
-                .setLngLat(coord)
+                .setLngLat(item.coord)
                 .addTo(this.map);
 
             marker.on('drag', () => {
                 const lngLat = marker.getLngLat();
-                this._applyVertexMove(feature.geometry, idx, [lngLat.lng, lngLat.lat], feature);
+                applyVertexMove(feature.geometry, item.path, [lngLat.lng, lngLat.lat]);
+                if (feature?.properties?._annotationType === ANNOTATION_TYPES.CALLOUT
+                    && feature.geometry?.type === 'LineString') {
+                    const coords = feature.geometry.coordinates;
+                    const last = coords[coords.length - 1];
+                    feature.properties.labelLng = last[0];
+                    feature.properties.labelLat = last[1];
+                }
                 this._syncLayerData();
             });
 
@@ -769,38 +778,20 @@ class DrawManager {
     }
 
     _getEditableCoords(geometry) {
-        switch (geometry.type) {
-            case 'Point': return [geometry.coordinates];
-            case 'LineString': return geometry.coordinates;
-            case 'Polygon': return geometry.coordinates[0].slice(0, -1);
-            case 'MultiPoint': return geometry.coordinates;
-            default: return [];
-        }
+        return collectEditableVertices(geometry).map((item) => item.coord);
     }
 
     _applyVertexMove(geometry, vertexIndex, newCoord, feature = null) {
-        switch (geometry.type) {
-            case 'Point':
-                geometry.coordinates = newCoord;
-                break;
-            case 'LineString':
-                geometry.coordinates[vertexIndex] = newCoord;
-                if (feature?.properties?._annotationType === ANNOTATION_TYPES.CALLOUT) {
-                    const coords = geometry.coordinates;
-                    const last = coords[coords.length - 1];
-                    feature.properties.labelLng = last[0];
-                    feature.properties.labelLat = last[1];
-                }
-                break;
-            case 'Polygon':
-                geometry.coordinates[0][vertexIndex] = newCoord;
-                if (vertexIndex === 0) {
-                    geometry.coordinates[0][geometry.coordinates[0].length - 1] = [...newCoord];
-                }
-                break;
-            case 'MultiPoint':
-                geometry.coordinates[vertexIndex] = newCoord;
-                break;
+        const vertices = collectEditableVertices(geometry);
+        const item = vertices[vertexIndex];
+        if (!item) return;
+        applyVertexMove(geometry, item.path, newCoord);
+        if (feature?.properties?._annotationType === ANNOTATION_TYPES.CALLOUT
+            && geometry.type === 'LineString') {
+            const coords = geometry.coordinates;
+            const last = coords[coords.length - 1];
+            feature.properties.labelLng = last[0];
+            feature.properties.labelLat = last[1];
         }
     }
 

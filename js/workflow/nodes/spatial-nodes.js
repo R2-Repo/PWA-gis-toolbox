@@ -17,7 +17,11 @@ import {
     differenceLayers,
     summarizeWithin,
     sampleFeatures,
-    explodeFeatures
+    explodeFeatures,
+    polygonToLineFeatures,
+    fillHolesFeatures,
+    splitPolygonsByLine,
+    splitPolygonsByPolygon
 } from '../../tools/gis-tools.js';
 import { reprojectLayer } from '../../tools/reproject.js';
 
@@ -523,6 +527,116 @@ export class ExplodeNode extends NodeBase {
 }
 
 // ==============================
+// Polygon to Line
+// ==============================
+export class PolygonToLineNode extends NodeBase {
+    constructor() {
+        super('polygon-to-line', {
+            name: 'Polygon to Line',
+            icon: '▭',
+            category: 'spatial',
+            color: '#059669'
+        });
+        this.inputPorts = [{ id: 'in', label: 'Polygons', dataType: 'dataset' }];
+        this.outputPorts = [{ id: 'out', label: 'Lines', dataType: 'dataset' }];
+        this.config = {};
+    }
+
+    validate() { return { valid: true, message: '' }; }
+
+    async execute(inputs) {
+        const data = inputs[0];
+        if (!data || data.type !== 'spatial') throw new Error('Spatial input required');
+        return polygonToLineFeatures(data);
+    }
+}
+
+// ==============================
+// Fill Holes
+// ==============================
+export class FillHolesNode extends NodeBase {
+    constructor() {
+        super('fill-holes', {
+            name: 'Fill Holes',
+            icon: '⬤',
+            category: 'spatial',
+            color: '#059669'
+        });
+        this.inputPorts = [{ id: 'in', label: 'Polygons', dataType: 'dataset' }];
+        this.outputPorts = [{ id: 'out', label: 'Filled', dataType: 'dataset' }];
+        this.config = {};
+    }
+
+    validate() { return { valid: true, message: '' }; }
+
+    async execute(inputs) {
+        const data = inputs[0];
+        if (!data || data.type !== 'spatial') throw new Error('Spatial input required');
+        return fillHolesFeatures(data);
+    }
+}
+
+// ==============================
+// Split by Line
+// ==============================
+export class SplitByLineNode extends NodeBase {
+    constructor() {
+        super('split-by-line', {
+            name: 'Split by Line',
+            icon: '✂️',
+            category: 'spatial',
+            color: '#059669'
+        });
+        this.inputPorts = [
+            { id: 'polygons', label: 'Polygons', dataType: 'dataset' },
+            { id: 'lines', label: 'Lines', dataType: 'dataset' }
+        ];
+        this.outputPorts = [{ id: 'out', label: 'Split', dataType: 'dataset' }];
+        this.config = {};
+    }
+
+    validate() { return { valid: true, message: '' }; }
+
+    async execute(inputs) {
+        const polygons = inputs[0];
+        const lines = inputs[1];
+        if (!polygons || polygons.type !== 'spatial') throw new Error('Polygons input required');
+        if (!lines || lines.type !== 'spatial') throw new Error('Lines input required');
+        return splitPolygonsByLine(polygons, lines);
+    }
+}
+
+// ==============================
+// Split by Polygon
+// ==============================
+export class SplitByPolygonNode extends NodeBase {
+    constructor() {
+        super('split-by-polygon', {
+            name: 'Split by Polygon',
+            icon: '✂️',
+            category: 'spatial',
+            color: '#059669'
+        });
+        this.inputPorts = [
+            { id: 'polygons', label: 'Polygons', dataType: 'dataset' },
+            { id: 'splitters', label: 'Splitters', dataType: 'dataset' }
+        ];
+        this.outputPorts = [{ id: 'out', label: 'Split', dataType: 'dataset' }];
+        this.config = {};
+    }
+
+    validate() { return { valid: true, message: '' }; }
+
+    async execute(inputs) {
+        const polygons = inputs[0];
+        const splitters = inputs[1];
+        if (!polygons || polygons.type !== 'spatial') throw new Error('Polygons input required');
+        if (!splitters || splitters.type !== 'spatial') throw new Error('Splitters input required');
+        return splitPolygonsByPolygon(polygons, splitters);
+    }
+}
+
+// ==============================
 // Reproject
 // ==============================
 export class ReprojectNode extends NodeBase {
@@ -575,5 +689,9 @@ export const SPATIAL_NODES = [
     { type: 'summarize-within', label: 'Summarize Within', icon: '📊', create: () => new SummarizeWithinNode() },
     { type: 'split-by-geometry', label: 'Split By Geometry', icon: '🔱', create: () => new SplitByGeometryNode() },
     { type: 'sample', label: 'Sample', icon: '🎲', create: () => new SampleNode() },
-    { type: 'explode', label: 'Explode', icon: '💥', create: () => new ExplodeNode() }
+    { type: 'explode', label: 'Explode', icon: '💥', create: () => new ExplodeNode() },
+    { type: 'polygon-to-line', label: 'Polygon to Line', icon: '▭', create: () => new PolygonToLineNode() },
+    { type: 'fill-holes', label: 'Fill Holes', icon: '⬤', create: () => new FillHolesNode() },
+    { type: 'split-by-line', label: 'Split by Line', icon: '✂️', create: () => new SplitByLineNode() },
+    { type: 'split-by-polygon', label: 'Split by Polygon', icon: '✂️', create: () => new SplitByPolygonNode() }
 ];

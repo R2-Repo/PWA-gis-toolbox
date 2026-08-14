@@ -46,6 +46,10 @@ export const NODE_DESCRIPTIONS = {
     'split-by-geometry': 'Split a mixed layer into separate point, line, and polygon outputs.',
     'sample': 'Randomly pick a specified number of features from the input layer.',
     'explode': 'Extract every coordinate vertex as a point feature, preserving parent attributes.',
+    'polygon-to-line': 'Convert polygon boundaries to line features (outer rings and holes).',
+    'fill-holes': 'Remove interior rings so donut polygons become solid.',
+    'split-by-line': 'Cut polygons into pieces wherever a line layer crosses them.',
+    'split-by-polygon': 'Cut polygons into overlap and remainder pieces using another polygon layer.',
 
     // Enrichment
     'add-elevation': 'Look up ground elevation for each feature and store it in a new field.',

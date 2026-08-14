@@ -17,7 +17,12 @@ const TOOL_GEOM_TYPES = {
     union: ['Polygon'],
     kinks: null,
     sample: null,
-    explode: ['LineString', 'Polygon']
+    explode: ['LineString', 'Polygon'],
+    'polygon-to-line': ['Polygon'],
+    'fill-holes': ['Polygon'],
+    'split-by-line': ['Polygon'],
+    'split-by-polygon': ['Polygon'],
+    'vertex-reshape': ['LineString', 'Polygon']
 };
 
 const GEOM_FAMILIES = {

@@ -339,6 +339,40 @@ function ExplodeInspector() {
     );
 }
 
+function PolygonToLineInspector() {
+    return (
+        <InfoText>
+            Converts polygon boundaries to line features. Outer rings and holes become separate lines.
+        </InfoText>
+    );
+}
+
+function FillHolesInspector() {
+    return (
+        <InfoText>
+            Removes interior rings so donut polygons become solid. Polygons without holes pass through unchanged.
+        </InfoText>
+    );
+}
+
+function SplitByLineInspector() {
+    return (
+        <InfoText>
+            Connect <strong>Polygons</strong> and <strong>Lines</strong>. Each polygon is cut into pieces
+            wherever a line crosses it. The line must intersect the polygon.
+        </InfoText>
+    );
+}
+
+function SplitByPolygonInspector() {
+    return (
+        <InfoText>
+            Connect <strong>Polygons</strong> and <strong>Splitters</strong>. Each target polygon is cut
+            into overlap and remainder pieces using the splitter polygons.
+        </InfoText>
+    );
+}
+
 export const SPATIAL_INSPECTORS = {
     buffer: BufferInspector,
     reproject: ReprojectInspector,
@@ -356,5 +390,9 @@ export const SPATIAL_INSPECTORS = {
     'summarize-within': SummarizeWithinInspector,
     'split-by-geometry': SplitByGeometryInspector,
     sample: SampleInspector,
-    explode: ExplodeInspector
+    explode: ExplodeInspector,
+    'polygon-to-line': PolygonToLineInspector,
+    'fill-holes': FillHolesInspector,
+    'split-by-line': SplitByLineInspector,
+    'split-by-polygon': SplitByPolygonInspector
 };
