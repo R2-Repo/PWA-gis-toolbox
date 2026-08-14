@@ -2,8 +2,9 @@
  * Post box-select actions: menu items + handlers (new layer, clip, copy/move, export).
  */
 import bus from '../core/event-bus.js';
-import { createSpatialDataset, analyzeSchema, isSpatialLayer, isAnalyzableLayer } from '../core/data-model.js';
+import { createSpatialDataset, analyzeSchema, isSpatialLayer, isAnalyzableLayer, isWorkspaceLayer } from '../core/data-model.js';
 import { getAvailableFormats, exportDataset } from '../export/exporter.js';
+import { getWorkspaceFeaturesByIndices } from '../workspace/workspace-store.js';
 import { bboxClipFeatures } from './gis-tools.js';
 import { saveSnapshot } from '../dataprep/transform-history.js';
 
@@ -38,6 +39,23 @@ export function featuresFromSelection(layer, indices = []) {
             return wanted.has(Number.isFinite(idx) ? idx : i);
         })
         .map(stripInternalFeatureProps);
+}
+
+/**
+ * Store-aware selection resolution. Workspace layers (viewport/tiled display)
+ * keep only a partial — or, when tiled, empty — geojson packet in memory, so
+ * selected features must be loaded from IndexedDB by their _featureIndex.
+ * @param {object} layer
+ * @param {number[]} indices
+ * @returns {Promise<object[]>} stripped selected features
+ */
+export async function resolveSelectionFeatures(layer, indices = []) {
+    if (isWorkspaceLayer(layer)) {
+        const layerId = layer.workspaceLayerId || layer.id;
+        const features = await getWorkspaceFeaturesByIndices(layerId, indices, { includeCold: true });
+        return features.map(stripInternalFeatureProps);
+    }
+    return featuresFromSelection(layer, indices);
 }
 
 /**
@@ -310,10 +328,10 @@ export function createSelectionActionHandlers(ctx) {
             await ctx.deleteSelectedFeatures?.();
         },
 
-        newLayerFromSelected() {
+        async newLayerFromSelected() {
             const sel = requireSelection();
             if (!sel) return;
-            const features = featuresFromSelection(sel.layer, sel.indices);
+            const features = await resolveSelectionFeatures(sel.layer, sel.indices);
             if (!features.length) {
                 ctx.showToast?.('No features selected', 'warning');
                 return;
@@ -385,7 +403,7 @@ export function createSelectionActionHandlers(ctx) {
         async exportSelected(format) {
             const sel = requireSelection();
             if (!sel) return;
-            const features = featuresFromSelection(sel.layer, sel.indices);
+            const features = await resolveSelectionFeatures(sel.layer, sel.indices);
             if (!features.length) {
                 ctx.showToast?.('No features selected', 'warning');
                 return;
