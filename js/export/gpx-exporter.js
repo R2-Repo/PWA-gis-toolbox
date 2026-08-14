@@ -4,10 +4,8 @@
  */
 import { loadToGpx } from '../core/libs.js';
 import { isWorkspaceLayer, getLayerFeatureCount } from '../core/data-model.js';
-import { iterateWorkspaceFeatures } from '../workspace/workspace-store.js';
+import { materializeWorkspaceGeoJSON } from './stream-export-service.js';
 import { MAX_MATERIALIZE_FEATURES } from '../tools/gis-layer-context.js';
-
-const EXPORT_BATCH_SIZE = 500;
 
 function _cleanFeatureProperties(properties = {}) {
     return Object.fromEntries(
@@ -23,26 +21,13 @@ function _mapFeatureForExport(feature) {
 }
 
 async function _collectFeatureCollection(dataset, task) {
-    if (isWorkspaceLayer(dataset)) {
-        const layerId = dataset.workspaceLayerId || dataset.id;
-        const features = [];
-        let offset = 0;
-
-        while (true) {
-            const batch = await iterateWorkspaceFeatures(layerId, offset, EXPORT_BATCH_SIZE);
-            if (!batch.length) break;
-            for (const feature of batch) {
-                features.push(_mapFeatureForExport(feature));
-            }
-            offset += batch.length;
-            task?.updateProgress(
-                20 + Math.min(40, Math.round((offset / Math.max(offset + 1000, 1)) * 40)),
-                `Preparing… ${features.length.toLocaleString()} features`
-            );
-            if (batch.length < EXPORT_BATCH_SIZE) break;
-        }
-
-        return { type: 'FeatureCollection', features };
+    // Fallback for direct callers — exporter.js normally materializes first.
+    if (isWorkspaceLayer(dataset) && !dataset._workspaceMaterialized) {
+        const full = await materializeWorkspaceGeoJSON(dataset, task);
+        return {
+            type: 'FeatureCollection',
+            features: full.features.map((feature) => _mapFeatureForExport(feature))
+        };
     }
 
     const source = dataset.geojson || { type: 'FeatureCollection', features: [] };

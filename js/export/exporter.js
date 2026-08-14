@@ -20,7 +20,8 @@ import {
 } from './coverage-raster-exporter.js';
 import {
     shouldUseStreamExport,
-    exportWorkspaceLayerStreamed
+    exportWorkspaceLayerStreamed,
+    materializeWorkspaceDatasetForExport
 } from './stream-export-service.js';
 import { MAX_MATERIALIZE_FEATURES } from '../tools/gis-layer-context.js';
 
@@ -121,6 +122,14 @@ export async function exportDataset(dataset, format, options = {}) {
             );
         }
 
+        // Workspace layers keep only the viewport packet (or nothing, when
+        // tiled) in layer.geojson — load the full layer from the store before
+        // running any non-streamed exporter.
+        if (isWorkspaceLayer(dataset)) {
+            t.updateProgress(15, 'Loading full layer...');
+            dataset = await materializeWorkspaceDatasetForExport(dataset, t);
+        }
+
         // Apply field selection if not photo export
         let exportData = dataset;
         if (!options.skipFieldSelection) {
@@ -186,7 +195,7 @@ function _flattenAttachments(dataset) {
         }
         return out;
     };
-    if (dataset.type === 'spatial' && dataset.geojson?.features) {
+    if (dataset.geojson?.features && !dataset.rows) {
         const fc = {
             type: 'FeatureCollection',
             features: dataset.geojson.features.map(f => ({
@@ -203,6 +212,33 @@ function _flattenAttachments(dataset) {
 }
 
 /**
+ * Materialize any workspace-backed layers in a multi-layer export list so the
+ * KML/KMZ builders see full features instead of the viewport packet.
+ * @param {Array<{dataset, style}>} layers
+ * @param {object} [task]
+ */
+async function _materializeLayersForExport(layers, task) {
+    const out = [];
+    for (const entry of layers) {
+        const { dataset } = entry;
+        if (!isWorkspaceLayer(dataset)) {
+            out.push(entry);
+            continue;
+        }
+        const count = getLayerFeatureCount(dataset);
+        if (count > MAX_MATERIALIZE_FEATURES) {
+            throw new Error(
+                `"${dataset.name}" has ${count.toLocaleString()} features — multi-layer export is `
+                + `limited to ${MAX_MATERIALIZE_FEATURES.toLocaleString()} features per layer. `
+                + 'Export that layer individually as GeoJSON or CSV.'
+            );
+        }
+        out.push({ ...entry, dataset: await materializeWorkspaceDatasetForExport(dataset, task) });
+    }
+    return out;
+}
+
+/**
  * Export multiple layers as a single multi-folder KMZ.
  * @param {Array<{dataset, style}>} layers - { dataset, style } per layer
  * @param {object} options - { filename }
@@ -212,6 +248,7 @@ export async function exportMultiLayerKMZFile(layers, options = {}) {
     const task = new TaskRunner('Export Multi-Layer KMZ', 'Exporter');
     return task.run(async (t) => {
         t.updateProgress(10, 'Preparing layers...');
+        layers = await _materializeLayersForExport(layers, t);
 
         const coverageLayers = layers.filter(({ dataset }) => isCoverageRasterLayer(dataset));
         const vectorLayers = layers.filter(({ dataset }) => !isCoverageRasterLayer(dataset));
@@ -243,6 +280,7 @@ export async function exportMultiLayerKMLFile(layers, options = {}) {
     const task = new TaskRunner('Export Multi-Layer KML', 'Exporter');
     return task.run(async (t) => {
         t.updateProgress(10, 'Preparing layers...');
+        layers = await _materializeLayersForExport(layers, t);
         const result = await exportMultiLayerKML(layers, options, t);
 
         logger.info('Exporter', 'Multi-layer KML export complete', {

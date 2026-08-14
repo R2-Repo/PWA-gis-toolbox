@@ -95,6 +95,59 @@ function _escapeCsv(value) {
 }
 
 /**
+ * Load the full feature set of a workspace layer into memory for the
+ * non-streamed exporters (KML/KMZ/Shapefile/Excel/JSON/GPX). Mirrors the
+ * streamed-export property contract: internal props stripped, __lgid kept,
+ * field selection respected, cold (detached) attributes joined.
+ * Callers must enforce MAX_MATERIALIZE_FEATURES before invoking.
+ * @param {object} dataset workspace layer handle
+ * @param {object} [task]
+ * @returns {Promise<{type: 'FeatureCollection', features: object[]}>}
+ */
+export async function materializeWorkspaceGeoJSON(dataset, task) {
+    const layerId = dataset.workspaceLayerId || dataset.id;
+    const total = getLayerFeatureCount(dataset) || 0;
+    const selectedNames = _selectedNameSet(dataset);
+    const features = [];
+    let offset = 0;
+    while (true) {
+        const batch = await iterateWorkspaceFeatures(layerId, offset, STREAM_EXPORT_BATCH_SIZE, {
+            includeCold: true
+        });
+        if (!batch.length) break;
+        for (const feature of batch) {
+            features.push({
+                type: 'Feature',
+                geometry: feature.geometry,
+                properties: _cleanExportProperties(feature.properties, {
+                    keepLgid: true,
+                    selectedNames
+                })
+            });
+        }
+        offset += batch.length;
+        const pct = total > 0 ? Math.round((features.length / total) * 15) : 0;
+        task?.updateProgress(10 + Math.min(15, pct), `Loading… ${features.length.toLocaleString()} features`);
+        if (batch.length < STREAM_EXPORT_BATCH_SIZE) break;
+        await new Promise((r) => setTimeout(r, 0));
+    }
+    return { type: 'FeatureCollection', features };
+}
+
+/**
+ * Return a copy of a workspace dataset whose `geojson` holds the FULL layer
+ * (not the viewport packet). No-op for in-memory datasets. Never mutates the
+ * live layer object.
+ * @param {object} dataset
+ * @param {object} [task]
+ */
+export async function materializeWorkspaceDatasetForExport(dataset, task) {
+    if (!isWorkspaceLayer(dataset)) return dataset;
+    const geojson = await materializeWorkspaceGeoJSON(dataset, task);
+    return { ...dataset, geojson, _workspaceMaterialized: true };
+}
+
+/**
  * @param {object} dataset
  * @param {'geojson'|'csv'} format
  * @param {object} [options]
@@ -240,5 +293,7 @@ export default {
     STREAM_EXPORT_BATCH_SIZE,
     STREAM_EXPORT_FORMATS,
     shouldUseStreamExport,
+    materializeWorkspaceGeoJSON,
+    materializeWorkspaceDatasetForExport,
     exportWorkspaceLayerStreamed
 };
