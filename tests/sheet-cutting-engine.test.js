@@ -306,6 +306,59 @@ describe('sheet cutting geometry', () => {
         }
     });
 
+    function buildHairpinRoute({ radiusFt = 120, approachFt = 1800 } = {}) {
+        let cursor = turf.point([-111.95, 40.72]);
+        const coords = [cursor.geometry.coordinates];
+        let heading = 90;
+        const step = 80;
+        for (let traveled = 0; traveled < approachFt; traveled += step) {
+            cursor = turf.destination(cursor, step, heading, { units: 'feet' });
+            coords.push(cursor.geometry.coordinates);
+        }
+        const arcStepDeg = 10;
+        const arcLen = radiusFt * ((arcStepDeg * Math.PI) / 180);
+        for (let deg = 0; deg < 180; deg += arcStepDeg) {
+            heading += arcStepDeg;
+            cursor = turf.destination(cursor, arcLen, heading, { units: 'feet' });
+            coords.push(cursor.geometry.coordinates);
+        }
+        for (let traveled = 0; traveled < approachFt; traveled += step) {
+            cursor = turf.destination(cursor, step, heading, { units: 'feet' });
+            coords.push(cursor.geometry.coordinates);
+        }
+        return turf.lineString(coords);
+    }
+
+    it('keeps a polygon for every sheet when length lands on a tight bend', () => {
+        const routeLine = buildHairpinRoute();
+        const corridorWidthFt = 350;
+
+        for (const sheetLengthFt of [700, 900, 1100, 1300, 1500]) {
+            const sheets = generateSheetFramesAlongRoute({
+                routeLine,
+                mapFrameWidthFt: sheetLengthFt,
+                sheetTemplate: { mapFrameHeightFt: corridorWidthFt }
+            }).map((sheet) => ({
+                ...sheet,
+                mapFrameWidthFt: sheetLengthFt,
+                mapFrameHeightFt: corridorWidthFt
+            }));
+
+            const frames = buildSheetFramesGeoJson(sheets, routeLine).features;
+            const frameIds = new Set(frames.map((feature) => feature.properties.sheet_id));
+            const missing = sheets
+                .filter((sheet) => !frameIds.has(sheet.sheetId))
+                .map((sheet) => sheet.sheetNumber);
+
+            expect(sheets.length).toBeGreaterThan(2);
+            expect(missing, `missing sheets at ${sheetLengthFt} ft`).toEqual([]);
+            expect(frames.length).toBe(sheets.length);
+            for (const frame of frames) {
+                expect(turf.kinks(frame).features).toHaveLength(0);
+            }
+        }
+    });
+
     it('mirrors corridor half-width equally on both sides of centerline', () => {
         const sheets = generateSheetFramesAlongRoute({
             routeLine: curvedRoute,

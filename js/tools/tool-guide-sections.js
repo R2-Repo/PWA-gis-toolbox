@@ -1,11 +1,10 @@
 /** Splash / info guide — illustration-first cards (ToolGuideDialog, MobileGate). */
 
 export const SPLASH_FLOW = {
-    image: '/icons/splash-flow.png',
     steps: [
-        { label: 'Import', hint: 'Bring data in' },
-        { label: 'Interact', hint: 'View, edit, analyze' },
-        { label: 'Export', hint: 'Save or convert' }
+        { label: 'Import', hint: 'Bring data in', image: '/icons/splash-flow-import.png' },
+        { label: 'Interact', hint: 'View, edit, analyze', image: '/icons/splash-flow-interact.png' },
+        { label: 'Export', hint: 'Save or convert', image: '/icons/splash-flow-export.png' }
     ]
 };
 

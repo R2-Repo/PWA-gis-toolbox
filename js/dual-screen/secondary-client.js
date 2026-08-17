@@ -169,13 +169,7 @@ function showSecondaryContextMenu({ latlng, originalEvent, layerId, featureIndex
         action: () => {
             void import('../ugrc/lookup.js').then(({ runReverseMilepostLookup }) =>
                 runReverseMilepostLookup(latlng, {
-                    showToast: showMapToast,
-                    openSettings: () => {
-                        showMapToast(
-                            'Set a UGRC API key in the main window (Info → UGRC API key…)',
-                            'warning'
-                        );
-                    }
+                    showToast: showMapToast
                 })
             );
         }

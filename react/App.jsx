@@ -287,7 +287,6 @@ function AppShell() {
                     onBasemapChange={onBasemapChange}
                     onBasemapToneChange={onBasemapToneChange}
                     onDimensionChange={onDimensionChange}
-                    onInfo={showToolInfo}
                     onExportMapView={exportMapView}
                     onPresentationLink={openPresentationLinkBuilderWidget}
                     getActiveLayer={getActiveLayer}

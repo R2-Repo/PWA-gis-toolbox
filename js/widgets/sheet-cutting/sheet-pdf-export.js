@@ -76,6 +76,8 @@ const NORTH_ARROW_SIZE_PT = 28;
 const EDGE_SEE_LABEL_FONT_PT = 7.5;
 /** Extra gap from the cutout border to the inner edge of matchline text. 0 = touching. */
 export const EDGE_SEE_LABEL_GAP_PT = 0;
+/** Basemap underlay JPEG quality. Linework stays vector; this only shrinks the background. */
+export const BASEMAP_JPEG_QUALITY = 0.88;
 /** Distance from cutout border to the label visual center so the inner glyph edge sits on the border. */
 export const EDGE_SEE_LABEL_OFFSET_PT = EDGE_SEE_LABEL_GAP_PT + EDGE_SEE_LABEL_FONT_PT * 0.5;
 const EDGE_SEE_LABEL_INTERIOR_EPS_FT = 2;
@@ -967,6 +969,42 @@ export function measureNominalSheetClipPx(map, template, captureScale = 1) {
  * @param {object} marginsPt
  * @param {object} [options]
  */
+/**
+ * Encode the basemap canvas as JPEG. Clipped corridor pixels are flattened onto white
+ * first so transparent corners do not become black.
+ * @param {HTMLCanvasElement|{ toDataURL?: Function, getContext?: Function, width?: number, height?: number }} canvas
+ * @param {number} [quality]
+ * @returns {string}
+ */
+export function canvasToBasemapJpegDataUrl(canvas, quality = BASEMAP_JPEG_QUALITY) {
+    const q = Number(quality);
+    const jpegQuality = Number.isFinite(q) ? Math.min(1, Math.max(0.5, q)) : BASEMAP_JPEG_QUALITY;
+    const flat = flattenCanvasOntoWhite(canvas);
+    return flat.toDataURL('image/jpeg', jpegQuality);
+}
+
+/**
+ * @param {HTMLCanvasElement|{ toDataURL?: Function, getContext?: Function, width?: number, height?: number }} canvas
+ * @returns {HTMLCanvasElement|{ toDataURL?: Function, getContext?: Function, width?: number, height?: number }}
+ */
+function flattenCanvasOntoWhite(canvas) {
+    if (typeof document === 'undefined' || typeof canvas?.getContext !== 'function') {
+        return canvas;
+    }
+    const width = canvas.width;
+    const height = canvas.height;
+    if (!width || !height) return canvas;
+    const out = document.createElement('canvas');
+    out.width = width;
+    out.height = height;
+    const ctx = out.getContext('2d');
+    if (!ctx) return canvas;
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, width, height);
+    ctx.drawImage(canvas, 0, 0);
+    return out;
+}
+
 export function placeSheetCanvasOnPdfPage(doc, canvas, marginsPt, options = {}) {
     const pageW = doc.internal.pageSize.getWidth();
     const pageH = doc.internal.pageSize.getHeight();
@@ -978,10 +1016,10 @@ export function placeSheetCanvasOnPdfPage(doc, canvas, marginsPt, options = {}) 
         canvas.height,
         options
     );
-    const dataUrl = canvas.toDataURL('image/png');
+    const dataUrl = canvasToBasemapJpegDataUrl(canvas);
     doc.addImage(
         dataUrl,
-        'PNG',
+        'JPEG',
         placement.x,
         placement.y,
         placement.width,
@@ -1531,6 +1569,7 @@ export async function exportSheetPlanPdf({
             });
         }
 
+        const skippedSheets = [];
         for (let index = 0; index < detailSheets.length; index++) {
             throwIfAborted(signal);
             const sheet = detailSheets[index];
@@ -1546,79 +1585,98 @@ export async function exportSheetPlanPdf({
             const frameCollection = buildSingleSheetFrameCollection(sheetFrames, sheet.sheetId);
             const frameFeature = frameCollection?.features?.[0];
             if (!frameFeature) {
-                throw new Error(`Sheet ${label} is missing a frame polygon`);
+                skippedSheets.push(label);
+                onWarning?.(`Sheet ${label} is missing a frame polygon — skipped so later sheets can still export.`);
+                reportProgress({
+                    step: `Skipped sheet ${label} (missing frame).`,
+                    fileIndex: pageIndex,
+                    fileName: pageFile
+                });
+                continue;
             }
 
-            const ring = extractPrimaryRing(frameFeature);
-            if (!ring?.length) {
-                throw new Error(`Sheet ${label} frame polygon is empty`);
-            }
+            try {
+                const ring = extractPrimaryRing(frameFeature);
+                if (!ring?.length) {
+                    throw new Error(`Sheet ${label} frame polygon is empty`);
+                }
 
-            reportProgress({
-                step: `Positioning map for sheet ${label}…`,
-                fileIndex: pageIndex,
-                fileName: pageFile
-            });
-            const exportBearing = await resolveDetailCaptureBearing(
-                mapService,
-                ring,
-                sheet,
-                routeLine,
-                pdfBearingMode,
-                pdfBearings
-            );
-
-            reportProgress({
-                step: `Capturing basemap at ${basemapDpi} DPI for sheet ${label}…`,
-                fileIndex: pageIndex,
-                fileName: pageFile
-            });
-            const underlay = await captureBasemapUnderlay(mapService, template, ring, {
-                skipViewportFit: true
-            });
-
-            reportProgress({
-                step: `Building PDF for sheet ${label}…`,
-                fileIndex: pageIndex,
-                fileName: pageFile
-            });
-            const sheetLayer = perSheetLayers.find((entry) => entry.sheetId === sheet.sheetId);
-            const pageBlob = await buildHybridPagePdfBlob({
-                template,
-                pageOptions: {
-                    pageType: 'detail',
-                    exportBearingDeg: exportBearing,
+                reportProgress({
+                    step: `Positioning map for sheet ${label}…`,
+                    fileIndex: pageIndex,
+                    fileName: pageFile
+                });
+                const exportBearing = await resolveDetailCaptureBearing(
+                    mapService,
+                    ring,
                     sheet,
-                    totalSheets: detailSheets.length,
-                    detailSheets,
                     routeLine,
-                    matchLineRegistry,
-                    frameRing: ring,
-                    projectName,
-                    exportDate
-                },
-                map,
-                mapService,
-                basemapCanvas: underlay.canvas,
-                pixelRing: underlay.pixelRing,
-                captureScale: underlay.captureScale,
-                vectorFeatures: sheetLayer?.contents || null,
-                JsPDFCtor,
-                matchLineRegistry
-            });
-            reportProgress({
-                step: `Writing ${pageFile}…`,
-                fileIndex: pageIndex,
-                fileName: pageFile
-            });
-            await writeBlobToFolder(folderHandle, pageFile, pageBlob);
-            writtenFiles.push(pageFile);
-            completedPages += 1;
-            reportProgress({
-                step: `Sheet ${label} saved.`,
-                fileIndex: pageIndex,
-                fileName: pageFile
-            });
+                    pdfBearingMode,
+                    pdfBearings
+                );
+
+                reportProgress({
+                    step: `Capturing basemap at ${basemapDpi} DPI for sheet ${label}…`,
+                    fileIndex: pageIndex,
+                    fileName: pageFile
+                });
+                const underlay = await captureBasemapUnderlay(mapService, template, ring, {
+                    skipViewportFit: true
+                });
+
+                reportProgress({
+                    step: `Building PDF for sheet ${label}…`,
+                    fileIndex: pageIndex,
+                    fileName: pageFile
+                });
+                const sheetLayer = perSheetLayers.find((entry) => entry.sheetId === sheet.sheetId);
+                const pageBlob = await buildHybridPagePdfBlob({
+                    template,
+                    pageOptions: {
+                        pageType: 'detail',
+                        exportBearingDeg: exportBearing,
+                        sheet,
+                        totalSheets: detailSheets.length,
+                        detailSheets,
+                        routeLine,
+                        matchLineRegistry,
+                        frameRing: ring,
+                        projectName,
+                        exportDate
+                    },
+                    map,
+                    mapService,
+                    basemapCanvas: underlay.canvas,
+                    pixelRing: underlay.pixelRing,
+                    captureScale: underlay.captureScale,
+                    vectorFeatures: sheetLayer?.contents || null,
+                    JsPDFCtor,
+                    matchLineRegistry
+                });
+                reportProgress({
+                    step: `Writing ${pageFile}…`,
+                    fileIndex: pageIndex,
+                    fileName: pageFile
+                });
+                await writeBlobToFolder(folderHandle, pageFile, pageBlob);
+                writtenFiles.push(pageFile);
+                completedPages += 1;
+                reportProgress({
+                    step: `Sheet ${label} saved.`,
+                    fileIndex: pageIndex,
+                    fileName: pageFile
+                });
+            } catch (err) {
+                throwIfAborted(signal);
+                if (err?.name === 'AbortError') throw err;
+                skippedSheets.push(label);
+                onWarning?.(err?.message || `Sheet ${label} export failed — later sheets will still export.`);
+                reportProgress({
+                    step: `Skipped sheet ${label}.`,
+                    fileIndex: pageIndex,
+                    fileName: pageFile
+                });
+            }
         }
 
         if (writtenFiles.length <= (includeOverview ? 1 : 0)) {
@@ -1629,7 +1687,12 @@ export async function exportSheetPlanPdf({
             phase: 'done',
             step: `Saved ${writtenFiles.length} PDF(s) to ${folderName}.`
         });
-        return { pageCount: writtenFiles.length, folderName, files: writtenFiles };
+        return {
+            pageCount: writtenFiles.length,
+            folderName,
+            files: writtenFiles,
+            skippedSheets
+        };
     } finally {
         try {
             await restoreMapPixelRatio(map, sessionOriginalPixelRatio);

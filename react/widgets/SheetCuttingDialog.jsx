@@ -454,7 +454,7 @@ export function SheetCuttingDialog({
                             ))}
                         </select>
                         <p className="text-xs" style={{ marginTop: 4, color: 'var(--text-muted)' }}>
-                            Linework and labels export as vector PDF and stay sharp when zoomed. Basemap quality affects only the background image and file size.
+                            Linework and labels stay vector. Basemap is JPEG so a combined 10-sheet set usually stays emailable. Higher DPI only grows the background.
                         </p>
                     </div>
 

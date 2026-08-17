@@ -458,6 +458,15 @@ export function validateCenterlinePolygonCoverage(sheets = [], routeLine = null,
         return { valid: false, warnings: ['No clipped sheet polygons generated.'] };
     }
 
+    if (frames.length !== detail.length) {
+        const frameIds = new Set(frames.map((frame) => frame.properties?.sheet_id));
+        for (const sheet of detail) {
+            if (!frameIds.has(sheet.sheetId)) {
+                warnings.push(`Sheet ${String(sheet.sheetNumber).padStart(2, '0')} polygon could not be built.`);
+            }
+        }
+    }
+
     const routeLengthFt = turf.length(routeLine, { units: 'feet' });
     const step = Math.max(5, sampleStepFt);
     const halfHeight = (detail[0]?.mapFrameHeightFt || 75) / 2;

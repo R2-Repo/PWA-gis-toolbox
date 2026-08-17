@@ -15,7 +15,7 @@ This is separate from the **Route Centerline** GIS Widget, which uses public UDO
 
 ## API keys
 
-The PWA uses an app-owned **browser** key via `VITE_UGRC_API_KEY` (referrer-locked). No key popup in the app.
+The PWA uses an app-owned **browser** key via `VITE_UGRC_API_KEY` (referrer-locked). Users never enter or see a key. Do not add key UI to the tool guide, splash, settings, or anywhere else in the app.
 
 Create keys at [developer.mapserv.utah.gov](https://developer.mapserv.utah.gov). See [Getting started](https://api.mapserv.utah.gov/getting-started/) for browser key setup.
 

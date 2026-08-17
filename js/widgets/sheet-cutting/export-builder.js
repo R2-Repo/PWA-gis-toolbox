@@ -219,12 +219,109 @@ function ringIsSymmetricAboutCenterline(ring, routeLine, startFt, endFt, halfHei
 }
 
 /**
+ * @param {number[][]} ring
+ * @param {import('geojson').Feature<import('geojson').LineString>} routeLine
+ * @param {number} startFt
+ * @param {number} endFt
+ * @returns {boolean}
+ */
+function ringCoversCenterline(ring, routeLine, startFt, endFt) {
+    try {
+        const polygon = turf.polygon([[...ring, ring[0]]]);
+        const stations = sampleSheetStations(
+            startFt + 5,
+            endFt - 5,
+            Math.max(40, (endFt - startFt) / 8)
+        );
+        return stations.every((stationFt) => {
+            const point = turf.along(routeLine, stationFt, { units: 'feet' });
+            return turf.booleanPointInPolygon(point, polygon);
+        });
+    } catch (_) {
+        return false;
+    }
+}
+
+/**
+ * Drop interior offset vertices whose chord crosses the centerline (tight-radius invert).
+ * @param {number[][]} coords
+ * @param {import('geojson').Feature<import('geojson').LineString>} routeLine
+ * @returns {number[][]}
+ */
+function sanitizeOffsetSide(coords, routeLine) {
+    if (!coords?.length) return coords || [];
+    const out = [[...coords[0]]];
+    for (let i = 1; i < coords.length; i++) {
+        const next = coords[i];
+        const isLast = i === coords.length - 1;
+        if (!isLast && offsetChordCrossesRoute(routeLine, out[out.length - 1], next)) {
+            continue;
+        }
+        if (!coordsEqual(out[out.length - 1], next)) {
+            out.push([...next]);
+        }
+    }
+    const last = coords[coords.length - 1];
+    if (!coordsEqual(out[out.length - 1], last)) {
+        out.push([...last]);
+    }
+    return out;
+}
+
+/**
+ * @param {import('geojson').Feature<import('geojson').LineString>} routeLine
+ * @param {number[]} a
+ * @param {number[]} b
+ * @returns {boolean}
+ */
+function offsetChordCrossesRoute(routeLine, a, b) {
+    if (coordsEqual(a, b, 1e-7)) return false;
+    try {
+        const hits = turf.lineIntersect(turf.lineString([a, b]), routeLine);
+        return (hits.features || []).length > 0;
+    } catch (_) {
+        return false;
+    }
+}
+
+/**
+ * If an offset ring self-intersects on a tight bend, keep the piece that still covers the route.
+ * @param {number[][]} ring
+ * @param {import('geojson').Feature<import('geojson').LineString>} routeLine
+ * @param {number} startFt
+ * @param {number} endFt
+ * @returns {number[][]|null}
+ */
+function repairSheetRing(ring, routeLine, startFt, endFt) {
+    if (!ringHasKinks(ring)) return ring;
+    try {
+        const unkinked = turf.unkinkPolygon(turf.polygon([[...ring, ring[0]]]));
+        const features = unkinked?.features || [];
+        if (!features.length) return null;
+        const mid = turf.along(routeLine, (startFt + endFt) / 2, { units: 'feet' });
+        const containing = features.filter((feature) => turf.booleanPointInPolygon(mid, feature));
+        const pick = (containing.length ? containing : features)
+            .slice()
+            .sort((a, b) => turf.area(b) - turf.area(a))[0];
+        const open = extractPrimaryRing(pick);
+        if (!open?.length) return null;
+        const repaired = dedupeConsecutiveRingPoints(open);
+        return repaired.length >= 4 ? repaired : null;
+    } catch (_) {
+        return null;
+    }
+}
+
+/**
  * @param {number} spanFt
  * @returns {number[]}
  */
 function corridorSampleStepsFt(spanFt) {
     const baseStep = Math.min(40, Math.max(20, spanFt / 35));
-    return [baseStep, baseStep * 1.5, baseStep * 2, baseStep * 3];
+    const steps = [10, 15, baseStep, baseStep * 1.5, baseStep * 2, baseStep * 3];
+    return [...new Set(steps.map((step) => Math.round(step * 10) / 10))]
+        .filter((step) => step > 0)
+        .sort((a, b) => a - b);
 }
 
 /**
@@ -562,7 +659,7 @@ export function buildSymmetricSheetPolygon(sheet, routeLine, startCap = null, en
 
     const start = startCap || buildSymmetricCorridorCap(routeLine, startFt, halfHeightFt);
     const end = endCap || buildSymmetricCorridorCap(routeLine, endFt, halfHeightFt);
-    const minSideVertices = spanFt > 300 ? 3 : 2;
+    let fallbackRing = null;
 
     for (const stepFt of corridorSampleStepsFt(spanFt)) {
         for (const simplifyFt of OFFSET_SIMPLIFY_TOLERANCES_FT) {
@@ -579,16 +676,41 @@ export function buildSymmetricSheetPolygon(sheet, routeLine, startCap = null, en
                 rightCoords = simplifyCoordLine(rightCoords, simplifyFt);
             }
 
-            if (leftCoords.length < minSideVertices || rightCoords.length < minSideVertices) {
+            leftCoords = sanitizeOffsetSide(leftCoords, routeLine);
+            rightCoords = sanitizeOffsetSide(rightCoords, routeLine);
+
+            if (leftCoords.length < 2 || rightCoords.length < 2) {
                 continue;
             }
 
             const ring = buildFlatCappedOffsetRing(leftCoords, rightCoords, start, end);
-            if (!ring || ring.length <= 6 || ringHasKinks(ring)) continue;
-            if (!ringIsSymmetricAboutCenterline(ring, routeLine, startFt, endFt, halfHeightFt)) continue;
+            if (!ring || ring.length < 4) continue;
 
-            return turf.polygon([[...ring, ring[0]]]);
+            const repaired = repairSheetRing(ring, routeLine, startFt, endFt);
+            if (!repaired || repaired.length < 4 || ringHasKinks(repaired)) continue;
+
+            if (ringIsSymmetricAboutCenterline(repaired, routeLine, startFt, endFt, halfHeightFt)) {
+                return turf.polygon([[...repaired, repaired[0]]]);
+            }
+
+            if (!fallbackRing && ringCoversCenterline(repaired, routeLine, startFt, endFt)) {
+                fallbackRing = repaired;
+            }
         }
+    }
+
+    if (fallbackRing) {
+        return turf.polygon([[...fallbackRing, fallbackRing[0]]]);
+    }
+
+    const trapezoid = buildFlatCappedOffsetRing(
+        [start.left, end.left],
+        [start.right, end.right],
+        start,
+        end
+    );
+    if (trapezoid?.length >= 4 && !ringHasKinks(trapezoid)) {
+        return turf.polygon([[...trapezoid, trapezoid[0]]]);
     }
 
     return null;

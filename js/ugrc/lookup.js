@@ -6,6 +6,9 @@ import {
 } from './client.js';
 import { hasResolvedUgrcApiKey, resolveUgrcApiKey } from './keys.js';
 
+const LOOKUP_UNAVAILABLE = 'Route & milepost lookup is unavailable.';
+const LOOKUP_FAILED = 'Route & milepost lookup failed.';
+
 /**
  * @param {number} [bufferMeters]
  * @returns {string}
@@ -15,14 +18,12 @@ export function noStateRouteMessage(bufferMeters = UGRC_REVERSE_MILEPOST_DEFAULT
 }
 
 /**
- * Run reverse milepost lookup and report via toast / clipboard / settings callback.
+ * Run reverse milepost lookup and report via toast / clipboard.
  *
  * @param {{ lat: number, lng: number }} latlng
  * @param {{
  *   showToast?: (message: string, type?: string) => void,
- *   openSettings?: () => void|Promise<void>,
- *   copyText?: (text: string) => Promise<void>,
- *   requireUserKey?: boolean
+ *   copyText?: (text: string) => Promise<void>
  * }} [deps]
  * @returns {Promise<'success'|'no_match'|'missing_key'|'error'>}
  */
@@ -36,16 +37,7 @@ export async function runReverseMilepostLookup(latlng, deps = {}) {
     });
 
     if (!hasResolvedUgrcApiKey()) {
-        // Optional personal-key dialog when a host provides openSettings; otherwise toast.
-        if (typeof deps.openSettings === 'function') {
-            showToast('UGRC API key required. Paste your personal key to continue.', 'warning');
-            await deps.openSettings();
-        } else {
-            showToast(
-                'UGRC is not configured for this build. Set VITE_UGRC_API_KEY in Cloudflare Pages env vars and redeploy.',
-                'warning'
-            );
-        }
+        showToast(LOOKUP_UNAVAILABLE, 'warning');
         return 'missing_key';
     }
 
@@ -80,19 +72,11 @@ export async function runReverseMilepostLookup(latlng, deps = {}) {
     }
 
     if (outcome.reason === 'http' && (outcome.status === 401 || outcome.status === 403)) {
-        if (typeof deps.openSettings === 'function') {
-            showToast('UGRC API key was rejected. Check the key in Settings.', 'error');
-            await deps.openSettings();
-        } else {
-            showToast(
-                'UGRC API key was rejected. Check Cloudflare env VITE_UGRC_API_KEY and browser-key referrer patterns, then redeploy.',
-                'error'
-            );
-        }
+        showToast(LOOKUP_FAILED, 'error');
         return 'error';
     }
 
-    const detail = outcome.error?.message || 'UGRC lookup failed';
+    const detail = outcome.error?.message || LOOKUP_FAILED;
     showToast(detail, 'error');
     return 'error';
 }

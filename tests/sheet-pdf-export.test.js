@@ -25,6 +25,7 @@ import {
     polygonRingFitsViewport,
     measureNominalSheetClipPx,
     placeSheetCanvasOnPdfPage,
+    canvasToBasemapJpegDataUrl,
     resolveDetailPageMarginsPt,
     resolveExportLayerIds,
     computeRotatedTextAnchor,
@@ -1466,10 +1467,11 @@ describe('sheet PDF basemap readiness helpers', () => {
 
 describe('sheet PDF placement', () => {
     it('prefers filling printable width for landscape-flow canvases', () => {
-        const placed = { width: 0, height: 0 };
+        const placed = { width: 0, height: 0, format: '' };
         const doc = {
             internal: { pageSize: { getWidth: () => 1224, getHeight: () => 792 } },
-            addImage: (_data, _fmt, _x, _y, width, height) => {
+            addImage: (_data, fmt, _x, _y, width, height) => {
+                placed.format = fmt;
                 placed.width = width;
                 placed.height = height;
             }
@@ -1477,15 +1479,31 @@ describe('sheet PDF placement', () => {
         const canvas = {
             width: 2000,
             height: 600,
-            toDataURL: () => 'data:image/png;base64,abc'
+            toDataURL: (type) => (type === 'image/jpeg' ? 'data:image/jpeg;base64,abc' : 'data:image/png;base64,abc')
         };
         const marginsPt = { top: 36, right: 36, bottom: 36, left: 36 };
 
         placeSheetCanvasOnPdfPage(doc, canvas, marginsPt, { preferLandscapeFlow: true });
 
         const availW = 1224 - 72;
+        expect(placed.format).toBe('JPEG');
         expect(placed.width).toBeCloseTo(availW, 0);
         expect(placed.height).toBeLessThan(availW);
+    });
+
+    it('encodes the basemap as JPEG after flattening onto white', () => {
+        const calls = [];
+        const canvas = {
+            width: 4,
+            height: 3,
+            toDataURL: (type, quality) => {
+                calls.push({ type, quality });
+                return 'data:image/jpeg;base64,abc';
+            }
+        };
+
+        expect(canvasToBasemapJpegDataUrl(canvas)).toBe('data:image/jpeg;base64,abc');
+        expect(calls).toEqual([{ type: 'image/jpeg', quality: 0.88 }]);
     });
 });
 

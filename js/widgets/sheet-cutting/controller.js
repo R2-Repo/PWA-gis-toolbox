@@ -222,7 +222,10 @@ export async function openSheetCutting(ctx, { restoreState = null } = {}) {
                     });
                     const count = result?.pageCount ?? 0;
                     const folder = result?.folderName ? ` in “${result.folderName}”` : '';
-                    ctx.showToast(`Saved ${count} sheet PDF(s)${folder}.`, 'success');
+                    const skipped = result?.skippedSheets?.length
+                        ? ` Skipped sheet ${result.skippedSheets.join(', ')}.`
+                        : '';
+                    ctx.showToast(`Saved ${count} sheet PDF(s)${folder}.${skipped}`, skipped ? 'warning' : 'success');
                     return result;
                 } catch (err) {
                     if (err?.name === 'AbortError') {

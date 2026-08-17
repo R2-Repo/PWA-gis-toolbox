@@ -8,7 +8,3 @@ export const UGRC_REVERSE_MILEPOST_DEFAULTS = Object.freeze({
     includeRampSystem: false,
     suggest: 0
 });
-
-export const UGRC_KEY_STORAGE_KEY = 'ugrc.apiKey';
-
-export const UGRC_DEVELOPER_URL = 'https://developer.mapserv.utah.gov';

@@ -7,14 +7,20 @@ import {
     normalizeReverseMilepostResult,
     reverseMilepost
 } from '../js/ugrc/client.js';
-import {
-    clearUserUgrcApiKey,
-    getUserUgrcApiKey,
-    resolveUgrcApiKey,
-    setUserUgrcApiKey
-} from '../js/ugrc/keys.js';
-import { UGRC_KEY_STORAGE_KEY } from '../js/ugrc/config.js';
+import { getEnvUgrcApiKey, resolveUgrcApiKey } from '../js/ugrc/keys.js';
 import { noStateRouteMessage, runReverseMilepostLookup } from '../js/ugrc/lookup.js';
+
+const { ugrcKeyTest } = vi.hoisted(() => ({ ugrcKeyTest: { override: null } }));
+
+vi.mock('../js/ugrc/keys.js', async (importOriginal) => {
+    const actual = await importOriginal();
+    const resolved = () => (ugrcKeyTest.override != null ? ugrcKeyTest.override : actual.getEnvUgrcApiKey());
+    return {
+        ...actual,
+        resolveUgrcApiKey: () => resolved(),
+        hasResolvedUgrcApiKey: () => Boolean(resolved())
+    };
+});
 
 describe('ugrc client URL + normalize', () => {
     it('builds reverse milepost URL with UTM 12N defaults', () => {
@@ -103,44 +109,19 @@ describe('reverseMilepost fetch', () => {
 });
 
 describe('ugrc keys', () => {
-    afterEach(() => {
-        clearUserUgrcApiKey();
-    });
-
-    it('stores and clears user override key', () => {
-        expect(getUserUgrcApiKey()).toBe('');
-        setUserUgrcApiKey('  abc  ');
-        expect(getUserUgrcApiKey()).toBe('abc');
-        expect(localStorage.getItem(UGRC_KEY_STORAGE_KEY)).toBe('abc');
-        clearUserUgrcApiKey();
-        expect(getUserUgrcApiKey()).toBe('');
-    });
-
-    it('prefers user key over env in resolveUgrcApiKey', () => {
-        setUserUgrcApiKey('user-key');
-        expect(resolveUgrcApiKey()).toBe('user-key');
+    it('resolves only the build-time env key', () => {
+        expect(resolveUgrcApiKey()).toBe(getEnvUgrcApiKey());
     });
 });
 
 describe('runReverseMilepostLookup', () => {
     afterEach(() => {
-        clearUserUgrcApiKey();
+        ugrcKeyTest.override = null;
         vi.restoreAllMocks();
     });
 
-    it('opens settings when no key is available and openSettings is provided', async () => {
-        const openSettings = vi.fn();
-        const showToast = vi.fn();
-        const status = await runReverseMilepostLookup(
-            { lat: 40.7, lng: -111.9 },
-            { showToast, openSettings }
-        );
-        expect(status).toBe('missing_key');
-        expect(openSettings).toHaveBeenCalledOnce();
-        expect(showToast).toHaveBeenCalled();
-    });
-
-    it('does not open settings on PWA-style missing key (toast only)', async () => {
+    it('toasts a generic unavailable message when no env key is configured', async () => {
+        ugrcKeyTest.override = '';
         const showToast = vi.fn();
         const status = await runReverseMilepostLookup(
             { lat: 40.7, lng: -111.9 },
@@ -148,13 +129,13 @@ describe('runReverseMilepostLookup', () => {
         );
         expect(status).toBe('missing_key');
         expect(showToast).toHaveBeenCalledWith(
-            expect.stringContaining('Cloudflare Pages'),
+            'Route & milepost lookup is unavailable.',
             'warning'
         );
     });
 
     it('toasts success and copies label', async () => {
-        setUserUgrcApiKey('k');
+        ugrcKeyTest.override = 'k';
         vi.spyOn(globalThis, 'fetch').mockResolvedValue({
             ok: true,
             status: 200,

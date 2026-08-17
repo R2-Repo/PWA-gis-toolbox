@@ -288,8 +288,8 @@ Stable feature identity and write/export paths for workspace layers:
   `sources/{opfsKey}/`. v1 kits still import. Deferred workspace folders
   restore through `importDeferredWorkspaceFromZip` without assembling a full
   bundle in RAM.
-- **Storage Manager** — Guide → **Storage…**. Lists preserved OPFS sources
-  with layer refs, quota bar, remove / remove-unreferenced.
+- **Storage Manager** — `openStorageManager()` (not shown in the tool guide).
+  Lists preserved OPFS sources with layer refs, quota bar, remove / remove-unreferenced.
 
 ### Files (Build 6)
 

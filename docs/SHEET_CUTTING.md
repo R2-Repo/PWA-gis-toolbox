@@ -147,7 +147,7 @@ Sheet PDFs combine a **modest-resolution basemap image** (whatever basemap is ac
 | Design + stationing + route + sheet outline | jsPDF vector paths + text | Infinite zoom — always crisp |
 | North arrow / footer | jsPDF vector | Crisp |
 
-**Basemap quality** (`basemapDpi`, default 150) affects only the background image and file size. Linework and labels are vector regardless of this setting.
+**Basemap quality** (`basemapDpi`, default 150) affects only the background image and file size. The underlay is JPEG (~88% quality) so a combined 10-sheet set usually stays emailable. Linework and labels are vector regardless of this setting.
 
 **Remnant (short last) sheets** keep the **same map scale and corridor height** as full-length sheets. Placement fits a **nominal** frame (`sheetLengthFt` × `corridorWidthFt` at the current zoom), then draws the actual clip at that scale — a shorter remnant is a shorter image, not a zoomed-up fill of the page. Without that reference, a square leftover would scale to page height.
 
