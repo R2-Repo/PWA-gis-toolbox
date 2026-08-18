@@ -1,6 +1,6 @@
 /**
  * Sheet plan PDF export — high-DPI basemap capture + crisp vector overlays per page.
- * Detail sheets: basemap raster + vector route/design layers styled from the map.
+ * Detail sheets: basemap raster + vector design layers and gold sheet outline.
  * Overview: basemap raster + vector sheet index (polygons, red route, labels).
  */
 

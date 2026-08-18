@@ -651,4 +651,34 @@ describe('matchline SEE SHEET labels', () => {
         );
         expect(labels.length).toBe(2);
     });
+
+    it('omits the widget centerline from per-sheet contents', () => {
+        const sheets = generateSheetFramesAlongRoute({
+            routeLine,
+            mapFrameWidthFt: 1100,
+            sheetTemplate: { mapFrameHeightFt: 350 }
+        }).map((sheet) => ({
+            ...sheet,
+            mapFrameWidthFt: 1100,
+            mapFrameHeightFt: 350
+        }));
+
+        const perSheet = buildPerSheetLayerExports(sheets, routeLine, []);
+        for (const sheetLayer of perSheet) {
+            const types = sheetLayer.contents.features.map((feature) => feature.properties?.feature_type);
+            expect(types).toContain('sheet_outline');
+            expect(types).not.toContain('route');
+        }
+
+        const overview = buildOverviewGeoJson(
+            { sheetBoxes: sheets.map((sheet) => ({
+                sheetId: sheet.sheetId,
+                sheetNumber: sheet.sheetNumber,
+                centerDistanceFt: sheet.centerDistanceFt
+            })) },
+            routeLine,
+            buildSheetFramesGeoJson(sheets, routeLine)
+        );
+        expect(overview.features.some((feature) => feature.properties?.feature_type === 'overview_route')).toBe(true);
+    });
 });

@@ -268,10 +268,16 @@ export async function openSheetCutting(ctx, { restoreState = null } = {}) {
                 const layers = exportPackage.layers || {};
                 const created = [];
                 const baseName = session.project.projectName || 'Sheet_Cutting';
+                const overviewWithoutRoute = {
+                    type: 'FeatureCollection',
+                    features: (layers.overview?.features || []).filter(
+                        (feature) => feature.properties?.feature_type !== 'overview_route'
+                    )
+                };
 
                 const layerDefs = [
                     { name: `${baseName}_Sheet_Frames`, data: layers.sheetFrames },
-                    { name: `${baseName}_Overview`, data: layers.overview }
+                    { name: `${baseName}_Overview`, data: overviewWithoutRoute }
                 ];
 
                 for (const sheetLayer of layers.perSheet || []) {

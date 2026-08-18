@@ -1055,17 +1055,18 @@ export function clipFeaturesToSheetFrame(frameFeature, features = []) {
 }
 
 /**
+ * Per-sheet GIS/PDF contents: gold outline, clipped design layers, matchline labels.
+ * Do not clone the widget centerline onto detail sheets — it belongs on the overview only.
+ *
  * @param {object[]} detailSheets
  * @param {object} routeLine
  * @param {object[]} designFeatures
- * @param {string} [stationingRouteLayerId]
  * @returns {object[]}
  */
 export function buildPerSheetLayerExports(
     detailSheets = [],
     routeLine = null,
-    designFeatures = [],
-    stationingRouteLayerId = ''
+    designFeatures = []
 ) {
     const sheetFrames = buildSheetFramesGeoJson(detailSheets, routeLine);
     const frameBySheetId = new Map(
@@ -1090,20 +1091,6 @@ export function buildPerSheetLayerExports(
             }
             : null;
 
-        const clippedRoute = routeLine?.geometry && frameFeature
-            ? clipFeatureToSheetFrame(
-                {
-                    type: 'Feature',
-                    properties: {
-                        feature_type: 'route',
-                        _sourceLayerId: stationingRouteLayerId || ''
-                    },
-                    geometry: routeLine.geometry
-                },
-                frameFeature
-            )
-            : null;
-
         const seeLabels = frameFeature
             ? buildMatchlineSeeLabelFeatures(
                 sheet,
@@ -1119,7 +1106,6 @@ export function buildPerSheetLayerExports(
             type: 'FeatureCollection',
             features: [
                 ...(outlineFeature ? [outlineFeature] : []),
-                ...(clippedRoute ? [clippedRoute] : []),
                 ...clippedFeatures,
                 ...seeLabels
             ]
@@ -1204,8 +1190,7 @@ export function buildSheetExportPackage(session) {
     const perSheet = buildPerSheetLayerExports(
         detailSheets,
         session.routeLine,
-        designFeatures,
-        session.project?.stationingRouteLayerId || ''
+        designFeatures
     );
 
     return {

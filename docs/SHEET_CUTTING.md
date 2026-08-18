@@ -128,7 +128,7 @@ Sheet Cutter produces **two deliverable types** only:
 | `layers.route` | Route centerline |
 | `layers.sheetFrames` | Clean clipped `sheet_frame` polygons |
 | `layers.overview` | Route + all sheet outlines (for overview page) |
-| `layers.perSheet[]` | Per-sheet GeoJSON: `sheet_outline`, clipped **route** segment, and design features **clipped to the sheet polygon** |
+| `layers.perSheet[]` | Per-sheet GeoJSON: gold `sheet_outline`, matchline labels, and design features **clipped to the sheet polygon**. Does **not** include the widget centerline — that stays on the overview only. |
 | `pdf` | Page plan (overview + detail pages) — renderer not yet implemented |
 
 Feature assignment for export uses **polygon intersection** (`clipFeaturesToSheetFrame`), not station distance alone.
@@ -138,13 +138,13 @@ Feature assignment for export uses **polygon intersection** (`clipFeaturesToShee
 Sheet PDFs combine a **modest-resolution basemap image** (whatever basemap is active on the map, including future basemaps) with **vector-drawn linework, labels, route, and sheet outlines** on top. Pages are written **one file at a time** to a folder the user picks (File System Access API — Chrome/Edge).
 
 1. **Overview** (optional) — `fitBounds` to all sheet frames; **north-up** (`bearing: 0`); basemap captured at **basemap DPI** (default 150); sheet frames and route drawn as vector; saved as `{project}_overview.pdf`.
-2. **Detail pages** — per sheet: camera aligned to **export bearing** (landscape-align by default); design layers hidden; **basemap-only** capture clipped to the sheet polygon at **basemap DPI** (120–200); selected design layers + clipped route + sheet outline drawn as **vector PDF** on top; saved as `{project}_sheet_01.pdf`, etc.
+2. **Detail pages** — per sheet: camera aligned to **export bearing** (landscape-align by default); design layers hidden; **basemap-only** capture clipped to the sheet polygon at **basemap DPI** (120–200); selected design layers + sheet outline drawn as **vector PDF** on top (no widget centerline overlay); saved as `{project}_sheet_01.pdf`, etc.
 3. **No multipage PDF** — each page is written immediately so memory stays flat on long routes.
 
 | Layer | Technology | Zoom behavior |
 |-------|------------|---------------|
 | Basemap underlay | MapLibre capture at basemap DPI | Soft when zoomed far (background context) |
-| Design + stationing + route + sheet outline | jsPDF vector paths + text | Infinite zoom — always crisp |
+| Design + stationing + sheet outline (overview also draws the widget route) | jsPDF vector paths + text | Infinite zoom — always crisp |
 | North arrow / footer | jsPDF vector | Crisp |
 
 **Basemap quality** (`basemapDpi`, default 150) affects only the background image and file size. The underlay is JPEG (~88% quality) so a combined 10-sheet set usually stays emailable. Linework and labels are vector regardless of this setting.
