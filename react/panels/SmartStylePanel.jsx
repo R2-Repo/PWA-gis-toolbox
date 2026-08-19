@@ -14,6 +14,7 @@ import { detectEmbeddedSimpleStyle } from '../../js/map/style-import.js';
 import {
     pickSmartField,
     suggestVariableType,
+    suggestStyleChannel,
     extractDefaultStyle,
     mergeDefaultStyleForDisplay,
     applyPaletteToVariables
@@ -166,7 +167,7 @@ function VisualVariableEditor({ vv, index, fields, features, onChange, onRemove 
 
     const handleFieldChange = (fieldName) => {
         const fd = fields.find((f) => f.name === fieldName);
-        onChange(createVisualVariable(vv.type, fieldName, features, fd));
+        onChange(createVisualVariable(vv.type, fieldName, features, fd, { channel: vv.channel }));
     };
 
     return (
@@ -232,7 +233,7 @@ function VisualVariableEditor({ vv, index, fields, features, onChange, onRemove 
                     <label>Type</label>
                     <select value={vv.type} onChange={(e) => {
                         const fd = fields.find((f) => f.name === vv.field);
-                        onChange(createVisualVariable(e.target.value, vv.field || fields[0]?.name, features, fd));
+                        onChange(createVisualVariable(e.target.value, vv.field || fields[0]?.name, features, fd, { channel: vv.channel }));
                     }}>
                         {VISUAL_VARIABLE_TYPES.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
                     </select>
@@ -380,6 +381,8 @@ function FilterRulesEditor({ rules, fields, onChange }) {
 function SmartStyleSection({ layer, style, onChange, onConvertEmbedded }) {
     const fields = layer?.schema?.fields || [];
     const features = layer?.geojson?.features || [];
+    const geomTypes = detectGeomTypes(layer);
+    const channel = suggestStyleChannel(geomTypes);
     const smart = style.smart || { defaultStyle: {}, visualVariables: [], filterRules: [] };
     const embedded = detectEmbeddedSimpleStyle(features);
     const variables = smart.visualVariables || [];
@@ -393,7 +396,7 @@ function SmartStyleSection({ layer, style, onChange, onConvertEmbedded }) {
         const field = pickSmartField(fields);
         if (!field) return;
         const type = suggestVariableType(field);
-        setVariables([...variables, createVisualVariable(type, field.name, features, field)]);
+        setVariables([...variables, createVisualVariable(type, field.name, features, field, { channel })]);
     };
 
     const applyPalette = (palette) => {
@@ -513,12 +516,13 @@ export function SmartStylePanel({ layer, style: externalStyle, defaultColor = '#
             const field = pickSmartField(fields);
             const features = layer?.geojson?.features || [];
             const type = suggestVariableType(field);
+            const channel = suggestStyleChannel(geomTypes);
             pushStyle({
                 ...style,
                 mode: 'smart',
                 smart: {
                     defaultStyle: extractDefaultStyle(style),
-                    visualVariables: field ? [createVisualVariable(type, field.name, features, field)] : [],
+                    visualVariables: field ? [createVisualVariable(type, field.name, features, field, { channel })] : [],
                     filterRules: []
                 }
             });

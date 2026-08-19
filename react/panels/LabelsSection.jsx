@@ -56,6 +56,9 @@ export function LabelsSection({ layer, style: externalStyle, defaultColor = '#25
             const suggested = pickLabelField(fields);
             if (suggested) patch.field = suggested.name;
         }
+        if (enabled && hasLines && !hasPoints) {
+            patch.placement = 'line';
+        }
         setLabels(patch);
     };
 

@@ -1,4 +1,5 @@
 import { ArcGISRestImporter, schemaFromArcgisMetadata } from '../arcgis/rest-importer.js';
+import { styleFromArcgisMetadata } from '../arcgis/drawing-info.js';
 import { analyzeSchema, createSpatialDataset } from '../core/data-model.js';
 import { getLayers } from '../core/state.js';
 import bus from '../core/event-bus.js';
@@ -145,7 +146,12 @@ export async function addServiceLayer(mapManager, dataset, colorIndex = 0, optio
     });
 
     const opacity = service.opacity ?? (kind === 'arcgis-mapserver' || kind === 'wms' ? 0.85 : 1);
-    const layerStyle = resolveServiceLayerStyle(service, colorIndex);
+
+    if (kind === 'arcgis-featureserver' || kind === 'arcgis-mapserver-vector') {
+        await ensureFeatureServerMetadata(dataset, runtime);
+    }
+
+    const layerStyle = resolveServiceLayerStyle(dataset.service || service, colorIndex);
 
     try {
         if (kind === 'arcgis-mapserver' || kind === 'wms') {
@@ -166,10 +172,6 @@ export async function addServiceLayer(mapManager, dataset, colorIndex = 0, optio
             getRuntimeMap(mapManager).set(dataset.id, runtime);
             scheduleServiceRefresh(mapManager, dataset.id);
         } else {
-            if (kind === 'arcgis-featureserver' || kind === 'arcgis-mapserver-vector') {
-                await ensureFeatureServerMetadata(dataset, runtime);
-            }
-
             if (!dataset.geojson) {
                 dataset.geojson = { type: 'FeatureCollection', features: [] };
             }
@@ -230,6 +232,10 @@ async function ensureFeatureServerMetadata(dataset, runtime) {
         if (dataset.service) {
             dataset.service.objectIdField = runtime.objectIdField;
             dataset.service.maxRecordCount = metadata.maxRecordCount || 1000;
+            if (!dataset.service.style) {
+                const style = styleFromArcgisMetadata(metadata);
+                if (style) dataset.service.style = style;
+            }
         }
         if (!dataset.schema?.fields?.length) {
             dataset.schema = schemaFromArcgisMetadata(metadata);
