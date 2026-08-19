@@ -9,10 +9,16 @@ import {
 import {
     buildUdotFiberLayerStyle,
     resolveStyle,
-    lookupBentleyColor
+    lookupBentleyColor,
+    requiredStyleFieldsForUdotFiberLayer,
+    mergeUdotFiberStyleFields,
+    markDatasetForUdotFiberStyle,
+    resolveUdotFiberStyleForDataset
 } from '../js/symbology/udot-fiber/resolve-style.js';
 import { applyUdotFiberDisplayOffsets } from '../js/symbology/udot-fiber/display-offsets.js';
 import { makeUdotGlyphSvg, resolvePointGlyph } from '../js/symbology/udot-fiber/glyphs.js';
+import { applyImportLayerStyles } from '../js/import/post-import.js';
+import { isSmartStyleActive } from '../js/map/style-engine.js';
 
 describe('UDOT Fiber symbology', () => {
     it('matches MapServer layer URLs', () => {
@@ -93,5 +99,56 @@ describe('UDOT Fiber symbology', () => {
         expect(svg).toContain('rect');
         const hit = resolvePointGlyph('building', { MODEL: 'UEN Building' });
         expect(hit?.glyph).toBe('square-x');
+    });
+
+    it('keeps Fiber class/label fields on a partial ArcGIS field pick', () => {
+        expect(requiredStyleFieldsForUdotFiberLayer('fiber')).toEqual(['FIBER_SYMBOLS', 'Fiber_Label']);
+        const url = 'https://central.udot.utah.gov/server/rest/services/Fiber/UDOT_Fiber_Network/MapServer/6';
+        expect(mergeUdotFiberStyleFields(null, url)).toBeNull();
+        expect(mergeUdotFiberStyleFields(['OBJECTID', 'Route'], url, ['OBJECTID', 'Route', 'FIBER_SYMBOLS', 'Fiber_Label']))
+            .toEqual(['OBJECTID', 'Route', 'FIBER_SYMBOLS', 'Fiber_Label']);
+    });
+
+    it('tags custom-URL ArcGIS imports and ignores unmatched URLs', () => {
+        const url = 'https://central.udot.utah.gov/server/rest/services/Fiber/UDOT_Fiber_Network/MapServer/6';
+        const ds = { id: 'a', source: { format: 'arcgis-rest' } };
+        expect(markDatasetForUdotFiberStyle(ds, url)).toEqual({ key: 'fiber', id: 6 });
+        expect(ds._udotFiberLayerKey).toBe('fiber');
+        expect(ds._applyUdotFiberStyle).toBe(true);
+        expect(ds.source.url).toBe(url);
+        expect(markDatasetForUdotFiberStyle({ id: 'b', source: {} }, 'https://example.com/FeatureServer/0')).toBeNull();
+    });
+
+    it('applies the Fiber style pack only when the custom-URL flag is set', () => {
+        const styles = new Map();
+        const mapService = {
+            getLayerStyle: (id) => styles.get(id) || null,
+            setLayerStyle: (id, style) => { styles.set(id, style); },
+            restyleLayer: (id, _ds, style) => { styles.set(id, style); },
+            getLayerRecord: () => null
+        };
+        const fiberUrl = 'https://central.udot.utah.gov/server/rest/services/Fiber/UDOT_Fiber_Network/MapServer/6';
+        const untagged = {
+            id: 'untagged',
+            type: 'spatial',
+            source: { url: fiberUrl, format: 'arcgis-rest' },
+            geojson: { type: 'FeatureCollection', features: [] }
+        };
+        applyImportLayerStyles(untagged, { mapService, getLayers: () => [untagged] });
+        expect(mapService.getLayerStyle('untagged')).toBeNull();
+
+        const tagged = {
+            id: 'tagged',
+            type: 'spatial',
+            source: { url: fiberUrl, format: 'arcgis-rest' },
+            geojson: { type: 'FeatureCollection', features: [] }
+        };
+        markDatasetForUdotFiberStyle(tagged, fiberUrl);
+        applyImportLayerStyles(tagged, { mapService, getLayers: () => [tagged] });
+        const applied = mapService.getLayerStyle('tagged');
+        expect(applied.mode).toBe('smart');
+        expect(applied.smart.visualVariables[0].field).toBe('FIBER_SYMBOLS');
+        expect(isSmartStyleActive(applied)).toBe(true);
+        expect(resolveUdotFiberStyleForDataset(tagged)?._udotFiber.layerKey).toBe('fiber');
     });
 });

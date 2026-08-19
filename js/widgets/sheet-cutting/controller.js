@@ -29,6 +29,7 @@ import {
 import { clearSheetPreview, showSheetPreview } from './sheet-preview.js';
 import { exportSheetPlanPdf } from './sheet-pdf-export.js';
 import { buildCombinedSheetGeoJson } from './export-builder.js';
+import { sanitizeExportFilename } from '../../export/folder-export.js';
 
 function persistSession(session, open = true) {
     upsertWidgetState(WIDGET_ID, {
@@ -246,7 +247,7 @@ export async function openSheetCutting(ctx, { restoreState = null } = {}) {
                 );
                 persistSession(session);
                 const exportPackage = buildSessionExport(session);
-                const base = (session.project.projectName || 'sheet_cutting').replace(/\s+/g, '_');
+                const base = sanitizeExportFilename(session.project.projectName || 'sheet_cutting');
                 const combined = buildCombinedSheetGeoJson(exportPackage);
 
                 if (!combined.features.length) {

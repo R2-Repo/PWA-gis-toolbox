@@ -130,6 +130,8 @@ export function extractImportMetadata(source) {
     if (source._importWarning) meta._importWarning = source._importWarning;
     if (source._networkLinkHrefs?.length) meta._networkLinkHrefs = [...source._networkLinkHrefs];
     if (source._blobUrls?.length) meta._blobUrls = [...source._blobUrls];
+    if (source._udotFiberLayerKey) meta._udotFiberLayerKey = source._udotFiberLayerKey;
+    if (source._applyUdotFiberStyle) meta._applyUdotFiberStyle = true;
     return meta;
 }
 
@@ -144,6 +146,8 @@ export function applyImportMetadata(target, meta) {
     if (meta._importWarning) target._importWarning = meta._importWarning;
     if (meta._networkLinkHrefs) target._networkLinkHrefs = meta._networkLinkHrefs;
     if (meta._blobUrls) target._blobUrls = meta._blobUrls;
+    if (meta._udotFiberLayerKey) target._udotFiberLayerKey = meta._udotFiberLayerKey;
+    if (meta._applyUdotFiberStyle) target._applyUdotFiberStyle = true;
     return target;
 }
 
@@ -185,23 +189,31 @@ export function applyImportLayerStyles(ds, options) {
         mapService.setLayerStyle(ds.id, { ...ds._kmlStyle });
     }
 
-    // UDOT Fiber Network MapServer — apply shared ArcGIS/Bentley style pack
-    const udotStyle = resolveUdotFiberStyleForDataset(ds);
-    if (udotStyle && !isSmartStyleActive(mapService.getLayerStyle(ds.id))) {
-        if (udotStyle.labels?.enabled) {
-            ds._mapLabels = {
-                field: udotStyle.labels.field,
-                placement: udotStyle.labels.placement,
-                minZoom: udotStyle.labels.minZoom,
-                maxZoom: udotStyle.labels.maxZoom,
-                size: udotStyle.labels.size,
-                color: udotStyle.labels.color,
-                haloColor: udotStyle.labels.haloColor,
-                haloWidth: udotStyle.labels.haloWidth
-            };
+    // UDOT Fiber style pack — only when ArcGIS Custom URL import tagged the layer
+    if (ds._applyUdotFiberStyle) {
+        const udotStyle = resolveUdotFiberStyleForDataset(ds);
+        if (udotStyle && !isSmartStyleActive(mapService.getLayerStyle(ds.id))) {
+            if (udotStyle.labels?.enabled) {
+                ds._mapLabels = {
+                    field: udotStyle.labels.field,
+                    placement: udotStyle.labels.placement,
+                    minZoom: udotStyle.labels.minZoom,
+                    maxZoom: udotStyle.labels.maxZoom,
+                    size: udotStyle.labels.size,
+                    color: udotStyle.labels.color,
+                    haloColor: udotStyle.labels.haloColor,
+                    haloWidth: udotStyle.labels.haloWidth
+                };
+            }
+            // Style before map add: setLayerStyle so the following addLayer compiles it.
+            // Style after map add: restyleLayer rebuilds paint.
+            if (mapService.getLayerRecord?.(ds.id)) {
+                mapService.restyleLayer(ds.id, ds, udotStyle);
+            } else {
+                mapService.setLayerStyle(ds.id, udotStyle);
+            }
+            return ds;
         }
-        mapService.restyleLayer(ds.id, ds, udotStyle);
-        return ds;
     }
 
     if (ds._arcgisStyle && !isSmartStyleActive(mapService.getLayerStyle(ds.id))) {

@@ -14,6 +14,25 @@ export const SPLASH_HOW_TO = SPLASH_FLOW.steps.map((step, i) => [
     step.hint
 ]);
 
+/** Quiet splash footer — hidden map gestures (desktop ToolGuideDialog only). */
+export const SPLASH_MAP_TIPS = {
+    heading: 'On the map',
+    tips: [
+        {
+            id: 'right-click',
+            label: 'Right-click',
+            hint: 'Tools and actions',
+            image: '/icons/splash-tip-right-click.png'
+        },
+        {
+            id: 'box-select',
+            label: 'Shift + drag',
+            hint: 'Select many',
+            image: '/icons/splash-tip-box-select.png'
+        }
+    ]
+};
+
 export const SPLASH_SOURCE_ICONS = [
     { src: '/icons/import-source-local.png', label: 'Files' },
     { src: '/icons/import-source-arcgis.png', label: 'ArcGIS' },

@@ -175,13 +175,14 @@ describe('sheet export sizing', () => {
 });
 
 describe('sheet export filenames', () => {
-    it('sanitizes unsafe filename characters', () => {
-        expect(sanitizeExportFilename('My Project: Phase 1')).toBe('My_Project_Phase_1');
+    it('keeps spaces and only replaces characters illegal in a file name', () => {
+        expect(sanitizeExportFilename('My Project: Phase 1')).toBe('My Project_ Phase 1');
+        expect(sanitizeExportFilename('  Belt Route  ')).toBe('Belt Route');
     });
 
     it('builds per-sheet PDF filenames', () => {
-        expect(buildSheetPageFilename('Fiber Route', 'sheet_03')).toBe('Fiber_Route_sheet_03.pdf');
-        expect(buildSheetPageFilename('Fiber Route', 'overview')).toBe('Fiber_Route_overview.pdf');
+        expect(buildSheetPageFilename('Fiber Route', 'sheet_03')).toBe('Fiber Route_sheet_03.pdf');
+        expect(buildSheetPageFilename('Fiber Route', 'overview')).toBe('Fiber Route_overview.pdf');
     });
 });
 
@@ -229,6 +230,12 @@ describe('sheet PDF orientation', () => {
         });
         expect(model.projectLabel).toBe('Project:');
         expect(model.projectValue).toBe('Belt Route');
+        expect(buildSheetTitleBlockFooterModel({
+            projectName: 'I-15 Northbound Widening',
+            exportDate: '07/14/2026',
+            sheet: { sheetNumber: 1 },
+            totalSheets: 2
+        }).projectValue).toBe('I-15 Northbound Widening');
         expect(model.dateLabel).toBe('Date:');
         expect(model.dateValue).toBe('07/14/2026');
         expect(model.sheetLabel).toBe('Sheet 08 of 15');
