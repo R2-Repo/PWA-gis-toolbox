@@ -204,6 +204,56 @@ export function resolveUdotFiberStyleForDataset(dataset) {
 }
 
 /**
+ * Class + label fields the UDOT Fiber style pack needs on the imported features.
+ * @param {string} layerKey
+ * @returns {string[]}
+ */
+export function requiredStyleFieldsForUdotFiberLayer(layerKey) {
+    const meta = getDrawingLayer(layerKey);
+    if (!meta) return [];
+    const fields = [];
+    if (meta.classField && meta.classField !== '*') fields.push(meta.classField);
+    if (meta.labelField) fields.push(meta.labelField);
+    return fields;
+}
+
+/**
+ * Ensure unique-value / label fields stay in an ArcGIS field selection.
+ * @param {string[]|null|undefined} selectedFields
+ * @param {string} url
+ * @param {string[]} [availableFieldNames]
+ * @returns {string[]|null|undefined}
+ */
+export function mergeUdotFiberStyleFields(selectedFields, url, availableFieldNames) {
+    const hit = matchUdotFiberLayerUrl(url);
+    if (!hit || !selectedFields) return selectedFields;
+    const extra = requiredStyleFieldsForUdotFiberLayer(hit.key)
+        .filter((name) => !availableFieldNames?.length || availableFieldNames.includes(name));
+    if (!extra.length) return selectedFields;
+    const set = new Set(selectedFields);
+    for (const name of extra) set.add(name);
+    return [...set];
+}
+
+/**
+ * Tag an ArcGIS custom-URL import so post-import applies the Fiber style pack.
+ * @param {object} dataset
+ * @param {string} [url]
+ * @returns {{ key: string, id: number }|null}
+ */
+export function markDatasetForUdotFiberStyle(dataset, url) {
+    if (!dataset) return null;
+    const hit = matchUdotFiberLayerUrl(url || dataset.service?.url || dataset.source?.url || dataset.url);
+    if (!hit) return null;
+    dataset._udotFiberLayerKey = hit.key;
+    dataset._applyUdotFiberStyle = true;
+    if (dataset.source && !dataset.source.url && url) {
+        dataset.source.url = url;
+    }
+    return hit;
+}
+
+/**
  * Per-feature style resolution (export / bake helpers).
  * @param {string} layerKey
  * @param {Record<string, unknown>} props

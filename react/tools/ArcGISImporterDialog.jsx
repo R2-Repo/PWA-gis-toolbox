@@ -54,6 +54,7 @@ export function ArcGISImporterDialog({
             const maybeCancel = onImport?.({
                 url,
                 name,
+                mode,
                 onProgress: ({ percent = 0, step = '' } = {}) => {
                     setProgressPercent(Math.max(0, Math.min(100, percent)));
                     if (step) setProgressText(step);

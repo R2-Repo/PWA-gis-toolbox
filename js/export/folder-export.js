@@ -39,15 +39,19 @@ export async function pickExportFolder() {
 }
 
 /**
+ * Keep the display name intact (including spaces). Only replace characters
+ * that Windows / the File System Access API reject in a file name.
+ *
  * @param {string} name
  * @returns {string}
  */
 export function sanitizeExportFilename(name) {
     return String(name || 'export')
+        .trim()
         .replace(/[<>:"/\\|?*\u0000-\u001f]/g, '_')
-        .replace(/\s+/g, '_')
         .replace(/_+/g, '_')
         .replace(/^\.+/, '')
+        .replace(/[. ]+$/, '')
         .slice(0, 120) || 'export';
 }
 

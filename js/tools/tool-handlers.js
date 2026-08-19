@@ -69,6 +69,10 @@ import { saveSnapshot, undo as undoHistory, redo as redoHistory, getHistoryState
 import { photoMapper } from '../photo/photo-mapper.js';
 import { arcgisImporter, ARCGIS_MAX_FEATURES, arcgisNeedsLargeDownloadConfirm } from '../arcgis/rest-importer.js';
 import { arcgisOutFieldsParam } from '../import/import-field-filter.js';
+import {
+    markDatasetForUdotFiberStyle,
+    mergeUdotFiberStyleFields
+} from '../symbology/udot-fiber/resolve-style.js';
 import ARCGIS_ENDPOINTS from '../arcgis/endpoints.js';
 import { checkAGOLCompatibility, applyAGOLFixes } from '../agol/compatibility.js';
 import * as gisTools from './gis-tools.js';
@@ -4652,12 +4656,13 @@ export async function openArcGISImporter() {
                 const root = overlay.querySelector(`#${rootId}`);
                 if (!root) return;
 
-                const startImportLayer = ({ url, name, onProgress, onComplete, onCancelled, onError }) => {
+                const startImportLayer = ({ url, name, mode, onProgress, onComplete, onCancelled, onError }) => {
                     if (!url) {
                         showToast('Enter a URL', 'warning');
                         onError?.();
                         return null;
                     }
+                    const applyUdotFiberStyle = mode === 'custom';
 
                     let arcgisTask = null;
                     let onArcgisProgress = null;
@@ -4725,10 +4730,14 @@ export async function openArcGISImporter() {
                                 const applyFieldSelection = (picked) => {
                                     const allSelected = picked.length >= allFieldNames.length
                                         && allFieldNames.every((n) => picked.includes(n));
-                                    queryOpts.selectedFields = allSelected ? null : picked;
-                                    queryOpts.outFields = allSelected
-                                        ? '*'
-                                        : arcgisOutFieldsParam(picked, meta.objectIdField);
+                                    let selected = allSelected ? null : picked;
+                                    if (applyUdotFiberStyle) {
+                                        selected = mergeUdotFiberStyleFields(selected, url, allFieldNames);
+                                    }
+                                    queryOpts.selectedFields = selected;
+                                    queryOpts.outFields = selected
+                                        ? arcgisOutFieldsParam(selected, meta.objectIdField)
+                                        : '*';
                                 };
 
                                 const runDownload = async (progressUi = null) => {
@@ -4753,6 +4762,9 @@ export async function openArcGISImporter() {
                                     const dataset = await arcgisImporter.downloadFeatures(queryOpts, arcgisTask);
                                     if (!dataset || arcgisTask.cancelled) {
                                         throw Object.assign(new Error('Cancelled'), { cancelled: true });
+                                    }
+                                    if (applyUdotFiberStyle) {
+                                        markDatasetForUdotFiberStyle(dataset, url);
                                     }
 
                                     onProgress?.({ percent: 98, step: 'Adding layer to map...' });

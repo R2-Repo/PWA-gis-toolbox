@@ -11,6 +11,9 @@ export {
 export {
     buildUdotFiberLayerStyle,
     resolveUdotFiberStyleForDataset,
+    requiredStyleFieldsForUdotFiberLayer,
+    mergeUdotFiberStyleFields,
+    markDatasetForUdotFiberStyle,
     resolveStyle,
     lookupBentleyColor,
     getDrawingLayer,
