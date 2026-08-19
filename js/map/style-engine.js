@@ -114,7 +114,17 @@ function variableApplies(vv, geometryKind) {
     return target === 'all' || target === geometryKind;
 }
 
-function fieldExpression(field) {
+function fieldExpression(field, extra = null) {
+    const concat = extra?.fieldConcat;
+    if (Array.isArray(concat) && concat.length > 1) {
+        const delim = extra.fieldDelimiter ?? ', ';
+        const parts = [];
+        for (let i = 0; i < concat.length; i++) {
+            if (i > 0) parts.push(delim);
+            parts.push(['coalesce', ['to-string', ['get', concat[i]]], '']);
+        }
+        return ['concat', ...parts];
+    }
     return ['coalesce', ['to-string', ['get', field]], ''];
 }
 
@@ -122,13 +132,25 @@ function numericFieldExpression(field, fallback = 0) {
     return ['to-number', ['get', field], fallback];
 }
 
-function buildMatchColor(field, classes, fallback) {
+function buildMatchColor(field, classes, fallback, extra = null) {
     if (!classes?.length) return fallback;
     const pairs = [];
     for (const cls of classes) {
-        pairs.push(String(cls.value), cls.color || cls.style?.fillColor || fallback);
+        pairs.push(String(cls.value), cls.color || cls.style?.fillColor || cls.style?.strokeColor || fallback);
     }
-    return ['match', fieldExpression(field), ...pairs, fallback];
+    return ['match', fieldExpression(field, extra), ...pairs, fallback];
+}
+
+function buildMatchNumber(field, classes, key, fallback, extra = null) {
+    if (!classes?.length) return null;
+    const pairs = [];
+    for (const cls of classes) {
+        const n = Number(cls.style?.[key]);
+        if (!Number.isFinite(n)) continue;
+        pairs.push(String(cls.value), n);
+    }
+    if (!pairs.length) return null;
+    return ['match', fieldExpression(field, extra), ...pairs, fallback];
 }
 
 function buildStepColor(vv, fallback) {
@@ -166,10 +188,15 @@ function compileVariableColor(vv, channel, geometryKind, baseColor) {
     if (!variableApplies(vv, geometryKind)) return null;
     const ch = vv.channel || 'fill';
     if (ch !== channel && ch !== 'both') return null;
-    if (vv.type === 'unique') return buildMatchColor(vv.field, vv.classes, vv.defaultColor || baseColor);
+    if (vv.type === 'unique') return buildMatchColor(vv.field, vv.classes, vv.defaultColor || baseColor, vv);
     if (vv.type === 'range') return buildStepColor(vv, baseColor);
     if (vv.type === 'ramp') return buildRampColor(vv, baseColor);
     return null;
+}
+
+function compileVariableClassNumber(vv, geometryKind, key, fallback) {
+    if (vv.type !== 'unique' || !variableApplies(vv, geometryKind)) return null;
+    return buildMatchNumber(vv.field, vv.classes, key, fallback, vv);
 }
 
 function mergeStylePatch(out, patch) {
@@ -221,6 +248,16 @@ export function compilePaint(style, geometryKind) {
                 strokeWidth = buildNumericInterpolate(vv, Number(vv.widthMin ?? 1), Number(vv.widthMax ?? 6));
                 hasDataDriven = true;
             }
+            const classWidth = compileVariableClassNumber(vv, geometryKind, 'strokeWidth', base.strokeWidth);
+            if (classWidth != null && (geometryKind === 'line' || geometryKind === 'polygon')) {
+                strokeWidth = classWidth;
+                hasDataDriven = true;
+            }
+            const classSize = compileVariableClassNumber(vv, geometryKind, 'pointSize', base.pointSize);
+            if (classSize != null && geometryKind === 'point') {
+                circleRadius = classSize;
+                hasDataDriven = true;
+            }
         }
     }
 
@@ -252,7 +289,15 @@ function propNumber(props, field, fallback) {
     return Number.isFinite(n) ? n : fallback;
 }
 
-function propString(props, field) {
+function propString(props, field, extra = null) {
+    const concat = extra?.fieldConcat;
+    if (Array.isArray(concat) && concat.length > 1) {
+        const delim = extra.fieldDelimiter ?? ', ';
+        return concat.map((f) => {
+            const raw = props?.[f];
+            return raw == null || raw === '' ? '' : String(raw);
+        }).join(delim);
+    }
     const raw = props?.[field];
     if (raw == null || raw === '') return '';
     return String(raw);
@@ -271,7 +316,7 @@ function applyVisualVariable(out, vv, props, geometryKind) {
     const ch = vv.channel || 'fill';
 
     if (vv.type === 'unique') {
-        const val = propString(props, vv.field);
+        const val = propString(props, vv.field, vv);
         const match = vv.classes?.find((c) => String(c.value) === val);
         const color = match?.color || match?.style?.fillColor || vv.defaultColor;
         if (color) {
@@ -418,21 +463,22 @@ export function autoClassifyQuantile(field, features, classCount = 5, rampName =
     return { classes, min: values[0], max: values[values.length - 1], breaks: classes.map((c) => c.max) };
 }
 
-export function createVisualVariable(type, field, features, schemaField = null) {
+export function createVisualVariable(type, field, features, schemaField = null, options = {}) {
     const id = `vv-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
     const ext = numericFieldExtent(field, features, schemaField);
+    const channel = options.channel || 'fill';
 
     switch (type) {
         case 'unique':
             return {
-                id, type, field, channel: 'fill',
+                id, type, field, channel,
                 classes: autoClassifyUnique(field, features),
                 defaultColor: '#94a3b8'
             };
         case 'range':
-            return { id, type, field, channel: 'fill', ramp: 'ylOrRd', method: 'equal', ...autoClassifyRange(field, features, 5, 'ylOrRd', schemaField) };
+            return { id, type, field, channel, ramp: 'ylOrRd', method: 'equal', ...autoClassifyRange(field, features, 5, 'ylOrRd', schemaField) };
         case 'ramp':
-            return { id, type, field, channel: 'fill', ramp: 'ylOrRd', min: ext.min, max: ext.max };
+            return { id, type, field, channel, ramp: 'ylOrRd', min: ext.min, max: ext.max };
         case 'size':
             return { id, type, field, min: ext.min, max: ext.max, sizeMin: 4, sizeMax: 16 };
         case 'width':
@@ -440,7 +486,7 @@ export function createVisualVariable(type, field, features, schemaField = null) 
         case 'opacity':
             return { id, type, field, min: ext.min, max: ext.max };
         default:
-            return { id, type: 'unique', field, channel: 'fill', classes: [], defaultColor: '#94a3b8' };
+            return { id, type: 'unique', field, channel, classes: [], defaultColor: '#94a3b8' };
     }
 }
 

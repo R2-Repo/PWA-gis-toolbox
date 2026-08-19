@@ -25,6 +25,20 @@ export function suggestVariableType(field) {
 }
 
 /**
+ * Default unique/range color channel from geometry kinds.
+ * Line-only layers must use stroke — fill-only unique colors never paint MapLibre lines.
+ * @param {Set<string>|null|undefined} geomTypes
+ * @returns {'fill'|'stroke'|'both'}
+ */
+export function suggestStyleChannel(geomTypes) {
+    const hasLine = !!geomTypes?.has?.('line');
+    const hasFill = !!geomTypes?.has?.('polygon') || !!geomTypes?.has?.('point');
+    if (hasLine && !hasFill) return 'stroke';
+    if (hasLine && hasFill) return 'both';
+    return 'fill';
+}
+
+/**
  * Strip mode/smart/labels wrapper; preserve point/line/polygon overrides for defaultStyle.
  * Labels belong on the root style object, not inside smart.defaultStyle.
  * @param {object} style

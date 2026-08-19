@@ -126,6 +126,7 @@ export function revokeKmzBlobUrls(dataset) {
 export function extractImportMetadata(source) {
     const meta = {};
     if (source._kmlStyle) meta._kmlStyle = { ...source._kmlStyle };
+    if (source._arcgisStyle) meta._arcgisStyle = source._arcgisStyle;
     if (source._importWarning) meta._importWarning = source._importWarning;
     if (source._networkLinkHrefs?.length) meta._networkLinkHrefs = [...source._networkLinkHrefs];
     if (source._blobUrls?.length) meta._blobUrls = [...source._blobUrls];
@@ -141,6 +142,7 @@ export function extractImportMetadata(source) {
 export function applyImportMetadata(target, meta) {
     if (!meta) return target;
     if (meta._kmlStyle) target._kmlStyle = meta._kmlStyle;
+    if (meta._arcgisStyle) target._arcgisStyle = meta._arcgisStyle;
     if (meta._importWarning) target._importWarning = meta._importWarning;
     if (meta._networkLinkHrefs) target._networkLinkHrefs = meta._networkLinkHrefs;
     if (meta._blobUrls) target._blobUrls = meta._blobUrls;
@@ -172,9 +174,9 @@ export function serializeImportedDataset(dataset) {
 }
 
 /**
- * Apply KML uniform style, then smart categorical style when per-feature colors vary.
- * Call after the layer is on the map (restyleLayer re-renders the map layer).
- * KML _kmlStyle is the layer default; varying stroke/fill/marker-color wins via smart mode.
+ * Apply KML uniform style, then ArcGIS drawingInfo, then smart categorical style
+ * when per-feature SimpleStyle colors vary. Call after the layer is in app state
+ * (restyleLayer re-renders if the map layer already exists).
  *
  * @param {object} ds spatial dataset
  * @param {{ mapService: object, getLayers: () => object[], layerIndex?: number }} options
@@ -212,6 +214,24 @@ export function applyImportLayerStyles(ds, options) {
             }
             return ds;
         }
+    }
+
+    if (ds._arcgisStyle && !isSmartStyleActive(mapService.getLayerStyle(ds.id))) {
+        const arcgisStyle = ds._arcgisStyle;
+        if (arcgisStyle.labels?.enabled) {
+            ds._mapLabels = {
+                field: arcgisStyle.labels.field,
+                placement: arcgisStyle.labels.placement,
+                minZoom: arcgisStyle.labels.minZoom,
+                maxZoom: arcgisStyle.labels.maxZoom,
+                size: arcgisStyle.labels.size,
+                color: arcgisStyle.labels.color,
+                haloColor: arcgisStyle.labels.haloColor,
+                haloWidth: arcgisStyle.labels.haloWidth
+            };
+        }
+        mapService.restyleLayer(ds.id, ds, arcgisStyle);
+        return ds;
     }
 
     if (ds.geojson?.features?.length) {

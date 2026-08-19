@@ -96,7 +96,7 @@ export function ArcGISImporterDialog({
                 </div>
             ) : null}
             <div className="info-box text-xs mb-8">
-                Select a layer from the list below or enter a custom ArcGIS REST URL. Only publicly accessible layers are supported (no login required).
+                Select a layer from the list below or enter a custom ArcGIS REST URL. Only publicly accessible layers are supported (no login required). Colors and labels from the published ArcGIS renderer are applied when available.
             </div>
 
             <div style={{ maxHeight: '45vh', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '4px', marginBottom: '12px' }} id="arcgis-preset-list-react">

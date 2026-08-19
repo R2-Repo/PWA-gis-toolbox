@@ -23,6 +23,7 @@ import {
 } from '../workspace/workspace-store.js';
 import { createSpatialChunkWriter } from '../workspace/spatial-chunk-writer.js';
 import { applyArcgisScaleRangeToLayer } from '../map/scale-range.js';
+import { styleFromArcgisMetadata } from './drawing-info.js';
 
 /** Maximum features to download without explicit user override. */
 export const ARCGIS_MAX_FEATURES = 250_000;
@@ -98,6 +99,13 @@ export async function appendArcgisFeaturesToWorkspace(layerId, esriFeatures, con
     return writer.writtenCount - startIndex;
 }
 
+function attachArcgisImportStyle(dataset, metadata) {
+    const styled = applyArcgisScaleRangeToLayer(dataset, metadata);
+    const style = styleFromArcgisMetadata(metadata);
+    if (style) styled._arcgisStyle = style;
+    return styled;
+}
+
 function _pushAll(target, items) {
     for (let i = 0; i < items.length; i++) {
         target.push(items[i]);
@@ -159,6 +167,8 @@ export class ArcGISRestImporter {
                 name: data.name || 'ArcGIS Layer',
                 minScale: data.minScale || null,
                 maxScale: data.maxScale || null,
+                displayField: data.displayField || data.displayFieldName || null,
+                drawingInfo: data.drawingInfo || null,
                 geometryType: this.mapGeometryType(data.geometryType),
                 fields: (data.fields || []).map(f => ({
                     name: f.name,
@@ -401,7 +411,7 @@ export class ArcGISRestImporter {
                     source: { ...datasetShell.source, importSelectedFields: selectedFields || undefined },
                     _viewportCache: true
                 };
-                return applyArcgisScaleRangeToLayer(workspaceResult, this.metadata);
+                return attachArcgisImportStyle(workspaceResult, this.metadata);
             }
 
             const geojsonFeatures = allFeatures.map((f) => esriFeatureToGeoJSON(f, (g) => this.convertGeometry(g)));
@@ -415,7 +425,7 @@ export class ArcGISRestImporter {
                     fc,
                     { format: 'arcgis-rest', url, features: geojsonFeatures.length }
                 );
-                return applyArcgisScaleRangeToLayer(dataset, this.metadata);
+                return attachArcgisImportStyle(dataset, this.metadata);
             } else {
                 const rows = geojsonFeatures.map(f => f.properties);
                 return createTableDataset(
