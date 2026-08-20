@@ -6,7 +6,7 @@ import bentleySymbols from './bentley-symbols.json';
 import { scaleToZoom } from '../../map/scale-range.js';
 import { normalizeStyle } from '../../map/style-engine.js';
 import { resolveEsriLineDasharray } from '../../arcgis/picture-markers.js';
-import { UDOT_FIBER_LAYER_BY_KEY, matchUdotFiberLayerUrl } from './constants.js';
+import { UDOT_FIBER_LAYER_BY_KEY, UDOT_FIBER_ROTATION_FIELD, matchUdotFiberLayerUrl } from './constants.js';
 import { isUdotFiberFeatureExcluded } from './display-filters.js';
 import { resolvePointGlyph } from './glyphs.js';
 import { UDOT_SPLICE_CLASS_FIELD, UDOT_SPLICE_ENCLOSURES } from './splice-enclosures.js';
@@ -193,10 +193,11 @@ export function buildUdotFiberLayerStyle(layerKey) {
             placement: isLine ? 'line' : 'point',
             minZoom: Math.max(10, Math.round(minZoom * 10) / 10),
             maxZoom: 24,
-            size: isConduit ? 9 : (isLine ? 11 : 10),
+            size: isConduit ? 9.5 : (isLine ? 10.5 : 11),
             color: buildLabelColorExpression(layerMeta),
-            haloColor: isConduit ? '#ffffff' : '#000000',
-            haloWidth: isConduit ? 1 : 1.25,
+            haloColor: '#ffffff',
+            haloWidth: 0.95,
+            font: ['Open Sans Regular', 'Arial Unicode MS Regular'],
             allowOverlap: false,
             ignorePlacement: false
         };
@@ -235,12 +236,18 @@ export function resolveUdotFiberStyleForDataset(dataset) {
  * @returns {string[]}
  */
 export function requiredStyleFieldsForUdotFiberLayer(layerKey) {
-    if (layerKey === 'splices') return [UDOT_SPLICE_CLASS_FIELD];
+    const layerDef = UDOT_FIBER_LAYER_BY_KEY[layerKey];
+    if (layerKey === 'splices') {
+        return layerDef?.geometry === 'point'
+            ? [UDOT_SPLICE_CLASS_FIELD, UDOT_FIBER_ROTATION_FIELD]
+            : [UDOT_SPLICE_CLASS_FIELD];
+    }
     const meta = getDrawingLayer(layerKey);
     if (!meta) return [];
     const fields = [];
     if (meta.classField && meta.classField !== '*') fields.push(meta.classField);
     if (meta.labelField) fields.push(meta.labelField);
+    if (layerDef?.geometry === 'point') fields.push(UDOT_FIBER_ROTATION_FIELD);
     return fields;
 }
 

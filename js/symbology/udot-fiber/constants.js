@@ -29,6 +29,9 @@ export const UDOT_FIBER_CATALOG_ID = 'udot-fiber-network';
 /** Live Fiber is hidden (no ArcGIS query) below this MapLibre zoom. */
 export const UDOT_FIBER_MIN_ZOOM = 14;
 
+/** Published rotationInfo field (`$feature.Rotation`, geographic / clockwise from north). */
+export const UDOT_FIBER_ROTATION_FIELD = 'Rotation';
+
 /**
  * @param {number|string} layerId
  * @returns {string}

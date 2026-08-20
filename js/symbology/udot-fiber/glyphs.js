@@ -1,9 +1,10 @@
 /**
- * Procedural CAD-like point glyphs for UDOT Fiber Network (no external SVGs).
- * Rules start sparse — grow by attribute as symbols are identified in the field.
+ * Procedural CAD lookalike glyphs for UDOT Fiber Network (no external SVGs).
  */
+import { resolveLookalike } from './lookalikes.js';
+import { udotFiberIconSpritePx } from './zoom-scale.js';
 
-/** @typedef {'circle'|'ring'|'square-x'|'bowtie'|'dashed-box'|'diamond'|'vee-circle'} UdotGlyphKind */
+/** @typedef {'circle'|'ring'|'rect'|'square-x'|'bowtie'|'dashed-box'|'diamond'|'vee-circle'|'rounded-square'|'hex'|'building'} UdotGlyphKind */
 
 /**
  * @typedef {object} UdotGlyphRule
@@ -14,13 +15,18 @@
  * @property {string} [color]
  */
 
-/** Seed rules — extend as you map attributes → symbols. */
+/** Pixel canvas for registered sprites (padding for baked shadow). */
+export const UDOT_FIBER_GLYPH_PX = 24;
+
+/** Seed rules — lookalikes cover published classes first. */
 /** @type {UdotGlyphRule[]} */
 export const UDOT_GLYPH_RULES = [
-    { layerKey: 'boxes', field: 'DT_RSCENCLOSURE_NAME', value: 'Vault', glyph: 'dashed-box', color: '#ffffff' },
+    { layerKey: 'boxes', field: 'DT_RSCENCLOSURE_NAME', value: 'Vault', glyph: 'ring', color: '#ff0000' },
     { layerKey: 'building', field: 'MODEL', value: 'UEN Building', glyph: 'square-x', color: '#00ff00' },
     { layerKey: 'cabinets', field: 'MODEL', value: 'Cabinet', glyph: 'square-x', color: '#00ff00' }
 ];
+
+const POINT_KEYS = new Set(['cabinets', 'splices', 'boxes', 'building']);
 
 /**
  * @param {string} layerKey
@@ -28,9 +34,8 @@ export const UDOT_GLYPH_RULES = [
  * @returns {{ glyph: UdotGlyphKind, color: string|null }|null}
  */
 export function resolvePointGlyph(layerKey, props = {}) {
-    if (layerKey === 'splices') {
-        return { glyph: 'bowtie', color: '#ff0000' };
-    }
+    const lookalike = resolveLookalike(layerKey, props);
+    if (lookalike) return lookalike;
     for (const rule of UDOT_GLYPH_RULES) {
         if (rule.layerKey !== layerKey) continue;
         const raw = props[rule.field];
@@ -60,78 +65,199 @@ export function buildGlyphMatchExpression(field, pairs, fallbackImageId) {
 }
 
 /**
+ * @param {string} hex
+ * @returns {{ r: number, g: number, b: number }}
+ */
+function hexToRgb(hex) {
+    const h = String(hex || '').replace('#', '');
+    if (h.length !== 6 || /[^0-9a-fA-F]/.test(h)) return { r: 255, g: 255, b: 255 };
+    return {
+        r: parseInt(h.slice(0, 2), 16),
+        g: parseInt(h.slice(2, 4), 16),
+        b: parseInt(h.slice(4, 6), 16)
+    };
+}
+
+/**
+ * @param {{ r: number, g: number, b: number }} rgb
+ */
+function rgbToHex({ r, g, b }) {
+    const byte = (n) => Math.max(0, Math.min(255, Math.round(n))).toString(16).padStart(2, '0');
+    return `#${byte(r)}${byte(g)}${byte(b)}`;
+}
+
+/**
+ * @param {string} a
+ * @param {string} b
+ * @param {number} t
+ */
+function mixHex(a, b, t) {
+    const A = hexToRgb(a);
+    const B = hexToRgb(b);
+    return rgbToHex({
+        r: A.r + (B.r - A.r) * t,
+        g: A.g + (B.g - A.g) * t,
+        b: A.b + (B.b - A.b) * t
+    });
+}
+
+/**
+ * @param {string} color
+ */
+function toneFor(color) {
+    const base = color || '#ffffff';
+    return {
+        base,
+        fill: mixHex(base, '#ffffff', 0.18),
+        stroke: mixHex(base, '#000000', 0.28),
+        highlight: mixHex(base, '#ffffff', 0.5)
+    };
+}
+
+/**
+ * @param {number} s
+ * @param {string} inner
+ */
+function svgFrame(s, inner) {
+    const common = `xmlns="http://www.w3.org/2000/svg" width="${s}" height="${s}" viewBox="0 0 ${s} ${s}"`;
+    return `<svg ${common}>
+  <ellipse cx="${s / 2}" cy="${s * 0.86}" rx="${s * 0.32}" ry="${s * 0.07}" fill="rgba(0,0,0,0.28)"/>
+  ${inner}
+</svg>`;
+}
+
+/**
  * @param {UdotGlyphKind} glyph
  * @param {string} stroke
  * @param {string} fill
  * @param {number} [size]
  * @returns {string} SVG markup
  */
-export function makeUdotGlyphSvg(glyph, stroke, fill, size = 18) {
-    const s = Math.max(12, Number(size) || 18);
-    const sw = Math.max(1.2, s / 12);
-    const common = `xmlns="http://www.w3.org/2000/svg" width="${s}" height="${s}" viewBox="0 0 ${s} ${s}"`;
+export function makeUdotGlyphSvg(glyph, stroke, fill, size = UDOT_FIBER_GLYPH_PX) {
+    const s = Math.max(16, Number(size) || UDOT_FIBER_GLYPH_PX);
+    const sw = Math.max(1.15, s / 14);
+    const tone = toneFor(stroke || fill || '#ffffff');
+    const ink = tone.stroke;
+    const body = tone.fill;
+    const hi = tone.highlight;
+    const pad = s * 0.18;
+    const mid = s / 2;
 
     if (glyph === 'square-x') {
-        const pad = s * 0.15;
         const x1 = pad;
         const y1 = pad;
         const x2 = s - pad;
-        const y2 = s - pad;
-        return `<svg ${common}>
-  <rect x="${pad}" y="${pad}" width="${s - pad * 2}" height="${s - pad * 2}" fill="none" stroke="${stroke}" stroke-width="${sw}"/>
-  <line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${stroke}" stroke-width="${sw}"/>
-  <line x1="${x2}" y1="${y1}" x2="${x1}" y2="${y2}" stroke="${stroke}" stroke-width="${sw}"/>
-  <circle cx="${s / 2}" cy="${s / 2}" r="${sw}" fill="#ffffff"/>
-</svg>`;
+        const y2 = s - pad * 1.15;
+        return svgFrame(s, `
+  <rect x="${pad}" y="${pad * 0.85}" width="${s - pad * 2}" height="${s - pad * 2.1}" rx="${sw}" fill="${body}" fill-opacity="0.22" stroke="${ink}" stroke-width="${sw}"/>
+  <line x1="${x1 + sw}" y1="${y1}" x2="${x2 - sw}" y2="${y2}" stroke="${ink}" stroke-width="${sw}" stroke-linecap="round"/>
+  <line x1="${x2 - sw}" y1="${y1}" x2="${x1 + sw}" y2="${y2}" stroke="${ink}" stroke-width="${sw}" stroke-linecap="round"/>
+  <ellipse cx="${mid}" cy="${pad * 1.15}" rx="${s * 0.16}" ry="${s * 0.05}" fill="${hi}" fill-opacity="0.45"/>`);
     }
 
     if (glyph === 'bowtie') {
-        const mid = s / 2;
-        return `<svg ${common}>
-  <polygon points="${s * 0.1},${s * 0.2} ${mid},${mid} ${s * 0.1},${s * 0.8}" fill="${fill}" fill-opacity="0.35" stroke="${stroke}" stroke-width="${sw}"/>
-  <polygon points="${s * 0.9},${s * 0.2} ${mid},${mid} ${s * 0.9},${s * 0.8}" fill="${fill}" fill-opacity="0.35" stroke="${stroke}" stroke-width="${sw}"/>
-</svg>`;
+        return svgFrame(s, `
+  <polygon points="${s * 0.12},${s * 0.22} ${mid},${mid} ${s * 0.12},${s * 0.72}" fill="${body}" fill-opacity="0.55" stroke="${ink}" stroke-width="${sw}" stroke-linejoin="round"/>
+  <polygon points="${s * 0.88},${s * 0.22} ${mid},${mid} ${s * 0.88},${s * 0.72}" fill="${body}" fill-opacity="0.55" stroke="${ink}" stroke-width="${sw}" stroke-linejoin="round"/>
+  <ellipse cx="${s * 0.22}" cy="${s * 0.3}" rx="${s * 0.08}" ry="${s * 0.04}" fill="${hi}" fill-opacity="0.4"/>`);
+    }
+
+    if (glyph === 'rect') {
+        const rw = s * 0.68;
+        const rh = s * 0.42;
+        const x = (s - rw) / 2;
+        const y = (s - rh) / 2 - s * 0.02;
+        return svgFrame(s, `
+  <rect x="${x}" y="${y}" width="${rw}" height="${rh}" rx="0.4" fill="${body}" fill-opacity="0.2" stroke="${ink}" stroke-width="${sw * 1.15}"/>
+  <ellipse cx="${mid}" cy="${y + sw}" rx="${rw * 0.28}" ry="${rh * 0.12}" fill="${hi}" fill-opacity="0.4"/>`);
     }
 
     if (glyph === 'dashed-box') {
-        const pad = s * 0.18;
-        return `<svg ${common}>
-  <rect x="${pad}" y="${pad}" width="${s - pad * 2}" height="${s - pad * 2}" fill="none" stroke="${stroke}" stroke-width="${sw}" stroke-dasharray="${sw * 2} ${sw * 1.5}"/>
-</svg>`;
+        return svgFrame(s, `
+  <rect x="${pad}" y="${pad * 0.85}" width="${s - pad * 2}" height="${s - pad * 2.1}" rx="${sw}" fill="${body}" fill-opacity="0.12" stroke="${ink}" stroke-width="${sw}" stroke-dasharray="${sw * 2.1} ${sw * 1.4}"/>
+  <ellipse cx="${mid}" cy="${pad * 1.15}" rx="${s * 0.14}" ry="${s * 0.04}" fill="${hi}" fill-opacity="0.4"/>`);
     }
 
     if (glyph === 'diamond') {
-        const mid = s / 2;
-        const pad = s * 0.15;
-        return `<svg ${common}>
-  <polygon points="${mid},${pad} ${s - pad},${mid} ${mid},${s - pad} ${pad},${mid}" fill="${fill}" fill-opacity="0.25" stroke="${stroke}" stroke-width="${sw}"/>
-</svg>`;
+        const top = pad * 0.85;
+        const bot = s - pad * 1.2;
+        return svgFrame(s, `
+  <polygon points="${mid},${top} ${s - pad},${mid} ${mid},${bot} ${pad},${mid}" fill="${body}" fill-opacity="0.42" stroke="${ink}" stroke-width="${sw}" stroke-linejoin="round"/>
+  <ellipse cx="${mid}" cy="${pad * 1.2}" rx="${s * 0.1}" ry="${s * 0.035}" fill="${hi}" fill-opacity="0.45"/>`);
     }
 
     if (glyph === 'ring') {
-        return `<svg ${common}>
-  <circle cx="${s / 2}" cy="${s / 2}" r="${s * 0.36}" fill="none" stroke="${stroke}" stroke-width="${sw * 1.4}"/>
-</svg>`;
+        return svgFrame(s, `
+  <circle cx="${mid}" cy="${mid * 0.96}" r="${s * 0.34}" fill="${body}" fill-opacity="0.16" stroke="${ink}" stroke-width="${sw * 1.45}"/>
+  <ellipse cx="${mid}" cy="${s * 0.28}" rx="${s * 0.12}" ry="${s * 0.04}" fill="${hi}" fill-opacity="0.4"/>`);
     }
 
     if (glyph === 'vee-circle') {
-        const cx = s / 2;
-        const r = s * 0.36;
-        const top = cx - r * 0.35;
-        const bot = cx + r * 0.4;
-        const left = cx - r * 0.42;
-        const right = cx + r * 0.42;
-        return `<svg ${common}>
-  <circle cx="${cx}" cy="${cx}" r="${r}" fill="none" stroke="${stroke}" stroke-width="${sw}"/>
-  <polyline points="${left},${top} ${cx},${bot} ${right},${top}" fill="none" stroke="${stroke}" stroke-width="${sw}"/>
-</svg>`;
+        const cx = mid;
+        const r = s * 0.3;
+        const top = cx - r * 0.32;
+        const bot = cx + r * 0.36;
+        const left = cx - r * 0.4;
+        const right = cx + r * 0.4;
+        return svgFrame(s, `
+  <circle cx="${cx}" cy="${cx * 0.96}" r="${r}" fill="${body}" fill-opacity="0.18" stroke="${ink}" stroke-width="${sw}"/>
+  <polyline points="${left},${top} ${cx},${bot} ${right},${top}" fill="none" stroke="${ink}" stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round"/>`);
     }
 
-    // circle
-    return `<svg ${common}>
-  <circle cx="${s / 2}" cy="${s / 2}" r="${s * 0.35}" fill="${fill}" stroke="${stroke}" stroke-width="${sw}"/>
-</svg>`;
+    if (glyph === 'rounded-square') {
+        return svgFrame(s, `
+  <rect x="${pad}" y="${pad * 0.85}" width="${s - pad * 2}" height="${s - pad * 2.1}" rx="${s * 0.14}" fill="${body}" fill-opacity="0.5" stroke="${ink}" stroke-width="${sw}"/>
+  <ellipse cx="${mid}" cy="${pad * 1.2}" rx="${s * 0.16}" ry="${s * 0.045}" fill="${hi}" fill-opacity="0.5"/>`);
+    }
+
+    if (glyph === 'hex') {
+        const r = s * 0.34;
+        const cy = mid * 0.96;
+        const pts = [0, 1, 2, 3, 4, 5].map((i) => {
+            const a = (Math.PI / 180) * (60 * i - 30);
+            return `${mid + r * Math.cos(a)},${cy + r * Math.sin(a)}`;
+        }).join(' ');
+        return svgFrame(s, `
+  <polygon points="${pts}" fill="${body}" fill-opacity="0.5" stroke="${ink}" stroke-width="${sw}" stroke-linejoin="round"/>
+  <ellipse cx="${mid}" cy="${s * 0.3}" rx="${s * 0.12}" ry="${s * 0.04}" fill="${hi}" fill-opacity="0.45"/>`);
+    }
+
+    if (glyph === 'building') {
+        const x = pad;
+        const w = s - pad * 2;
+        const roof = pad * 0.7;
+        const baseY = s - pad * 1.2;
+        const wallY = s * 0.38;
+        return svgFrame(s, `
+  <polygon points="${mid},${roof} ${x},${wallY} ${x + w},${wallY}" fill="${body}" fill-opacity="0.55" stroke="${ink}" stroke-width="${sw}" stroke-linejoin="round"/>
+  <rect x="${x + sw * 0.4}" y="${wallY}" width="${w - sw * 0.8}" height="${baseY - wallY}" fill="${body}" fill-opacity="0.42" stroke="${ink}" stroke-width="${sw}"/>
+  <ellipse cx="${mid}" cy="${roof + sw}" rx="${s * 0.1}" ry="${s * 0.03}" fill="${hi}" fill-opacity="0.4"/>`);
+    }
+
+    return svgFrame(s, `
+  <circle cx="${mid}" cy="${mid * 0.96}" r="${s * 0.3}" fill="${body}" stroke="${ink}" stroke-width="${sw}"/>
+  <ellipse cx="${mid}" cy="${s * 0.3}" rx="${s * 0.12}" ry="${s * 0.04}" fill="${hi}" fill-opacity="0.45"/>`);
 }
+
+/** @type {Array<[UdotGlyphKind, string]>} */
+export const UDOT_FIBER_PRELOAD_GLYPHS = [
+    ['square-x', '#00ff00'],
+    ['bowtie', '#ff0000'],
+    ['rect', '#111111'],
+    ['dashed-box', '#ffffff'],
+    ['diamond', '#ffff00'],
+    ['diamond', '#94a3b8'],
+    ['rounded-square', '#00f0f0'],
+    ['ring', '#ff0000'],
+    ['hex', '#ff7f00'],
+    ['building', '#00ff00'],
+    ['circle', '#94a3b8'],
+    ['circle', '#00ff00'],
+    ['circle', '#ff7f00'],
+    ['ring', '#94a3b8'],
+    ['ring', '#00ff00'],
+    ['vee-circle', '#ffff00']
+];
 
 /**
  * Register a glyph image on a MapLibre map (sync id; async pixel load).
@@ -141,7 +267,7 @@ export function makeUdotGlyphSvg(glyph, stroke, fill, size = 18) {
  * @param {number} [size]
  * @returns {string} image id
  */
-export function ensureUdotGlyphImage(map, glyph, color, size = 18) {
+export function ensureUdotGlyphImage(map, glyph, color, size = UDOT_FIBER_GLYPH_PX) {
     const safeColor = String(color || '#ffffff').replace(/#/g, '');
     const imageId = `udot-glyph-${glyph}-${safeColor}-${size}`;
     if (!map || map.hasImage?.(imageId)) return imageId;
@@ -161,4 +287,41 @@ export function ensureUdotGlyphImage(map, glyph, color, size = 18) {
     };
     img.src = url;
     return imageId;
+}
+
+/**
+ * @param {import('maplibre-gl').Map} [map]
+ * @param {number} [size]
+ */
+export function preloadUdotFiberGlyphs(map, size = UDOT_FIBER_GLYPH_PX) {
+    for (const [glyph, color] of UDOT_FIBER_PRELOAD_GLYPHS) {
+        ensureUdotGlyphImage(map, glyph, color, size);
+    }
+}
+
+/**
+ * Stamp procedural lookalike image ids onto Fiber point features.
+ * @param {string} layerKey
+ * @param {object[]} features
+ * @param {import('maplibre-gl').Map} [map]
+ * @param {number} [size]
+ */
+export function decorateUdotFiberPointFeatures(layerKey, features, map, size) {
+    if (!features?.length || !POINT_KEYS.has(layerKey)) return features;
+    const px = Number.isFinite(Number(size)) && Number(size) > 0
+        ? Number(size)
+        : Math.max(UDOT_FIBER_GLYPH_PX, udotFiberIconSpritePx(layerKey));
+    return features.map((feature) => {
+        const hit = resolvePointGlyph(layerKey, feature.properties || {});
+        if (!hit) return feature;
+        const imageId = ensureUdotGlyphImage(map, hit.glyph, hit.color || '#ffffff', px);
+        return {
+            ...feature,
+            properties: {
+                ...feature.properties,
+                _udotGlyph: imageId,
+                _udotEsriWidth: px
+            }
+        };
+    });
 }

@@ -10,7 +10,7 @@
  */
 export function applyUdotFiberDisplayOffsets(features, opts = {}) {
     const field = opts.field || 'MULTISHEATH';
-    const metersPerUnit = opts.metersPerUnit ?? 1.25;
+    const metersPerUnit = opts.metersPerUnit ?? 1.75;
     if (!features?.length) return features || [];
 
     return features.map((feature, index) => {

@@ -8,9 +8,9 @@ How a REST layer URL is styled from published `drawingInfo` (including Custom UR
 
 Import → Live Layers → **UDOT Fiber Network** (password-gated composite). Adds six viewport-query layers from the MapServer. Hidden below neighborhood zoom (14); no idle refresh. Features are session / viewport only.
 
-Point layers use the published ArcGIS picture-marker PNGs (`drawingInfo` `imageData`). Line layers use unique-value colors, dash styles, along-line labels, and a light parallel offset.
+Live Fiber uses a modern CAD paint pack: class-colored line stacks (casing + soft glow + core), dual-halo labels, and procedural lookalike icons. Published unique-value colors stay the same (`FIBER_SYMBOLS`, `CONDUIT_SYM`, Bentley `Fiber_Label`).
 
-Styles live in `js/symbology/udot-fiber/`. Picture-marker load: [`js/arcgis/picture-markers.js`](../js/arcgis/picture-markers.js).
+Styles live in `js/symbology/udot-fiber/`. Live MapLibre specs: [`js/symbology/udot-fiber/paint.js`](../js/symbology/udot-fiber/paint.js). Lookalike icons: [`js/symbology/udot-fiber/lookalikes.js`](../js/symbology/udot-fiber/lookalikes.js).
 
 ## Style sources
 
@@ -26,7 +26,7 @@ python scripts/build-udot-fiber-bentley-symbols.py /path/to/NewSymbols.xlsx
 
 ## Point glyphs
 
-Procedural CAD glyphs (square-X, bowtie, dashed box) are ruled in `js/symbology/udot-fiber/glyphs.js`. Expand `UDOT_GLYPH_RULES` as you identify attributes.
+Live Fiber does not draw published ArcGIS picture-marker PNGs. Class labels map to modern lookalikes (square-X, bowtie, hex, building) with baked shadow/highlight in `glyphs.js`. Boxes match the ArcGIS Online shapes: landscape rectangles for Type I / Type II / other boxes, red circles for vaults. Point icons follow the published `Rotation` field (geographic, clockwise from north). Expand `lookalikes.js` families as you identify attributes.
 
 ## Platform
 

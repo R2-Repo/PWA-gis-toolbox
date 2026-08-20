@@ -222,8 +222,8 @@ function AppShell() {
     }, [layers, refreshTick]);
 
     const onBasemapChange = useCallback((value) => {
-        setBasemap(value);
         applyBasemapHeaderSelection(value);
+        setBasemap(mapService.getCurrentBasemap() || value);
     }, []);
 
     const onBasemapToneChange = useCallback((tone) => {
@@ -232,8 +232,8 @@ function AppShell() {
     }, []);
 
     const onDimensionChange = useCallback((value) => {
-        setDimension(value);
         applyDimensionHeaderSelection(value);
+        setDimension(mapService.is3DEnabled() ? '3d' : '2d');
     }, []);
 
     const onPopupModeChange = useCallback((value) => {
@@ -242,7 +242,7 @@ function AppShell() {
     }, []);
 
     useEffect(() => {
-        return bus.on('map:chrome', (payload) => {
+        const unsubChrome = bus.on('map:chrome', (payload) => {
             if (payload?.is3d !== undefined) {
                 setDimension(payload.is3d ? '3d' : '2d');
             }
@@ -253,12 +253,21 @@ function AppShell() {
                 setBasemapTone(payload.basemapTone);
             }
         });
-    }, []);
-
-    useEffect(() => {
-        return bus.on('map:basemapTone', (tone) => {
+        const unsubBasemap = bus.on('map:basemap', (key) => {
+            if (key) setBasemap(key);
+        });
+        const unsub3d = bus.on('map:3dChanged', (is3d) => {
+            setDimension(is3d ? '3d' : '2d');
+        });
+        const unsubTone = bus.on('map:basemapTone', (tone) => {
             if (tone) setBasemapTone(tone);
         });
+        return () => {
+            unsubChrome();
+            unsubBasemap();
+            unsub3d();
+            unsubTone();
+        };
     }, []);
 
     useEffect(() => {

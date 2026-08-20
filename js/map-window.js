@@ -201,7 +201,9 @@ function syncBasemapToggle(basemap) {
 
 function syncDimensionToggle(is3d) {
     document.querySelectorAll('#dimension-toggle .header-toggle-option').forEach(b => {
-        b.classList.toggle('active', b.dataset.value === (is3d ? '3d' : '2d'));
+        const isActive = b.dataset.value === (is3d ? '3d' : '2d');
+        b.classList.toggle('active', isActive);
+        b.setAttribute('aria-pressed', String(isActive));
     });
 }
 

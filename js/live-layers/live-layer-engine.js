@@ -1,8 +1,6 @@
 import { ArcGISRestImporter, schemaFromArcgisMetadata } from '../arcgis/rest-importer.js';
 import { styleFromArcgisMetadata } from '../arcgis/drawing-info.js';
 import {
-    resolveEsriLineDasharray,
-    decorateFeaturesWithPictureMarkers,
     pictureMarkersFromDrawingInfo,
     registerPictureMarkers
 } from '../arcgis/picture-markers.js';
@@ -20,23 +18,14 @@ import {
     pruneSelectionToViewport,
     tagServiceFeatures
 } from './live-layer-viewport.js';
-import {
-    ensureUdotGlyphImage,
-    resolvePointGlyph
-} from '../symbology/udot-fiber/glyphs.js';
+import { decorateUdotFiberPointFeatures } from '../symbology/udot-fiber/glyphs.js';
 import { matchUdotFiberLayerUrl } from '../symbology/udot-fiber/constants.js';
-import { getDrawingLayer } from '../symbology/udot-fiber/resolve-style.js';
+import { addUdotFiberVectorLayers } from '../symbology/udot-fiber/paint.js';
 import { applyUdotFiberDisplayOffsets } from '../symbology/udot-fiber/display-offsets.js';
 import {
     buildUdotFiberExcludeWhere,
-    combineUdotFiberMapLibreFilter,
     filterUdotFiberDisplayFeatures
 } from '../symbology/udot-fiber/display-filters.js';
-import {
-    buildUdotFiberCircleRadiusExpression,
-    buildUdotFiberIconSizeExpression,
-    buildUdotFiberLineWidthExpression
-} from '../symbology/udot-fiber/zoom-scale.js';
 import {
     envelopeFromMapBounds,
     isLiveLayerInRange,
@@ -265,8 +254,11 @@ async function ensureFeatureServerMetadata(dataset, runtime, map = null) {
         const metadata = await importer.fetchMetadata(runtime.url);
         runtime.objectIdField = metadata.objectIdField || 'OBJECTID';
         runtime.drawingInfo = metadata.drawingInfo || null;
-        runtime.pictureMarkers = pictureMarkersFromDrawingInfo(metadata.drawingInfo);
-        if (map && runtime.pictureMarkers.markers.length) {
+        const fiberHit = matchUdotFiberLayerUrl(runtime.url);
+        runtime.pictureMarkers = fiberHit
+            ? { field: null, markers: [] }
+            : pictureMarkersFromDrawingInfo(metadata.drawingInfo);
+        if (!fiberHit && map && runtime.pictureMarkers.markers.length) {
             await registerPictureMarkers(map, runtime.pictureMarkers);
         }
         if (dataset.service) {
@@ -322,63 +314,44 @@ function addVectorLayers(map, datasetId, sourceId, layerStyle, opacity, opts = {
     const fiberKey = udotMatch?.key;
     const minzoom = Number.isFinite(Number(opts.minZoom)) ? Number(opts.minZoom) : undefined;
 
+    if (udotMatch) {
+        return addUdotFiberVectorLayers(map, datasetId, sourceId, layerStyle, opacity, {
+            fiberKey,
+            minZoom: minzoom
+        });
+    }
+
     map.addLayer({
         id: polygonId,
         type: 'fill',
         source: sourceId,
         ...(minzoom != null ? { minzoom } : {}),
-        filter: combineUdotFiberMapLibreFilter(
-            ['match', ['geometry-type'], ['Polygon', 'MultiPolygon'], true, false],
-            fiberKey
-        ),
+        filter: ['match', ['geometry-type'], ['Polygon', 'MultiPolygon'], true, false],
         paint: {
             'fill-color': styPoly.fillColor,
             'fill-opacity': scalePaintOpacity(styPoly.fillOpacity, opacity * 0.35)
         }
     });
-    const linePaint = {
-        'line-color': styLine.strokeColor,
-        'line-width': fiberKey
-            ? buildUdotFiberLineWidthExpression(styLine.strokeWidth, fiberKey)
-            : styLine.strokeWidth,
-        'line-opacity': scalePaintOpacity(styLine.strokeOpacity, opacity)
-    };
-    if (udotMatch) {
-        const dash = layerStyle?._udotFiber?.lineDasharray
-            || resolveEsriLineDasharray(getDrawingLayer(udotMatch.key)?.classes);
-        if (Array.isArray(dash) && dash.length) linePaint['line-dasharray'] = dash;
-    }
-    const lineLayout = (Array.isArray(linePaint['line-dasharray']) && linePaint['line-dasharray'].length)
-        ? { 'line-cap': 'butt', 'line-join': 'round' }
-        : undefined;
     map.addLayer({
         id: lineId,
         type: 'line',
         source: sourceId,
         ...(minzoom != null ? { minzoom } : {}),
-        filter: combineUdotFiberMapLibreFilter(
-            ['match', ['geometry-type'], ['LineString', 'MultiLineString', 'Polygon', 'MultiPolygon'], true, false],
-            fiberKey
-        ),
-        ...(lineLayout ? { layout: lineLayout } : {}),
-        paint: linePaint
+        filter: ['match', ['geometry-type'], ['LineString', 'MultiLineString', 'Polygon', 'MultiPolygon'], true, false],
+        paint: {
+            'line-color': styLine.strokeColor,
+            'line-width': styLine.strokeWidth,
+            'line-opacity': scalePaintOpacity(styLine.strokeOpacity, opacity)
+        }
     });
     map.addLayer({
         id: pointId,
         type: 'circle',
         source: sourceId,
         ...(minzoom != null ? { minzoom } : {}),
-        filter: combineUdotFiberMapLibreFilter(
-            ['all',
-                ['match', ['geometry-type'], ['Point', 'MultiPoint'], true, false],
-                ['!', ['has', '_udotGlyph']]
-            ],
-            fiberKey
-        ),
+        filter: ['match', ['geometry-type'], ['Point', 'MultiPoint'], true, false],
         paint: {
-            'circle-radius': fiberKey
-                ? buildUdotFiberCircleRadiusExpression(styPoint.circleRadius, fiberKey)
-                : styPoint.circleRadius,
+            'circle-radius': styPoint.circleRadius,
             'circle-color': styPoint.fillColor,
             'circle-stroke-color': styPoint.strokeColor,
             'circle-stroke-width': styPoint.strokeWidth,
@@ -399,56 +372,12 @@ function addVectorLayers(map, datasetId, sourceId, layerStyle, opacity, opts = {
                     'text-color': layerStyle.labels.color
                 };
             }
-            if (fiberKey && labelSpec.layout?.['text-size'] != null) {
-                labelSpec.layout = {
-                    ...labelSpec.layout,
-                    'text-size': buildUdotFiberLineWidthExpression(labelSpec.layout['text-size'], fiberKey)
-                };
-            }
-            labelSpec.filter = combineUdotFiberMapLibreFilter(labelSpec.filter, fiberKey);
             if (minzoom != null) {
                 labelSpec.minzoom = Math.max(Number(labelSpec.minzoom) || 0, minzoom);
             }
             map.addLayer(labelSpec);
             ids.push(labelSpec.id);
         }
-    }
-
-    if (udotMatch && layerStyle?._udotFiber?.geometry === 'point') {
-        const glyphLayerId = `svc-lyr-${datasetId}-glyph`;
-        ensureUdotGlyphImage(map, 'square-x', '#00ff00', 18);
-        ensureUdotGlyphImage(map, 'bowtie', '#ff0000', 18);
-        ensureUdotGlyphImage(map, 'bowtie', '#8000a0', 18);
-        ensureUdotGlyphImage(map, 'dashed-box', '#ffffff', 18);
-        ensureUdotGlyphImage(map, 'diamond', '#ffff00', 18);
-        ensureUdotGlyphImage(map, 'diamond', '#94a3b8', 18);
-        ensureUdotGlyphImage(map, 'circle', '#00ff00', 16);
-        ensureUdotGlyphImage(map, 'circle', '#ff7f00', 16);
-        ensureUdotGlyphImage(map, 'ring', '#00ff00', 18);
-        ensureUdotGlyphImage(map, 'ring', '#ff7f00', 18);
-        ensureUdotGlyphImage(map, 'vee-circle', '#ffff00', 18);
-        ensureUdotGlyphImage(map, 'vee-circle', '#b2b2b2', 18);
-        ensureUdotGlyphImage(map, 'circle', styPoint.fillColor || '#ffffff', 16);
-        map.addLayer({
-            id: glyphLayerId,
-            type: 'symbol',
-            source: sourceId,
-            ...(minzoom != null ? { minzoom } : {}),
-            filter: combineUdotFiberMapLibreFilter(
-                ['all',
-                    ['match', ['geometry-type'], ['Point', 'MultiPoint'], true, false],
-                    ['has', '_udotGlyph']
-                ],
-                fiberKey
-            ),
-            layout: {
-                'icon-image': ['get', '_udotGlyph'],
-                'icon-size': buildUdotFiberIconSizeExpression(fiberKey),
-                'icon-allow-overlap': true,
-                'icon-ignore-placement': true
-            }
-        });
-        ids.push(glyphLayerId);
     }
 
     return ids;
@@ -460,35 +389,10 @@ function addVectorLayers(map, datasetId, sourceId, layerStyle, opacity, opts = {
  * @param {object[]} features
  * @param {import('maplibre-gl').Map} map
  */
-function decorateUdotFiberGlyphProps(serviceUrl, features, map, pictureMarkers = null) {
+function decorateUdotFiberGlyphProps(serviceUrl, features, map) {
     const match = matchUdotFiberLayerUrl(serviceUrl);
-    if (!features?.length) return features;
-
-    if (match?.key !== 'splices' && pictureMarkers?.markers?.length) {
-        const stamped = decorateFeaturesWithPictureMarkers(features, pictureMarkers);
-        const ready = stamped.map((feature) => {
-            const imageId = feature.properties?._udotGlyph;
-            if (!imageId || map?.hasImage?.(imageId)) return feature;
-            const { _udotGlyph, ...properties } = feature.properties;
-            return { ...feature, properties };
-        });
-        if (ready.some((f) => f.properties?._udotGlyph)) return ready;
-    }
-
-    if (!match) return features;
-    return features.map((feature) => {
-        const hit = resolvePointGlyph(match.key, feature.properties || {});
-        if (!hit) return feature;
-        const imageId = ensureUdotGlyphImage(map, hit.glyph, hit.color || '#ffffff', 18);
-        return {
-            ...feature,
-            properties: {
-                ...feature.properties,
-                _udotGlyph: imageId,
-                _udotEsriWidth: 18
-            }
-        };
-    });
+    if (!match || !features?.length) return features;
+    return decorateUdotFiberPointFeatures(match.key, features, map);
 }
 
 /**
@@ -565,7 +469,7 @@ export async function refreshServiceLayer(mapManager, layerId) {
         if (fiberHit && fiberHit.key === 'fiber') {
             tagged = applyUdotFiberDisplayOffsets(tagged);
         }
-        tagged = decorateUdotFiberGlyphProps(runtime.url, tagged, map, runtime.pictureMarkers);
+        tagged = decorateUdotFiberGlyphProps(runtime.url, tagged, map);
         const geojson = { type: 'FeatureCollection', features: tagged };
 
         if (runtime.fetchGen !== fetchGen) return;

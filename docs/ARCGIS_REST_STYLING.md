@@ -163,7 +163,7 @@ Full attributes remain in the workspace attribute store for the table, identify,
 | Legend has classes; all lines gray **Other** | Style fields not on map features (old import, or fields dropped) — re-import via Custom URL |
 | Labels on; “No sample values” / empty-field warning | Tiled workspace `geojson` is empty — the Labels panel samples in-memory features, not tiles. Zoom in; labels still draw from tile props when the field was promoted |
 | Colors wrong after picking a subset of attributes | Renderer fields must stay in the pick — the importer merges them back |
-| Looks styled in ArcGIS Online, flat color here | Custom URL download does not replay CAD picture markers. Use Import → Live Layers → UDOT Fiber Network for published PMS icons. |
+| Looks styled in ArcGIS Online, flat color here | Custom URL download does not replay CAD picture markers. Use Import → Live Layers → UDOT Fiber Network for modern Fiber lookalike icons. |
 | 401 / 403 on metadata | Layer is not public |
 | URL opens the service but import fails | Need a **layer** id (`/MapServer/6`), not `/MapServer` |
 
@@ -173,10 +173,10 @@ Full attributes remain in the workspace attribute store for the table, identify,
 
 - Public layers only — no tokens, IWA, or OAuth.
 - Not a full ArcGIS renderer: no hatch fills or Arcade-driven labels.
-- **Live Fiber layers** load published picture-marker PNGs from `drawingInfo.imageData`. Custom URL import still uses flat/Smart colors.
+- **Live Fiber layers** draw modern lookalike glyphs (not published PMS PNGs). Custom URL import still uses flat/Smart colors.
 - CIM symbols: only a flat color/width is extracted when there is no `imageData`.
 - Raster MapServer live layers do not use this path.
-- Live Layers catalog styles are developer-authored except Fiber, which also applies live `drawingInfo` icons ([`docs/LIVE_MAP_PRESETS.md`](LIVE_MAP_PRESETS.md)).
+- Live Layers catalog styles are developer-authored except Fiber, which uses the modern Fiber paint pack ([`docs/UDOT_FIBER_SYMBOLOGY.md`](UDOT_FIBER_SYMBOLOGY.md)).
 
 ---
 

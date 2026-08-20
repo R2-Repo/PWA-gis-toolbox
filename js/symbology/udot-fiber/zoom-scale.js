@@ -1,7 +1,7 @@
 /**
  * Screen-size lock for UDOT Fiber symbols.
- * Below neighborhood zoom, sizes hold (do not keep growing as the map shrinks).
- * Building PMS sprites are ~156px — they are capped to a neighborhood icon size.
+ * Boxes/splices scale with zoom (small when pulled back, large up close).
+ * Building sprites stay capped to a neighborhood icon size.
  */
 
 import { UDOT_FIBER_MIN_ZOOM } from './constants.js';
@@ -13,9 +13,30 @@ export const UDOT_FIBER_NEIGHBORHOOD_ZOOM = UDOT_FIBER_MIN_ZOOM;
 export const UDOT_FIBER_ICON_PX = Object.freeze({
     building: 18,
     cabinets: 16,
-    splices: 16,
+    splices: 14,
     boxes: 14,
     default: 16
+});
+
+/**
+ * On-screen px by MapLibre zoom for layers that must shrink out / grow in.
+ * Stops: layer min zoom → street → close → max.
+ */
+export const UDOT_FIBER_ICON_ZOOM_PX = Object.freeze({
+    boxes: Object.freeze([
+        [14, 10],
+        [16, 14],
+        [18, 28],
+        [20, 46],
+        [22, 52]
+    ]),
+    splices: Object.freeze([
+        [14, 10],
+        [16, 14],
+        [18, 28],
+        [20, 46],
+        [22, 52]
+    ])
 });
 
 /**
@@ -23,6 +44,16 @@ export const UDOT_FIBER_ICON_PX = Object.freeze({
  */
 export function udotFiberTargetIconPx(layerKey) {
     return UDOT_FIBER_ICON_PX[layerKey] || UDOT_FIBER_ICON_PX.default;
+}
+
+/**
+ * Sprite pixel size — large enough for the closest zoom stop.
+ * @param {string} [layerKey]
+ */
+export function udotFiberIconSpritePx(layerKey) {
+    const stops = UDOT_FIBER_ICON_ZOOM_PX[layerKey];
+    if (stops?.length) return stops[stops.length - 1][1];
+    return udotFiberTargetIconPx(layerKey);
 }
 
 /**
@@ -34,6 +65,10 @@ export function udotFiberIconSizeFromEsriWidth(esriWidth, layerKey) {
     const target = udotFiberTargetIconPx(layerKey);
     const native = Math.max(10, Number(esriWidth) || target);
     return target / native;
+}
+
+function nativeWidthExpr() {
+    return ['max', 10, ['to-number', ['coalesce', ['get', '_udotEsriWidth'], 24]]];
 }
 
 /**
@@ -60,13 +95,16 @@ export function buildUdotFiberZoomSize(value, layerKey) {
  * @param {string} [layerKey]
  */
 export function buildUdotFiberIconSizeExpression(layerKey) {
-    const target = udotFiberTargetIconPx(layerKey);
-    const base = [
-        '/',
-        target,
-        ['max', 10, ['to-number', ['coalesce', ['get', '_udotEsriWidth'], 24]]]
-    ];
-    return buildUdotFiberZoomSize(base, layerKey);
+    const native = nativeWidthExpr();
+    const stops = UDOT_FIBER_ICON_ZOOM_PX[layerKey];
+    if (stops?.length) {
+        const expr = ['interpolate', ['linear'], ['zoom']];
+        for (const [z, px] of stops) {
+            expr.push(z, ['/', px, native]);
+        }
+        return expr;
+    }
+    return buildUdotFiberZoomSize(['/', udotFiberTargetIconPx(layerKey), native], layerKey);
 }
 
 /**

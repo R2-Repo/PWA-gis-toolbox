@@ -336,7 +336,9 @@ class DualScreenCoordinator {
         if (payload.is3d !== undefined) {
             mapService.set3DEnabled(!!payload.is3d);
             document.querySelectorAll('#dimension-toggle .header-toggle-option').forEach(btn => {
-                btn.classList.toggle('active', btn.dataset.value === (payload.is3d ? '3d' : '2d'));
+                const isActive = btn.dataset.value === (payload.is3d ? '3d' : '2d');
+                btn.classList.toggle('active', isActive);
+                btn.setAttribute('aria-pressed', String(isActive));
             });
         }
         if (payload.basemapTone) {

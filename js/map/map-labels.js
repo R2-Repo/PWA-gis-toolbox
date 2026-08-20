@@ -50,7 +50,10 @@ const NAME_LIKE_FIELD_RE = /^(name|label|title|station|route|road|street|descrip
  */
 export function isMapLabelLayerId(layerId) {
     return typeof layerId === 'string'
-        && (layerId.endsWith('-labels') || layerId.endsWith('-line-labels'));
+        && (layerId.endsWith('-labels')
+            || layerId.endsWith('-line-labels')
+            || layerId.endsWith('-labels-plate')
+            || layerId.endsWith('-line-labels-plate'));
 }
 
 /**

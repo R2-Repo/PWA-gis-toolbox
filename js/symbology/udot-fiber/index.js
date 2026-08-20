@@ -5,6 +5,7 @@ export {
     UDOT_FIBER_LAYER_BY_ID,
     UDOT_FIBER_CATALOG_ID,
     UDOT_FIBER_MIN_ZOOM,
+    UDOT_FIBER_ROTATION_FIELD,
     layerUrl,
     matchUdotFiberLayerUrl
 } from './constants.js';
@@ -30,18 +31,37 @@ export {
 } from './splice-enclosures.js';
 export {
     UDOT_GLYPH_RULES,
+    UDOT_FIBER_GLYPH_PX,
     resolvePointGlyph,
     makeUdotGlyphSvg,
     ensureUdotGlyphImage,
+    preloadUdotFiberGlyphs,
+    decorateUdotFiberPointFeatures,
     buildGlyphMatchExpression
 } from './glyphs.js';
+export {
+    resolveLookalike,
+    matchLookalikeFamily,
+    lookalikeClassText
+} from './lookalikes.js';
+export {
+    UDOT_FIBER_LABEL_FONT,
+    widenLineWidth,
+    resolveUdotFiberPaintGeometry,
+    buildUdotFiberIconRotateExpression,
+    buildUdotFiberLayerSpecs,
+    buildUdotFiberLabelSpecs,
+    addUdotFiberVectorLayers
+} from './paint.js';
 
 export { downloadUdotFiberLayer, downloadAllUdotFiberLayers } from './download.js';
 export { applyUdotFiberDisplayOffsets } from './display-offsets.js';
 export {
     UDOT_FIBER_NEIGHBORHOOD_ZOOM,
     UDOT_FIBER_ICON_PX,
+    UDOT_FIBER_ICON_ZOOM_PX,
     udotFiberTargetIconPx,
+    udotFiberIconSpritePx,
     udotFiberIconSizeFromEsriWidth,
     buildUdotFiberZoomSize,
     buildUdotFiberIconSizeExpression,

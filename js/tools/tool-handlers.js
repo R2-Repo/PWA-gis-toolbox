@@ -1464,7 +1464,9 @@ function setBasemapToggleActive(value) {
 
 function setDimensionToggleActive(value) {
     document.querySelectorAll('#dimension-toggle .header-toggle-option').forEach((button) => {
-        button.classList.toggle('active', button.dataset.value === value);
+        const isActive = button.dataset.value === value;
+        button.classList.toggle('active', isActive);
+        button.setAttribute('aria-pressed', String(isActive));
     });
 }
 

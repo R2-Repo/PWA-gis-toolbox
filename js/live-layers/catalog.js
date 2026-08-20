@@ -75,7 +75,7 @@ export const LIVE_LAYERS = [
     {
         id: UDOT_FIBER_CATALOG_ID,
         name: 'UDOT Fiber Network',
-        description: 'Cabinets, splices, boxes, fiber, conduit, and buildings. Hidden until neighborhood zoom. Password required.',
+        description: 'Cabinets, splices, boxes, fiber, conduit, and buildings.',
         icon: '/icons/udot-fiber-network.png',
         category: 'Utilities',
         region: 'utah',

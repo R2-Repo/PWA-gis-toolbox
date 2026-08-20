@@ -75,9 +75,27 @@ export function HeaderBar({
                     tone={basemapTone}
                     onToneChange={onBasemapToneChange}
                 />
-                <div className="header-toggle" id="dimension-toggle">
-                    <button className={`header-toggle-option${dimension === '2d' ? ' active' : ''}`} data-value="2d" onClick={() => onDimensionChange?.('2d')}>2D</button>
-                    <button className={`header-toggle-option${dimension === '3d' ? ' active' : ''}`} data-value="3d" onClick={() => onDimensionChange?.('3d')}>3D</button>
+                <div className="header-toggle" id="dimension-toggle" role="group" aria-label="Map dimension">
+                    <button
+                        type="button"
+                        className={`header-toggle-option${dimension === '2d' ? ' active' : ''}`}
+                        data-value="2d"
+                        title="Flat map"
+                        aria-pressed={dimension === '2d'}
+                        onClick={() => onDimensionChange?.('2d')}
+                    >
+                        2D
+                    </button>
+                    <button
+                        type="button"
+                        className={`header-toggle-option${dimension === '3d' ? ' active' : ''}`}
+                        data-value="3d"
+                        title="Terrain and buildings"
+                        aria-pressed={dimension === '3d'}
+                        onClick={() => onDimensionChange?.('3d')}
+                    >
+                        3D
+                    </button>
                 </div>
                 <PopupModeMenu mode={popupMode} onModeChange={onPopupModeChange} />
                 <MapPrintMenu onExportMapView={onExportMapView} onPresentationLink={onPresentationLink} />

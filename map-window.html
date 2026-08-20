@@ -14,9 +14,9 @@
         <span class="map-window-title">GIS-Toolbox.com — Dual Screen Map</span>
         <div class="map-window-header-controls">
             <div class="header-toggle" id="basemap-toggle"></div>
-            <div class="header-toggle" id="dimension-toggle">
-                <button type="button" class="header-toggle-option active" data-value="2d">2D</button>
-                <button type="button" class="header-toggle-option" data-value="3d">3D</button>
+            <div class="header-toggle" id="dimension-toggle" role="group" aria-label="Map dimension">
+                <button type="button" class="header-toggle-option active" data-value="2d" title="Flat map" aria-pressed="true">2D</button>
+                <button type="button" class="header-toggle-option" data-value="3d" title="Terrain and buildings" aria-pressed="false">3D</button>
             </div>
             <div class="header-print-menu" id="map-print-menu">
                 <button type="button" class="btn btn-secondary btn-sm" id="btn-print-map" title="Download map as PNG, PDF, or orbit GIF">🖨️ Print ▾</button>

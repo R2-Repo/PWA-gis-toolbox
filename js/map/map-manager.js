@@ -143,6 +143,8 @@ const BASEMAP_RASTER_PAINT = {
 };
 
 const OPENFREEMAP_SOURCE_URL = 'https://tiles.openfreemap.org/planet';
+const TERRAIN_SOURCE_ID = 'terrain-source';
+const HILLSHADE_SOURCE_ID = 'hillshade-source';
 const TERRAIN_SOURCE_SPEC = {
     type: 'raster-dem',
     tiles: ['https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'],
@@ -150,7 +152,16 @@ const TERRAIN_SOURCE_SPEC = {
     tileSize: 256,
     maxzoom: 15
 };
-const TERRAIN_EXAGGERATION = 1.35;
+const TERRAIN_EXAGGERATION = 1.2;
+const HILLSHADE_PAINT = {
+    'hillshade-illumination-anchor': 'map',
+    'hillshade-illumination-direction': 315,
+    'hillshade-exaggeration': 0.5,
+    'hillshade-shadow-color': '#473B24',
+    'hillshade-highlight-color': '#FFFFFF',
+    'hillshade-accent-color': '#6e6e6e'
+};
+const BASEMAP_LAYER_IDS = new Set(['basemap-backdrop', 'basemap-layer', 'basemap-overlay-layer']);
 
 /** MapLibre filter (boolean expression): geometry-type is one of the given GeoJSON types */
 function _geomTypesFilter(types) {
@@ -601,75 +612,113 @@ class MapManager {
         };
     }
 
+    _firstLayerIdNotIn(skipIds) {
+        const layers = this.map?.getStyle?.()?.layers || [];
+        for (const layer of layers) {
+            if (!skipIds.has(layer.id)) return layer.id;
+        }
+        return undefined;
+    }
+
+    _removeLayerAndSource(layerId, sourceId) {
+        if (this.map.getLayer(layerId)) this.map.removeLayer(layerId);
+        if (this.map.getSource(sourceId)) this.map.removeSource(sourceId);
+    }
+
+    _buildBasemapSourceSpec(bm) {
+        return {
+            type: 'raster',
+            tiles: bm.tiles,
+            tileSize: 256,
+            maxzoom: bm.maxZoom || 19,
+            attribution: bm.attribution
+        };
+    }
+
+    _replaceBasemapSources(bm) {
+        const beforeId = this._firstLayerIdNotIn(BASEMAP_LAYER_IDS);
+
+        this._removeLayerAndSource('basemap-overlay-layer', 'basemap-overlay');
+        this._removeLayerAndSource('basemap-layer', 'basemap');
+
+        const insertBefore = beforeId && this.map.getLayer(beforeId) ? beforeId : undefined;
+        this.map.addSource('basemap', this._buildBasemapSourceSpec(bm));
+        this.map.addLayer({
+            id: 'basemap-layer',
+            type: 'raster',
+            source: 'basemap',
+            minzoom: 0,
+            maxzoom: 22,
+            paint: this._getBasemapRasterPaint()
+        }, insertBefore);
+
+        if (!bm.overlayTiles) return;
+
+        this.map.addSource('basemap-overlay', {
+            type: 'raster',
+            tiles: bm.overlayTiles,
+            tileSize: 256,
+            maxzoom: 20
+        });
+        this.map.addLayer({
+            id: 'basemap-overlay-layer',
+            type: 'raster',
+            source: 'basemap-overlay',
+            minzoom: 0,
+            maxzoom: 22,
+            paint: this._getBasemapRasterPaint({ applyTint: false })
+        }, insertBefore);
+    }
+
+    _withTerrainPaused(fn) {
+        const wasOn = this._isMapTerrainActive();
+        if (wasOn) {
+            this._applyCamera({}, { animate: false });
+            this.map.setTerrain(null);
+            this._terrainEnabled = false;
+        }
+        try {
+            fn();
+        } finally {
+            if (wasOn && this._3dEnabled) {
+                this._ensureTerrainSource();
+                this._setTerrainIfNeeded();
+            }
+        }
+    }
+
     setBasemap(key) {
         const bm = getBasemapConfig(key);
         if (!bm) {
             logger.warn('Map', 'Unknown basemap key', { key });
             return;
         }
+        if (!this.map?.getStyle?.()) return;
+        if (key === this.currentBasemap && this.map.getLayer?.('basemap-layer')) {
+            return;
+        }
 
-        // Collect all non-basemap sources/layers to preserve data layers
-        // Skip 3D-specific assets — _apply3D will recreate them cleanly
-        const _3dIds = new Set(['terrain-source', 'openfreemap']);
-        const _3dLayerIds = new Set(['hillshade', 'sky', '3d-buildings']);
-
-        const style = this.map.getStyle();
-        const userSources = {};
-        const userLayers = [];
-        for (const [id, src] of Object.entries(style.sources)) {
-            if (id !== 'basemap' && id !== 'basemap-overlay' && !_3dIds.has(id)) {
-                userSources[id] = src;
+        const swap = () => this._replaceBasemapSources(bm);
+        try {
+            swap();
+        } catch (err) {
+            logger.warn('Map', 'In-place basemap swap failed, retrying with terrain paused', {
+                message: err?.message
+            });
+            try {
+                this._withTerrainPaused(swap);
+            } catch (retryErr) {
+                logger.warn('Map', 'Basemap swap failed', { message: retryErr?.message });
+                return;
             }
         }
-        for (const layer of style.layers) {
-            if (!layer.id.startsWith('basemap') && !_3dLayerIds.has(layer.id)) {
-                userLayers.push(layer);
-            }
-        }
 
-        // Build new basemap style
-        const newStyle = this._buildStyle(key);
-
-        // Merge user data back
-        Object.assign(newStyle.sources, userSources);
-        newStyle.layers.push(...userLayers);
-
-        // If 3D is active, carry terrain/buildings into the new style so there is
-        // no gap between setStyle and _apply3D (prevents black flash / missing buildings)
-        if (this._3dEnabled) {
-            this._buildingsEnabled = false;
-            newStyle.sources['terrain-source'] = { ...TERRAIN_SOURCE_SPEC };
-            newStyle.sources.openfreemap = {
-                type: 'vector',
-                url: OPENFREEMAP_SOURCE_URL
-            };
-            newStyle.terrain = { source: 'terrain-source', exaggeration: TERRAIN_EXAGGERATION };
-            this._append3DStyleLayers(newStyle, key);
-        }
-
-        this.map.setStyle(newStyle, { diff: true });
         this.currentBasemap = key;
-
-        // Re-apply 3D if it was active before the basemap switch.
-        // style.load does NOT always fire with { diff: true }, so we
-        // listen for styledata (always emitted) with a one-shot guard.
         if (this._3dEnabled) {
-            let applied = false;
-            const reapply = () => {
-                if (applied) return;
-                applied = true;
-                this.map.off('styledata', reapply);
-                this._terrainEnabled = false;
-                this._buildingsEnabled = false;
-                this._apply3D();
-            };
-            this.map.on('styledata', reapply);
-            // Safety fallback in case styledata already fired synchronously
-            setTimeout(reapply, 200);
+            this._syncHillshadeForBasemap(key);
         }
-
-        this._scheduleBasemapToneReapply();
-
+        this._applyBasemapToneToMap();
+        this._syncBasemapToneDom();
         bus.emit('map:basemap', key);
     }
 
@@ -730,20 +779,6 @@ class MapManager {
         if (container) {
             container.style.background = backdrop;
         }
-    }
-
-    _scheduleBasemapToneReapply() {
-        if (!this.map) return;
-        let applied = false;
-        const reapply = () => {
-            if (applied) return;
-            applied = true;
-            this.map.off('styledata', reapply);
-            this._applyBasemapToneToMap();
-            this._syncBasemapToneDom();
-        };
-        this.map.on('styledata', reapply);
-        setTimeout(reapply, 200);
     }
 
     getBasemaps() { return getBasemapRegistry(); }
@@ -2886,7 +2921,10 @@ class MapManager {
     _ensure3DAssets() {
         const needsTerrain = !this._isMapTerrainActive();
         const needsBuildings = !this._isBuildingsLayerActive();
-        if (!needsTerrain && !needsBuildings) {
+        const wantsHillshade = !isSatelliteBasemap(this.currentBasemap);
+        const hasHillshade = !!this.map.getLayer('hillshade');
+        const needsHillshadeSync = wantsHillshade !== hasHillshade;
+        if (!needsTerrain && !needsBuildings && !needsHillshadeSync) {
             this._sync3DAssetFlags();
             return;
         }
@@ -2901,7 +2939,77 @@ class MapManager {
         if (this.map.getLayer('hillshade')) this.map.removeLayer('hillshade');
         if (this.map.getLayer('sky')) this.map.removeLayer('sky');
         this._removeBuildingsLayer();
-        if (this.map.getSource('terrain-source')) this.map.removeSource('terrain-source');
+        if (this.map.getSource(HILLSHADE_SOURCE_ID)) this.map.removeSource(HILLSHADE_SOURCE_ID);
+        if (this.map.getSource(TERRAIN_SOURCE_ID)) this.map.removeSource(TERRAIN_SOURCE_ID);
+    }
+
+    _ensureTerrainSource() {
+        if (!this.map.getSource(TERRAIN_SOURCE_ID)) {
+            this.map.addSource(TERRAIN_SOURCE_ID, { ...TERRAIN_SOURCE_SPEC });
+        }
+    }
+
+    _ensureHillshadeSource() {
+        if (!this.map.getSource(HILLSHADE_SOURCE_ID)) {
+            this.map.addSource(HILLSHADE_SOURCE_ID, { ...TERRAIN_SOURCE_SPEC });
+        }
+    }
+
+    _setTerrainIfNeeded() {
+        if (!this._isMapTerrainActive()) {
+            this.map.setTerrain({ source: TERRAIN_SOURCE_ID, exaggeration: TERRAIN_EXAGGERATION });
+        }
+        this._terrainEnabled = true;
+    }
+
+    _buildHillshadeLayerSpec() {
+        return {
+            id: 'hillshade',
+            type: 'hillshade',
+            source: HILLSHADE_SOURCE_ID,
+            paint: { ...HILLSHADE_PAINT }
+        };
+    }
+
+    _firstHillshadeInsertBeforeId() {
+        const layers = this.map.getStyle()?.layers || [];
+        for (const layer of layers) {
+            if (!layer.id.startsWith('basemap') && layer.id !== 'hillshade' && layer.id !== 'sky' && layer.id !== '3d-buildings') {
+                return layer.id;
+            }
+        }
+        if (this.map.getLayer('sky')) return 'sky';
+        if (this.map.getLayer('3d-buildings')) return '3d-buildings';
+        return undefined;
+    }
+
+    _syncHillshadeForBasemap(basemapKey = this.currentBasemap) {
+        const wantHillshade = this._3dEnabled && !isSatelliteBasemap(basemapKey);
+        if (!wantHillshade) {
+            if (this.map.getLayer('hillshade')) this.map.removeLayer('hillshade');
+            return;
+        }
+
+        this._ensureHillshadeSource();
+        const existing = this.map.getLayer('hillshade');
+        if (existing?.source === HILLSHADE_SOURCE_ID) return;
+        if (existing) this.map.removeLayer('hillshade');
+
+        const beforeId = this._firstHillshadeInsertBeforeId();
+        this.map.addLayer(this._buildHillshadeLayerSpec(), beforeId);
+    }
+
+    _ensureSkyLayer() {
+        if (this.map.getLayer('sky')) return;
+        this.map.addLayer({
+            id: 'sky',
+            type: 'sky',
+            paint: {
+                'sky-type': 'atmosphere',
+                'sky-atmosphere-sun': [0.0, 0.0],
+                'sky-atmosphere-sun-intensity': 15
+            }
+        });
     }
 
     /**
@@ -2983,74 +3091,11 @@ class MapManager {
         };
     }
 
-    /** Append hillshade, sky, and buildings to a style object (basemap switch carry-over). */
-    _append3DStyleLayers(style, basemapKey = this.currentBasemap) {
-        if (!isSatelliteBasemap(basemapKey)) {
-            style.layers.push({
-                id: 'hillshade',
-                type: 'hillshade',
-                source: 'terrain-source',
-                paint: {
-                    'hillshade-illumination-direction': 315,
-                    'hillshade-exaggeration': 0.8,
-                    'hillshade-shadow-color': '#473B24',
-                    'hillshade-highlight-color': '#FFFFFF',
-                    'hillshade-accent-color': '#6e6e6e'
-                }
-            });
-        }
-        style.layers.push({
-            id: 'sky',
-            type: 'sky',
-            paint: {
-                'sky-type': 'atmosphere',
-                'sky-atmosphere-sun': [0.0, 0.0],
-                'sky-atmosphere-sun-intensity': 15
-            }
-        });
-        style.layers.push(this._build3DBuildingsLayerSpec());
-    }
-
     _apply3D() {
-        if (!this.map.getSource('terrain-source')) {
-            this.map.addSource('terrain-source', { ...TERRAIN_SOURCE_SPEC });
-        }
-        this.map.setTerrain({ source: 'terrain-source', exaggeration: TERRAIN_EXAGGERATION });
-        this._terrainEnabled = true;
-
-        // Only add hillshade on non-satellite basemaps
-        if (!isSatelliteBasemap(this.currentBasemap) && !this.map.getLayer('hillshade')) {
-            // Find the first non-basemap layer to insert hillshade above basemap but below data
-            const layers = this.map.getStyle().layers;
-            let beforeId;
-            for (const l of layers) {
-                if (!l.id.startsWith('basemap') && l.id !== 'hillshade' && l.id !== 'sky' && l.id !== '3d-buildings') {
-                    beforeId = l.id;
-                    break;
-                }
-            }
-            this.map.addLayer({
-                id: 'hillshade',
-                type: 'hillshade',
-                source: 'terrain-source',
-                paint: {
-                    'hillshade-illumination-direction': 315,
-                    'hillshade-exaggeration': 0.8,
-                    'hillshade-shadow-color': '#473B24',
-                    'hillshade-highlight-color': '#FFFFFF',
-                    'hillshade-accent-color': '#6e6e6e'
-                }
-            }, beforeId);
-        } else if (isSatelliteBasemap(this.currentBasemap) && this.map.getLayer('hillshade')) {
-            this.map.removeLayer('hillshade');
-        }
-
-        if (!this.map.getLayer('sky')) {
-            this.map.addLayer({
-                id: 'sky', type: 'sky',
-                paint: { 'sky-type': 'atmosphere', 'sky-atmosphere-sun': [0.0, 0.0], 'sky-atmosphere-sun-intensity': 15 }
-            });
-        }
+        this._ensureTerrainSource();
+        this._setTerrainIfNeeded();
+        this._syncHillshadeForBasemap(this.currentBasemap);
+        this._ensureSkyLayer();
         this._addBuildingsLayer();
     }
 
