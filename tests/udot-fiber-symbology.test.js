@@ -103,15 +103,21 @@ describe('UDOT Fiber symbology', () => {
         expect(services.every((s) => s.style?.mode === 'smart')).toBe(true);
     });
 
-    it('caps building icons and holds size at neighborhood zoom', () => {
-        expect(udotFiberIconSizeFromEsriWidth(156, 'building')).toBeCloseTo(18 / 156);
-        expect(udotFiberIconSizeFromEsriWidth(20, 'building')).toBeCloseTo(18 / 20);
+    it('scales cabinet and building icons with zoom', () => {
+        expect(udotFiberIconSizeFromEsriWidth(156, 'building')).toBeCloseTo(44 / 156);
+        expect(udotFiberIconSizeFromEsriWidth(20, 'cabinets')).toBeCloseTo(28 / 20);
         const held = buildUdotFiberZoomSize(2, 'fiber');
         expect(held[0]).toBe('interpolate');
         expect(held).toContain(UDOT_FIBER_NEIGHBORHOOD_ZOOM);
         const icon = buildUdotFiberIconSizeExpression('building');
         expect(JSON.stringify(icon)).toContain('_udotEsriWidth');
-        expect(icon).toContain(UDOT_FIBER_NEIGHBORHOOD_ZOOM);
+        expect(icon[0]).toBe('interpolate');
+        expect(icon).toContain(14);
+        expect(icon).toContain(22);
+        expect(JSON.stringify(icon)).toContain('104');
+        const cabinetIcon = buildUdotFiberIconSizeExpression('cabinets');
+        expect(cabinetIcon).toContain(22);
+        expect(JSON.stringify(cabinetIcon)).toContain('68');
         const boxIcon = buildUdotFiberIconSizeExpression('boxes');
         expect(boxIcon[0]).toBe('interpolate');
         expect(boxIcon).toContain(14);
@@ -288,7 +294,7 @@ describe('UDOT Fiber symbology', () => {
         ], null);
         expect(out[0].properties._udotGlyph).toMatch(/^udot-glyph-square-x-/);
         expect(out[0].properties._udotGlyph).not.toMatch(/^arcgis-pms-/);
-        expect(out[0].properties._udotEsriWidth).toBe(24);
+        expect(out[0].properties._udotEsriWidth).toBe(68);
         const box = decorateUdotFiberPointFeatures('boxes', [
             { type: 'Feature', properties: { DT_RSCENCLOSURE_NAME: 'Exist Type I PC-R1' } }
         ], null);
@@ -350,6 +356,10 @@ describe('UDOT Fiber symbology', () => {
         expect(glyph.layout['icon-rotation-alignment']).toBe('map');
         expect(glyph.layout['icon-rotate']).toEqual(['to-number', ['coalesce', ['get', 'Rotation'], 0]]);
         expect(circle.paint['circle-pitch-alignment']).toBe('viewport');
+        const hit = specs.find((spec) => spec.id.endsWith('-hit'));
+        expect(hit?.type).toBe('circle');
+        expect(hit.paint['circle-opacity']).toBe(0);
+        expect(hit.paint['circle-radius'][0]).toBe('interpolate');
         expect(specs.some((spec) => spec.id.endsWith('-casing'))).toBe(false);
     });
 

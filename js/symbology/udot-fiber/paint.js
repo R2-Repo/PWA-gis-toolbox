@@ -12,6 +12,7 @@ import { resolveEsriLineDasharray } from '../../arcgis/picture-markers.js';
 import { preloadUdotFiberGlyphs } from './glyphs.js';
 import {
     buildUdotFiberCircleRadiusExpression,
+    buildUdotFiberHitRadiusExpression,
     buildUdotFiberIconSizeExpression,
     buildUdotFiberLineWidthExpression
 } from './zoom-scale.js';
@@ -347,6 +348,22 @@ export function buildUdotFiberLayerSpecs({
                 'icon-pitch-alignment': 'viewport',
                 'icon-rotation-alignment': 'map',
                 'icon-rotate': buildUdotFiberIconRotateExpression()
+            }
+        });
+        specs.push({
+            id: `svc-lyr-${datasetId}-hit`,
+            type: 'circle',
+            source: sourceId,
+            ...zoomOpt,
+            filter: combineUdotFiberMapLibreFilter(
+                ['match', ['geometry-type'], ['Point', 'MultiPoint'], true, false],
+                fiberKey
+            ),
+            paint: {
+                'circle-radius': buildUdotFiberHitRadiusExpression(fiberKey),
+                'circle-color': '#000000',
+                'circle-opacity': 0,
+                'circle-stroke-width': 0
             }
         });
     }

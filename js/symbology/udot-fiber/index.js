@@ -66,8 +66,16 @@ export {
     buildUdotFiberZoomSize,
     buildUdotFiberIconSizeExpression,
     buildUdotFiberLineWidthExpression,
-    buildUdotFiberCircleRadiusExpression
+    buildUdotFiberCircleRadiusExpression,
+    buildUdotFiberHitRadiusExpression
 } from './zoom-scale.js';
+export {
+    UDOT_FIBER_DRAW_ORDER,
+    udotFiberDrawRank,
+    udotFiberKeyFromUrl,
+    groupUdotFiberMapLayerIds,
+    orderUdotFiberLayers
+} from './draw-order.js';
 export {
     UDOT_BOXES_EXCLUDE_FIELD,
     UDOT_BOXES_EXCLUDE_VALUES,
