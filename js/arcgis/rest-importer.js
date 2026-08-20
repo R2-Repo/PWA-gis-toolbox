@@ -23,7 +23,7 @@ import {
 } from '../workspace/workspace-store.js';
 import { createSpatialChunkWriter } from '../workspace/spatial-chunk-writer.js';
 import { applyArcgisScaleRangeToLayer } from '../map/scale-range.js';
-import { styleFromArcgisMetadata } from './drawing-info.js';
+import { requiredStyleFieldsFromDrawingInfo, styleFromArcgisMetadata } from './drawing-info.js';
 
 /** Maximum features to download without explicit user override. */
 export const ARCGIS_MAX_FEATURES = 250_000;
@@ -77,14 +77,21 @@ export function schemaFromArcgisMetadata(metadata, selectedFields = null) {
 /**
  * Append ESRI features to workspace in spatially bucketed chunks.
  */
-export async function appendArcgisFeaturesToWorkspace(layerId, esriFeatures, convertGeometry, startIndex, selectedFields = null) {
+export async function appendArcgisFeaturesToWorkspace(
+    layerId,
+    esriFeatures,
+    convertGeometry,
+    startIndex,
+    selectedFields = null,
+    displayFields = null
+) {
     if (!esriFeatures?.length) return 0;
 
     const writer = createSpatialChunkWriter({
         chunkSize: WORKSPACE_CHUNK_SIZE,
         initialIndex: startIndex,
         onFlush: async (batch, index) => {
-            await appendWorkspaceBatch(layerId, batch, index, selectedFields);
+            await appendWorkspaceBatch(layerId, batch, index, selectedFields, { displayFields });
         }
     });
 
@@ -237,8 +244,13 @@ export class ArcGISRestImporter {
             returnGeometry = true,
             spatialFilter = null,
             allowLargeDownload = false,
-            selectedFields = null
+            selectedFields = null,
+            displayFields = null
         } = queryOptions;
+
+        const mapDisplayFields = displayFields?.length
+            ? displayFields
+            : requiredStyleFieldsFromDrawingInfo(this.metadata.drawingInfo);
 
         const url = this.metadata.url;
         const maxRec = this.metadata.maxRecordCount || 1000;
@@ -356,7 +368,8 @@ export class ArcGISRestImporter {
                         features,
                         convertGeom,
                         featureOffset,
-                        selectedFields
+                        selectedFields,
+                        mapDisplayFields
                     );
                     featureOffset += added;
                 } else {
@@ -408,7 +421,11 @@ export class ArcGISRestImporter {
                         { ...datasetShell.schema, featureCount: featureOffset },
                         selectedFields
                     ),
-                    source: { ...datasetShell.source, importSelectedFields: selectedFields || undefined },
+                    source: {
+                        ...datasetShell.source,
+                        importSelectedFields: selectedFields || undefined,
+                        mapDisplayFields: mapDisplayFields.length ? mapDisplayFields : undefined
+                    },
                     _viewportCache: true
                 };
                 return attachArcgisImportStyle(workspaceResult, this.metadata);
@@ -423,7 +440,12 @@ export class ArcGISRestImporter {
                 const dataset = createSpatialDataset(
                     this.metadata.name,
                     fc,
-                    { format: 'arcgis-rest', url, features: geojsonFeatures.length }
+                    {
+                        format: 'arcgis-rest',
+                        url,
+                        features: geojsonFeatures.length,
+                        mapDisplayFields: mapDisplayFields.length ? mapDisplayFields : undefined
+                    }
                 );
                 return attachArcgisImportStyle(dataset, this.metadata);
             } else {

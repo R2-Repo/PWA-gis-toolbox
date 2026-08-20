@@ -5,7 +5,9 @@ import {
     geometryKindFromArcgis,
     parseArcgisLabelField,
     styleFromDrawingInfo,
-    styleFromArcgisMetadata
+    styleFromArcgisMetadata,
+    requiredStyleFieldsFromDrawingInfo,
+    mergeArcgisStyleFields
 } from '../js/arcgis/drawing-info.js';
 import { compilePaint, resolveFeatureStyle } from '../js/map/style-engine.js';
 import { suggestStyleChannel } from '../js/map/style-panel-helpers.js';
@@ -168,6 +170,18 @@ describe('ArcGIS drawingInfo → layer style', () => {
     it('returns null when drawingInfo is missing', () => {
         expect(styleFromDrawingInfo(null)).toBeNull();
         expect(styleFromArcgisMetadata({})).toBeNull();
+    });
+
+    it('lists renderer and label fields for workspace map display', () => {
+        expect(requiredStyleFieldsFromDrawingInfo({
+            renderer: UDOT_ROUTES_RENDERER,
+            labelingInfo: [{ labelExpression: '[ROUTE_ID]' }]
+        })).toEqual(['CARTO_CODE', 'ROUTE_ID']);
+        expect(mergeArcgisStyleFields(['OBJECTID'], {
+            renderer: UDOT_ROUTES_RENDERER,
+            labelingInfo: [{ labelExpression: '[ROUTE_ID]' }]
+        }, ['OBJECTID', 'CARTO_CODE', 'ROUTE_ID'])).toEqual(['OBJECTID', 'CARTO_CODE', 'ROUTE_ID']);
+        expect(mergeArcgisStyleFields(null, { renderer: UDOT_ROUTES_RENDERER })).toBeNull();
     });
 });
 

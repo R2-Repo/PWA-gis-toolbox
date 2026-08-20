@@ -106,7 +106,7 @@ Do not put widget logic inline in `js/tools/tool-handlers.js`. Copy the closest 
 | `css/` | Stylesheets |
 | `pipelines/` | Saved workflow pipeline JSON |
 | `public/` | Static assets |
-| `docs/` | Development guide, widget playbook, authoring checklist, **sheet cutting geometry** (`SHEET_CUTTING.md`), **UGRC API** (`UGRC.md`), **large-file import** (`IMPORT_LARGE_FILES.md`) |
+| `docs/` | Development guide, widget playbook, authoring checklist, **sheet cutting** (`SHEET_CUTTING.md`), **UGRC** (`UGRC.md`), **large-file import** (`IMPORT_LARGE_FILES.md`), **ArcGIS REST styling** (`ARCGIS_REST_STYLING.md`) |
 | `js/ugrc/` | UGRC API client (reverse route/milepost, key resolve) |
 | `.cursor/skills/` | Agent skills: `fix-pwa` |
 | `.cursor/commands/` | Slash commands: `/fix-pwa`, `/widget-scaffold` |

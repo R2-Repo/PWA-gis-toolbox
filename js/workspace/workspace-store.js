@@ -247,9 +247,10 @@ export async function updateWorkspaceLayerMeta(layerId, patch) {
  * @param {import('geojson').Feature[]} features
  * @param {number} startIndex
  * @param {string[]|null} [selectedFields]
- * @param {{ allowCreateLayer?: boolean }} [options]
+ * @param {{ allowCreateLayer?: boolean, displayFields?: string[]|null }} [options]
  *   allowCreateLayer — restore/import only. Normal import must not recreate a
  *   layer that was deleted during cancel/rollback.
+ *   displayFields — style/label fields copied onto map/tile features.
  */
 export async function appendWorkspaceBatch(
     layerId,
@@ -260,6 +261,7 @@ export async function appendWorkspaceBatch(
 ) {
     if (!features?.length) return null;
     const allowCreateLayer = options.allowCreateLayer === true;
+    const displayFields = options.displayFields || null;
 
     const idb = await openDB();
     const idx = await _getSpatialIndex();
@@ -292,7 +294,8 @@ export async function appendWorkspaceBatch(
                 lgid,
                 layerId,
                 featureIndex: globalIndex,
-                properties: f.properties || {}
+                properties: f.properties || {},
+                displayFields
             })
         };
     });

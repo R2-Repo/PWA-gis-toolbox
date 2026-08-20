@@ -2,6 +2,8 @@
 
 Shared ArcGIS/Bentley style pack for the [UDOT Fiber Network MapServer](https://central.udot.utah.gov/server/rest/services/Fiber/UDOT_Fiber_Network/MapServer).
 
+How a REST layer URL is styled from published `drawingInfo` (including Custom URL import): [`docs/ARCGIS_REST_STYLING.md`](ARCGIS_REST_STYLING.md).
+
 ## Adding layers (PWA)
 
 Import → Live Layers → **UDOT Fiber Network** (vector viewport query). Features are session / viewport only in the browser.

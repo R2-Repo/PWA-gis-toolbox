@@ -50,22 +50,37 @@ export function isInternalFeatureProp(key) {
 }
 
 /**
- * Stamp display identity props used by map/tiles (does not copy user attrs).
+ * Stamp display identity props used by map/tiles.
+ * Copies only `displayFields` (style/label) plus a name hint — not all attrs.
  * @param {object} params
  * @param {string} params.lgid
  * @param {string} params.layerId
  * @param {number} params.featureIndex
- * @param {object} [params.properties] source properties (for name only)
+ * @param {object} [params.properties]
+ * @param {string[]|null|undefined} [params.displayFields]
  */
-export function buildDisplayIdentityProps({ lgid, layerId, featureIndex, properties = {} }) {
+export function buildDisplayIdentityProps({
+    lgid,
+    layerId,
+    featureIndex,
+    properties = {},
+    displayFields = null
+}) {
     const fid = `${layerId}:f:${featureIndex}`;
-    return {
+    const out = {
         _featureIndex: featureIndex,
         _datasetId: layerId,
         _featureId: fid,
         [LGID_PROP]: lgid,
         name: properties?.name ?? properties?.Name ?? null
     };
+    if (!displayFields?.length) return out;
+    for (const field of displayFields) {
+        if (!field || isInternalFeatureProp(field)) continue;
+        if (!Object.prototype.hasOwnProperty.call(properties, field)) continue;
+        out[field] = properties[field];
+    }
+    return out;
 }
 
 export default {

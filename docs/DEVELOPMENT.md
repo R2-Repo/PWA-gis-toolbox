@@ -115,12 +115,14 @@ Platform contracts live in `js/platform/web/`. Widget controllers receive `ctx.p
 - “fix/update PWA” → `/fix-pwa`
 - after widget Build Plan → `/widget-scaffold`
 
-## Planned features
+## Reference documents
 
 | Document | Description |
 |----------|-------------|
-| [`docs/LIVE_MAP_FEATURE_PLAN.md`](LIVE_MAP_FEATURE_PLAN.md) | App URL config, live/service layers, Live Map widget (Import entry). |
+| [`docs/ARCGIS_REST_STYLING.md`](ARCGIS_REST_STYLING.md) | Style a public ArcGIS REST layer URL from its published `drawingInfo`. |
+| [`docs/UDOT_FIBER_SYMBOLOGY.md`](UDOT_FIBER_SYMBOLOGY.md) | UDOT Fiber Bentley / glyph style pack. |
 | [`docs/LIVE_MAP_PRESETS.md`](LIVE_MAP_PRESETS.md) | Catalog authoring for Import → Live Layers. |
+| [`docs/LIVE_MAP_FEATURE_PLAN.md`](LIVE_MAP_FEATURE_PLAN.md) | App URL config, live/service layers, Live Map widget (Import entry). |
 
 ## Optional: Cursor User Rules note
 

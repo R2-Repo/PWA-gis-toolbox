@@ -48,10 +48,11 @@ export async function convertSpatialDatasetToWorkspace(dataset) {
 
         const selectedFields = dataset.source?.importSelectedFields || null;
         const filter = shouldFilterFields(selectedFields) ? selectedFields : null;
+        const displayFields = dataset.source?.mapDisplayFields || null;
         const writer = createSpatialChunkWriter({
             chunkSize: WORKSPACE_CHUNK_SIZE,
             onFlush: async (batch, startIndex) => {
-                await appendWorkspaceBatch(layerId, batch, startIndex, filter);
+                await appendWorkspaceBatch(layerId, batch, startIndex, filter, { displayFields });
             }
         });
         for (const feature of features) {

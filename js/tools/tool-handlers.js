@@ -68,11 +68,14 @@ import { applyTemplate } from '../dataprep/template-builder.js';
 import { saveSnapshot, undo as undoHistory, redo as redoHistory, getHistoryState } from '../dataprep/transform-history.js';
 import { photoMapper } from '../photo/photo-mapper.js';
 import { arcgisImporter, ARCGIS_MAX_FEATURES, arcgisNeedsLargeDownloadConfirm } from '../arcgis/rest-importer.js';
+import { mergeArcgisStyleFields, requiredStyleFieldsFromDrawingInfo } from '../arcgis/drawing-info.js';
 import { arcgisOutFieldsParam } from '../import/import-field-filter.js';
 import {
     markDatasetForUdotFiberStyle,
-    mergeUdotFiberStyleFields
+    mergeUdotFiberStyleFields,
+    requiredStyleFieldsForUdotFiberLayer
 } from '../symbology/udot-fiber/resolve-style.js';
+import { matchUdotFiberLayerUrl } from '../symbology/udot-fiber/constants.js';
 import ARCGIS_ENDPOINTS from '../arcgis/endpoints.js';
 import { checkAGOLCompatibility, applyAGOLFixes } from '../agol/compatibility.js';
 import * as gisTools from './gis-tools.js';
@@ -4723,7 +4726,8 @@ export async function openArcGISImporter() {
                                     outFields: '*',
                                     where: '1=1',
                                     returnGeometry: true,
-                                    useWorkspace: arcgisShouldUseWorkspace(meta.totalCount, { spatialFilter })
+                                    useWorkspace: arcgisShouldUseWorkspace(meta.totalCount, { spatialFilter }),
+                                    displayFields: requiredStyleFieldsFromDrawingInfo(meta.drawingInfo)
                                 };
                                 if (spatialFilter) queryOpts.spatialFilter = spatialFilter;
 
@@ -4731,6 +4735,7 @@ export async function openArcGISImporter() {
                                     const allSelected = picked.length >= allFieldNames.length
                                         && allFieldNames.every((n) => picked.includes(n));
                                     let selected = allSelected ? null : picked;
+                                    selected = mergeArcgisStyleFields(selected, meta.drawingInfo, allFieldNames);
                                     if (applyUdotFiberStyle) {
                                         selected = mergeUdotFiberStyleFields(selected, url, allFieldNames);
                                     }
@@ -4738,6 +4743,15 @@ export async function openArcGISImporter() {
                                     queryOpts.outFields = selected
                                         ? arcgisOutFieldsParam(selected, meta.objectIdField)
                                         : '*';
+                                    const extra = applyUdotFiberStyle
+                                        ? requiredStyleFieldsForUdotFiberLayer(matchUdotFiberLayerUrl(url)?.key)
+                                        : [];
+                                    const display = [
+                                        ...requiredStyleFieldsFromDrawingInfo(meta.drawingInfo),
+                                        ...extra
+                                    ].filter((name, i, arr) => name && arr.indexOf(name) === i)
+                                        .filter((name) => !allFieldNames.length || allFieldNames.includes(name));
+                                    queryOpts.displayFields = display.length ? display : null;
                                 };
 
                                 const runDownload = async (progressUi = null) => {

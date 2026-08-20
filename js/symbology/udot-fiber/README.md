@@ -2,6 +2,8 @@
 
 Shared style pack for the [UDOT Fiber Network MapServer](https://central.udot.utah.gov/server/rest/services/Fiber/UDOT_Fiber_Network/MapServer).
 
+REST `drawingInfo` → Smart style (any public layer, Custom URL): [`docs/ARCGIS_REST_STYLING.md`](../../../docs/ARCGIS_REST_STYLING.md).
+
 ## Regenerate data files
 
 ```bash

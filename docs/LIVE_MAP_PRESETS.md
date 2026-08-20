@@ -58,6 +58,8 @@ Composite cards create an expandable **layer group** in the left panel (same fol
 
 Assign a `style` object using the same schema as the main style engine (`mode: 'smart'` with visual variables, or simple flat style). Reuse presets from [`js/live-layers/live-layer-styles.js`](../js/live-layers/live-layer-styles.js) or define new exported constants there.
 
+Ad-hoc styling from a pasted layer URL (no catalog entry) is **Import → ArcGIS REST → Custom URL**, which reads the service `drawingInfo`. See [`docs/ARCGIS_REST_STYLING.md`](ARCGIS_REST_STYLING.md).
+
 Paint is compiled in [`js/live-layers/live-layer-engine.js`](../js/live-layers/live-layer-engine.js) via `resolveServiceLayerStyle()` → `compilePaint()`.
 
 Styles are **developer-authored in the catalog** (not the layer style panel).

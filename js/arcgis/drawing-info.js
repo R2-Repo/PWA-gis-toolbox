@@ -495,6 +495,47 @@ export function styleFromArcgisMetadata(metadata, options = {}) {
     });
 }
 
+/**
+ * Unique-value / class-break / label fields the published renderer needs
+ * on map features (workspace tiles otherwise keep identity props only).
+ * @param {object|null|undefined} drawingInfo
+ * @returns {string[]}
+ */
+export function requiredStyleFieldsFromDrawingInfo(drawingInfo) {
+    const fields = [];
+    const renderer = drawingInfo?.renderer;
+    if (renderer) {
+        for (const key of ['field1', 'field2', 'field3', 'field']) {
+            const value = renderer[key];
+            if (value && value !== '*') fields.push(String(value));
+        }
+    }
+    const entries = drawingInfo?.labelingInfo;
+    const entry = Array.isArray(entries)
+        ? entries.find((e) => e && (e.labelExpression || e.labelExpressionInfo))
+        : null;
+    const labelField = parseArcgisLabelField(entry);
+    if (labelField) fields.push(labelField);
+    return [...new Set(fields)];
+}
+
+/**
+ * Keep renderer/label fields in an ArcGIS field pick so Smart style can match.
+ * @param {string[]|null|undefined} selectedFields
+ * @param {object|null|undefined} drawingInfo
+ * @param {string[]} [availableFieldNames]
+ * @returns {string[]|null|undefined}
+ */
+export function mergeArcgisStyleFields(selectedFields, drawingInfo, availableFieldNames) {
+    if (!selectedFields) return selectedFields;
+    const extra = requiredStyleFieldsFromDrawingInfo(drawingInfo)
+        .filter((name) => !availableFieldNames?.length || availableFieldNames.includes(name));
+    if (!extra.length) return selectedFields;
+    const set = new Set(selectedFields);
+    for (const name of extra) set.add(name);
+    return [...set];
+}
+
 export default {
     MAX_UNIQUE_CLASSES,
     geometryKindFromArcgis,
@@ -502,5 +543,7 @@ export default {
     esriSymbolToFlat,
     parseArcgisLabelField,
     styleFromDrawingInfo,
-    styleFromArcgisMetadata
+    styleFromArcgisMetadata,
+    requiredStyleFieldsFromDrawingInfo,
+    mergeArcgisStyleFields
 };

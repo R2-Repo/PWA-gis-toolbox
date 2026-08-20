@@ -46,6 +46,25 @@ describe('feature-identity', () => {
         expect(isInternalFeatureProp('_featureIndex')).toBe(true);
         expect(isInternalFeatureProp('owner')).toBe(false);
     });
+
+    it('copies style display fields onto map props', () => {
+        const props = buildDisplayIdentityProps({
+            lgid: 'abc',
+            layerId: 'layer1',
+            featureIndex: 7,
+            properties: {
+                FIBER_SYMBOLS: '48',
+                Fiber_Label: 'UDOT 048 SMF',
+                JOB_NAME: 'keep-off-tiles',
+                _secret: 'no'
+            },
+            displayFields: ['FIBER_SYMBOLS', 'Fiber_Label', '_secret']
+        });
+        expect(props.FIBER_SYMBOLS).toBe('48');
+        expect(props.Fiber_Label).toBe('UDOT 048 SMF');
+        expect(props.JOB_NAME).toBeUndefined();
+        expect(props._secret).toBeUndefined();
+    });
 });
 
 describe('cold-attributes', () => {
