@@ -9,7 +9,7 @@ import {
     UDOT_SPLICES_STYLE,
     UDOT_BUILDING_STYLE
 } from '../symbology/udot-fiber/styles.js';
-import { layerUrl, UDOT_FIBER_CATALOG_ID } from '../symbology/udot-fiber/constants.js';
+import { layerUrl, UDOT_FIBER_CATALOG_ID, UDOT_FIBER_MIN_ZOOM } from '../symbology/udot-fiber/constants.js';
 import {
     FIREWATCH_CATALOG_ID,
     FIREWATCH_KIND,
@@ -73,16 +73,19 @@ export const LIVE_LAYERS = [
         ]
     },
     {
-        // Temporarily hidden from Import → Live Layers until fiber map is ready to publish.
-        // Set hidden: false (or remove) to re-enable in the UI. Catalog/tests still resolve by id.
         id: UDOT_FIBER_CATALOG_ID,
         name: 'UDOT Fiber Network',
-        description: 'UDOT Fiber Network MapServer with ArcGIS/Bentley style pack (vector query).',
-        icon: '🧵',
+        description: 'Cabinets, splices, boxes, fiber, conduit, and buildings. Hidden until neighborhood zoom. Password required.',
+        icon: '/icons/udot-fiber-network.png',
         category: 'Utilities',
         region: 'utah',
-        hidden: true,
-        refreshMs: 300000,
+        // SHA-256 of the shared passphrase — look of security only (hash is in the client).
+        access: {
+            kind: 'password',
+            hash: 'e74d3f8174265b01d207cdd015ace568d99a07d3ab1602b532df0381c97e66a3'
+        },
+        refreshMs: 0,
+        minZoom: UDOT_FIBER_MIN_ZOOM,
         opacity: 1,
         attribution: 'UDOT',
         subLayers: [

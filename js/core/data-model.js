@@ -102,6 +102,7 @@ export function isSpatialLayer(layer) {
  * @param {string} options.url
  * @param {string} options.kind
  * @param {number} [options.refreshMs]
+ * @param {number} [options.minZoom]
  * @param {number} [options.opacity]
  * @param {string} [options.attribution]
  * @param {string} [options.presetId]
@@ -112,6 +113,7 @@ export function createServiceLayer({
     url,
     kind,
     refreshMs = 300000,
+    minZoom = null,
     opacity = 1,
     attribution = '',
     presetId = null,
@@ -132,6 +134,7 @@ export function createServiceLayer({
             kind,
             url: String(url || '').trim().replace(/\/+$/, '').split('?')[0],
             refreshMs,
+            ...(Number.isFinite(Number(minZoom)) ? { minZoom: Number(minZoom) } : {}),
             opacity,
             attribution,
             ...(style ? { style } : {}),

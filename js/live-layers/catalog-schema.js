@@ -13,6 +13,7 @@ import { LIVE_LAYERS } from './catalog.js';
  * @property {string} [layers] - WMS LAYERS param
  * @property {Record<string, string>} [params]
  * @property {number} [refreshMs]
+ * @property {number} [minZoom]
  * @property {number} [opacity]
  * @property {string} [attribution]
  * @property {object} [style]
@@ -32,10 +33,12 @@ import { LIVE_LAYERS } from './catalog.js';
  * @property {string} [layers] - WMS LAYERS param
  * @property {Record<string, string>} [params]
  * @property {number} [refreshMs]
+ * @property {number} [minZoom]
  * @property {number} [opacity]
  * @property {string} [attribution]
  * @property {object} [style]
  * @property {boolean} [hidden] - omit from Import → Live Layers UI when true
+ * @property {{ kind: 'password', hash: string }} [access] - client-side unlock (not real security)
  * @property {LiveLayerServiceConfig[]} [subLayers] - composite catalog entries
  */
 
@@ -81,6 +84,7 @@ export function expandCatalogEntry(entry) {
             layers: sub.layers,
             params: sub.params,
             refreshMs: sub.refreshMs ?? entry.refreshMs,
+            minZoom: sub.minZoom ?? entry.minZoom,
             opacity: sub.opacity ?? entry.opacity,
             attribution: sub.attribution ?? entry.attribution,
             style: sub.style,
@@ -96,6 +100,7 @@ export function expandCatalogEntry(entry) {
         layers: entry.layers,
         params: entry.params,
         refreshMs: entry.refreshMs,
+        minZoom: entry.minZoom,
         opacity: entry.opacity,
         attribution: entry.attribution,
         style: entry.style
@@ -137,6 +142,14 @@ export function validateCatalog() {
             }
             subLayerIds.add(service.id);
         }
+
+        if (layer.access) {
+            if (layer.access.kind !== 'password') {
+                errors.push(`Live layer ${layer.id} has unknown access.kind`);
+            } else if (!/^[a-f0-9]{64}$/i.test(String(layer.access.hash || ''))) {
+                errors.push(`Live layer ${layer.id} password access needs a SHA-256 hex hash`);
+            }
+        }
     }
     return errors;
 }
@@ -147,13 +160,14 @@ export function validateCatalog() {
 export function listCatalogLiveLayers() {
     return LIVE_LAYERS
         .filter((entry) => !entry.hidden)
-        .map(({ id, name, description, category, region, icon, subLayers }) => ({
+        .map(({ id, name, description, category, region, icon, subLayers, access }) => ({
             id,
             name,
             description,
             category,
             region,
             icon,
+            locked: access?.kind === 'password' && !!access.hash,
             subLayerCount: Array.isArray(subLayers) ? subLayers.length : 1
         }));
 }

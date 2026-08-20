@@ -1327,12 +1327,12 @@ function _openImportFlowModal(flowProps = {}) {
                 },
                 catalogLiveLayers: listCatalogLiveLayers(),
                 onAddCatalogLiveLayer: async (layerId) => {
-                    close();
                     try {
-                        await addCatalogLayerToMap(
+                        const added = await addCatalogLayerToMap(
                             { mapService, showToast, refreshUI },
                             layerId
                         );
+                        if (added) close();
                     } catch (error) {
                         showErrorToast(handleError(error, 'Import', 'Add live layer'));
                     }

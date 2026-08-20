@@ -3,7 +3,7 @@
  * Rules start sparse — grow by attribute as symbols are identified in the field.
  */
 
-/** @typedef {'circle'|'square-x'|'bowtie'|'dashed-box'|'diamond'} UdotGlyphKind */
+/** @typedef {'circle'|'ring'|'square-x'|'bowtie'|'dashed-box'|'diamond'|'vee-circle'} UdotGlyphKind */
 
 /**
  * @typedef {object} UdotGlyphRule
@@ -17,7 +17,6 @@
 /** Seed rules — extend as you map attributes → symbols. */
 /** @type {UdotGlyphRule[]} */
 export const UDOT_GLYPH_RULES = [
-    { layerKey: 'splices', field: 'MODEL_1', value: 'Telco Handoff', glyph: 'bowtie', color: '#ff0000' },
     { layerKey: 'boxes', field: 'DT_RSCENCLOSURE_NAME', value: 'Vault', glyph: 'dashed-box', color: '#ffffff' },
     { layerKey: 'building', field: 'MODEL', value: 'UEN Building', glyph: 'square-x', color: '#00ff00' },
     { layerKey: 'cabinets', field: 'MODEL', value: 'Cabinet', glyph: 'square-x', color: '#00ff00' }
@@ -29,6 +28,9 @@ export const UDOT_GLYPH_RULES = [
  * @returns {{ glyph: UdotGlyphKind, color: string|null }|null}
  */
 export function resolvePointGlyph(layerKey, props = {}) {
+    if (layerKey === 'splices') {
+        return { glyph: 'bowtie', color: '#ff0000' };
+    }
     for (const rule of UDOT_GLYPH_RULES) {
         if (rule.layerKey !== layerKey) continue;
         const raw = props[rule.field];
@@ -103,6 +105,25 @@ export function makeUdotGlyphSvg(glyph, stroke, fill, size = 18) {
         const pad = s * 0.15;
         return `<svg ${common}>
   <polygon points="${mid},${pad} ${s - pad},${mid} ${mid},${s - pad} ${pad},${mid}" fill="${fill}" fill-opacity="0.25" stroke="${stroke}" stroke-width="${sw}"/>
+</svg>`;
+    }
+
+    if (glyph === 'ring') {
+        return `<svg ${common}>
+  <circle cx="${s / 2}" cy="${s / 2}" r="${s * 0.36}" fill="none" stroke="${stroke}" stroke-width="${sw * 1.4}"/>
+</svg>`;
+    }
+
+    if (glyph === 'vee-circle') {
+        const cx = s / 2;
+        const r = s * 0.36;
+        const top = cx - r * 0.35;
+        const bot = cx + r * 0.4;
+        const left = cx - r * 0.42;
+        const right = cx + r * 0.42;
+        return `<svg ${common}>
+  <circle cx="${cx}" cy="${cx}" r="${r}" fill="none" stroke="${stroke}" stroke-width="${sw}"/>
+  <polyline points="${left},${top} ${cx},${bot} ${right},${top}" fill="none" stroke="${stroke}" stroke-width="${sw}"/>
 </svg>`;
     }
 

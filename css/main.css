@@ -1088,7 +1088,7 @@ html, body {
     margin-bottom: 4px;
 }
 input:not([type]), input[type="text"], input[type="number"], input[type="url"],
-input[type="search"], select, textarea {
+input[type="search"], input[type="password"], select, textarea {
     width: 100%;
     padding: 8px 12px;
     border: 1px solid var(--border);
@@ -5099,4 +5099,10 @@ textarea { resize: vertical; min-height: 60px; }
 .live-layer-catalog-picker .import-option-hint,
 .live-map-preset-picker .import-option-hint {
     text-align: left;
+}
+.live-layer-password-form {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-top: 4px;
 }

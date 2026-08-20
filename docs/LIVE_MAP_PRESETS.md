@@ -54,6 +54,21 @@ Edit [`js/live-layers/catalog.js`](../js/live-layers/catalog.js) and append to `
 
 Composite cards create an expandable **layer group** in the left panel (same folder UX as multi-file imports). Each sublayer is its own `type: 'service'` dataset with its own style and refresh.
 
+### Password gate (look of security)
+
+Optional. Clicking the card prompts for a password before layers are added. This is **not** real security — the hash ships in the client and the REST URLs stay public.
+
+```javascript
+access: {
+  kind: 'password',
+  hash: '<sha256-hex of the shared passphrase>'
+}
+```
+
+Success is remembered for the current browser tab (`sessionStorage`). Cancel leaves the catalog picker open.
+
+**UDOT Fiber Network** is a six-sublayer composite with this gate.
+
 ## Styling
 
 Assign a `style` object using the same schema as the main style engine (`mode: 'smart'` with visual variables, or simple flat style). Reuse presets from [`js/live-layers/live-layer-styles.js`](../js/live-layers/live-layer-styles.js) or define new exported constants there.
@@ -66,7 +81,7 @@ Styles are **developer-authored in the catalog** (not the layer style panel).
 
 ## Runtime behavior
 
-- Vector layers (`arcgis-featureserver`, `geojson-feed`, `wfs`) stream features for the **current map viewport** and refresh on pan/zoom (plus `refreshMs`).
+- Vector layers (`arcgis-featureserver`, `arcgis-mapserver-vector`, `geojson-feed`, `wfs`) query the **current map viewport**. A padded envelope is cached so zoom-in / small pans reuse data. `minZoom` hides the layer and skips the server. `refreshMs: 0` disables the idle timer.
 - Features are tagged with stable `_featureIndex` values (ArcGIS `OBJECTID` when available) so selection, popups, GIS tools, and widgets can use them like normal spatial layers.
 - Analysis, selection, and widget pickers are **viewport-scoped** — they operate on features currently loaded in view, not the full national feed.
 - Dense viewports may be capped by map render limits; zoom in if counts look truncated.

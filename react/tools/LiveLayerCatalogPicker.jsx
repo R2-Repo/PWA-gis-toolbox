@@ -8,7 +8,17 @@ const CATEGORY_ICONS = {
     Custom: '✏️'
 };
 
+function isIconPath(icon) {
+    return typeof icon === 'string' && (icon.startsWith('/') || /\.(png|svg|webp|jpe?g)$/i.test(icon));
+}
+
 function layerIcon(layer) {
+    if (isIconPath(layer.icon)) {
+        const src = layer.icon.startsWith('http')
+            ? layer.icon
+            : `${import.meta.env.BASE_URL}${String(layer.icon).replace(/^\//, '')}`;
+        return <img src={src} alt="" width={96} height={96} draggable={false} />;
+    }
     if (layer.icon) return layer.icon;
     if (layer.category && CATEGORY_ICONS[layer.category]) return CATEGORY_ICONS[layer.category];
     return '🛰️';
@@ -31,7 +41,7 @@ export function LiveLayerCatalogPicker({
                         icon={layerIcon(layer)}
                         title={layer.name}
                         description={layer.description || 'Curated live layer'}
-                        badge={layer.category || null}
+                        badge={layer.locked ? 'Locked' : (layer.category || null)}
                         onClick={() => onAddCatalogLiveLayer?.(layer.id)}
                     />
                 ))}

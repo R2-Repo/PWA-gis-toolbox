@@ -2,6 +2,7 @@ import { addLayer, getLayers, setActiveLayer } from '../core/state.js';
 import { createServiceLayer, isServiceLayer } from '../core/data-model.js';
 import { assignLayersToGroup, createLayerGroup } from '../core/layer-groups.js';
 import { expandCatalogEntry, resolveLiveLayer } from './catalog-schema.js';
+import { ensureCatalogAccess } from './catalog-access.js';
 import { FIREWATCH_CATALOG_ID } from './firewatch/constants.js';
 import {
     fitUtahEnvelope,
@@ -22,6 +23,7 @@ function createServiceLayerFromConfig(serviceConfig, catalogId, sessionKey = nul
         kind: serviceConfig.kind,
         url: serviceConfig.url,
         refreshMs: serviceConfig.refreshMs,
+        minZoom: serviceConfig.minZoom,
         opacity: serviceConfig.opacity,
         attribution: serviceConfig.attribution,
         presetId: serviceConfig.id || catalogId,
@@ -42,6 +44,9 @@ export async function addCatalogLayerToMap(ctx, layerId, { fit = true } = {}) {
     if (!catalogEntry) {
         throw new Error(`Unknown live layer: ${layerId}`);
     }
+
+    const allowed = await ensureCatalogAccess(catalogEntry);
+    if (!allowed) return null;
 
     const serviceConfigs = expandCatalogEntry(catalogEntry);
     if (!serviceConfigs.length) {

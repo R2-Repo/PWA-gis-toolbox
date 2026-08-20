@@ -1,5 +1,11 @@
 import { ArcGISRestImporter, schemaFromArcgisMetadata } from '../arcgis/rest-importer.js';
 import { styleFromArcgisMetadata } from '../arcgis/drawing-info.js';
+import {
+    resolveEsriLineDasharray,
+    decorateFeaturesWithPictureMarkers,
+    pictureMarkersFromDrawingInfo,
+    registerPictureMarkers
+} from '../arcgis/picture-markers.js';
 import { analyzeSchema, createSpatialDataset } from '../core/data-model.js';
 import { getLayers } from '../core/state.js';
 import bus from '../core/event-bus.js';
@@ -19,6 +25,25 @@ import {
     resolvePointGlyph
 } from '../symbology/udot-fiber/glyphs.js';
 import { matchUdotFiberLayerUrl } from '../symbology/udot-fiber/constants.js';
+import { getDrawingLayer } from '../symbology/udot-fiber/resolve-style.js';
+import { applyUdotFiberDisplayOffsets } from '../symbology/udot-fiber/display-offsets.js';
+import {
+    buildUdotFiberExcludeWhere,
+    combineUdotFiberMapLibreFilter,
+    filterUdotFiberDisplayFeatures
+} from '../symbology/udot-fiber/display-filters.js';
+import {
+    buildUdotFiberCircleRadiusExpression,
+    buildUdotFiberIconSizeExpression,
+    buildUdotFiberLineWidthExpression
+} from '../symbology/udot-fiber/zoom-scale.js';
+import {
+    envelopeFromMapBounds,
+    isLiveLayerInRange,
+    padEnvelope,
+    resolveLiveRefreshMs,
+    resolveLiveViewportAction
+} from './live-layer-cache.js';
 import logger from '../core/logger.js';
 import {
     addFirewatchPart,
@@ -48,6 +73,9 @@ const DEFAULT_REFRESH_MS = 300000;
  * @property {import('./catalog-schema.js').ServiceKind} kind
  * @property {string} url
  * @property {number} refreshMs
+ * @property {number|null} [minZoom]
+ * @property {import('./live-layer-cache.js').LngLatEnvelope|null} [lastEnvelope]
+ * @property {number} [fetchGen]
  * @property {number} [refreshTimer]
  * @property {import('geojson').FeatureCollection} [viewportCache]
  * @property {string} [lastError]
@@ -93,7 +121,7 @@ export function createServiceLayerFromUrl(name, url, kind = inferServiceKind(url
         service: {
             kind: resolvedKind,
             url: normalizeServiceUrl(url),
-            refreshMs: DEFAULT_REFRESH_MS,
+            refreshMs: resolveLiveRefreshMs(undefined, DEFAULT_REFRESH_MS),
             opacity: resolvedKind === 'arcgis-mapserver' || resolvedKind === 'wms' ? 0.85 : 1,
             attribution: '',
             ...(style ? { style } : {})
@@ -138,18 +166,18 @@ export async function addServiceLayer(mapManager, dataset, colorIndex = 0, optio
         mapLayerIds: [],
         kind,
         url: normalizeServiceUrl(service.url),
-        refreshMs: service.refreshMs || DEFAULT_REFRESH_MS,
+        refreshMs: resolveLiveRefreshMs(service.refreshMs, DEFAULT_REFRESH_MS),
+        minZoom: Number.isFinite(Number(service.minZoom)) ? Number(service.minZoom) : null,
         colorIndex,
         objectIdField: service.objectIdField || 'OBJECTID',
         truncated: false,
-        viewportCache: { type: 'FeatureCollection', features: [] }
+        viewportCache: { type: 'FeatureCollection', features: [] },
+        lastEnvelope: null,
+        fetchGen: 0,
+        metadataReady: false
     });
 
     const opacity = service.opacity ?? (kind === 'arcgis-mapserver' || kind === 'wms' ? 0.85 : 1);
-
-    if (kind === 'arcgis-featureserver' || kind === 'arcgis-mapserver-vector') {
-        await ensureFeatureServerMetadata(dataset, runtime);
-    }
 
     const layerStyle = resolveServiceLayerStyle(dataset.service || service, colorIndex);
 
@@ -181,8 +209,15 @@ export async function addServiceLayer(mapManager, dataset, colorIndex = 0, optio
                 data: { type: 'FeatureCollection', features: [] }
             });
             runtime.mapLayerIds = addVectorLayers(map, dataset.id, sourceId, layerStyle, opacity, {
-                serviceUrl: runtime.url
+                serviceUrl: runtime.url,
+                minZoom: runtime.minZoom
             });
+            if (runtime.minZoom != null) {
+                mapManager._applyZoomRangeToLayerIds?.(runtime.mapLayerIds, {
+                    minzoom: runtime.minZoom,
+                    maxzoom: 24
+                }, resolveLayerLabels(layerStyle, dataset));
+            }
 
             mapManager.dataLayers.set(dataset.id, {
                 sourceId,
@@ -224,11 +259,16 @@ export async function addServiceLayer(mapManager, dataset, colorIndex = 0, optio
  * @param {object} dataset
  * @param {ServiceRuntime} runtime
  */
-async function ensureFeatureServerMetadata(dataset, runtime) {
+async function ensureFeatureServerMetadata(dataset, runtime, map = null) {
     try {
         const importer = new ArcGISRestImporter();
         const metadata = await importer.fetchMetadata(runtime.url);
         runtime.objectIdField = metadata.objectIdField || 'OBJECTID';
+        runtime.drawingInfo = metadata.drawingInfo || null;
+        runtime.pictureMarkers = pictureMarkersFromDrawingInfo(metadata.drawingInfo);
+        if (map && runtime.pictureMarkers.markers.length) {
+            await registerPictureMarkers(map, runtime.pictureMarkers);
+        }
         if (dataset.service) {
             dataset.service.objectIdField = runtime.objectIdField;
             dataset.service.maxRecordCount = metadata.maxRecordCount || 1000;
@@ -268,7 +308,7 @@ function buildRasterTileUrl(runtime, service) {
  * @param {string} sourceId
  * @param {ReturnType<typeof resolveServiceLayerStyle>} layerStyle
  * @param {number} opacity
- * @param {{ serviceUrl?: string }} [opts]
+ * @param {{ serviceUrl?: string, minZoom?: number|null }} [opts]
  */
 function addVectorLayers(map, datasetId, sourceId, layerStyle, opacity, opts = {}) {
     const ids = [];
@@ -278,35 +318,67 @@ function addVectorLayers(map, datasetId, sourceId, layerStyle, opacity, opts = {
     const styPoly = compilePaint(layerStyle, 'polygon');
     const styLine = compilePaint(layerStyle, 'line');
     const styPoint = compilePaint(layerStyle, 'point');
+    const udotMatch = matchUdotFiberLayerUrl(opts.serviceUrl);
+    const fiberKey = udotMatch?.key;
+    const minzoom = Number.isFinite(Number(opts.minZoom)) ? Number(opts.minZoom) : undefined;
 
     map.addLayer({
         id: polygonId,
         type: 'fill',
         source: sourceId,
-        filter: ['match', ['geometry-type'], ['Polygon', 'MultiPolygon'], true, false],
+        ...(minzoom != null ? { minzoom } : {}),
+        filter: combineUdotFiberMapLibreFilter(
+            ['match', ['geometry-type'], ['Polygon', 'MultiPolygon'], true, false],
+            fiberKey
+        ),
         paint: {
             'fill-color': styPoly.fillColor,
             'fill-opacity': scalePaintOpacity(styPoly.fillOpacity, opacity * 0.35)
         }
     });
+    const linePaint = {
+        'line-color': styLine.strokeColor,
+        'line-width': fiberKey
+            ? buildUdotFiberLineWidthExpression(styLine.strokeWidth, fiberKey)
+            : styLine.strokeWidth,
+        'line-opacity': scalePaintOpacity(styLine.strokeOpacity, opacity)
+    };
+    if (udotMatch) {
+        const dash = layerStyle?._udotFiber?.lineDasharray
+            || resolveEsriLineDasharray(getDrawingLayer(udotMatch.key)?.classes);
+        if (Array.isArray(dash) && dash.length) linePaint['line-dasharray'] = dash;
+    }
+    const lineLayout = (Array.isArray(linePaint['line-dasharray']) && linePaint['line-dasharray'].length)
+        ? { 'line-cap': 'butt', 'line-join': 'round' }
+        : undefined;
     map.addLayer({
         id: lineId,
         type: 'line',
         source: sourceId,
-        filter: ['match', ['geometry-type'], ['LineString', 'MultiLineString', 'Polygon', 'MultiPolygon'], true, false],
-        paint: {
-            'line-color': styLine.strokeColor,
-            'line-width': styLine.strokeWidth,
-            'line-opacity': scalePaintOpacity(styLine.strokeOpacity, opacity)
-        }
+        ...(minzoom != null ? { minzoom } : {}),
+        filter: combineUdotFiberMapLibreFilter(
+            ['match', ['geometry-type'], ['LineString', 'MultiLineString', 'Polygon', 'MultiPolygon'], true, false],
+            fiberKey
+        ),
+        ...(lineLayout ? { layout: lineLayout } : {}),
+        paint: linePaint
     });
     map.addLayer({
         id: pointId,
         type: 'circle',
         source: sourceId,
-        filter: ['match', ['geometry-type'], ['Point', 'MultiPoint'], true, false],
+        ...(minzoom != null ? { minzoom } : {}),
+        filter: combineUdotFiberMapLibreFilter(
+            ['all',
+                ['match', ['geometry-type'], ['Point', 'MultiPoint'], true, false],
+                ['!', ['has', '_udotGlyph']]
+            ],
+            fiberKey
+        ),
         paint: {
-            'circle-radius': styPoint.circleRadius,
+            'circle-radius': fiberKey
+                ? buildUdotFiberCircleRadiusExpression(styPoint.circleRadius, fiberKey)
+                : styPoint.circleRadius,
             'circle-color': styPoint.fillColor,
             'circle-stroke-color': styPoint.strokeColor,
             'circle-stroke-width': styPoint.strokeWidth,
@@ -327,30 +399,51 @@ function addVectorLayers(map, datasetId, sourceId, layerStyle, opacity, opts = {
                     'text-color': layerStyle.labels.color
                 };
             }
+            if (fiberKey && labelSpec.layout?.['text-size'] != null) {
+                labelSpec.layout = {
+                    ...labelSpec.layout,
+                    'text-size': buildUdotFiberLineWidthExpression(labelSpec.layout['text-size'], fiberKey)
+                };
+            }
+            labelSpec.filter = combineUdotFiberMapLibreFilter(labelSpec.filter, fiberKey);
+            if (minzoom != null) {
+                labelSpec.minzoom = Math.max(Number(labelSpec.minzoom) || 0, minzoom);
+            }
             map.addLayer(labelSpec);
             ids.push(labelSpec.id);
         }
     }
 
-    const udotMatch = matchUdotFiberLayerUrl(opts.serviceUrl);
     if (udotMatch && layerStyle?._udotFiber?.geometry === 'point') {
         const glyphLayerId = `svc-lyr-${datasetId}-glyph`;
         ensureUdotGlyphImage(map, 'square-x', '#00ff00', 18);
         ensureUdotGlyphImage(map, 'bowtie', '#ff0000', 18);
+        ensureUdotGlyphImage(map, 'bowtie', '#8000a0', 18);
         ensureUdotGlyphImage(map, 'dashed-box', '#ffffff', 18);
         ensureUdotGlyphImage(map, 'diamond', '#ffff00', 18);
+        ensureUdotGlyphImage(map, 'diamond', '#94a3b8', 18);
+        ensureUdotGlyphImage(map, 'circle', '#00ff00', 16);
+        ensureUdotGlyphImage(map, 'circle', '#ff7f00', 16);
+        ensureUdotGlyphImage(map, 'ring', '#00ff00', 18);
+        ensureUdotGlyphImage(map, 'ring', '#ff7f00', 18);
+        ensureUdotGlyphImage(map, 'vee-circle', '#ffff00', 18);
+        ensureUdotGlyphImage(map, 'vee-circle', '#b2b2b2', 18);
         ensureUdotGlyphImage(map, 'circle', styPoint.fillColor || '#ffffff', 16);
         map.addLayer({
             id: glyphLayerId,
             type: 'symbol',
             source: sourceId,
-            filter: ['all',
-                ['match', ['geometry-type'], ['Point', 'MultiPoint'], true, false],
-                ['has', '_udotGlyph']
-            ],
+            ...(minzoom != null ? { minzoom } : {}),
+            filter: combineUdotFiberMapLibreFilter(
+                ['all',
+                    ['match', ['geometry-type'], ['Point', 'MultiPoint'], true, false],
+                    ['has', '_udotGlyph']
+                ],
+                fiberKey
+            ),
             layout: {
                 'icon-image': ['get', '_udotGlyph'],
-                'icon-size': 1,
+                'icon-size': buildUdotFiberIconSizeExpression(fiberKey),
                 'icon-allow-overlap': true,
                 'icon-ignore-placement': true
             }
@@ -367,9 +460,22 @@ function addVectorLayers(map, datasetId, sourceId, layerStyle, opacity, opts = {
  * @param {object[]} features
  * @param {import('maplibre-gl').Map} map
  */
-function decorateUdotFiberGlyphProps(serviceUrl, features, map) {
+function decorateUdotFiberGlyphProps(serviceUrl, features, map, pictureMarkers = null) {
     const match = matchUdotFiberLayerUrl(serviceUrl);
-    if (!match || !features?.length) return features;
+    if (!features?.length) return features;
+
+    if (match?.key !== 'splices' && pictureMarkers?.markers?.length) {
+        const stamped = decorateFeaturesWithPictureMarkers(features, pictureMarkers);
+        const ready = stamped.map((feature) => {
+            const imageId = feature.properties?._udotGlyph;
+            if (!imageId || map?.hasImage?.(imageId)) return feature;
+            const { _udotGlyph, ...properties } = feature.properties;
+            return { ...feature, properties };
+        });
+        if (ready.some((f) => f.properties?._udotGlyph)) return ready;
+    }
+
+    if (!match) return features;
     return features.map((feature) => {
         const hit = resolvePointGlyph(match.key, feature.properties || {});
         if (!hit) return feature;
@@ -378,7 +484,8 @@ function decorateUdotFiberGlyphProps(serviceUrl, features, map) {
             ...feature,
             properties: {
                 ...feature.properties,
-                _udotGlyph: imageId
+                _udotGlyph: imageId,
+                _udotEsriWidth: 18
             }
         };
     });
@@ -388,6 +495,18 @@ function decorateUdotFiberGlyphProps(serviceUrl, features, map) {
  * @param {object} mapManager
  * @param {string} layerId
  */
+/**
+ * @param {import('maplibre-gl').Map} map
+ * @param {ServiceRuntime} runtime
+ * @param {boolean} visible
+ */
+function applyLiveLayerVisibility(map, runtime, visible) {
+    const vis = visible ? 'visible' : 'none';
+    for (const id of runtime.mapLayerIds || []) {
+        if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', vis);
+    }
+}
+
 export async function refreshServiceLayer(mapManager, layerId) {
     const map = mapManager.map;
     const runtime = getRuntimeMap(mapManager).get(layerId);
@@ -404,18 +523,62 @@ export async function refreshServiceLayer(mapManager, layerId) {
         return;
     }
 
+    const dataset = getLayers().find((layer) => layer.id === layerId) || null;
+    if (dataset?.visible === false) {
+        applyLiveLayerVisibility(map, runtime, false);
+        return;
+    }
+
+    const view = envelopeFromMapBounds(map.getBounds());
+    const action = resolveLiveViewportAction({
+        zoom: map.getZoom(),
+        minZoom: runtime.minZoom,
+        view,
+        cached: runtime.lastEnvelope
+    });
+    if (action === 'hide') {
+        applyLiveLayerVisibility(map, runtime, false);
+        return;
+    }
+    applyLiveLayerVisibility(map, runtime, true);
+    if (action === 'reuse') return;
+
+    runtime.fetchGen = (runtime.fetchGen || 0) + 1;
+    const fetchGen = runtime.fetchGen;
+
     try {
+        if (
+            (runtime.kind === 'arcgis-featureserver' || runtime.kind === 'arcgis-mapserver-vector')
+            && !runtime.metadataReady
+        ) {
+            await ensureFeatureServerMetadata(dataset, runtime, map);
+            if (runtime.fetchGen !== fetchGen) return;
+            runtime.metadataReady = true;
+        }
         const raw = await fetchVectorData(map, runtime);
         const limited = applyRenderLimits(raw.features || []);
         let tagged = tagServiceFeatures(layerId, limited.features, runtime.objectIdField);
-        tagged = decorateUdotFiberGlyphProps(runtime.url, tagged, map);
+        const fiberHit = matchUdotFiberLayerUrl(runtime.url);
+        if (fiberHit) {
+            tagged = filterUdotFiberDisplayFeatures(fiberHit.key, tagged);
+        }
+        if (fiberHit && fiberHit.key === 'fiber') {
+            tagged = applyUdotFiberDisplayOffsets(tagged);
+        }
+        tagged = decorateUdotFiberGlyphProps(runtime.url, tagged, map, runtime.pictureMarkers);
         const geojson = { type: 'FeatureCollection', features: tagged };
+
+        if (runtime.fetchGen !== fetchGen) return;
 
         runtime.viewportCache = geojson;
         runtime.truncated = limited.truncated || !!raw.truncated;
         runtime.lastError = null;
+        runtime.lastEnvelope = runtime.truncated ? view : padEnvelope(view);
 
-        const dataset = getLayers().find((layer) => layer.id === layerId) || null;
+        if (!isLiveLayerInRange(map.getZoom(), runtime.minZoom) || dataset?.visible === false) {
+            applyLiveLayerVisibility(map, runtime, false);
+        }
+
         if (dataset) {
             dataset.geojson = geojson;
             if (!dataset.schema?.fields?.length) {
@@ -509,11 +672,12 @@ async function fetchArcgisFeatureServerViewport(map, runtime) {
     const bounds = map.getBounds();
     const importer = new ArcGISRestImporter();
     const cleanUrl = importer.normalizeUrl(runtime.url);
+    const padded = padEnvelope(envelopeFromMapBounds(bounds));
     const geometry = {
-        xmin: bounds.getWest(),
-        ymin: bounds.getSouth(),
-        xmax: bounds.getEast(),
-        ymax: bounds.getNorth(),
+        xmin: padded.west,
+        ymin: padded.south,
+        xmax: padded.east,
+        ymax: padded.north,
         spatialReference: { wkid: 4326 }
     };
 
@@ -526,7 +690,7 @@ async function fetchArcgisFeatureServerViewport(map, runtime) {
         const remaining = RENDER_LIMITS.maxFeaturesPerSource - features.length;
         const params = new URLSearchParams({
             f: 'geojson',
-            where: '1=1',
+            where: buildUdotFiberExcludeWhere(matchUdotFiberLayerUrl(runtime.url)?.key),
             geometry: JSON.stringify(geometry),
             geometryType: 'esriGeometryEnvelope',
             inSR: '4326',
@@ -687,9 +851,17 @@ export function toggleServiceLayer(mapManager, layerId, visible) {
         toggleFirewatchPart(mapManager, layerId, visible);
         return;
     }
-    const visibility = visible ? 'visible' : 'none';
-    for (const id of runtime.mapLayerIds) {
-        if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', visibility);
+    if (!visible) {
+        applyLiveLayerVisibility(map, runtime, false);
+        return;
+    }
+    if (!isLiveLayerInRange(map.getZoom(), runtime.minZoom)) {
+        applyLiveLayerVisibility(map, runtime, false);
+        return;
+    }
+    applyLiveLayerVisibility(map, runtime, true);
+    if (!runtime.lastEnvelope) {
+        void refreshServiceLayer(mapManager, layerId);
     }
 }
 

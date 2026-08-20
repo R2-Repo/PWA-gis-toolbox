@@ -6,9 +6,11 @@ How a REST layer URL is styled from published `drawingInfo` (including Custom UR
 
 ## Adding layers (PWA)
 
-Import → Live Layers → **UDOT Fiber Network** (vector viewport query). Features are session / viewport only in the browser.
+Import → Live Layers → **UDOT Fiber Network** (password-gated composite). Adds six viewport-query layers from the MapServer. Hidden below neighborhood zoom (14); no idle refresh. Features are session / viewport only.
 
-Styles live in `js/symbology/udot-fiber/`.
+Point layers use the published ArcGIS picture-marker PNGs (`drawingInfo` `imageData`). Line layers use unique-value colors, dash styles, along-line labels, and a light parallel offset.
+
+Styles live in `js/symbology/udot-fiber/`. Picture-marker load: [`js/arcgis/picture-markers.js`](../js/arcgis/picture-markers.js).
 
 ## Style sources
 

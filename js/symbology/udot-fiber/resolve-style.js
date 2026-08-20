@@ -5,8 +5,11 @@ import drawingInfo from './arcgis-drawing-info.json';
 import bentleySymbols from './bentley-symbols.json';
 import { scaleToZoom } from '../../map/scale-range.js';
 import { normalizeStyle } from '../../map/style-engine.js';
+import { resolveEsriLineDasharray } from '../../arcgis/picture-markers.js';
 import { UDOT_FIBER_LAYER_BY_KEY, matchUdotFiberLayerUrl } from './constants.js';
+import { isUdotFiberFeatureExcluded } from './display-filters.js';
 import { resolvePointGlyph } from './glyphs.js';
+import { UDOT_SPLICE_CLASS_FIELD, UDOT_SPLICE_ENCLOSURES } from './splice-enclosures.js';
 
 const UTAH_LAT = 40.2;
 const DEFAULT_LINE_COLOR = '#94a3b8';
@@ -78,7 +81,9 @@ function buildLabelColorExpression(layerMeta) {
     const classField = layerMeta.classField;
     const classes = layerMeta.classes || [];
 
-    if (labelField) {
+    // Fiber labels match Bentley CAD colors by text. Conduit (and others)
+    // use unique-value class colors — Bentley names do not apply.
+    if (labelField === 'Fiber_Label') {
         const pairs = [];
         const seen = new Set();
         for (const sym of bentleySymbols.symbols || []) {
@@ -111,28 +116,45 @@ export function buildUdotFiberLayerStyle(layerKey) {
     if (!layerMeta || !layerDef) return null;
 
     const isLine = layerDef.geometry === 'line';
-    const classField = layerMeta.classField && layerMeta.classField !== '*'
-        ? layerMeta.classField
-        : null;
-    const classes = (layerMeta.classes || [])
+    const isConduit = layerKey === 'conduit';
+    const isSplices = layerKey === 'splices';
+    const classField = isSplices
+        ? UDOT_SPLICE_CLASS_FIELD
+        : (layerMeta.classField && layerMeta.classField !== '*'
+            ? layerMeta.classField
+            : null);
+    const sourceClasses = isSplices
+        ? UDOT_SPLICE_ENCLOSURES.map((row) => ({
+            value: row.value,
+            label: row.label,
+            color: row.color,
+            width: 8
+        }))
+        : (layerMeta.classes || []);
+    const classes = sourceClasses
         .filter((c) => c.value && c.value !== '*')
+        .filter((c) => !isUdotFiberFeatureExcluded(layerKey, { [classField]: c.value }))
         .map((c) => ({
             value: String(c.value),
             label: c.label || String(c.value),
             color: c.color || (isLine ? DEFAULT_LINE_COLOR : DEFAULT_POINT_COLOR),
             style: isLine
-                ? { strokeColor: c.color, strokeWidth: Number(c.width) || 2 }
+                ? {
+                    strokeColor: c.color,
+                    ...(isConduit ? {} : { strokeWidth: Number(c.width) || 2 })
+                }
                 : { fillColor: c.color, strokeColor: c.color }
         }));
 
     const defaultColor = classes[0]?.color
-        || (isLine ? DEFAULT_LINE_COLOR : DEFAULT_POINT_COLOR);
+        || (isLine ? DEFAULT_LINE_COLOR : (isSplices ? '#ff0000' : DEFAULT_POINT_COLOR));
+    const lineWidth = isConduit ? 2.5 : (isLine ? 2 : 1.25);
 
     const style = {
         mode: 'smart',
         strokeColor: defaultColor,
         fillColor: defaultColor,
-        strokeWidth: isLine ? 2 : 1.25,
+        strokeWidth: isLine ? lineWidth : 1.25,
         strokeOpacity: 1,
         fillOpacity: isLine ? 1 : 0.85,
         pointSize: 6,
@@ -141,7 +163,7 @@ export function buildUdotFiberLayerStyle(layerKey) {
             defaultStyle: {
                 strokeColor: defaultColor,
                 fillColor: defaultColor,
-                strokeWidth: isLine ? 2 : 1.25,
+                strokeWidth: isLine ? lineWidth : 1.25,
                 pointSize: 6
             },
             visualVariables: [],
@@ -157,7 +179,7 @@ export function buildUdotFiberLayerStyle(layerKey) {
             channel: isLine ? 'stroke' : 'both',
             geometryTarget: isLine ? 'line' : 'point',
             classes,
-            defaultColor: isLine ? DEFAULT_LINE_COLOR : DEFAULT_POINT_COLOR
+            defaultColor: isLine ? DEFAULT_LINE_COLOR : (isSplices ? '#ff0000' : DEFAULT_POINT_COLOR)
         });
     }
 
@@ -171,10 +193,10 @@ export function buildUdotFiberLayerStyle(layerKey) {
             placement: isLine ? 'line' : 'point',
             minZoom: Math.max(10, Math.round(minZoom * 10) / 10),
             maxZoom: 24,
-            size: isLine ? 11 : 10,
+            size: isConduit ? 9 : (isLine ? 11 : 10),
             color: buildLabelColorExpression(layerMeta),
-            haloColor: '#000000',
-            haloWidth: 1.25,
+            haloColor: isConduit ? '#ffffff' : '#000000',
+            haloWidth: isConduit ? 1 : 1.25,
             allowOverlap: false,
             ignorePlacement: false
         };
@@ -182,11 +204,15 @@ export function buildUdotFiberLayerStyle(layerKey) {
 
     const normalized = normalizeStyle(style, defaultColor);
     // Glyph / layer hint for map/live renderers (survive normalizeStyle)
+    const lineDasharray = isLine
+        ? resolveEsriLineDasharray(layerMeta.classes || [])
+        : null;
     normalized._udotFiber = {
         layerKey,
         classField,
         labelField: layerMeta.labelField || null,
-        geometry: layerDef.geometry
+        geometry: layerDef.geometry,
+        ...(lineDasharray ? { lineDasharray } : {})
     };
     return normalized;
 }
@@ -209,6 +235,7 @@ export function resolveUdotFiberStyleForDataset(dataset) {
  * @returns {string[]}
  */
 export function requiredStyleFieldsForUdotFiberLayer(layerKey) {
+    if (layerKey === 'splices') return [UDOT_SPLICE_CLASS_FIELD];
     const meta = getDrawingLayer(layerKey);
     if (!meta) return [];
     const fields = [];
@@ -265,9 +292,12 @@ export function resolveStyle(layerKey, props = {}) {
         return { color: DEFAULT_LINE_COLOR, label: null, glyph: null };
     }
 
-    const classField = layerMeta.classField;
+    const classField = layerKey === 'splices' ? UDOT_SPLICE_CLASS_FIELD : layerMeta.classField;
     const classValue = classField ? props[classField] : null;
-    const classHit = (layerMeta.classes || []).find((c) => String(c.value) === String(classValue));
+    const classHit = (layerKey === 'splices'
+        ? UDOT_SPLICE_ENCLOSURES
+        : (layerMeta.classes || [])
+    ).find((c) => String(c.value) === String(classValue));
     let color = classHit?.color || (layerDef.geometry === 'line' ? DEFAULT_LINE_COLOR : DEFAULT_POINT_COLOR);
 
     const labelField = layerMeta.labelField;

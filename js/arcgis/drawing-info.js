@@ -193,7 +193,7 @@ function uniqueClassFromSymbol(value, label, symbol, kind) {
     };
 }
 
-function collectUniqueInfos(renderer) {
+export function collectUniqueInfos(renderer) {
     const infos = [];
     const seen = new Set();
     const delim = renderer.fieldDelimiter || ', ';
@@ -542,6 +542,7 @@ export default {
     esriColorToCss,
     esriSymbolToFlat,
     parseArcgisLabelField,
+    collectUniqueInfos,
     styleFromDrawingInfo,
     styleFromArcgisMetadata,
     requiredStyleFieldsFromDrawingInfo,
