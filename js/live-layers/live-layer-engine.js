@@ -21,6 +21,10 @@ import {
 import { decorateUdotFiberPointFeatures } from '../symbology/udot-fiber/glyphs.js';
 import { matchUdotFiberLayerUrl } from '../symbology/udot-fiber/constants.js';
 import { addUdotFiberVectorLayers } from '../symbology/udot-fiber/paint.js';
+import {
+    groupUdotFiberMapLayerIds,
+    orderUdotFiberLayers
+} from '../symbology/udot-fiber/draw-order.js';
 import { applyUdotFiberDisplayOffsets } from '../symbology/udot-fiber/display-offsets.js';
 import {
     buildUdotFiberExcludeWhere,
@@ -235,6 +239,9 @@ export async function addServiceLayer(mapManager, dataset, colorIndex = 0, optio
         }
 
         mapManager._layerNames?.set(dataset.id, dataset.name);
+        if (matchUdotFiberLayerUrl(runtime.url)) {
+            orderUdotFiberLiveLayers(mapManager);
+        }
         logger.info('LiveLayer', 'Service layer added', { id: dataset.id, kind });
     } catch (error) {
         runtime.lastError = error?.message || 'Failed to add service layer';
@@ -740,6 +747,26 @@ export function materializeServiceLayerViewport(mapManager, dataset) {
  */
 export function getServiceLayerRuntime(mapManager, layerId) {
     return getRuntimeMap(mapManager).get(layerId) || null;
+}
+
+/**
+ * Re-apply Fiber draw order: cabinets → splices → boxes above everything else.
+ * @param {object} mapManager
+ */
+export function orderUdotFiberLiveLayers(mapManager) {
+    const map = mapManager?.map;
+    if (!map) return;
+    const parts = [];
+    for (const [layerId, runtime] of getRuntimeMap(mapManager)) {
+        const key = matchUdotFiberLayerUrl(runtime?.url)?.key;
+        if (!key) continue;
+        const ids = runtime.mapLayerIds?.length
+            ? runtime.mapLayerIds
+            : mapManager._getMapSubLayerIds?.(layerId) || [];
+        parts.push({ key, mapLayerIds: ids });
+    }
+    if (!parts.length) return;
+    orderUdotFiberLayers(map, groupUdotFiberMapLayerIds(parts));
 }
 
 /**

@@ -44,8 +44,12 @@ import {
     refreshAllVectorServiceLayers,
     toggleServiceLayer,
     materializeServiceLayerViewport,
-    getServiceLayerRuntime
+    getServiceLayerRuntime,
+    orderUdotFiberLiveLayers
 } from '../live-layers/live-layer-engine.js';
+import { mergeLiveLayerHitsNearClick, LIVE_LAYER_IDENTIFY_PX } from '../live-layers/live-layer-hits.js';
+import { matchUdotFiberLayerUrl } from '../symbology/udot-fiber/constants.js';
+import { udotFiberDrawRank } from '../symbology/udot-fiber/draw-order.js';
 import { renderProcurementIcon } from '../plan-project/symbol-icons.js';
 
 const POINT_CLUSTER_THRESHOLD = 10000;
@@ -1732,6 +1736,7 @@ class MapManager {
     _bindLayerClickHandlers(dataset, layerIds, styFlat) {
         for (const lid of layerIds) {
             if (shouldSkipClickBinding(lid, layerIds)) continue;
+            if (dataset?.type === 'service' && isMapLabelLayerId(lid)) continue;
             if (this._boundClickLayers?.has(lid)) continue;
             if (!this._boundClickLayers) this._boundClickLayers = new Set();
 
@@ -2120,6 +2125,7 @@ class MapManager {
                 if (this.map.getLayer(lid)) this.map.moveLayer(lid);
             }
         }
+        orderUdotFiberLiveLayers(this);
     }
 
     // ==========================================
@@ -2200,11 +2206,16 @@ class MapManager {
     // ==========================================
 
     _queryFeaturesAtPoint(point, layerIds = null, bufferPx = FEATURE_QUERY_BUFFER_PX) {
-        const layers = layerIds ?? this._getInteractiveLayerIds();
+        const layers = (layerIds ?? this._getInteractiveLayerIds())
+            .filter((id) => this.map?.getLayer(id));
         if (!layers.length || !this.map) return [];
         const min = { x: point.x - bufferPx, y: point.y - bufferPx };
         const max = { x: point.x + bufferPx, y: point.y + bufferPx };
-        return this.map.queryRenderedFeatures([min, max], { layers });
+        try {
+            return this.map.queryRenderedFeatures([min, max], { layers });
+        } catch {
+            return [];
+        }
     }
 
     _findFeaturesNearClick(latlng, clickedLayerId, clickedFeatureIndex, point = null) {
@@ -2218,11 +2229,12 @@ class MapManager {
             const props = rf.properties;
             if (!props || props._featureIndex === undefined) continue;
             const featureIndex = Number(props._featureIndex);
-            const key = `${props._datasetId}-${featureIndex}`;
+            const layerId = props._datasetId;
+            if (!layerId) continue;
+            const key = `${layerId}-${featureIndex}`;
             if (seen.has(key)) continue;
             seen.add(key);
 
-            const layerId = props._datasetId;
             const layerName = this._layerNames.get(layerId) || layerId;
             const sty = this._layerStyles.get(layerId);
             const layerColor = sty?.strokeColor || '#2563eb';
@@ -2250,6 +2262,21 @@ class MapManager {
             });
         }
 
+        mergeLiveLayerHitsNearClick({
+            map: this.map,
+            dataLayers: this.dataLayers,
+            isLocked: isLayerLocked,
+            pixel,
+            results,
+            seen,
+            bufferPx: Math.max(FEATURE_QUERY_BUFFER_PX, LIVE_LAYER_IDENTIFY_PX),
+            stripInternal: (feature) => this._stripInternalProps(feature),
+            layerName: (layerId) => this._layerNames.get(layerId) || layerId,
+            layerColor: (layerId) => this._layerStyles.get(layerId)?.strokeColor || '#2563eb'
+        });
+
+        this._sortPopupHitsByFiberDrawOrder(results);
+
         if (clickedLayerId !== undefined && clickedFeatureIndex !== undefined) {
             const idx = results.findIndex(r => r.layerId === clickedLayerId && r.featureIndex === clickedFeatureIndex);
             if (idx > 0) {
@@ -2259,6 +2286,25 @@ class MapManager {
         }
 
         return results;
+    }
+
+    _fiberKeyForLayerId(layerId) {
+        const dataset = getLayers().find((layer) => layer.id === layerId)
+            || this._workspaceDatasets?.get(layerId);
+        const url = dataset?.service?.url || dataset?.source?.url;
+        return matchUdotFiberLayerUrl(url)?.key || null;
+    }
+
+    _sortPopupHitsByFiberDrawOrder(hits) {
+        if (!hits?.length) return hits;
+        hits.sort((a, b) => {
+            const ra = udotFiberDrawRank(this._fiberKeyForLayerId(a.layerId));
+            const rb = udotFiberDrawRank(this._fiberKeyForLayerId(b.layerId));
+            const na = ra < 0 ? -1 : ra;
+            const nb = rb < 0 ? -1 : rb;
+            return nb - na;
+        });
+        return hits;
     }
 
     async _enrichPopupHitsWithWorkspaceAttrs(hits) {
@@ -2323,11 +2369,18 @@ class MapManager {
 
         let navHtml = '';
         if (hits.length > 1) {
+            const pickHtml = hits.map((entry, i) => {
+                const selected = i === idx
+                    ? 'font-weight:700;border-color:var(--primary);'
+                    : '';
+                return `<button type="button" data-map-popup-action="nav-to" data-index="${i}" style="background:none;border:1px solid var(--border);color:var(--text);border-radius:3px;padding:1px 6px;cursor:pointer;font-size:10px;${selected}">${entry.layerName || entry.layerId}</button>`;
+            }).join('');
             navHtml = `<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;font-size:11px;">
                 <button type="button" data-map-popup-action="nav" data-dir="-1" style="background:none;border:1px solid var(--border);color:var(--text);border-radius:3px;padding:1px 8px;cursor:pointer;font-size:13px;">&larr;</button>
                 <span>${idx + 1} of ${hits.length}</span>
                 <button type="button" data-map-popup-action="nav" data-dir="1" style="background:none;border:1px solid var(--border);color:var(--text);border-radius:3px;padding:1px 8px;cursor:pointer;font-size:13px;">&rarr;</button>
-            </div>`;
+            </div>
+            <div style="display:flex;flex-wrap:wrap;gap:4px;margin:0 0 6px;">${pickHtml}</div>`;
         }
 
         const editBtn = `<div style="margin-top:6px;border-top:1px solid var(--border);padding-top:4px;text-align:right;">
@@ -5881,6 +5934,13 @@ class MapManager {
                 if (!Array.isArray(this._popupHits) || this._popupHits.length === 0) return;
                 const len = this._popupHits.length;
                 this._popupIndex = (this._popupIndex + dir + len) % len;
+                this._renderCyclePopup(this._popupRenderOptions || {});
+                this._syncPopupHitSelection();
+            } else if (action === 'nav-to') {
+                if (!Array.isArray(this._popupHits) || this._popupHits.length === 0) return;
+                const next = Number(btn.dataset.index);
+                if (!Number.isInteger(next) || next < 0 || next >= this._popupHits.length) return;
+                this._popupIndex = next;
                 this._renderCyclePopup(this._popupRenderOptions || {});
                 this._syncPopupHitSelection();
             } else if (action === 'edit') {

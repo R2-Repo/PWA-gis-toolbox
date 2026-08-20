@@ -1,7 +1,7 @@
 /**
  * Screen-size lock for UDOT Fiber symbols.
- * Boxes/splices scale with zoom (small when pulled back, large up close).
- * Building sprites stay capped to a neighborhood icon size.
+ * Point icons scale with zoom (small when pulled back, large up close).
+ * Buildings and cabinets use a larger scale than boxes/splices.
  */
 
 import { UDOT_FIBER_MIN_ZOOM } from './constants.js';
@@ -9,10 +9,10 @@ import { UDOT_FIBER_MIN_ZOOM } from './constants.js';
 /** MapLibre zoom where a typical neighborhood / local streets view settles. */
 export const UDOT_FIBER_NEIGHBORHOOD_ZOOM = UDOT_FIBER_MIN_ZOOM;
 
-/** Target on-screen pixels at neighborhood (and farther out). */
+/** Target on-screen pixels at neighborhood zoom (fallback when a layer has no stops). */
 export const UDOT_FIBER_ICON_PX = Object.freeze({
-    building: 18,
-    cabinets: 16,
+    building: 44,
+    cabinets: 28,
     splices: 14,
     boxes: 14,
     default: 16
@@ -36,6 +36,20 @@ export const UDOT_FIBER_ICON_ZOOM_PX = Object.freeze({
         [18, 28],
         [20, 46],
         [22, 52]
+    ]),
+    cabinets: Object.freeze([
+        [14, 20],
+        [16, 28],
+        [18, 42],
+        [20, 58],
+        [22, 68]
+    ]),
+    building: Object.freeze([
+        [14, 32],
+        [16, 44],
+        [18, 64],
+        [20, 88],
+        [22, 104]
     ])
 });
 
@@ -121,4 +135,20 @@ export function buildUdotFiberLineWidthExpression(width, layerKey) {
  */
 export function buildUdotFiberCircleRadiusExpression(radius, layerKey) {
     return buildUdotFiberZoomSize(radius, layerKey);
+}
+
+/**
+ * Invisible hit-circle radius — at least 16px, ~55% of the on-screen icon.
+ * @param {string} [layerKey]
+ */
+export function buildUdotFiberHitRadiusExpression(layerKey) {
+    const stops = UDOT_FIBER_ICON_ZOOM_PX[layerKey];
+    if (stops?.length) {
+        const expr = ['interpolate', ['linear'], ['zoom']];
+        for (const [z, px] of stops) {
+            expr.push(z, Math.max(16, px * 0.55));
+        }
+        return expr;
+    }
+    return Math.max(16, udotFiberTargetIconPx(layerKey) * 0.55);
 }

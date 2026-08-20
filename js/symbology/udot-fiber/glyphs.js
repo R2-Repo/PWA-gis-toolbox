@@ -2,7 +2,7 @@
  * Procedural CAD lookalike glyphs for UDOT Fiber Network (no external SVGs).
  */
 import { resolveLookalike } from './lookalikes.js';
-import { udotFiberIconSpritePx } from './zoom-scale.js';
+import { UDOT_FIBER_ICON_ZOOM_PX, udotFiberIconSpritePx } from './zoom-scale.js';
 
 /** @typedef {'circle'|'ring'|'rect'|'square-x'|'bowtie'|'dashed-box'|'diamond'|'vee-circle'|'rounded-square'|'hex'|'building'} UdotGlyphKind */
 
@@ -294,8 +294,14 @@ export function ensureUdotGlyphImage(map, glyph, color, size = UDOT_FIBER_GLYPH_
  * @param {number} [size]
  */
 export function preloadUdotFiberGlyphs(map, size = UDOT_FIBER_GLYPH_PX) {
-    for (const [glyph, color] of UDOT_FIBER_PRELOAD_GLYPHS) {
-        ensureUdotGlyphImage(map, glyph, color, size);
+    const sizes = new Set([UDOT_FIBER_GLYPH_PX, Number(size) || UDOT_FIBER_GLYPH_PX]);
+    for (const key of Object.keys(UDOT_FIBER_ICON_ZOOM_PX)) {
+        sizes.add(udotFiberIconSpritePx(key));
+    }
+    for (const px of sizes) {
+        for (const [glyph, color] of UDOT_FIBER_PRELOAD_GLYPHS) {
+            ensureUdotGlyphImage(map, glyph, color, px);
+        }
     }
 }
 
