@@ -6,6 +6,7 @@ import {
     pointInPdfRing,
     probeOutwardUnitNormal
 } from './sheet-pdf-placement.js';
+import { buildUdotFiberPdfStyle, layoutUdotFiberPdfBox, udotFiberPdfDrawRank } from './sheet-pdf-fiber.js';
 
 /** Matchline SEE SHEET label size (PDF points). Inner glyph edge sits on the cutout border. */
 export const MATCHLINE_SEE_LABEL_FONT_PT = 7.5;
@@ -201,6 +202,9 @@ export function resolveVectorFeatureStyle(feature, layerStyle = null) {
         };
     }
 
+    const fiberStyle = buildUdotFiberPdfStyle(feature, layerStyle);
+    if (fiberStyle) return fiberStyle;
+
     const geometryType = feature?.geometry?.type;
     const geometryKind = geometryKindFromType(geometryType);
     const flat = geometryKind ? resolveLayerFlatStyle(layerStyle, feature, geometryKind) : null;
@@ -320,7 +324,12 @@ function drawPolyline(doc, points, style, pxPerPt) {
 
     withPdfOpacity(doc, style.strokeOpacity, () => {
         applyStrokeColor(doc, style.strokeColor);
-        doc.setLineWidth(Math.max(0.35, (style.strokeWidth || 1) * pxPerPt));
+        const widthPt = Number.isFinite(style._pdfWidthPt)
+            ? style._pdfWidthPt
+            : Math.max(0.35, (style.strokeWidth || 1) * pxPerPt);
+        doc.setLineWidth(widthPt);
+        if (typeof doc.setLineCap === 'function') doc.setLineCap('round');
+        if (typeof doc.setLineJoin === 'function') doc.setLineJoin('round');
 
         if (style.dash?.length) {
             doc.setLineDashPattern?.(style.dash, 0);
@@ -332,6 +341,159 @@ function drawPolyline(doc, points, style, pxPerPt) {
             doc.line(points[i - 1].x, points[i - 1].y, points[i].x, points[i].y);
         }
     });
+}
+
+/**
+ * @param {import('jspdf').jsPDF} doc
+ * @param {Array<{ x: number, y: number }>} points
+ * @param {object} style
+ * @param {number} pxPerPt
+ */
+function fiberStrokeWidthPt(strokeWidth, pxPerPt) {
+    const scale = Math.min(Math.max(Number(pxPerPt) || 0.2, 0.12), 0.38);
+    return Math.max(0.18, (strokeWidth || 0.62) * scale);
+}
+
+function drawFiberLine(doc, points, style, pxPerPt) {
+    for (const stroke of style.strokes || []) {
+        drawPolyline(doc, points, { ...stroke, _pdfWidthPt: fiberStrokeWidthPt(stroke.strokeWidth, pxPerPt) }, pxPerPt);
+    }
+    doc.setLineDashPattern?.([], 0);
+}
+
+function rotatePdfPoint(cx, cy, x, y, angleDeg) {
+    const rad = ((Number(angleDeg) || 0) * Math.PI) / 180;
+    const dx = x - cx;
+    const dy = y - cy;
+    return {
+        x: cx + dx * Math.cos(rad) - dy * Math.sin(rad),
+        y: cy + dx * Math.sin(rad) + dy * Math.cos(rad)
+    };
+}
+
+function fillQuad(doc, a, b, c, d) {
+    if (typeof doc.triangle === 'function') {
+        doc.triangle(a.x, a.y, b.x, b.y, c.x, c.y, 'F');
+        doc.triangle(a.x, a.y, c.x, c.y, d.x, d.y, 'F');
+        return;
+    }
+    applyStrokeColor(doc, '#111111');
+    doc.line(a.x, a.y, b.x, b.y);
+    doc.line(b.x, b.y, c.x, c.y);
+    doc.line(c.x, c.y, d.x, d.y);
+    doc.line(d.x, d.y, a.x, a.y);
+}
+
+function mixHexToward(hex, toward, t) {
+    const a = parseHexColor(hex);
+    const b = parseHexColor(toward);
+    const mix = (x, y) => Math.round(x + (y - x) * t);
+    const byte = (n) => Math.max(0, Math.min(255, n)).toString(16).padStart(2, '0');
+    return `#${byte(mix(a.r, b.r))}${byte(mix(a.g, b.g))}${byte(mix(a.b, b.b))}`;
+}
+
+function drawInBoxLabel(doc, point, text, fontSize, angleDeg) {
+    if (!text) return;
+    doc.setFontSize(fontSize);
+    const width = typeof doc.getTextWidth === 'function'
+        ? doc.getTextWidth(text)
+        : text.length * fontSize * 0.52;
+    const { x, y } = computeRotatedTextAnchor(point.x, point.y, width, angleDeg);
+    const rad = ((Number(angleDeg) || 0) * Math.PI) / 180;
+    const lift = fontSize * 0.35;
+    doc.setTextColor(17, 17, 17);
+    doc.text(text, x - lift * Math.sin(rad), y - lift * Math.cos(rad), {
+        angle: Number(angleDeg) || 0
+    });
+}
+
+/**
+ * Crisp CAD marks — not raster sprites.
+ * @param {import('jspdf').jsPDF} doc
+ * @param {{ x: number, y: number }} point
+ * @param {object} style
+ * @param {number} pxPerPt
+ * @param {number} mapBearing
+ */
+function drawFiberPoint(doc, point, style, pxPerPt, mapBearing = 0) {
+    const size = Math.max(2.4, (style.radius || 4) * pxPerPt);
+    const angle = (Number(style.rotation) || 0) - (Number(mapBearing) || 0);
+    const color = style.fillColor || '#111111';
+    const ink = style.strokeColor || '#111111';
+    applyFillColor(doc, color);
+    applyStrokeColor(doc, ink);
+    doc.setLineWidth(Math.max(0.35, 0.55 * pxPerPt));
+    doc.setLineDashPattern?.([], 0);
+
+    const at = (dx, dy) => rotatePdfPoint(point.x, point.y, point.x + dx, point.y + dy, angle);
+    const glyph = style.glyph || 'circle';
+
+    if (glyph === 'rect') {
+        const measure = (text, fontSize) => {
+            doc.setFontSize(fontSize);
+            return typeof doc.getTextWidth === 'function'
+                ? doc.getTextWidth(text)
+                : text.length * fontSize * 0.52;
+        };
+        const box = layoutUdotFiberPdfBox(
+            style.boxLabel,
+            Math.max(4.8, (style.radius || 4.8) * pxPerPt),
+            measure
+        );
+        const a = at(-box.halfWidth, -box.halfHeight);
+        const b = at(box.halfWidth, -box.halfHeight);
+        const c = at(box.halfWidth, box.halfHeight);
+        const d = at(-box.halfWidth, box.halfHeight);
+        applyFillColor(doc, '#ffffff');
+        fillQuad(doc, a, b, c, d);
+        applyStrokeColor(doc, ink);
+        doc.line(a.x, a.y, b.x, b.y);
+        doc.line(b.x, b.y, c.x, c.y);
+        doc.line(c.x, c.y, d.x, d.y);
+        doc.line(d.x, d.y, a.x, a.y);
+        if (style.boxLabel && box.fontSize) {
+            drawInBoxLabel(doc, point, style.boxLabel, box.fontSize, angle);
+        }
+        return;
+    }
+
+    if (glyph === 'ring' || glyph === 'circle') {
+        applyFillColor(doc, glyph === 'ring' ? '#ffffff' : color);
+        applyStrokeColor(doc, glyph === 'ring' ? (color || '#ff0000') : ink);
+        doc.circle(point.x, point.y, size * 0.55, 'FD');
+        return;
+    }
+
+    if (glyph === 'bowtie') {
+        const left = [at(-size, -size * 0.7), at(0, 0), at(-size, size * 0.7)];
+        const right = [at(size, -size * 0.7), at(0, 0), at(size, size * 0.7)];
+        if (typeof doc.triangle === 'function') {
+            doc.triangle(left[0].x, left[0].y, left[1].x, left[1].y, left[2].x, left[2].y, 'FD');
+            doc.triangle(right[0].x, right[0].y, right[1].x, right[1].y, right[2].x, right[2].y, 'FD');
+        }
+        return;
+    }
+
+    if (glyph === 'square-x') {
+        const a = at(-size * 0.7, -size * 0.7);
+        const b = at(size * 0.7, -size * 0.7);
+        const c = at(size * 0.7, size * 0.7);
+        const d = at(-size * 0.7, size * 0.7);
+        applyFillColor(doc, mixHexToward(color, '#ffffff', 0.72));
+        fillQuad(doc, a, b, c, d);
+        applyStrokeColor(doc, color || ink);
+        doc.line(a.x, a.y, b.x, b.y);
+        doc.line(b.x, b.y, c.x, c.y);
+        doc.line(c.x, c.y, d.x, d.y);
+        doc.line(d.x, d.y, a.x, a.y);
+        doc.line(a.x, a.y, c.x, c.y);
+        doc.line(b.x, b.y, d.x, d.y);
+        return;
+    }
+
+    applyFillColor(doc, color);
+    applyStrokeColor(doc, ink);
+    doc.circle(point.x, point.y, size * 0.5, 'FD');
 }
 
 /**
@@ -665,6 +827,7 @@ function featureDrawOrder(feature) {
     if (props.feature_type === 'overview_sheet_outline') return 35;
     if (props._preview === 'station_tick') return 40;
     if (props.feature_type === 'route' || props._preview === 'route' || props.feature_type === 'overview_route') return 20;
+    if (props._udotFiberKey) return udotFiberPdfDrawRank(props._udotFiberKey);
     return 50;
 }
 
@@ -690,14 +853,16 @@ function renderFeature(doc, feature, map, transform, captureScale, style, pdfRin
 
     if (geometry.type === 'LineString') {
         const points = projectRing(map, geometry.coordinates, transform, captureScale);
-        drawPolyline(doc, points, style, pxPerPt);
+        if (style.kind === 'fiber_line') drawFiberLine(doc, points, style, pxPerPt);
+        else drawPolyline(doc, points, style, pxPerPt);
         return;
     }
 
     if (geometry.type === 'MultiLineString') {
         for (const line of geometry.coordinates) {
             const points = projectRing(map, line, transform, captureScale);
-            drawPolyline(doc, points, style, pxPerPt);
+            if (style.kind === 'fiber_line') drawFiberLine(doc, points, style, pxPerPt);
+            else drawPolyline(doc, points, style, pxPerPt);
         }
         return;
     }
@@ -738,6 +903,11 @@ function renderFeature(doc, feature, map, transform, captureScale, style, pdfRin
             return;
         }
 
+        if (style.kind === 'fiber_point') {
+            drawFiberPoint(doc, point, style, pxPerPt, map.getBearing?.() || 0);
+            return;
+        }
+
         drawPoint(doc, point, style, pxPerPt);
         if (style.labelField && style.kind !== 'label') {
             drawLabel(doc, point, feature.properties?.[style.labelField], {
@@ -755,6 +925,8 @@ function renderFeature(doc, feature, map, transform, captureScale, style, pdfRin
             const point = transform.projectLngLat(map, coord[0], coord[1], captureScale);
             if (style.kind === 'label') {
                 drawLabel(doc, point, feature.properties?.[style.field], style);
+            } else if (style.kind === 'fiber_point') {
+                drawFiberPoint(doc, point, style, pxPerPt, map.getBearing?.() || 0);
             } else {
                 drawPoint(doc, point, style, pxPerPt);
             }

@@ -20,6 +20,8 @@ python scripts/build-udot-fiber-bentley-symbols.py /path/to/NewSymbols.xlsx
 |------|------|--------|
 | PWA | Live vector MapServer query / ArcGIS import | This style pack |
 
+Desktop port: [`docs/UDOT_FIBER_DESKTOP_REPLICATION.md`](../../../docs/UDOT_FIBER_DESKTOP_REPLICATION.md).
+
 ## Point glyphs
 
 Live Fiber uses modern lookalikes (`lookalikes.js` + SVGs in `glyphs.js`). Point icons are flat (no drop shadow). Boxes are white landscape rectangles with `BOXLABELS` inside; vaults are red circles. Expand families as you identify attributes.

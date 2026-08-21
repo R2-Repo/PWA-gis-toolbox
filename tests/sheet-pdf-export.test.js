@@ -26,6 +26,7 @@ import {
     measureNominalSheetClipPx,
     placeSheetCanvasOnPdfPage,
     canvasToBasemapJpegDataUrl,
+    canvasToSheetUnderlayDataUrl,
     resolveDetailPageMarginsPt,
     resolveExportLayerIds,
     computeRotatedTextAnchor,
@@ -35,7 +36,7 @@ import {
     resolveSheetEdgeSeeLabelPlacements,
     warnIfBasemapDpiConstrained
 } from '../js/widgets/sheet-cutting/sheet-pdf-export.js';
-import { prepareExportLayerVisibility } from '../js/widgets/sheet-cutting/sheet-preview.js';
+import { prepareExportLayerVisibility, suppressMapDataLayersForCapture } from '../js/widgets/sheet-cutting/sheet-preview.js';
 import {
     PDF_DETAIL_FOOTER_BAND_IN,
     PDF_DETAIL_FOOTER_GAP_IN,
@@ -112,6 +113,41 @@ describe('sheet PDF export layer visibility', () => {
         ]);
         expect(visibility.get('other-layer')).toBe(true);
         expect(visibility.get('hidden-layer')).toBe(false);
+    });
+
+    it('keeps UDOT Fiber live layers visible during basemap capture', () => {
+        const visibility = new Map([
+            ['udot-fiber-lines', true],
+            ['design-a', true],
+            ['other-layer', true]
+        ]);
+        const toggled = [];
+        const mapService = {
+            getMap: () => ({
+                getLayer: (subId) => ({ id: subId }),
+                getLayoutProperty: (subId, prop) => {
+                    if (prop !== 'visibility') return 'visible';
+                    const parentId = subId.replace(/-line$/, '');
+                    return visibility.get(parentId) ? 'visible' : 'none';
+                }
+            }),
+            getLayerIds: () => ['udot-fiber-lines', 'design-a', 'other-layer'],
+            getLayerRecord: (layerId) => ({ layerIds: [`${layerId}-line`] }),
+            toggleLayer: (layerId, show) => {
+                toggled.push({ layerId, show });
+                visibility.set(layerId, show);
+            }
+        };
+
+        const restore = suppressMapDataLayersForCapture(mapService, ['udot-fiber-lines']);
+        expect(toggled).toEqual([
+            { layerId: 'design-a', show: false },
+            { layerId: 'other-layer', show: false }
+        ]);
+        expect(visibility.get('udot-fiber-lines')).toBe(true);
+        restore();
+        expect(visibility.get('udot-fiber-lines')).toBe(true);
+        expect(visibility.get('design-a')).toBe(true);
     });
 
     it('builds overview vector content with route, sheet outlines, and labels only', () => {
@@ -1511,6 +1547,26 @@ describe('sheet PDF placement', () => {
 
         expect(canvasToBasemapJpegDataUrl(canvas)).toBe('data:image/jpeg;base64,abc');
         expect(calls).toEqual([{ type: 'image/jpeg', quality: 0.88 }]);
+    });
+
+    it('embeds Fiber underlays as PNG', () => {
+        const placed = { format: '' };
+        const doc = {
+            internal: { pageSize: { getWidth: () => 1224, getHeight: () => 792 } },
+            addImage: (_data, fmt) => {
+                placed.format = fmt;
+            }
+        };
+        const canvas = {
+            width: 200,
+            height: 100,
+            toDataURL: (type) => (type === 'image/png' ? 'data:image/png;base64,abc' : 'data:image/jpeg;base64,abc')
+        };
+        placeSheetCanvasOnPdfPage(doc, canvas, { top: 36, right: 36, bottom: 36, left: 36 }, {
+            imageFormat: 'PNG'
+        });
+        expect(placed.format).toBe('PNG');
+        expect(canvasToSheetUnderlayDataUrl(canvas, 'PNG').format).toBe('PNG');
     });
 });
 

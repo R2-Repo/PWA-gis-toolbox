@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { describe, expect, it } from 'vitest';
 import {
     buildSheetPageTransform,
@@ -175,6 +176,18 @@ describe('sheet PDF vector styles', () => {
         expect(styledRoute.strokeColor).toBe('#336699');
         expect(styledRoute.strokeWidth).toBe(3);
         expect(styledRoute.strokeOpacity).toBe(0.4);
+    });
+
+    it('draws Fiber lines as vector without along-line labels', () => {
+        const style = resolveVectorFeatureStyle(
+            {
+                properties: { Fiber_Label: '2 IMD 10mm', _udotFiberKey: 'fiber' },
+                geometry: { type: 'LineString', coordinates: [[0, 0], [1, 1]] }
+            },
+            { _udotFiber: { layerKey: 'fiber' }, labels: { enabled: true, field: 'Fiber_Label' } }
+        );
+        expect(style.kind).toBe('fiber_line');
+        expect(style.labelField).toBeNull();
     });
 
     it('falls back to layer style for design features', () => {

@@ -139,21 +139,23 @@ Sheet PDFs combine a **modest-resolution basemap image** (whatever basemap is ac
 
 1. **Overview** (optional) — `fitBounds` to all sheet frames; **north-up** (`bearing: 0`); basemap captured at **basemap DPI** (default 150); sheet frames and route drawn as vector; saved as `{project}_overview.pdf`.
 2. **Detail pages** — per sheet: camera aligned to **export bearing** (landscape-align by default); design layers hidden; **basemap-only** capture clipped to the sheet polygon at **basemap DPI** (120–200); selected design layers + sheet outline drawn as **vector PDF** on top (no widget centerline overlay); saved as `{project}_sheet_01.pdf`, etc.
+   **UDOT Fiber** is refreshed for that sheet, then drawn as **vector** (class colors, thin fiber/conduit strokes, point marks). Fiber/Conduit **along-line labels are not exported**. Box `BOXLABELS` stay inside landscape rectangles sized to the text. Cabinets use the same lookalike color as the map.
 3. **No multipage PDF** — each page is written immediately so memory stays flat on long routes.
 
 | Layer | Technology | Zoom behavior |
 |-------|------------|---------------|
 | Basemap underlay | MapLibre capture at basemap DPI | Soft when zoomed far (background context) |
-| Design + stationing + sheet outline (overview also draws the widget route) | jsPDF vector paths + text | Infinite zoom — always crisp |
+| UDOT Fiber live layers (if visible) | jsPDF vector (no Fiber/Conduit line labels) | Infinite zoom — always crisp |
+| Other design + stationing + sheet outline (overview also draws the widget route) | jsPDF vector paths + text | Infinite zoom — always crisp |
 | North arrow / footer | jsPDF vector | Crisp |
 
 **Basemap quality** (`basemapDpi`, default 150) affects only the background image and file size. The underlay is JPEG (~88% quality) so a combined 10-sheet set usually stays emailable. Linework and labels are vector regardless of this setting.
 
 **Remnant (short last) sheets** keep the **same map scale and corridor height** as full-length sheets. Placement fits a **nominal** frame (`sheetLengthFt` × `corridorWidthFt` at the current zoom), then draws the actual clip at that scale — a shorter remnant is a shorter image, not a zoomed-up fill of the page. Without that reference, a square leftover would scale to page height.
 
-**Design layers must be selected** in the Sheet Cutter wizard for their features to appear in vector export. Layer styles are resolved from `mapService.getLayerStyle()` using `_sourceLayerId` stamped at collection time.
+**Design layers must be selected** in the Sheet Cutter wizard for their features to appear in vector export. Layer styles are resolved from `mapService.getLayerStyle()` using `_sourceLayerId` stamped at collection time. **UDOT Fiber** that is on the map is drawn as vector on detail sheets (hide the group first if you do not want it).
 
-Implementation: `js/widgets/sheet-cutting/sheet-pdf-export.js`, `js/widgets/sheet-cutting/sheet-pdf-vector.js`, `js/widgets/sheet-cutting/sheet-pdf-placement.js`, `js/widgets/sheet-cutting/sheet-pdf-orientation.js`, `js/export/folder-export.js`
+Implementation: `js/widgets/sheet-cutting/sheet-pdf-export.js`, `js/widgets/sheet-cutting/sheet-pdf-fiber.js`, `js/widgets/sheet-cutting/sheet-pdf-vector.js`, `js/widgets/sheet-cutting/sheet-pdf-placement.js`, `js/widgets/sheet-cutting/sheet-pdf-orientation.js`, `js/export/folder-export.js`
 
 The map camera and 3D state are restored after export. 3D is temporarily flattened for consistent plan-sheet output.
 
@@ -230,6 +232,7 @@ If a future change makes right-side or skewed labels drift again, check the jsPD
 | `js/widgets/sheet-cutting/controller.js` | Preview wiring |
 | `react/widgets/SheetCuttingDialog.jsx` | Wizard UI |
 | `js/widgets/sheet-cutting/sheet-pdf-export.js` | Hybrid PDF export to folder |
+| `js/widgets/sheet-cutting/sheet-pdf-fiber.js` | Keep live Fiber paint in the detail underlay |
 | `js/widgets/sheet-cutting/sheet-pdf-vector.js` | Vector GeoJSON → jsPDF renderer; **matchline SEE SHEET draw** (`placeMatchlineLabelOnGoldOutline`) |
 | `js/widgets/sheet-cutting/sheet-matchline-labels.js` | Geographic SEE SHEET point features (cap midpoint + outward probe) |
 | `js/widgets/sheet-cutting/sheet-pdf-placement.js` | Shared map-pixel → PDF-point placement |

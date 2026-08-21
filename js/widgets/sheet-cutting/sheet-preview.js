@@ -146,11 +146,19 @@ export function prepareExportLayerVisibility(mapService, exportLayerIds = []) {
     };
 }
 
-export function suppressMapDataLayersForCapture(mapService) {
-    const map = mapService?.getMap?.();
+/**
+ * Hide data layers for basemap capture. `keepLayerIds` stay on (live Fiber paint).
+ *
+ * @param {object} mapService
+ * @param {string[]} [keepLayerIds]
+ * @returns {() => void}
+ */
+export function suppressMapDataLayersForCapture(mapService, keepLayerIds = []) {
+    const keep = new Set((keepLayerIds || []).filter(Boolean));
     const restored = [];
 
     for (const layerId of mapService.getLayerIds?.() ?? []) {
+        if (keep.has(layerId)) continue;
         const wasVisible = isLayerVisibleOnMap(mapService, layerId);
         if (wasVisible) {
             mapService.toggleLayer(layerId, false);

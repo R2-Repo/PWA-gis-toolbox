@@ -1,6 +1,6 @@
 /**
  * Sheet plan PDF export — high-DPI basemap capture + crisp vector overlays per page.
- * Detail sheets: basemap raster + vector design layers and gold sheet outline.
+ * Detail sheets: basemap raster (plus live Fiber paint) + vector design layers and gold sheet outline.
  * Overview: basemap raster + vector sheet index (polygons, red route, labels).
  */
 
@@ -63,6 +63,12 @@ import {
     pointInPdfRing
 } from './sheet-pdf-placement.js';
 import { renderFeatureCollectionToPdf } from './sheet-pdf-vector.js';
+import {
+    collectUdotFiberSheetFeatures,
+    listVisibleUdotFiberLayerIds,
+    omitRasterizedLiveFeatures,
+    refreshUdotFiberPaintLayers
+} from './sheet-pdf-fiber.js';
 
 const FIT_PADDING = 48;
 const FIT_MAX_ZOOM = 18;
@@ -984,6 +990,20 @@ export function canvasToBasemapJpegDataUrl(canvas, quality = BASEMAP_JPEG_QUALIT
 }
 
 /**
+ * Fiber linework stays on PNG so JPEG does not smear class colors.
+ * @param {HTMLCanvasElement|{ toDataURL?: Function, getContext?: Function, width?: number, height?: number }} canvas
+ * @param {'JPEG'|'PNG'} [format]
+ * @returns {{ dataUrl: string, format: 'JPEG'|'PNG' }}
+ */
+export function canvasToSheetUnderlayDataUrl(canvas, format = 'JPEG') {
+    const flat = flattenCanvasOntoWhite(canvas);
+    if (String(format).toUpperCase() === 'PNG') {
+        return { dataUrl: flat.toDataURL('image/png'), format: 'PNG' };
+    }
+    return { dataUrl: canvasToBasemapJpegDataUrl(canvas), format: 'JPEG' };
+}
+
+/**
  * @param {HTMLCanvasElement|{ toDataURL?: Function, getContext?: Function, width?: number, height?: number }} canvas
  * @returns {HTMLCanvasElement|{ toDataURL?: Function, getContext?: Function, width?: number, height?: number }}
  */
@@ -1016,10 +1036,10 @@ export function placeSheetCanvasOnPdfPage(doc, canvas, marginsPt, options = {}) 
         canvas.height,
         options
     );
-    const dataUrl = canvasToBasemapJpegDataUrl(canvas);
+    const { dataUrl, format } = canvasToSheetUnderlayDataUrl(canvas, options.imageFormat);
     doc.addImage(
         dataUrl,
-        'JPEG',
+        format,
         placement.x,
         placement.y,
         placement.width,
@@ -1105,12 +1125,12 @@ async function bumpMapToExportRatio(map, template) {
  * @param {object} mapService
  * @param {object} template
  * @param {number[][]} ring
- * @param {{ skipViewportFit?: boolean }} [options]
+ * @param {{ skipViewportFit?: boolean, keepLayerIds?: string[] }} [options]
  * @returns {Promise<{ canvas: HTMLCanvasElement, pixelRing: number[][], captureScale: number }>}
  */
 async function captureBasemapUnderlay(mapService, template, ring, options = {}) {
     clearSheetPreview(mapService);
-    const restoreDataLayers = suppressMapDataLayersForCapture(mapService);
+    const restoreDataLayers = suppressMapDataLayersForCapture(mapService, options.keepLayerIds || []);
     const map = mapService?.getMap?.();
 
     try {
@@ -1235,7 +1255,8 @@ export async function buildHybridPagePdfBlob({
     vectorFeatures = null,
     overviewPlacement = false,
     JsPDFCtor = null,
-    matchLineRegistry = null
+    matchLineRegistry = null,
+    underlayFormat = 'JPEG'
 }) {
     const orientation = template.orientation === PAGE_ORIENTATIONS.PORTRAIT
         ? PAGE_ORIENTATIONS.PORTRAIT
@@ -1271,7 +1292,8 @@ export async function buildHybridPagePdfBlob({
 
         if (overviewPlacement || !pixelRing?.length) {
             placeSheetCanvasOnPdfPage(doc, basemapCanvas, layoutMargins, {
-                preferLandscapeFlow: false
+                preferLandscapeFlow: false,
+                imageFormat: underlayFormat
             });
             transform = buildSheetPageTransform(
                 [
@@ -1285,7 +1307,10 @@ export async function buildHybridPagePdfBlob({
                 { preferLandscapeFlow: false }
             );
         } else {
-            placeSheetCanvasOnPdfPage(doc, basemapCanvas, layoutMargins, placementOptions);
+            placeSheetCanvasOnPdfPage(doc, basemapCanvas, layoutMargins, {
+                ...placementOptions,
+                imageFormat: underlayFormat
+            });
             transform = buildSheetPageTransform(
                 pixelRing,
                 layoutMargins,
@@ -1431,6 +1456,7 @@ export async function exportSheetPlanPdf({
         throw new Error('Generate sheets before exporting PDF');
     }
 
+    const fiberLayerIds = listVisibleUdotFiberLayerIds(mapService);
     const template = {
         basemapDpi: DEFAULT_BASEMAP_DPI,
         ...(session?.sheets?.template || exportPackage?.template || {})
@@ -1620,6 +1646,14 @@ export async function exportSheetPlanPdf({
                     fileIndex: pageIndex,
                     fileName: pageFile
                 });
+                if (fiberLayerIds.length) {
+                    await refreshUdotFiberPaintLayers(mapService, fiberLayerIds);
+                }
+                const fiberFeatures = collectUdotFiberSheetFeatures(
+                    mapService,
+                    fiberLayerIds,
+                    frameFeature
+                );
                 const underlay = await captureBasemapUnderlay(mapService, template, ring, {
                     skipViewportFit: true
                 });
@@ -1630,6 +1664,7 @@ export async function exportSheetPlanPdf({
                     fileName: pageFile
                 });
                 const sheetLayer = perSheetLayers.find((entry) => entry.sheetId === sheet.sheetId);
+                const cleaned = omitRasterizedLiveFeatures(sheetLayer?.contents || null, fiberLayerIds);
                 const pageBlob = await buildHybridPagePdfBlob({
                     template,
                     pageOptions: {
@@ -1649,7 +1684,10 @@ export async function exportSheetPlanPdf({
                     basemapCanvas: underlay.canvas,
                     pixelRing: underlay.pixelRing,
                     captureScale: underlay.captureScale,
-                    vectorFeatures: sheetLayer?.contents || null,
+                    vectorFeatures: {
+                        type: 'FeatureCollection',
+                        features: [...(cleaned?.features || []), ...fiberFeatures]
+                    },
                     JsPDFCtor,
                     matchLineRegistry
                 });
