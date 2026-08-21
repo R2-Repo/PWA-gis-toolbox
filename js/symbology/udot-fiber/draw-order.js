@@ -1,11 +1,11 @@
 /**
  * Fixed MapLibre draw order for UDOT Fiber Network live layers.
- * Cabinets stay on top of every other Fiber sublayer.
+ * Line paint sits at the back; splices sit above boxes; cabinets stay on top.
  */
 
 import { matchUdotFiberLayerUrl } from './constants.js';
 
-/** Bottom → top. Cabinets, then splices, then boxes sit above buildings and lines. */
+/** Bottom → top among Fiber catalog keys (paint rank). Cabinets always win. */
 export const UDOT_FIBER_DRAW_ORDER = Object.freeze([
     'conduit',
     'fiber',
@@ -18,6 +18,20 @@ export const UDOT_FIBER_DRAW_ORDER = Object.freeze([
 const DRAW_RANK = Object.freeze(
     Object.fromEntries(UDOT_FIBER_DRAW_ORDER.map((key, index) => [key, index]))
 );
+
+const LINE_KEYS = new Set(['conduit', 'fiber']);
+
+/**
+ * @param {string} [layerId]
+ * @returns {boolean}
+ */
+export function isUdotFiberLabelLayerId(layerId) {
+    return typeof layerId === 'string'
+        && (layerId.endsWith('-labels')
+            || layerId.endsWith('-line-labels')
+            || layerId.endsWith('-labels-plate')
+            || layerId.endsWith('-line-labels-plate'));
+}
 
 /**
  * @param {string} [layerKey]
@@ -54,31 +68,52 @@ export function groupUdotFiberMapLayerIds(parts) {
 }
 
 /**
+ * Flatten Fiber map layers into a stable bottom → top list.
+ * Line paint first, then line labels (in front of the strokes), then points.
+ * @param {Record<string, string[]>} byKey
+ * @returns {string[]}
+ */
+export function collectUdotFiberOrderedIds(byKey) {
+    const linePaint = [];
+    const lineLabels = [];
+    const pointStack = [];
+
+    for (const key of UDOT_FIBER_DRAW_ORDER) {
+        const ids = byKey?.[key] || [];
+        if (LINE_KEYS.has(key)) {
+            for (const id of ids) {
+                if (isUdotFiberLabelLayerId(id)) lineLabels.push(id);
+                else linePaint.push(id);
+            }
+            continue;
+        }
+        const paint = [];
+        const labels = [];
+        for (const id of ids) {
+            if (isUdotFiberLabelLayerId(id)) labels.push(id);
+            else paint.push(id);
+        }
+        pointStack.push(...paint, ...labels);
+    }
+
+    return [...linePaint, ...lineLabels, ...pointStack];
+}
+
+/**
  * @param {import('maplibre-gl').Map} map
  * @param {Record<string, string[]>} byKey
  */
 export function orderUdotFiberLayers(map, byKey) {
     if (!map || !byKey) return;
 
-    const ordered = UDOT_FIBER_DRAW_ORDER.flatMap((key) => byKey[key] || []);
-    for (let i = 0; i < ordered.length; i++) {
-        const id = ordered[i];
-        if (!map.getLayer(id)) continue;
-        const beforeId = ordered.slice(i + 1).find((candidate) => map.getLayer(candidate));
-        try {
-            if (beforeId) map.moveLayer(id, beforeId);
-            else map.moveLayer(id);
-        } catch {
-            /* ignore move errors during teardown */
-        }
-    }
-
-    for (const id of byKey.cabinets || []) {
+    // moveLayer(id) sends each id to the top. Walking bottom → top leaves
+    // cabinets last (on top) and conduit/fiber paint at the back of the stack.
+    for (const id of collectUdotFiberOrderedIds(byKey)) {
         if (!map.getLayer(id)) continue;
         try {
             map.moveLayer(id);
         } catch {
-            /* ignore */
+            /* ignore move errors during teardown */
         }
     }
 }

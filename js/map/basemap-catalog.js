@@ -6,7 +6,7 @@
  * @property {string} name
  * @property {string[]} tiles
  * @property {string} [attribution]
- * @property {number} [maxZoom]
+ * @property {number} [maxZoom] Native tile pyramid cap (source.maxzoom). The map overzooms past this.
  * @property {string[]} [overlayTiles]
  */
 

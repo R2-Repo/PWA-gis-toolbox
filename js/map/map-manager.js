@@ -29,7 +29,8 @@ import {
     resolveMapLibreZoomRange,
     normalizeScaleRange,
     MAPLIBRE_MIN_ZOOM,
-    MAPLIBRE_MAX_ZOOM
+    MAPLIBRE_MAX_ZOOM,
+    MAP_CAMERA_MAX_ZOOM
 } from './scale-range.js';
 import { resetMapPopupScroll } from './map-popup-utils.js';
 import { buildPopupBodyHtml, POPUP_MODES } from './map-popup-content.js';
@@ -166,6 +167,12 @@ const HILLSHADE_PAINT = {
     'hillshade-accent-color': '#6e6e6e'
 };
 const BASEMAP_LAYER_IDS = new Set(['basemap-backdrop', 'basemap-layer', 'basemap-overlay-layer']);
+
+/**
+ * Style layer maxzoom is exclusive (hidden at zoom >= maxzoom). Keep this above
+ * the camera ceiling so the last native tiles stay overzoomed at max zoom.
+ */
+const BASEMAP_LAYER_VISIBILITY_MAX_ZOOM = MAP_CAMERA_MAX_ZOOM + 1;
 
 /** MapLibre filter (boolean expression): geometry-type is one of the given GeoJSON types */
 function _geomTypesFilter(types) {
@@ -384,6 +391,7 @@ class MapManager {
             pitch: mapInit?.pitch ?? 0,
             bearing: mapInit?.bearing ?? 0,
             attributionControl: true,
+            maxZoom: MAP_CAMERA_MAX_ZOOM,
             maxPitch: 85,
             dragRotate: mapInit?.enable3D ?? false,
             touchZoomRotate: true,
@@ -392,6 +400,8 @@ class MapManager {
             // (default true cancels them and details pop in abruptly).
             cancelPendingTileRequestsWhileZooming: false
         });
+
+        this.map.once('load', () => this._unlockBasemapLayerZoom());
 
         // Disable right-click rotate and touch rotation (keeps zoom gestures)
         if (!mapInit?.enable3D) {
@@ -574,37 +584,14 @@ class MapManager {
                 paint: { 'background-color': tone.backdrop }
             });
 
-            sources['basemap'] = {
-                type: 'raster',
-                tiles: bm.tiles,
-                tileSize: 256,
-                maxzoom: bm.maxZoom || 19,
-                attribution: bm.attribution
-            };
-            layers.push({
-                id: 'basemap-layer',
-                type: 'raster',
-                source: 'basemap',
-                minzoom: 0,
-                maxzoom: 22,
-                paint: this._getBasemapRasterPaint()
-            });
+            sources['basemap'] = this._buildBasemapSourceSpec(bm);
+            layers.push(this._buildBasemapRasterLayerSpec('basemap-layer', 'basemap'));
 
             if (bm.overlayTiles) {
-                sources['basemap-overlay'] = {
-                    type: 'raster',
-                    tiles: bm.overlayTiles,
-                    tileSize: 256,
-                    maxzoom: 20
-                };
-                layers.push({
-                    id: 'basemap-overlay-layer',
-                    type: 'raster',
-                    source: 'basemap-overlay',
-                    minzoom: 0,
-                    maxzoom: 22,
-                    paint: this._getBasemapRasterPaint({ applyTint: false })
-                });
+                sources['basemap-overlay'] = this._buildBasemapOverlaySourceSpec(bm);
+                layers.push(this._buildBasemapRasterLayerSpec('basemap-overlay-layer', 'basemap-overlay', {
+                    applyTint: false
+                }));
             }
         }
 
@@ -634,9 +621,38 @@ class MapManager {
             type: 'raster',
             tiles: bm.tiles,
             tileSize: 256,
+            // Native tile cutoff only — MapLibre overzooms these past maxzoom.
             maxzoom: bm.maxZoom || 19,
             attribution: bm.attribution
         };
+    }
+
+    _buildBasemapOverlaySourceSpec(bm) {
+        return {
+            type: 'raster',
+            tiles: bm.overlayTiles,
+            tileSize: 256,
+            maxzoom: 20
+        };
+    }
+
+    _buildBasemapRasterLayerSpec(id, sourceId, { applyTint = true } = {}) {
+        return {
+            id,
+            type: 'raster',
+            source: sourceId,
+            minzoom: 0,
+            paint: this._getBasemapRasterPaint({ applyTint })
+        };
+    }
+
+    _unlockBasemapLayerZoom() {
+        const map = this.map;
+        if (!map?.setLayerZoomRange) return;
+        for (const layerId of ['basemap-layer', 'basemap-overlay-layer']) {
+            if (!map.getLayer(layerId)) continue;
+            map.setLayerZoomRange(layerId, 0, BASEMAP_LAYER_VISIBILITY_MAX_ZOOM);
+        }
     }
 
     _replaceBasemapSources(bm) {
@@ -647,31 +663,19 @@ class MapManager {
 
         const insertBefore = beforeId && this.map.getLayer(beforeId) ? beforeId : undefined;
         this.map.addSource('basemap', this._buildBasemapSourceSpec(bm));
-        this.map.addLayer({
-            id: 'basemap-layer',
-            type: 'raster',
-            source: 'basemap',
-            minzoom: 0,
-            maxzoom: 22,
-            paint: this._getBasemapRasterPaint()
-        }, insertBefore);
+        this.map.addLayer(this._buildBasemapRasterLayerSpec('basemap-layer', 'basemap'), insertBefore);
 
-        if (!bm.overlayTiles) return;
+        if (bm.overlayTiles) {
+            this.map.addSource('basemap-overlay', this._buildBasemapOverlaySourceSpec(bm));
+            this.map.addLayer(
+                this._buildBasemapRasterLayerSpec('basemap-overlay-layer', 'basemap-overlay', {
+                    applyTint: false
+                }),
+                insertBefore
+            );
+        }
 
-        this.map.addSource('basemap-overlay', {
-            type: 'raster',
-            tiles: bm.overlayTiles,
-            tileSize: 256,
-            maxzoom: 20
-        });
-        this.map.addLayer({
-            id: 'basemap-overlay-layer',
-            type: 'raster',
-            source: 'basemap-overlay',
-            minzoom: 0,
-            maxzoom: 22,
-            paint: this._getBasemapRasterPaint({ applyTint: false })
-        }, insertBefore);
+        this._unlockBasemapLayerZoom();
     }
 
     _withTerrainPaused(fn) {

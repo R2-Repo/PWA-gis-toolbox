@@ -60,6 +60,9 @@ export {
     UDOT_FIBER_NEIGHBORHOOD_ZOOM,
     UDOT_FIBER_ICON_PX,
     UDOT_FIBER_ICON_ZOOM_PX,
+    UDOT_FIBER_GROUND_LOCK_ZOOM,
+    UDOT_FIBER_ICON_SPRITE_MAX_PX,
+    UDOT_FIBER_POINT_LAYER_KEYS,
     udotFiberTargetIconPx,
     udotFiberIconSpritePx,
     udotFiberIconSizeFromEsriWidth,
@@ -73,7 +76,9 @@ export {
     UDOT_FIBER_DRAW_ORDER,
     udotFiberDrawRank,
     udotFiberKeyFromUrl,
+    isUdotFiberLabelLayerId,
     groupUdotFiberMapLayerIds,
+    collectUdotFiberOrderedIds,
     orderUdotFiberLayers
 } from './draw-order.js';
 export {

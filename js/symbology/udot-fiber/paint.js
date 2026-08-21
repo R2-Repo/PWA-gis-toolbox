@@ -102,10 +102,18 @@ function lineLabelSize(fiberKey) {
     const base = fiberKey === 'conduit' ? 10 : 11;
     return [
         'interpolate', ['linear'], ['zoom'],
-        15, base,
-        17, base + 0.5,
-        20, base + 1
+        14, base,
+        17, base + 1,
+        20, base + 2
     ];
+}
+
+function lineLabelColor(layerStyle, labelCfg) {
+    const compiled = compilePaint(layerStyle, 'line');
+    return compiled?.strokeColor
+        ?? layerStyle?.labels?.color
+        ?? labelCfg?.color
+        ?? '#111827';
 }
 
 /**
@@ -134,15 +142,15 @@ export function buildUdotFiberLabelSpecs({
             'text-font': UDOT_FIBER_LABEL_FONT,
             'text-pitch-alignment': isLine ? 'map' : 'viewport',
             'text-letter-spacing': 0.03,
-            'text-padding': isLine ? 8 : 2,
+            'text-padding': isLine ? (fiberKey === 'conduit' ? 2 : 8) : 2,
             'text-max-width': 24,
-            'text-allow-overlap': false,
-            'text-ignore-placement': false,
+            'text-allow-overlap': fiberKey === 'conduit',
+            'text-ignore-placement': fiberKey === 'conduit',
             'text-optional': true
         };
         if (isLine) {
             layout['symbol-placement'] = 'line';
-            layout['symbol-spacing'] = 360;
+            layout['symbol-spacing'] = fiberKey === 'conduit' ? 190 : 360;
             layout['text-max-angle'] = 45;
             layout['text-keep-upright'] = true;
             layout['text-rotation-alignment'] = 'map';
@@ -156,8 +164,9 @@ export function buildUdotFiberLabelSpecs({
         const filter = isLine
             ? lineLabelFilter(labelCfg.field, fiberKey)
             : combineUdotFiberMapLibreFilter(base.filter, fiberKey);
+        const lineFloor = fiberKey === 'conduit' ? 14 : 15;
         const labelMin = isLine
-            ? Math.max(15, Number(base.minzoom) || 0, minz ?? 0)
+            ? Math.max(lineFloor, minz ?? 0)
             : (minz != null ? Math.max(Number(base.minzoom) || 0, minz) : base.minzoom);
         const shared = {
             type: 'symbol',
@@ -168,15 +177,16 @@ export function buildUdotFiberLabelSpecs({
         };
 
         if (isLine) {
+            const conduit = fiberKey === 'conduit';
             return [{
                 ...shared,
                 id: labelId,
                 layout: { ...layout },
                 paint: {
-                    'text-color': '#111827',
+                    'text-color': lineLabelColor(layerStyle, labelCfg),
                     'text-halo-color': '#ffffff',
-                    'text-halo-width': 2.6,
-                    'text-halo-blur': 0.05,
+                    'text-halo-width': conduit ? 4.6 : 4.2,
+                    'text-halo-blur': 0.15,
                     'text-opacity': 1
                 }
             }];
@@ -253,6 +263,7 @@ export function buildUdotFiberLayerSpecs({
             ?? (typeof styLine.strokeWidth === 'number' ? styLine.strokeWidth : 1.2);
         const coreWidth = buildUdotFiberLineWidthExpression(baseWidth, fiberKey);
         const dash = resolveLineDash(layerStyle, fiberKey);
+        const dashed = Array.isArray(dash) && dash.length;
 
         const lineLayer = (id, layout, paint) => ({
             id,
@@ -267,40 +278,43 @@ export function buildUdotFiberLayerSpecs({
             paint
         });
 
-        specs.push(lineLayer(
-            `svc-lyr-${datasetId}-casing`,
-            { 'line-cap': 'round', 'line-join': 'round' },
-            {
-                'line-color': CASING_COLOR,
-                'line-width': buildUdotFiberLineWidthExpression(
-                    widenLineWidth(baseWidth, CASING_EXTRA, baseWidth),
-                    fiberKey
-                ),
-                'line-opacity': CASING_OPACITY * opacity
-            }
-        ));
-        specs.push(lineLayer(
-            `svc-lyr-${datasetId}-glow`,
-            { 'line-cap': 'round', 'line-join': 'round' },
-            {
-                'line-color': styLine.strokeColor,
-                'line-width': buildUdotFiberLineWidthExpression(
-                    widenLineWidth(baseWidth, GLOW_EXTRA, baseWidth),
-                    fiberKey
-                ),
-                'line-blur': GLOW_BLUR,
-                'line-opacity': GLOW_OPACITY * opacity
-            }
-        ));
+        // Dashed conduit must stay a traditional dash (transparent gaps). A
+        // solid casing/glow under the core reads as a grey dashed underlay.
+        if (!dashed) {
+            specs.push(lineLayer(
+                `svc-lyr-${datasetId}-casing`,
+                { 'line-cap': 'round', 'line-join': 'round' },
+                {
+                    'line-color': CASING_COLOR,
+                    'line-width': buildUdotFiberLineWidthExpression(
+                        widenLineWidth(baseWidth, CASING_EXTRA, baseWidth),
+                        fiberKey
+                    ),
+                    'line-opacity': CASING_OPACITY * opacity
+                }
+            ));
+            specs.push(lineLayer(
+                `svc-lyr-${datasetId}-glow`,
+                { 'line-cap': 'round', 'line-join': 'round' },
+                {
+                    'line-color': styLine.strokeColor,
+                    'line-width': buildUdotFiberLineWidthExpression(
+                        widenLineWidth(baseWidth, GLOW_EXTRA, baseWidth),
+                        fiberKey
+                    ),
+                    'line-blur': GLOW_BLUR,
+                    'line-opacity': GLOW_OPACITY * opacity
+                }
+            ));
+        }
         const corePaint = {
             'line-color': styLine.strokeColor,
             'line-width': coreWidth,
             'line-opacity': scaleOpacity(styLine.strokeOpacity, opacity)
         };
-        const coreLayout = { 'line-cap': 'round', 'line-join': 'round' };
-        if (Array.isArray(dash) && dash.length) {
+        const coreLayout = { 'line-cap': dashed ? 'butt' : 'round', 'line-join': 'round' };
+        if (dashed) {
             corePaint['line-dasharray'] = dash;
-            coreLayout['line-cap'] = 'butt';
         }
         specs.push(lineLayer(`svc-lyr-${datasetId}-line`, coreLayout, corePaint));
     }

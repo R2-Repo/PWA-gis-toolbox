@@ -2,7 +2,7 @@
  * Procedural CAD lookalike glyphs for UDOT Fiber Network (no external SVGs).
  */
 import { resolveLookalike } from './lookalikes.js';
-import { UDOT_FIBER_ICON_ZOOM_PX, udotFiberIconSpritePx } from './zoom-scale.js';
+import { UDOT_FIBER_POINT_LAYER_KEYS, udotFiberIconSpritePx } from './zoom-scale.js';
 
 /** @typedef {'circle'|'ring'|'rect'|'square-x'|'bowtie'|'dashed-box'|'diamond'|'vee-circle'|'rounded-square'|'hex'|'building'} UdotGlyphKind */
 
@@ -115,13 +115,14 @@ function toneFor(color) {
 }
 
 /**
- * @param {number} s
+ * @param {number} w
+ * @param {number} h
  * @param {string} inner
  */
-function svgFrame(s, inner) {
-    const common = `xmlns="http://www.w3.org/2000/svg" width="${s}" height="${s}" viewBox="0 0 ${s} ${s}"`;
+function svgFrame(w, h, inner) {
+    const common = `xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"`;
     return `<svg ${common}>
-  <ellipse cx="${s / 2}" cy="${s * 0.86}" rx="${s * 0.32}" ry="${s * 0.07}" fill="rgba(0,0,0,0.28)"/>
+  <ellipse cx="${w / 2}" cy="${h * 0.9}" rx="${w * 0.3}" ry="${h * 0.08}" fill="rgba(0,0,0,0.28)"/>
   ${inner}
 </svg>`;
 }
@@ -148,7 +149,7 @@ export function makeUdotGlyphSvg(glyph, stroke, fill, size = UDOT_FIBER_GLYPH_PX
         const y1 = pad;
         const x2 = s - pad;
         const y2 = s - pad * 1.15;
-        return svgFrame(s, `
+        return svgFrame(s, s, `
   <rect x="${pad}" y="${pad * 0.85}" width="${s - pad * 2}" height="${s - pad * 2.1}" rx="${sw}" fill="${body}" fill-opacity="0.22" stroke="${ink}" stroke-width="${sw}"/>
   <line x1="${x1 + sw}" y1="${y1}" x2="${x2 - sw}" y2="${y2}" stroke="${ink}" stroke-width="${sw}" stroke-linecap="round"/>
   <line x1="${x2 - sw}" y1="${y1}" x2="${x1 + sw}" y2="${y2}" stroke="${ink}" stroke-width="${sw}" stroke-linecap="round"/>
@@ -156,24 +157,26 @@ export function makeUdotGlyphSvg(glyph, stroke, fill, size = UDOT_FIBER_GLYPH_PX
     }
 
     if (glyph === 'bowtie') {
-        return svgFrame(s, `
-  <polygon points="${s * 0.12},${s * 0.22} ${mid},${mid} ${s * 0.12},${s * 0.72}" fill="${body}" fill-opacity="0.55" stroke="${ink}" stroke-width="${sw}" stroke-linejoin="round"/>
-  <polygon points="${s * 0.88},${s * 0.22} ${mid},${mid} ${s * 0.88},${s * 0.72}" fill="${body}" fill-opacity="0.55" stroke="${ink}" stroke-width="${sw}" stroke-linejoin="round"/>
-  <ellipse cx="${s * 0.22}" cy="${s * 0.3}" rx="${s * 0.08}" ry="${s * 0.04}" fill="${hi}" fill-opacity="0.4"/>`);
+        return svgFrame(s, s, `
+  <polygon points="${s * 0.06},${s * 0.14} ${mid},${mid} ${s * 0.06},${s * 0.82}" fill="${body}" fill-opacity="0.55" stroke="${ink}" stroke-width="${sw}" stroke-linejoin="round"/>
+  <polygon points="${s * 0.94},${s * 0.14} ${mid},${mid} ${s * 0.94},${s * 0.82}" fill="${body}" fill-opacity="0.55" stroke="${ink}" stroke-width="${sw}" stroke-linejoin="round"/>
+  <ellipse cx="${s * 0.18}" cy="${s * 0.26}" rx="${s * 0.08}" ry="${s * 0.04}" fill="${hi}" fill-opacity="0.4"/>`);
     }
 
     if (glyph === 'rect') {
-        const rw = s * 0.68;
-        const rh = s * 0.42;
-        const x = (s - rw) / 2;
-        const y = (s - rh) / 2 - s * 0.02;
-        return svgFrame(s, `
+        const w = Math.round(s * 1.4);
+        const h = Math.round(s * 0.82);
+        const rw = w * 0.9;
+        const rh = rw / 2.05;
+        const x = (w - rw) / 2;
+        const y = (h - rh) / 2 - h * 0.04;
+        return svgFrame(w, h, `
   <rect x="${x}" y="${y}" width="${rw}" height="${rh}" rx="0.4" fill="${body}" fill-opacity="0.2" stroke="${ink}" stroke-width="${sw * 1.15}"/>
-  <ellipse cx="${mid}" cy="${y + sw}" rx="${rw * 0.28}" ry="${rh * 0.12}" fill="${hi}" fill-opacity="0.4"/>`);
+  <ellipse cx="${w / 2}" cy="${y + sw}" rx="${rw * 0.28}" ry="${rh * 0.12}" fill="${hi}" fill-opacity="0.4"/>`);
     }
 
     if (glyph === 'dashed-box') {
-        return svgFrame(s, `
+        return svgFrame(s, s, `
   <rect x="${pad}" y="${pad * 0.85}" width="${s - pad * 2}" height="${s - pad * 2.1}" rx="${sw}" fill="${body}" fill-opacity="0.12" stroke="${ink}" stroke-width="${sw}" stroke-dasharray="${sw * 2.1} ${sw * 1.4}"/>
   <ellipse cx="${mid}" cy="${pad * 1.15}" rx="${s * 0.14}" ry="${s * 0.04}" fill="${hi}" fill-opacity="0.4"/>`);
     }
@@ -181,13 +184,13 @@ export function makeUdotGlyphSvg(glyph, stroke, fill, size = UDOT_FIBER_GLYPH_PX
     if (glyph === 'diamond') {
         const top = pad * 0.85;
         const bot = s - pad * 1.2;
-        return svgFrame(s, `
+        return svgFrame(s, s, `
   <polygon points="${mid},${top} ${s - pad},${mid} ${mid},${bot} ${pad},${mid}" fill="${body}" fill-opacity="0.42" stroke="${ink}" stroke-width="${sw}" stroke-linejoin="round"/>
   <ellipse cx="${mid}" cy="${pad * 1.2}" rx="${s * 0.1}" ry="${s * 0.035}" fill="${hi}" fill-opacity="0.45"/>`);
     }
 
     if (glyph === 'ring') {
-        return svgFrame(s, `
+        return svgFrame(s, s, `
   <circle cx="${mid}" cy="${mid * 0.96}" r="${s * 0.34}" fill="${body}" fill-opacity="0.16" stroke="${ink}" stroke-width="${sw * 1.45}"/>
   <ellipse cx="${mid}" cy="${s * 0.28}" rx="${s * 0.12}" ry="${s * 0.04}" fill="${hi}" fill-opacity="0.4"/>`);
     }
@@ -199,13 +202,13 @@ export function makeUdotGlyphSvg(glyph, stroke, fill, size = UDOT_FIBER_GLYPH_PX
         const bot = cx + r * 0.36;
         const left = cx - r * 0.4;
         const right = cx + r * 0.4;
-        return svgFrame(s, `
+        return svgFrame(s, s, `
   <circle cx="${cx}" cy="${cx * 0.96}" r="${r}" fill="${body}" fill-opacity="0.18" stroke="${ink}" stroke-width="${sw}"/>
   <polyline points="${left},${top} ${cx},${bot} ${right},${top}" fill="none" stroke="${ink}" stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round"/>`);
     }
 
     if (glyph === 'rounded-square') {
-        return svgFrame(s, `
+        return svgFrame(s, s, `
   <rect x="${pad}" y="${pad * 0.85}" width="${s - pad * 2}" height="${s - pad * 2.1}" rx="${s * 0.14}" fill="${body}" fill-opacity="0.5" stroke="${ink}" stroke-width="${sw}"/>
   <ellipse cx="${mid}" cy="${pad * 1.2}" rx="${s * 0.16}" ry="${s * 0.045}" fill="${hi}" fill-opacity="0.5"/>`);
     }
@@ -217,7 +220,7 @@ export function makeUdotGlyphSvg(glyph, stroke, fill, size = UDOT_FIBER_GLYPH_PX
             const a = (Math.PI / 180) * (60 * i - 30);
             return `${mid + r * Math.cos(a)},${cy + r * Math.sin(a)}`;
         }).join(' ');
-        return svgFrame(s, `
+        return svgFrame(s, s, `
   <polygon points="${pts}" fill="${body}" fill-opacity="0.5" stroke="${ink}" stroke-width="${sw}" stroke-linejoin="round"/>
   <ellipse cx="${mid}" cy="${s * 0.3}" rx="${s * 0.12}" ry="${s * 0.04}" fill="${hi}" fill-opacity="0.45"/>`);
     }
@@ -228,13 +231,13 @@ export function makeUdotGlyphSvg(glyph, stroke, fill, size = UDOT_FIBER_GLYPH_PX
         const roof = pad * 0.7;
         const baseY = s - pad * 1.2;
         const wallY = s * 0.38;
-        return svgFrame(s, `
+        return svgFrame(s, s, `
   <polygon points="${mid},${roof} ${x},${wallY} ${x + w},${wallY}" fill="${body}" fill-opacity="0.55" stroke="${ink}" stroke-width="${sw}" stroke-linejoin="round"/>
   <rect x="${x + sw * 0.4}" y="${wallY}" width="${w - sw * 0.8}" height="${baseY - wallY}" fill="${body}" fill-opacity="0.42" stroke="${ink}" stroke-width="${sw}"/>
   <ellipse cx="${mid}" cy="${roof + sw}" rx="${s * 0.1}" ry="${s * 0.03}" fill="${hi}" fill-opacity="0.4"/>`);
     }
 
-    return svgFrame(s, `
+    return svgFrame(s, s, `
   <circle cx="${mid}" cy="${mid * 0.96}" r="${s * 0.3}" fill="${body}" stroke="${ink}" stroke-width="${sw}"/>
   <ellipse cx="${mid}" cy="${s * 0.3}" rx="${s * 0.12}" ry="${s * 0.04}" fill="${hi}" fill-opacity="0.45"/>`);
 }
@@ -295,7 +298,7 @@ export function ensureUdotGlyphImage(map, glyph, color, size = UDOT_FIBER_GLYPH_
  */
 export function preloadUdotFiberGlyphs(map, size = UDOT_FIBER_GLYPH_PX) {
     const sizes = new Set([UDOT_FIBER_GLYPH_PX, Number(size) || UDOT_FIBER_GLYPH_PX]);
-    for (const key of Object.keys(UDOT_FIBER_ICON_ZOOM_PX)) {
+    for (const key of UDOT_FIBER_POINT_LAYER_KEYS) {
         sizes.add(udotFiberIconSpritePx(key));
     }
     for (const px of sizes) {

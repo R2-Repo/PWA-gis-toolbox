@@ -8,9 +8,9 @@ How a REST layer URL is styled from published `drawingInfo` (including Custom UR
 
 Import → Live Layers → **UDOT Fiber Network** (password-gated composite). Adds six viewport-query layers from the MapServer. Hidden below neighborhood zoom (14); no idle refresh. Features are session / viewport only.
 
-Live Fiber uses a modern CAD paint pack: class-colored line stacks (casing + soft glow + core), dual-halo labels, and procedural lookalike icons. Published unique-value colors stay the same (`FIBER_SYMBOLS`, `CONDUIT_SYM`, Bentley `Fiber_Label`). Point icons scale with zoom; buildings and cabinets use a larger scale than boxes and splices.
+Live Fiber uses a modern CAD paint pack: class-colored line stacks (casing + soft glow + core), dual-halo labels, and procedural lookalike icons. Published unique-value colors stay the same (`FIBER_SYMBOLS`, `CONDUIT_SYM`, Bentley `Fiber_Label`). Boxes are landscape rectangles. Boxes, splices, and cabinets shrink as you zoom out through **17** (approved high-elevation look). From zoom **19.02** (approved close-to-ground look) boxes/splices grow with the map; cabinets use a flatter scale. Buildings still scale with zoom.
 
-Draw order is fixed (bottom → top): conduit, fiber, buildings, boxes, splices, **cabinets**. Panel reorder does not bury cabinets. Stacked Fiber features use the same map popup cycle (arrows + layer chips) as other layers.
+Draw order is fixed (bottom → top): conduit and fiber **line paint**, then those line labels, then buildings, boxes, splices, **cabinets**. Conduit is a traditional dashed stroke (transparent gaps — no grey casing underlay). Fiber/conduit labels use the line class color plus a white halo; conduit type is slightly smaller than fiber. Panel reorder does not bury cabinets. Stacked Fiber features use the same map popup cycle (arrows + layer chips) as other layers.
 
 Styles live in `js/symbology/udot-fiber/`. Live MapLibre specs: [`js/symbology/udot-fiber/paint.js`](../js/symbology/udot-fiber/paint.js). Lookalike icons: [`js/symbology/udot-fiber/lookalikes.js`](../js/symbology/udot-fiber/lookalikes.js).
 

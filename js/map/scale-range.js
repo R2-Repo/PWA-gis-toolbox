@@ -6,6 +6,9 @@
 export const MAPLIBRE_MIN_ZOOM = 0;
 export const MAPLIBRE_MAX_ZOOM = 24;
 
+/** Camera zoom ceiling. MapLibre's default is 22; 24 is ~4× closer to the ground. */
+export const MAP_CAMERA_MAX_ZOOM = MAPLIBRE_MAX_ZOOM;
+
 const EARTH_CIRCUMFERENCE_M = 40075016.686;
 
 /** Meters per pixel at zoom 0 for a 256px tile at the given latitude. */

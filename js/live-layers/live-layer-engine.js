@@ -750,7 +750,7 @@ export function getServiceLayerRuntime(mapManager, layerId) {
 }
 
 /**
- * Re-apply Fiber draw order: cabinets → splices → boxes above everything else.
+ * Re-apply Fiber draw order: conduit/fiber paint at the back, splices above boxes, cabinets on top.
  * @param {object} mapManager
  */
 export function orderUdotFiberLiveLayers(mapManager) {

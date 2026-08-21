@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
     UDOT_FIBER_DRAW_ORDER,
+    collectUdotFiberOrderedIds,
     groupUdotFiberMapLayerIds,
     orderUdotFiberLayers,
     udotFiberDrawRank,
@@ -13,6 +14,8 @@ describe('UDOT Fiber draw order', () => {
         expect(udotFiberDrawRank('cabinets')).toBeGreaterThan(udotFiberDrawRank('splices'));
         expect(udotFiberDrawRank('splices')).toBeGreaterThan(udotFiberDrawRank('boxes'));
         expect(udotFiberDrawRank('boxes')).toBeGreaterThan(udotFiberDrawRank('building'));
+        expect(udotFiberDrawRank('fiber')).toBeGreaterThan(udotFiberDrawRank('conduit'));
+        expect(udotFiberDrawRank('boxes')).toBeGreaterThan(udotFiberDrawRank('fiber'));
     });
 
     it('detects Fiber layer keys from MapServer URLs', () => {
@@ -22,7 +25,24 @@ describe('UDOT Fiber draw order', () => {
         expect(udotFiberKeyFromUrl('https://example.com/MapServer/0')).toBeNull();
     });
 
-    it('moves cabinets last so they stay on top', () => {
+    it('puts line paint at the back, conduit labels in front of lines, splice above box', () => {
+        const byKey = groupUdotFiberMapLayerIds([
+            { key: 'boxes', mapLayerIds: ['box-glyph'] },
+            { key: 'splices', mapLayerIds: ['splice-glyph'] },
+            { key: 'cabinets', mapLayerIds: ['cab-glyph'] },
+            { key: 'fiber', mapLayerIds: ['fiber-line'] },
+            { key: 'conduit', mapLayerIds: ['conduit-line', 'svc-conduit-line-labels'] }
+        ]);
+        const ordered = collectUdotFiberOrderedIds(byKey);
+
+        expect(ordered.indexOf('conduit-line')).toBeLessThan(ordered.indexOf('fiber-line'));
+        expect(ordered.indexOf('fiber-line')).toBeLessThan(ordered.indexOf('svc-conduit-line-labels'));
+        expect(ordered.indexOf('svc-conduit-line-labels')).toBeLessThan(ordered.indexOf('box-glyph'));
+        expect(ordered.indexOf('box-glyph')).toBeLessThan(ordered.indexOf('splice-glyph'));
+        expect(ordered.at(-1)).toBe('cab-glyph');
+    });
+
+    it('moves layers to top in stack order so cabinets stay last', () => {
         const added = [];
         const map = {
             getLayer: (id) => ({ id }),
@@ -34,15 +54,21 @@ describe('UDOT Fiber draw order', () => {
             { key: 'boxes', mapLayerIds: ['box-glyph'] },
             { key: 'splices', mapLayerIds: ['splice-glyph'] },
             { key: 'cabinets', mapLayerIds: ['cab-glyph'] },
-            { key: 'fiber', mapLayerIds: ['fiber-line'] }
+            { key: 'fiber', mapLayerIds: ['fiber-line'] },
+            { key: 'conduit', mapLayerIds: ['conduit-line', 'svc-conduit-line-labels'] }
         ]);
 
         orderUdotFiberLayers(map, byKey);
 
-        expect(added.some((step) => step.id === 'fiber-line')).toBe(true);
-        expect(added.some((step) => step.id === 'box-glyph')).toBe(true);
+        expect(added.map((step) => step.id)).toEqual([
+            'conduit-line',
+            'fiber-line',
+            'svc-conduit-line-labels',
+            'box-glyph',
+            'splice-glyph',
+            'cab-glyph'
+        ]);
+        expect(added.every((step) => step.beforeId === null)).toBe(true);
         expect(added.at(-1)).toEqual({ id: 'cab-glyph', beforeId: null });
-        const cabGuarantee = added.filter((step) => step.id === 'cab-glyph' && step.beforeId === null);
-        expect(cabGuarantee.length).toBeGreaterThanOrEqual(1);
     });
 });

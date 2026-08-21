@@ -63,6 +63,8 @@ describe('UDOT Fiber symbology', () => {
         expect(style.labels.enabled).toBe(true);
         expect(style.labels.field).toBe('Fiber_Label');
         expect(style.labels.placement).toBe('line');
+        expect(style.labels.color[0]).toBe('match');
+        expect(JSON.stringify(style.labels.color)).toContain('FIBER_SYMBOLS');
         expect(style._udotFiber.layerKey).toBe('fiber');
 
         const paint = compilePaint(style, 'line');
@@ -103,9 +105,9 @@ describe('UDOT Fiber symbology', () => {
         expect(services.every((s) => s.style?.mode === 'smart')).toBe(true);
     });
 
-    it('scales cabinet and building icons with zoom', () => {
+    it('holds ArcGIS box/splice size until 19.02, then grows with the map', () => {
         expect(udotFiberIconSizeFromEsriWidth(156, 'building')).toBeCloseTo(44 / 156);
-        expect(udotFiberIconSizeFromEsriWidth(20, 'cabinets')).toBeCloseTo(28 / 20);
+        expect(udotFiberIconSizeFromEsriWidth(20, 'cabinets')).toBeCloseTo(29 / 20);
         const held = buildUdotFiberZoomSize(2, 'fiber');
         expect(held[0]).toBe('interpolate');
         expect(held).toContain(UDOT_FIBER_NEIGHBORHOOD_ZOOM);
@@ -115,16 +117,19 @@ describe('UDOT Fiber symbology', () => {
         expect(icon).toContain(14);
         expect(icon).toContain(22);
         expect(JSON.stringify(icon)).toContain('104');
-        const cabinetIcon = buildUdotFiberIconSizeExpression('cabinets');
-        expect(cabinetIcon).toContain(22);
-        expect(JSON.stringify(cabinetIcon)).toContain('68');
         const boxIcon = buildUdotFiberIconSizeExpression('boxes');
-        expect(boxIcon[0]).toBe('interpolate');
-        expect(boxIcon).toContain(14);
-        expect(boxIcon).toContain(16);
-        expect(boxIcon).toContain(22);
-        expect(JSON.stringify(boxIcon)).toContain('20');
-        expect(buildUdotFiberIconSizeExpression('splices')).toContain(22);
+        expect(boxIcon[1]).toEqual(['exponential', 2]);
+        const boxJson = JSON.stringify(boxIcon);
+        expect(boxIcon).toContain(17);
+        expect(boxJson).toContain('19.02');
+        expect(boxJson).toContain('16');
+        expect(boxJson).toContain('32');
+        const spliceIcon = JSON.stringify(buildUdotFiberIconSizeExpression('splices'));
+        expect(spliceIcon).toContain('19.02');
+        expect(spliceIcon).toContain('12');
+        expect(spliceIcon).toContain('24');
+        const cabinetIcon = JSON.stringify(buildUdotFiberIconSizeExpression('cabinets'));
+        expect(cabinetIcon).toContain('42');
     });
 
     it('hides listed UDOT Boxes enclosure names', () => {
@@ -188,7 +193,11 @@ describe('UDOT Fiber symbology', () => {
         expect(svg).toContain('<svg');
         expect(svg).toContain('rect');
         expect(svg).toContain('rgba(0,0,0,0.28)');
-        expect(makeUdotGlyphSvg('rect', '#111111', '#111111', 24)).toContain('<rect');
+        const boxSvg = makeUdotGlyphSvg('rect', '#111111', '#111111', 24);
+        expect(boxSvg).toContain('<rect');
+        expect(Number(boxSvg.match(/width="(\d+)"/)?.[1])).toBeGreaterThan(
+            Number(boxSvg.match(/height="(\d+)"/)?.[1])
+        );
         expect(makeUdotGlyphSvg('ring', '#ff0000', '#ff0000', 24)).toContain('<circle');
         const hit = resolvePointGlyph('building', { MODEL: 'UEN Building' });
         expect(hit?.glyph).toBe('square-x');
@@ -294,18 +303,18 @@ describe('UDOT Fiber symbology', () => {
         ], null);
         expect(out[0].properties._udotGlyph).toMatch(/^udot-glyph-square-x-/);
         expect(out[0].properties._udotGlyph).not.toMatch(/^arcgis-pms-/);
-        expect(out[0].properties._udotEsriWidth).toBe(68);
+        expect(out[0].properties._udotEsriWidth).toBe(186);
         const box = decorateUdotFiberPointFeatures('boxes', [
             { type: 'Feature', properties: { DT_RSCENCLOSURE_NAME: 'Exist Type I PC-R1' } }
         ], null);
         const splice = decorateUdotFiberPointFeatures('splices', [
             { type: 'Feature', properties: { MODEL: 'Endpoint' } }
         ], null);
-        expect(box[0].properties._udotEsriWidth).toBe(52);
-        expect(splice[0].properties._udotEsriWidth).toBe(52);
+        expect(box[0].properties._udotEsriWidth).toBe(256);
+        expect(splice[0].properties._udotEsriWidth).toBe(256);
     });
 
-    it('builds a casing/glow/core line stack with conduit dash on the core only', () => {
+    it('paints conduit as a traditional dash without a grey casing underlay', () => {
         expect(widenLineWidth(2, 2.2)).toBeCloseTo(4.2);
         const specs = buildUdotFiberLayerSpecs({
             datasetId: 'fiber-demo',
@@ -316,29 +325,51 @@ describe('UDOT Fiber symbology', () => {
             minzoom: 14
         });
         const byId = Object.fromEntries(specs.map((spec) => [spec.id, spec]));
-        expect(byId['svc-lyr-fiber-demo-casing']).toBeTruthy();
-        expect(byId['svc-lyr-fiber-demo-glow']).toBeTruthy();
+        expect(byId['svc-lyr-fiber-demo-casing']).toBeUndefined();
+        expect(byId['svc-lyr-fiber-demo-glow']).toBeUndefined();
         expect(byId['svc-lyr-fiber-demo-line'].paint['line-dasharray']).toEqual([3, 2]);
-        expect(byId['svc-lyr-fiber-demo-casing'].paint['line-dasharray']).toBeUndefined();
-        expect(byId['svc-lyr-fiber-demo-glow'].paint['line-dasharray']).toBeUndefined();
-        expect(byId['svc-lyr-fiber-demo-glow'].paint['line-blur']).toBe(1.35);
-        expect(byId['svc-lyr-fiber-demo-casing'].paint['line-width'][0]).toBe('interpolate');
+        expect(byId['svc-lyr-fiber-demo-line'].layout['line-cap']).toBe('butt');
         expect(byId['svc-lyr-fiber-demo-line'].paint['line-width'][0]).toBe('interpolate');
         expect(byId['svc-lyr-fiber-demo-line'].paint['line-width']).toContain(2.55);
 
         const ink = specs.find((spec) => spec.id === 'svc-fiber-demo-line-labels');
         expect(specs.some((spec) => spec.id.endsWith('-line-labels-plate'))).toBe(false);
-        expect(ink.paint['text-color']).toBe('#111827');
+        expect(specs.indexOf(ink)).toBeGreaterThan(specs.indexOf(byId['svc-lyr-fiber-demo-line']));
+        expect(ink.paint['text-color']).toEqual(byId['svc-lyr-fiber-demo-line'].paint['line-color']);
+        expect(JSON.stringify(ink.paint['text-color'])).toContain('CONDUIT_SYM');
         expect(ink.paint['text-halo-color']).toBe('#ffffff');
-        expect(ink.paint['text-halo-width']).toBeGreaterThanOrEqual(2.4);
+        expect(ink.paint['text-halo-width']).toBeGreaterThanOrEqual(3);
         expect(ink.layout['text-font']).toEqual(UDOT_FIBER_LABEL_FONT);
         expect(ink.layout['symbol-placement']).toBe('line');
-        expect(ink.layout['text-allow-overlap']).toBe(false);
-        expect(ink.layout['symbol-spacing']).toBeGreaterThanOrEqual(300);
-        expect(ink.minzoom).toBeGreaterThanOrEqual(15);
+        expect(ink.layout['text-allow-overlap']).toBe(true);
+        expect(ink.layout['text-ignore-placement']).toBe(true);
+        expect(ink.layout['symbol-spacing']).toBe(190);
+        expect(ink.layout['text-size']).toContain(10);
+        expect(ink.minzoom).toBe(14);
         expect(JSON.stringify(ink.filter)).toContain('MultiLineString');
         expect(ink.layout['text-pitch-alignment']).toBe('map');
         expect(ink.layout['text-rotation-alignment']).toBe('map');
+    });
+
+    it('keeps fiber casing/glow because fiber is a solid stroke', () => {
+        const specs = buildUdotFiberLayerSpecs({
+            datasetId: 'fiber-solid',
+            sourceId: 'svc-src-fiber-solid',
+            layerStyle: buildUdotFiberLayerStyle('fiber'),
+            opacity: 1,
+            fiberKey: 'fiber',
+            minzoom: 14
+        });
+        const byId = Object.fromEntries(specs.map((spec) => [spec.id, spec]));
+        expect(byId['svc-lyr-fiber-solid-casing']).toBeTruthy();
+        expect(byId['svc-lyr-fiber-solid-glow']).toBeTruthy();
+        expect(byId['svc-lyr-fiber-solid-line'].paint['line-dasharray']).toBeUndefined();
+        const ink = specs.find((spec) => spec.id === 'svc-fiber-solid-line-labels');
+        expect(ink.paint['text-color']).toEqual(byId['svc-lyr-fiber-solid-line'].paint['line-color']);
+        expect(JSON.stringify(ink.paint['text-color'])).toContain('FIBER_SYMBOLS');
+        expect(ink.paint['text-halo-color']).toBe('#ffffff');
+        expect(ink.layout['text-size']).toContain(11);
+        expect(ink.layout['symbol-spacing']).toBe(360);
     });
 
     it('billboards Fiber point icons in 3D', () => {
@@ -379,6 +410,8 @@ describe('UDOT Fiber symbology', () => {
             minzoom: 14
         });
         expect(specs.some((spec) => spec.id === 'svc-lyr-stripped-line')).toBe(true);
-        expect(specs.some((spec) => spec.id === 'svc-lyr-stripped-casing')).toBe(true);
+        expect(specs.some((spec) => spec.id === 'svc-lyr-stripped-casing')).toBe(false);
+        const line = specs.find((spec) => spec.id === 'svc-lyr-stripped-line');
+        expect(line.paint['line-dasharray']).toEqual([3, 2]);
     });
 });

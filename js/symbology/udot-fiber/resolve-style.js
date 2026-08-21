@@ -73,33 +73,12 @@ export function buildClassColorExpression(field, classes, fallback) {
 }
 
 /**
- * Label text-color: prefer Bentley color by label field value, else ArcGIS class color.
+ * Label text-color matches the line's unique-value class color.
  * @param {object} layerMeta
  */
 function buildLabelColorExpression(layerMeta) {
-    const labelField = layerMeta.labelField;
     const classField = layerMeta.classField;
     const classes = layerMeta.classes || [];
-
-    // Fiber labels match Bentley CAD colors by text. Conduit (and others)
-    // use unique-value class colors — Bentley names do not apply.
-    if (labelField === 'Fiber_Label') {
-        const pairs = [];
-        const seen = new Set();
-        for (const sym of bentleySymbols.symbols || []) {
-            if (!sym.color || !sym.name) continue;
-            const name = String(sym.name).trim();
-            const key = name.toLowerCase();
-            if (seen.has(key)) continue;
-            seen.add(key);
-            pairs.push(name, sym.color);
-            if (pairs.length >= 200) break; // MapLibre match practical limit
-        }
-        if (pairs.length) {
-            return ['match', ['to-string', ['get', labelField]], ...pairs, DEFAULT_LINE_COLOR];
-        }
-    }
-
     if (classField && classes.length) {
         return buildClassColorExpression(classField, classes, DEFAULT_LINE_COLOR);
     }
@@ -184,22 +163,24 @@ export function buildUdotFiberLayerStyle(layerKey) {
     }
 
     if (layerMeta.labelField) {
-        const minZoom = layerMeta.labelMinScale
+        const publishedMin = layerMeta.labelMinScale
             ? (scaleToZoom(layerMeta.labelMinScale, UTAH_LAT) ?? 14)
             : (isLine ? 14 : 12);
+        // Published conduit minScale (1000) is ~z19 — too late for a live overlay.
+        const minZoom = isConduit ? 14 : publishedMin;
         style.labels = {
             enabled: true,
             field: layerMeta.labelField,
             placement: isLine ? 'line' : 'point',
             minZoom: Math.max(10, Math.round(minZoom * 10) / 10),
             maxZoom: 24,
-            size: isConduit ? 9.5 : (isLine ? 10.5 : 11),
+            size: isConduit ? 10 : (isLine ? 11 : 11),
             color: buildLabelColorExpression(layerMeta),
             haloColor: '#ffffff',
-            haloWidth: 0.95,
+            haloWidth: isConduit ? 4.6 : (isLine ? 4.2 : 0.95),
             font: ['Open Sans Regular', 'Arial Unicode MS Regular'],
-            allowOverlap: false,
-            ignorePlacement: false
+            allowOverlap: isConduit,
+            ignorePlacement: isConduit
         };
     }
 
