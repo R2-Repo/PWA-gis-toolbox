@@ -20,8 +20,8 @@ export const UDOT_FIBER_GROUND_LOCK_ZOOM = 19.02;
 export const UDOT_FIBER_ICON_PX = Object.freeze({
     building: 44,
     cabinets: 29,
-    splices: 12,
-    boxes: 16,
+    splices: 18,
+    boxes: 18,
     default: 16
 });
 
@@ -174,8 +174,11 @@ export function buildUdotFiberCircleRadiusExpression(radius, layerKey) {
     return buildUdotFiberZoomSize(radius, layerKey);
 }
 
+/** Invisible hit-circle radius floor — keep it on the icon, not a fat halo. */
+export const UDOT_FIBER_HIT_RADIUS_MIN_PX = 3;
+
 /**
- * Invisible hit-circle radius — at least 16px, ~55% of the on-screen icon.
+ * Invisible hit-circle radius — half the on-screen icon, no fat halo.
  * @param {string} [layerKey]
  */
 export function buildUdotFiberHitRadiusExpression(layerKey) {
@@ -183,9 +186,9 @@ export function buildUdotFiberHitRadiusExpression(layerKey) {
     if (stops?.length) {
         const expr = ['interpolate', ['linear'], ['zoom']];
         for (const [z, px] of stops) {
-            expr.push(z, Math.max(16, px * 0.55));
+            expr.push(z, Math.max(UDOT_FIBER_HIT_RADIUS_MIN_PX, px * 0.5));
         }
         return expr;
     }
-    return Math.max(16, udotFiberTargetIconPx(layerKey) * 0.55);
+    return Math.max(UDOT_FIBER_HIT_RADIUS_MIN_PX, udotFiberTargetIconPx(layerKey) * 0.5);
 }

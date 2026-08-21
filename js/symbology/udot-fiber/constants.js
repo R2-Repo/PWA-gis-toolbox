@@ -32,6 +32,12 @@ export const UDOT_FIBER_MIN_ZOOM = 14;
 /** Published rotationInfo field (`$feature.Rotation`, geographic / clockwise from north). */
 export const UDOT_FIBER_ROTATION_FIELD = 'Rotation';
 
+/** Published Boxes in-symbol label (`drawingInfo.labelingInfo`). */
+export const UDOT_BOX_LABEL_FIELD = 'BOXLABELS';
+
+/** Stamped on landscape box features that should show an in-rectangle label. */
+export const UDOT_BOX_IN_LABEL_PROP = '_udotBoxLabel';
+
 /**
  * @param {number|string} layerId
  * @returns {string}

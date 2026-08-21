@@ -22,4 +22,4 @@ python scripts/build-udot-fiber-bentley-symbols.py /path/to/NewSymbols.xlsx
 
 ## Point glyphs
 
-Live Fiber uses modern lookalikes (`lookalikes.js` + shadowed SVGs in `glyphs.js`). Boxes are landscape rectangles; vaults are red circles (ArcGIS Online shapes). Expand families as you identify attributes.
+Live Fiber uses modern lookalikes (`lookalikes.js` + SVGs in `glyphs.js`). Point icons are flat (no drop shadow). Boxes are white landscape rectangles with `BOXLABELS` inside; vaults are red circles. Expand families as you identify attributes.

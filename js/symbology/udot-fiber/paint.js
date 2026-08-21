@@ -6,11 +6,14 @@ import { compilePaint } from '../../map/style-engine.js';
 import { buildMapLabelLayerSpec, resolveLayerLabels } from '../../map/map-labels.js';
 import logger from '../../core/logger.js';
 import { combineUdotFiberMapLibreFilter } from './display-filters.js';
-import { UDOT_FIBER_LAYER_BY_KEY, UDOT_FIBER_ROTATION_FIELD } from './constants.js';
+import { UDOT_BOX_IN_LABEL_PROP, UDOT_FIBER_LAYER_BY_KEY, UDOT_FIBER_MIN_ZOOM, UDOT_FIBER_ROTATION_FIELD } from './constants.js';
 import { getDrawingLayer } from './resolve-style.js';
 import { resolveEsriLineDasharray } from '../../arcgis/picture-markers.js';
 import { preloadUdotFiberGlyphs } from './glyphs.js';
 import {
+    UDOT_FIBER_GROUND_LOCK_ZOOM,
+    UDOT_FIBER_ICON_PX,
+    UDOT_FIBER_ICON_ZOOM_PX,
     buildUdotFiberCircleRadiusExpression,
     buildUdotFiberHitRadiusExpression,
     buildUdotFiberIconSizeExpression,
@@ -29,6 +32,11 @@ const GLOW_BLUR = 1.35;
 const GLOW_OPACITY = 0.18;
 const CASING_EXTRA = 0.8;
 const GLOW_EXTRA = 1.55;
+const SHADOW_COLOR = '#0a0a0a';
+const SHADOW_OPACITY = 0.22;
+const SHADOW_BLUR = 1.15;
+const SHADOW_EXTRA = 0.7;
+const SHADOW_TRANSLATE = Object.freeze([1.15, 1.55]);
 
 const LINE_CORE_WIDTH = Object.freeze({
     fiber: 2.35,
@@ -99,13 +107,40 @@ function lineLabelFilter(field, fiberKey) {
 }
 
 function lineLabelSize(fiberKey) {
-    const base = fiberKey === 'conduit' ? 10 : 11;
+    const base = fiberKey === 'conduit' ? 9 : 10;
     return [
         'interpolate', ['linear'], ['zoom'],
         14, base,
         17, base + 1,
         20, base + 2
     ];
+}
+
+/** Characters that fit at the base in-box size. Longer BOXLABELS shrink. */
+const BOX_LABEL_FIT_CHARS = 3.5;
+
+function boxLabelFitScale(field) {
+    return [
+        'min',
+        1,
+        ['/', BOX_LABEL_FIT_CHARS, ['max', 1, ['length', ['to-string', ['coalesce', ['get', field], '']]]]]
+    ];
+}
+
+function boxLabelSize(field) {
+    const stops = UDOT_FIBER_ICON_ZOOM_PX.boxes || [];
+    const fit = boxLabelFitScale(field);
+    const held = Math.max(8, Math.round((UDOT_FIBER_ICON_PX.boxes || 18) * 0.48));
+    // Zoom interpolate must stay top-level — MapLibre rejects zoom * property.
+    // Hold a readable size while zooming out; grow with the box after lock.
+    const expr = ['interpolate', ['exponential', 2], ['zoom']];
+    for (const [z, px] of stops) {
+        const base = z < UDOT_FIBER_GROUND_LOCK_ZOOM
+            ? held
+            : Math.max(held, Math.round(px * 0.48));
+        expr.push(z, ['*', base, fit]);
+    }
+    return expr;
 }
 
 function lineLabelColor(layerStyle, labelCfg) {
@@ -130,6 +165,46 @@ export function buildUdotFiberLabelSpecs({
     try {
         const labelCfg = resolveLayerLabels(layerStyle, null);
         if (!labelCfg?.field) return [];
+        if (fiberKey === 'boxes') {
+            const field = labelCfg.field;
+            return [{
+                id: `svc-${datasetId}-labels`,
+                type: 'symbol',
+                source: sourceId,
+                filter: [
+                    'all',
+                    ['match', ['geometry-type'], ['Point', 'MultiPoint'], true, false],
+                    ['==', ['get', UDOT_BOX_IN_LABEL_PROP], 1],
+                    ['has', field],
+                    ['!=', ['to-string', ['get', field]], '']
+                ],
+                minzoom: Math.max(UDOT_FIBER_MIN_ZOOM, minz ?? 0),
+                maxzoom: 24,
+                layout: {
+                    'text-field': ['to-string', ['get', field]],
+                    'text-font': UDOT_FIBER_LABEL_FONT,
+                    'text-size': boxLabelSize(field),
+                    'text-anchor': 'center',
+                    'text-offset': [0, 0],
+                    'text-letter-spacing': 0,
+                    'text-max-width': 24,
+                    'text-padding': 0,
+                    'text-allow-overlap': true,
+                    'text-ignore-placement': true,
+                    'text-optional': false,
+                    'text-pitch-alignment': 'viewport',
+                    'text-rotation-alignment': 'map',
+                    'text-rotate': buildUdotFiberIconRotateExpression(),
+                    'text-keep-upright': false
+                },
+                paint: {
+                    'text-color': '#111111',
+                    'text-halo-color': '#ffffff',
+                    'text-halo-width': 0,
+                    'text-opacity': 1
+                }
+            }];
+        }
         const base = buildMapLabelLayerSpec(datasetId, sourceId, labelCfg, false);
         if (!base) return [];
 
@@ -278,8 +353,26 @@ export function buildUdotFiberLayerSpecs({
             paint
         });
 
-        // Dashed conduit must stay a traditional dash (transparent gaps). A
-        // solid casing/glow under the core reads as a grey dashed underlay.
+        const shadowPaint = {
+            'line-color': SHADOW_COLOR,
+            'line-width': buildUdotFiberLineWidthExpression(
+                widenLineWidth(baseWidth, SHADOW_EXTRA, baseWidth),
+                fiberKey
+            ),
+            'line-blur': SHADOW_BLUR,
+            'line-opacity': SHADOW_OPACITY * opacity,
+            'line-translate': [...SHADOW_TRANSLATE],
+            'line-translate-anchor': 'viewport'
+        };
+        if (dashed) shadowPaint['line-dasharray'] = dash;
+        specs.push(lineLayer(
+            `svc-lyr-${datasetId}-shadow`,
+            { 'line-cap': 'round', 'line-join': 'round' },
+            shadowPaint
+        ));
+
+        // Dashed conduit must keep transparent gaps. A solid casing/glow
+        // under the core reads as a grey dashed underlay — shadow stays dashed.
         if (!dashed) {
             specs.push(lineLayer(
                 `svc-lyr-${datasetId}-casing`,
@@ -312,7 +405,7 @@ export function buildUdotFiberLayerSpecs({
             'line-width': coreWidth,
             'line-opacity': scaleOpacity(styLine.strokeOpacity, opacity)
         };
-        const coreLayout = { 'line-cap': dashed ? 'butt' : 'round', 'line-join': 'round' };
+        const coreLayout = { 'line-cap': 'round', 'line-join': 'round' };
         if (dashed) {
             corePaint['line-dasharray'] = dash;
         }
@@ -359,6 +452,7 @@ export function buildUdotFiberLayerSpecs({
                 'icon-size': buildUdotFiberIconSizeExpression(fiberKey),
                 'icon-allow-overlap': true,
                 'icon-ignore-placement': true,
+                'icon-padding': 0,
                 'icon-pitch-alignment': 'viewport',
                 'icon-rotation-alignment': 'map',
                 'icon-rotate': buildUdotFiberIconRotateExpression()

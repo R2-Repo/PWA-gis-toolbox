@@ -6,6 +6,8 @@ export {
     UDOT_FIBER_CATALOG_ID,
     UDOT_FIBER_MIN_ZOOM,
     UDOT_FIBER_ROTATION_FIELD,
+    UDOT_BOX_LABEL_FIELD,
+    UDOT_BOX_IN_LABEL_PROP,
     layerUrl,
     matchUdotFiberLayerUrl
 } from './constants.js';
@@ -90,6 +92,18 @@ export {
     buildUdotFiberExcludeWhere,
     combineUdotFiberMapLibreFilter
 } from './display-filters.js';
+export {
+    UDOT_FIBER_HOVER_FIELDS,
+    isUdotFiberLiveDataset,
+    pickUdotFiberHoverRows,
+    buildUdotFiberHoverHtml
+} from './hover-fields.js';
+export {
+    isUdotFiberHoverQueryLayerId,
+    pickClosestUdotFiberHoverHit,
+    registerUdotFiberHoverLayers,
+    unregisterUdotFiberHoverLayers
+} from './hover-tooltip.js';
 export {
     UDOT_FIBER_STYLE,
     UDOT_CONDUIT_STYLE,

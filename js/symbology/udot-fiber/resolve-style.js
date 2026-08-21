@@ -167,20 +167,26 @@ export function buildUdotFiberLayerStyle(layerKey) {
             ? (scaleToZoom(layerMeta.labelMinScale, UTAH_LAT) ?? 14)
             : (isLine ? 14 : 12);
         // Published conduit minScale (1000) is ~z19 — too late for a live overlay.
-        const minZoom = isConduit ? 14 : publishedMin;
+        const isBoxes = layerKey === 'boxes';
+        const minZoom = isConduit || isBoxes ? 14 : publishedMin;
         style.labels = {
             enabled: true,
             field: layerMeta.labelField,
             placement: isLine ? 'line' : 'point',
             minZoom: Math.max(10, Math.round(minZoom * 10) / 10),
             maxZoom: 24,
-            size: isConduit ? 10 : (isLine ? 11 : 11),
-            color: buildLabelColorExpression(layerMeta),
+            size: isBoxes ? 9 : (isConduit ? 9 : (isLine ? 10 : 11)),
+            color: isBoxes ? '#111111' : buildLabelColorExpression(layerMeta),
             haloColor: '#ffffff',
-            haloWidth: isConduit ? 4.6 : (isLine ? 4.2 : 0.95),
+            haloWidth: isBoxes ? 0 : (isConduit ? 4.6 : (isLine ? 4.2 : 0.95)),
             font: ['Open Sans Regular', 'Arial Unicode MS Regular'],
-            allowOverlap: isConduit,
-            ignorePlacement: isConduit
+            allowOverlap: isConduit || isBoxes,
+            ignorePlacement: isConduit || isBoxes
+        };
+        if (isBoxes) {
+            style.labels.offset = [0, 0];
+            style.labels.anchor = 'center';
+            style.labels.rotateField = UDOT_FIBER_ROTATION_FIELD;
         };
     }
 

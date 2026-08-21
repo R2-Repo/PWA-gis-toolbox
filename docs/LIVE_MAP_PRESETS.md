@@ -67,7 +67,7 @@ access: {
 
 Success is remembered for the current browser tab (`sessionStorage`). Cancel leaves the catalog picker open.
 
-**UDOT Fiber Network** is a six-sublayer composite with this gate.
+**UDOT Fiber Network** is a six-sublayer composite with this gate. Identify is hover-only (no click popup).
 
 ## Styling
 

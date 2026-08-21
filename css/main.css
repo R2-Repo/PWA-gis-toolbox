@@ -334,6 +334,45 @@ html, body {
     max-height: none;
     overflow: visible;
 }
+
+.udot-fiber-hover-tooltip {
+    position: fixed;
+    z-index: 80;
+    pointer-events: none;
+    max-width: 280px;
+    padding: 6px 8px;
+    background: var(--bg-surface);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-lg);
+    font-size: 11px;
+    line-height: 1.35;
+}
+.udot-fiber-hover-tooltip.hidden { display: none !important; }
+.udot-fiber-hover-tooltip__title {
+    font-weight: 600;
+    margin-bottom: 4px;
+}
+.udot-fiber-hover-tooltip table {
+    width: 100%;
+    border-collapse: collapse;
+}
+.udot-fiber-hover-tooltip th {
+    text-align: left;
+    padding: 1px 8px 1px 0;
+    color: var(--text-muted);
+    font-weight: 600;
+    white-space: nowrap;
+    vertical-align: top;
+}
+.udot-fiber-hover-tooltip td {
+    padding: 1px 0;
+    word-break: break-word;
+}
+.udot-fiber-hover-tooltip__empty {
+    color: var(--text-muted);
+}
 .header-pipeline-dual {
     display: inline-flex;
     align-items: center;

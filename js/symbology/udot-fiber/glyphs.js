@@ -2,6 +2,7 @@
  * Procedural CAD lookalike glyphs for UDOT Fiber Network (no external SVGs).
  */
 import { resolveLookalike } from './lookalikes.js';
+import { UDOT_BOX_IN_LABEL_PROP, UDOT_BOX_LABEL_FIELD } from './constants.js';
 import { UDOT_FIBER_POINT_LAYER_KEYS, udotFiberIconSpritePx } from './zoom-scale.js';
 
 /** @typedef {'circle'|'ring'|'rect'|'square-x'|'bowtie'|'dashed-box'|'diamond'|'vee-circle'|'rounded-square'|'hex'|'building'} UdotGlyphKind */
@@ -15,7 +16,7 @@ import { UDOT_FIBER_POINT_LAYER_KEYS, udotFiberIconSpritePx } from './zoom-scale
  * @property {string} [color]
  */
 
-/** Pixel canvas for registered sprites (padding for baked shadow). */
+/** Pixel canvas for registered sprites. */
 export const UDOT_FIBER_GLYPH_PX = 24;
 
 /** Seed rules — lookalikes cover published classes first. */
@@ -121,10 +122,7 @@ function toneFor(color) {
  */
 function svgFrame(w, h, inner) {
     const common = `xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"`;
-    return `<svg ${common}>
-  <ellipse cx="${w / 2}" cy="${h * 0.9}" rx="${w * 0.3}" ry="${h * 0.08}" fill="rgba(0,0,0,0.28)"/>
-  ${inner}
-</svg>`;
+    return `<svg ${common}>${inner}</svg>`;
 }
 
 /**
@@ -159,8 +157,7 @@ export function makeUdotGlyphSvg(glyph, stroke, fill, size = UDOT_FIBER_GLYPH_PX
     if (glyph === 'bowtie') {
         return svgFrame(s, s, `
   <polygon points="${s * 0.06},${s * 0.14} ${mid},${mid} ${s * 0.06},${s * 0.82}" fill="${body}" fill-opacity="0.55" stroke="${ink}" stroke-width="${sw}" stroke-linejoin="round"/>
-  <polygon points="${s * 0.94},${s * 0.14} ${mid},${mid} ${s * 0.94},${s * 0.82}" fill="${body}" fill-opacity="0.55" stroke="${ink}" stroke-width="${sw}" stroke-linejoin="round"/>
-  <ellipse cx="${s * 0.18}" cy="${s * 0.26}" rx="${s * 0.08}" ry="${s * 0.04}" fill="${hi}" fill-opacity="0.4"/>`);
+  <polygon points="${s * 0.94},${s * 0.14} ${mid},${mid} ${s * 0.94},${s * 0.82}" fill="${body}" fill-opacity="0.55" stroke="${ink}" stroke-width="${sw}" stroke-linejoin="round"/>`);
     }
 
     if (glyph === 'rect') {
@@ -169,10 +166,9 @@ export function makeUdotGlyphSvg(glyph, stroke, fill, size = UDOT_FIBER_GLYPH_PX
         const rw = w * 0.9;
         const rh = rw / 2.05;
         const x = (w - rw) / 2;
-        const y = (h - rh) / 2 - h * 0.04;
+        const y = (h - rh) / 2;
         return svgFrame(w, h, `
-  <rect x="${x}" y="${y}" width="${rw}" height="${rh}" rx="0.4" fill="${body}" fill-opacity="0.2" stroke="${ink}" stroke-width="${sw * 1.15}"/>
-  <ellipse cx="${w / 2}" cy="${y + sw}" rx="${rw * 0.28}" ry="${rh * 0.12}" fill="${hi}" fill-opacity="0.4"/>`);
+  <rect x="${x}" y="${y}" width="${rw}" height="${rh}" rx="0.4" fill="#ffffff" fill-opacity="1" stroke="${ink}" stroke-width="${sw * 1.15}"/>`);
     }
 
     if (glyph === 'dashed-box') {
@@ -191,8 +187,7 @@ export function makeUdotGlyphSvg(glyph, stroke, fill, size = UDOT_FIBER_GLYPH_PX
 
     if (glyph === 'ring') {
         return svgFrame(s, s, `
-  <circle cx="${mid}" cy="${mid * 0.96}" r="${s * 0.34}" fill="${body}" fill-opacity="0.16" stroke="${ink}" stroke-width="${sw * 1.45}"/>
-  <ellipse cx="${mid}" cy="${s * 0.28}" rx="${s * 0.12}" ry="${s * 0.04}" fill="${hi}" fill-opacity="0.4"/>`);
+  <circle cx="${mid}" cy="${mid}" r="${s * 0.34}" fill="${body}" fill-opacity="0.16" stroke="${ink}" stroke-width="${sw * 1.45}"/>`);
     }
 
     if (glyph === 'vee-circle') {
@@ -324,13 +319,20 @@ export function decorateUdotFiberPointFeatures(layerKey, features, map, size) {
         const hit = resolvePointGlyph(layerKey, feature.properties || {});
         if (!hit) return feature;
         const imageId = ensureUdotGlyphImage(map, hit.glyph, hit.color || '#ffffff', px);
+        const properties = {
+            ...feature.properties,
+            _udotGlyph: imageId,
+            _udotEsriWidth: px
+        };
+        if (layerKey === 'boxes' && hit.glyph === 'rect') {
+            const raw = properties[UDOT_BOX_LABEL_FIELD];
+            if (raw != null && String(raw).trim() !== '') {
+                properties[UDOT_BOX_IN_LABEL_PROP] = 1;
+            }
+        }
         return {
             ...feature,
-            properties: {
-                ...feature.properties,
-                _udotGlyph: imageId,
-                _udotEsriWidth: px
-            }
+            properties
         };
     });
 }

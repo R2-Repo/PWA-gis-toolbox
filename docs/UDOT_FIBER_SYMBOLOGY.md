@@ -10,7 +10,7 @@ Import → Live Layers → **UDOT Fiber Network** (password-gated composite). Ad
 
 Live Fiber uses a modern CAD paint pack: class-colored line stacks (casing + soft glow + core), dual-halo labels, and procedural lookalike icons. Published unique-value colors stay the same (`FIBER_SYMBOLS`, `CONDUIT_SYM`, Bentley `Fiber_Label`). Boxes are landscape rectangles. Boxes, splices, and cabinets shrink as you zoom out through **17** (approved high-elevation look). From zoom **19.02** (approved close-to-ground look) boxes/splices grow with the map; cabinets use a flatter scale. Buildings still scale with zoom.
 
-Draw order is fixed (bottom → top): conduit and fiber **line paint**, then those line labels, then buildings, boxes, splices, **cabinets**. Conduit is a traditional dashed stroke (transparent gaps — no grey casing underlay). Fiber/conduit labels use the line class color plus a white halo; conduit type is slightly smaller than fiber. Panel reorder does not bury cabinets. Stacked Fiber features use the same map popup cycle (arrows + layer chips) as other layers.
+Draw order is fixed (bottom → top): conduit and fiber **line paint**, then those line labels, then buildings, boxes, splices, **cabinets**. Conduit is a pill-dashed stroke (transparent gaps — no grey casing underlay) with a matching dashed offset shadow. Fiber keeps casing/glow plus a soft offset shadow. Fiber/conduit labels use the line class color plus a white halo; conduit type is slightly smaller than fiber. Panel reorder does not bury cabinets. Hover a Fiber live feature for a cursor tooltip (cabinets: `NAME_ADDRESS`, `CHANNEL`, `DROP__`; splices: `NAME`, `MODEL`; boxes: `DT_RSCENCLOSURE_NAME`; fiber: `Fiber_Label`; conduit: `CustNameRight`, `CONDUIT_SYM`; building: `NAME`). Click popups are off for these live layers.
 
 Styles live in `js/symbology/udot-fiber/`. Live MapLibre specs: [`js/symbology/udot-fiber/paint.js`](../js/symbology/udot-fiber/paint.js). Lookalike icons: [`js/symbology/udot-fiber/lookalikes.js`](../js/symbology/udot-fiber/lookalikes.js).
 
@@ -28,7 +28,7 @@ python scripts/build-udot-fiber-bentley-symbols.py /path/to/NewSymbols.xlsx
 
 ## Point glyphs
 
-Live Fiber does not draw published ArcGIS picture-marker PNGs. Class labels map to modern lookalikes (square-X, bowtie, hex, building) with baked shadow/highlight in `glyphs.js`. Boxes match the ArcGIS Online shapes: landscape rectangles for Type I / Type II / other boxes, red circles for vaults. Point icons follow the published `Rotation` field (geographic, clockwise from north). Expand `lookalikes.js` families as you identify attributes.
+Live Fiber does not draw published ArcGIS picture-marker PNGs. Class labels map to modern lookalikes (square-X, bowtie, hex, building) in `glyphs.js` with no drop shadow. Boxes match the ArcGIS Online shapes: white landscape rectangles for Type I / Type II / other boxes, red circles for vaults. `BOXLABELS` is drawn inside those rectangles (same `Rotation` as the icon; vaults stay unlabeled). Point icons follow the published `Rotation` field (geographic, clockwise from north). Expand `lookalikes.js` families as you identify attributes.
 
 ## Platform
 

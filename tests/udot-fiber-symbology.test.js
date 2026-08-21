@@ -3,6 +3,8 @@ import { compilePaint } from '../js/map/style-engine.js';
 import { validateCatalog, resolveLiveLayer, expandCatalogEntry } from '../js/live-layers/catalog-schema.js';
 import { isVectorServiceKind } from '../js/live-layers/live-layer-viewport.js';
 import {
+    UDOT_BOX_IN_LABEL_PROP,
+    UDOT_BOX_LABEL_FIELD,
     UDOT_FIBER_CATALOG_ID,
     matchUdotFiberLayerUrl
 } from '../js/symbology/udot-fiber/constants.js';
@@ -122,12 +124,12 @@ describe('UDOT Fiber symbology', () => {
         const boxJson = JSON.stringify(boxIcon);
         expect(boxIcon).toContain(17);
         expect(boxJson).toContain('19.02');
-        expect(boxJson).toContain('16');
-        expect(boxJson).toContain('32');
+        expect(boxJson).toContain('18');
+        expect(boxJson).toContain('36');
         const spliceIcon = JSON.stringify(buildUdotFiberIconSizeExpression('splices'));
         expect(spliceIcon).toContain('19.02');
-        expect(spliceIcon).toContain('12');
-        expect(spliceIcon).toContain('24');
+        expect(spliceIcon).toContain('18');
+        expect(spliceIcon).toContain('36');
         const cabinetIcon = JSON.stringify(buildUdotFiberIconSizeExpression('cabinets'));
         expect(cabinetIcon).toContain('42');
     });
@@ -192,9 +194,14 @@ describe('UDOT Fiber symbology', () => {
         const svg = makeUdotGlyphSvg('square-x', '#00ff00', '#00ff00', 24);
         expect(svg).toContain('<svg');
         expect(svg).toContain('rect');
-        expect(svg).toContain('rgba(0,0,0,0.28)');
+        expect(svg).not.toContain('rgba(0,0,0,0.28)');
         const boxSvg = makeUdotGlyphSvg('rect', '#111111', '#111111', 24);
         expect(boxSvg).toContain('<rect');
+        expect(boxSvg).toContain('#ffffff');
+        expect(boxSvg).not.toContain('rgba(0,0,0,0.28)');
+        expect(boxSvg).not.toContain('<ellipse');
+        expect(makeUdotGlyphSvg('ring', '#ff0000', '#ff0000', 24)).not.toContain('<ellipse');
+        expect(makeUdotGlyphSvg('bowtie', '#ff0000', '#ff0000', 24)).not.toContain('<ellipse');
         expect(Number(boxSvg.match(/width="(\d+)"/)?.[1])).toBeGreaterThan(
             Number(boxSvg.match(/height="(\d+)"/)?.[1])
         );
@@ -312,6 +319,26 @@ describe('UDOT Fiber symbology', () => {
         ], null);
         expect(box[0].properties._udotEsriWidth).toBe(256);
         expect(splice[0].properties._udotEsriWidth).toBe(256);
+        const labeled = decorateUdotFiberPointFeatures('boxes', [
+            {
+                type: 'Feature',
+                properties: {
+                    DT_RSCENCLOSURE_NAME: 'Exist Type I PC-R1',
+                    BOXLABELS: 'III'
+                }
+            }
+        ], null);
+        const vault = decorateUdotFiberPointFeatures('boxes', [
+            {
+                type: 'Feature',
+                properties: {
+                    DT_RSCENCLOSURE_NAME: 'Existing Vault-CTL',
+                    BOXLABELS: 'III'
+                }
+            }
+        ], null);
+        expect(labeled[0].properties[UDOT_BOX_IN_LABEL_PROP]).toBe(1);
+        expect(vault[0].properties[UDOT_BOX_IN_LABEL_PROP]).toBeUndefined();
     });
 
     it('paints conduit as a traditional dash without a grey casing underlay', () => {
@@ -327,8 +354,14 @@ describe('UDOT Fiber symbology', () => {
         const byId = Object.fromEntries(specs.map((spec) => [spec.id, spec]));
         expect(byId['svc-lyr-fiber-demo-casing']).toBeUndefined();
         expect(byId['svc-lyr-fiber-demo-glow']).toBeUndefined();
+        expect(byId['svc-lyr-fiber-demo-shadow'].paint['line-dasharray']).toEqual([3, 2]);
+        expect(byId['svc-lyr-fiber-demo-shadow'].paint['line-translate']).toEqual([1.15, 1.55]);
+        expect(byId['svc-lyr-fiber-demo-shadow'].layout['line-cap']).toBe('round');
         expect(byId['svc-lyr-fiber-demo-line'].paint['line-dasharray']).toEqual([3, 2]);
-        expect(byId['svc-lyr-fiber-demo-line'].layout['line-cap']).toBe('butt');
+        expect(byId['svc-lyr-fiber-demo-line'].layout['line-cap']).toBe('round');
+        expect(specs.indexOf(byId['svc-lyr-fiber-demo-shadow'])).toBeLessThan(
+            specs.indexOf(byId['svc-lyr-fiber-demo-line'])
+        );
         expect(byId['svc-lyr-fiber-demo-line'].paint['line-width'][0]).toBe('interpolate');
         expect(byId['svc-lyr-fiber-demo-line'].paint['line-width']).toContain(2.55);
 
@@ -344,7 +377,12 @@ describe('UDOT Fiber symbology', () => {
         expect(ink.layout['text-allow-overlap']).toBe(true);
         expect(ink.layout['text-ignore-placement']).toBe(true);
         expect(ink.layout['symbol-spacing']).toBe(190);
-        expect(ink.layout['text-size']).toContain(10);
+        expect(ink.layout['text-size']).toEqual([
+            'interpolate', ['linear'], ['zoom'],
+            14, 9,
+            17, 10,
+            20, 11
+        ]);
         expect(ink.minzoom).toBe(14);
         expect(JSON.stringify(ink.filter)).toContain('MultiLineString');
         expect(ink.layout['text-pitch-alignment']).toBe('map');
@@ -361,6 +399,9 @@ describe('UDOT Fiber symbology', () => {
             minzoom: 14
         });
         const byId = Object.fromEntries(specs.map((spec) => [spec.id, spec]));
+        expect(byId['svc-lyr-fiber-solid-shadow']).toBeTruthy();
+        expect(byId['svc-lyr-fiber-solid-shadow'].paint['line-dasharray']).toBeUndefined();
+        expect(byId['svc-lyr-fiber-solid-shadow'].paint['line-translate']).toEqual([1.15, 1.55]);
         expect(byId['svc-lyr-fiber-solid-casing']).toBeTruthy();
         expect(byId['svc-lyr-fiber-solid-glow']).toBeTruthy();
         expect(byId['svc-lyr-fiber-solid-line'].paint['line-dasharray']).toBeUndefined();
@@ -368,8 +409,49 @@ describe('UDOT Fiber symbology', () => {
         expect(ink.paint['text-color']).toEqual(byId['svc-lyr-fiber-solid-line'].paint['line-color']);
         expect(JSON.stringify(ink.paint['text-color'])).toContain('FIBER_SYMBOLS');
         expect(ink.paint['text-halo-color']).toBe('#ffffff');
-        expect(ink.layout['text-size']).toContain(11);
+        expect(ink.layout['text-size']).toEqual([
+            'interpolate', ['linear'], ['zoom'],
+            14, 10,
+            17, 11,
+            20, 12
+        ]);
         expect(ink.layout['symbol-spacing']).toBe(360);
+    });
+
+    it('paints BOXLABELS inside landscape box rectangles', () => {
+        const style = buildUdotFiberLayerStyle('boxes');
+        expect(style.labels.field).toBe(UDOT_BOX_LABEL_FIELD);
+        expect(style.labels.offset).toEqual([0, 0]);
+        expect(style.labels.allowOverlap).toBe(true);
+        expect(style.labels.minZoom).toBe(14);
+        expect(requiredStyleFieldsForUdotFiberLayer('boxes')).toContain(UDOT_BOX_LABEL_FIELD);
+        const specs = buildUdotFiberLayerSpecs({
+            datasetId: 'box-demo',
+            sourceId: 'svc-src-box-demo',
+            layerStyle: style,
+            opacity: 1,
+            fiberKey: 'boxes',
+            minzoom: 14
+        });
+        const ink = specs.find((spec) => spec.id === 'svc-box-demo-labels');
+        expect(ink).toBeTruthy();
+        expect(specs.some((spec) => spec.id.endsWith('-labels-plate'))).toBe(false);
+        expect(ink.minzoom).toBe(14);
+        expect(ink.layout['text-field']).toEqual(['to-string', ['get', UDOT_BOX_LABEL_FIELD]]);
+        expect(ink.layout['text-anchor']).toBe('center');
+        expect(ink.layout['text-offset']).toEqual([0, 0]);
+        expect(ink.layout['text-allow-overlap']).toBe(true);
+        expect(ink.layout['text-ignore-placement']).toBe(true);
+        expect(ink.layout['text-rotate']).toEqual(['to-number', ['coalesce', ['get', 'Rotation'], 0]]);
+        expect(ink.layout['text-keep-upright']).toBe(false);
+        expect(ink.paint['text-color']).toBe('#111111');
+        expect(ink.paint['text-halo-width']).toBe(0);
+        expect(ink.layout['text-size'][0]).toBe('interpolate');
+        expect(JSON.stringify(ink.layout['text-size'])).toContain('length');
+        expect(JSON.stringify(ink.layout['text-size'])).toContain(UDOT_BOX_LABEL_FIELD);
+        expect(JSON.stringify(ink.filter)).toContain(UDOT_BOX_IN_LABEL_PROP);
+        const glyph = specs.find((spec) => spec.id.endsWith('-glyph'));
+        expect(specs.indexOf(ink)).toBeGreaterThan(specs.indexOf(glyph));
     });
 
     it('billboards Fiber point icons in 3D', () => {
@@ -386,6 +468,7 @@ describe('UDOT Fiber symbology', () => {
         expect(glyph.layout['icon-pitch-alignment']).toBe('viewport');
         expect(glyph.layout['icon-rotation-alignment']).toBe('map');
         expect(glyph.layout['icon-rotate']).toEqual(['to-number', ['coalesce', ['get', 'Rotation'], 0]]);
+        expect(glyph.layout['icon-padding']).toBe(0);
         expect(circle.paint['circle-pitch-alignment']).toBe('viewport');
         const hit = specs.find((spec) => spec.id.endsWith('-hit'));
         expect(hit?.type).toBe('circle');

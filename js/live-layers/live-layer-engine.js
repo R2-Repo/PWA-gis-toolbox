@@ -19,7 +19,8 @@ import {
     tagServiceFeatures
 } from './live-layer-viewport.js';
 import { decorateUdotFiberPointFeatures } from '../symbology/udot-fiber/glyphs.js';
-import { matchUdotFiberLayerUrl } from '../symbology/udot-fiber/constants.js';
+import { matchUdotFiberLayerUrl, UDOT_FIBER_MIN_ZOOM } from '../symbology/udot-fiber/constants.js';
+import { registerUdotFiberHoverLayers, unregisterUdotFiberHoverLayers } from '../symbology/udot-fiber/hover-tooltip.js';
 import { addUdotFiberVectorLayers } from '../symbology/udot-fiber/paint.js';
 import {
     groupUdotFiberMapLayerIds,
@@ -206,10 +207,14 @@ export async function addServiceLayer(mapManager, dataset, colorIndex = 0, optio
                 minZoom: runtime.minZoom
             });
             if (runtime.minZoom != null) {
+                const labelsConfig = resolveLayerLabels(layerStyle, dataset);
+                if (matchUdotFiberLayerUrl(runtime.url)?.key === 'boxes' && labelsConfig) {
+                    labelsConfig.minZoom = UDOT_FIBER_MIN_ZOOM;
+                }
                 mapManager._applyZoomRangeToLayerIds?.(runtime.mapLayerIds, {
                     minzoom: runtime.minZoom,
                     maxzoom: 24
-                }, resolveLayerLabels(layerStyle, dataset));
+                }, labelsConfig);
             }
 
             mapManager.dataLayers.set(dataset.id, {
@@ -225,6 +230,14 @@ export async function addServiceLayer(mapManager, dataset, colorIndex = 0, optio
             const styFlat = getBaseFlatStyle(layerStyle, 'point');
             mapManager._layerStyles?.set(dataset.id, layerStyle);
             mapManager._bindLayerClickHandlers?.(dataset, runtime.mapLayerIds, styFlat);
+            const fiberMatch = matchUdotFiberLayerUrl(runtime.url);
+            if (fiberMatch) {
+                registerUdotFiberHoverLayers(map, {
+                    mapLayerIds: runtime.mapLayerIds,
+                    fiberKey: fiberMatch.key,
+                    layerName: dataset.name
+                });
+            }
 
             getRuntimeMap(mapManager).set(dataset.id, runtime);
             await refreshServiceLayer(mapManager, dataset.id);
@@ -670,6 +683,9 @@ export function removeServiceLayer(mapManager, layerId) {
     if (runtime?.refreshTimer) window.clearInterval(runtime.refreshTimer);
 
     if (runtime && map) {
+        if (matchUdotFiberLayerUrl(runtime.url)) {
+            unregisterUdotFiberHoverLayers(map, runtime.mapLayerIds);
+        }
         for (const id of runtime.mapLayerIds) {
             if (map.getLayer(id)) map.removeLayer(id);
             mapManager._boundClickLayers?.delete(id);

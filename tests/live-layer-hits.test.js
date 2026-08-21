@@ -74,4 +74,30 @@ describe('live-layer identify hits', () => {
         expect(seen.has('cab-1')).toBe(true);
         expect(seen.has('workspace-3')).toBe(false);
     });
+
+    it('can skip a live layer from identify merge', () => {
+        const project = ([lng, lat]) => ({ x: lng * 10, y: lat * 10 });
+        const dataLayers = new Map([
+            ['cab', {
+                liveService: true,
+                geojson: {
+                    features: [{
+                        type: 'Feature',
+                        properties: { _featureIndex: 1 },
+                        geometry: { type: 'Point', coordinates: [1, 2] }
+                    }]
+                }
+            }]
+        ]);
+        const results = [];
+        mergeLiveLayerHitsNearClick({
+            map: { project },
+            dataLayers,
+            pixel: { x: 10, y: 20 },
+            results,
+            seen: new Set(),
+            skipLayer: (id) => id === 'cab'
+        });
+        expect(results).toEqual([]);
+    });
 });

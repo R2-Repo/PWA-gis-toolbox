@@ -99,6 +99,7 @@ export function featurePixelDistance(project, feature, pixel) {
  * @param {(feature: object) => object} [opts.stripInternal]
  * @param {(layerId: string) => string} [opts.layerName]
  * @param {(layerId: string) => string} [opts.layerColor]
+ * @param {(layerId: string) => boolean} [opts.skipLayer]
  * @returns {LiveHit[]}
  */
 export function mergeLiveLayerHitsNearClick({
@@ -111,7 +112,8 @@ export function mergeLiveLayerHitsNearClick({
     bufferPx = LIVE_LAYER_IDENTIFY_PX,
     stripInternal,
     layerName,
-    layerColor
+    layerColor,
+    skipLayer
 }) {
     if (!map?.project || !dataLayers || !pixel || !results || !seen) return results;
 
@@ -120,6 +122,7 @@ export function mergeLiveLayerHitsNearClick({
     for (const [layerId, info] of dataLayers) {
         if (!info?.liveService) continue;
         if (isLocked?.(layerId)) continue;
+        if (skipLayer?.(layerId)) continue;
         const features = info.geojson?.features || [];
         for (const feature of features) {
             const featureIndex = Number(feature?.properties?._featureIndex);

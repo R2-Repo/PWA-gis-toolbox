@@ -51,6 +51,7 @@ import {
 import { mergeLiveLayerHitsNearClick, LIVE_LAYER_IDENTIFY_PX } from '../live-layers/live-layer-hits.js';
 import { matchUdotFiberLayerUrl } from '../symbology/udot-fiber/constants.js';
 import { udotFiberDrawRank } from '../symbology/udot-fiber/draw-order.js';
+import { isUdotFiberLiveDataset } from '../symbology/udot-fiber/hover-fields.js';
 import { renderProcurementIcon } from '../plan-project/symbol-icons.js';
 
 const POINT_CLUSTER_THRESHOLD = 10000;
@@ -1776,15 +1777,20 @@ class MapManager {
                     let nearby = this._findFeaturesNearClick(latlng, dataset.id, featureIndex, e.point);
                     nearby = await this._enrichPopupHitsWithWorkspaceAttrs(nearby);
                     void this.highlightFeature(dataset.id, featureIndex, styFlat.strokeColor, feature);
-                    this._popupHits = nearby.length > 0 ? nearby : [{
-                        feature: this._stripInternalProps(feature), featureIndex,
-                        layerId: dataset.id, layerName: dataset.name,
-                        layerColor: styFlat.strokeColor
-                    }];
+                    const popupHits = this._excludeFiberLivePopupHits(
+                        nearby.length > 0 ? nearby : [{
+                            feature: this._stripInternalProps(feature), featureIndex,
+                            layerId: dataset.id, layerName: dataset.name,
+                            layerColor: styFlat.strokeColor
+                        }]
+                    );
+                    this._popupHits = popupHits;
                     this._popupIndex = 0;
                     this._popupLatLng = latlng;
                     this._popupRenderOptions = {};
-                    if (this._popupMode !== 'off') {
+                    if (!popupHits.length) {
+                        this._closePopup();
+                    } else if (this._popupMode !== 'off') {
                         this._renderCyclePopup(this._popupRenderOptions);
                     }
 
@@ -2135,6 +2141,13 @@ class MapManager {
     // ==========================================
     // Popups
     // ==========================================
+
+    _excludeFiberLivePopupHits(hits) {
+        return (hits || []).filter((hit) => {
+            const dataset = getLayers().find((layer) => layer.id === hit.layerId);
+            return !isUdotFiberLiveDataset(dataset);
+        });
+    }
 
     getPopupMode() {
         return this._popupMode;
