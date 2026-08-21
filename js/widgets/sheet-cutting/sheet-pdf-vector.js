@@ -392,18 +392,52 @@ function mixHexToward(hex, toward, t) {
     return `#${byte(mix(a.r, b.r))}${byte(mix(a.g, b.g))}${byte(mix(a.b, b.b))}`;
 }
 
-function drawInBoxLabel(doc, point, text, fontSize, angleDeg) {
+function drawRotatedCenteredText(doc, cx, cy, text, fontSize, angleDeg, color, haloColor = null, haloWidth = 0) {
     if (!text) return;
     doc.setFontSize(fontSize);
     const width = typeof doc.getTextWidth === 'function'
         ? doc.getTextWidth(text)
         : text.length * fontSize * 0.52;
-    const { x, y } = computeRotatedTextAnchor(point.x, point.y, width, angleDeg);
+    const { x, y } = computeRotatedTextAnchor(cx, cy, width, angleDeg);
     const rad = ((Number(angleDeg) || 0) * Math.PI) / 180;
     const lift = fontSize * 0.35;
-    doc.setTextColor(17, 17, 17);
-    doc.text(text, x - lift * Math.sin(rad), y - lift * Math.cos(rad), {
-        angle: Number(angleDeg) || 0
+    const ax = x + lift * Math.sin(rad);
+    const ay = y + lift * Math.cos(rad);
+    const options = { angle: Number(angleDeg) || 0 };
+    if (haloColor) {
+        const halo = parseHexColor(haloColor);
+        const step = haloWidth || 0.65;
+        doc.setTextColor(halo.r, halo.g, halo.b);
+        for (const [dx, dy] of [[-step, 0], [step, 0], [0, -step], [0, step]]) {
+            doc.text(text, ax + dx, ay + dy, options);
+        }
+    }
+    const ink = parseHexColor(color || '#111111');
+    doc.setTextColor(ink.r, ink.g, ink.b);
+    doc.text(text, ax, ay, options);
+}
+
+function drawInBoxLabel(doc, point, lines, fontSize, jsPdfAngleDeg, color = '#111111', haloColor = null, haloWidth = 0) {
+    const list = (Array.isArray(lines) ? lines : [lines]).map((line) => String(line || '').trim()).filter(Boolean);
+    if (!list.length || !fontSize) return;
+    const lineH = fontSize * 1.08;
+    const blockH = list.length * lineH;
+    const rad = ((Number(jsPdfAngleDeg) || 0) * Math.PI) / 180;
+    const upX = -Math.sin(rad);
+    const upY = -Math.cos(rad);
+    list.forEach((line, i) => {
+        const fromCenter = (blockH - lineH) / 2 - i * lineH;
+        drawRotatedCenteredText(
+            doc,
+            point.x + upX * fromCenter,
+            point.y + upY * fromCenter,
+            line,
+            fontSize,
+            jsPdfAngleDeg,
+            color,
+            haloColor,
+            haloWidth
+        );
     });
 }
 
@@ -437,22 +471,34 @@ function drawFiberPoint(doc, point, style, pxPerPt, mapBearing = 0) {
         };
         const box = layoutUdotFiberPdfBox(
             style.boxLabel,
-            Math.max(4.8, (style.radius || 4.8) * pxPerPt),
+            Math.max(4.8, (style.radius || 4.8) * Math.max(pxPerPt, 0.7)),
             measure
         );
         const a = at(-box.halfWidth, -box.halfHeight);
         const b = at(box.halfWidth, -box.halfHeight);
         const c = at(box.halfWidth, box.halfHeight);
         const d = at(-box.halfWidth, box.halfHeight);
-        applyFillColor(doc, '#ffffff');
-        fillQuad(doc, a, b, c, d);
         applyStrokeColor(doc, ink);
         doc.line(a.x, a.y, b.x, b.y);
         doc.line(b.x, b.y, c.x, c.y);
         doc.line(c.x, c.y, d.x, d.y);
         doc.line(d.x, d.y, a.x, a.y);
-        if (style.boxLabel && box.fontSize) {
-            drawInBoxLabel(doc, point, style.boxLabel, box.fontSize, angle);
+        if (box.lines.length && box.fontSize) {
+            const edgeAngle = (Math.atan2(b.y - a.y, b.x - a.x) * 180) / Math.PI;
+            const outward = {
+                x: (a.x + b.x) / 2 - point.x,
+                y: (a.y + b.y) / 2 - point.y
+            };
+            drawInBoxLabel(
+                doc,
+                point,
+                box.lines,
+                box.fontSize,
+                pickJsPdfAngleWithCapsOutward(edgeAngle, outward),
+                '#111111',
+                '#ffffff',
+                0.45
+            );
         }
         return;
     }
@@ -582,6 +628,22 @@ function computeRotatedTextAnchor(cx, cy, widthPt, angleDeg) {
  * @param {{ x: number, y: number }} outward
  * @returns {number}
  */
+/**
+ * jsPDF angle for text that runs along a rotated Fiber box (page y-down).
+ * The rectangle is drawn with `rotatePdfPoint`; jsPDF run is (cos θ, −sin θ).
+ *
+ * @param {number} boxAngleDeg
+ * @returns {number}
+ */
+export function udotFiberPdfBoxTextAngle(boxAngleDeg) {
+    const rad = ((Number(boxAngleDeg) || 0) * Math.PI) / 180;
+    const edgeAngle = (Math.atan2(Math.sin(rad), Math.cos(rad)) * 180) / Math.PI;
+    return pickJsPdfAngleWithCapsOutward(edgeAngle, {
+        x: Math.sin(rad),
+        y: -Math.cos(rad)
+    });
+}
+
 export function pickJsPdfAngleWithCapsOutward(edgeAngleDeg, outward) {
     const a = -Number(edgeAngleDeg) || 0;
     const b = a + (a > 0 ? -180 : 180);

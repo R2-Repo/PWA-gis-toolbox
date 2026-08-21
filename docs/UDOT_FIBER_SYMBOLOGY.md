@@ -28,7 +28,7 @@ python scripts/build-udot-fiber-bentley-symbols.py /path/to/NewSymbols.xlsx
 
 ## Point glyphs
 
-Live Fiber does not draw published ArcGIS picture-marker PNGs. Class labels map to modern lookalikes (square-X, bowtie, hex, building) in `glyphs.js` with no drop shadow. Boxes match the ArcGIS Online shapes: white landscape rectangles for Type I / Type II / other boxes, red circles for vaults. `BOXLABELS` is drawn inside those rectangles (same `Rotation` as the icon; vaults stay unlabeled). Sheet PDFs use the same in-box labels and size the rectangle to the text. Cabinets keep the map lookalike color (green square-X). Point icons follow the published `Rotation` field (geographic, clockwise from north). Expand `lookalikes.js` families as you identify attributes.
+Live Fiber does not draw published ArcGIS picture-marker PNGs. Class labels map to modern lookalikes (square-X, bowtie, hex, building) in `glyphs.js` with no drop shadow. Boxes match the ArcGIS Online shapes: white landscape rectangles for Type I / Type II / other boxes, red circles for vaults. `BOXLABELS` is drawn inside those rectangles (same `Rotation` as the icon; vaults stay unlabeled). Sheet PDFs keep that landscape aspect at map scale, use a transparent fill, wrap/shrink long names, and rotate in-box text with the rectangle. Cabinets keep the map lookalike color (green square-X). Fiber/Conduit along-line labels are not exported on sheet PDFs. Point icons follow the published `Rotation` field (geographic, clockwise from north). Expand `lookalikes.js` families as you identify attributes.
 
 ## Platform
 

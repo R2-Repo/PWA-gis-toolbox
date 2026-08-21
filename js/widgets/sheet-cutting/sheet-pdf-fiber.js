@@ -1,5 +1,5 @@
 /**
- * UDOT Fiber on sheet PDFs: vector linework (no Fiber/Conduit labels).
+ * UDOT Fiber on sheet PDFs: vector linework (no Fiber/Conduit along-line labels).
  */
 import { getLayers } from '../../core/state.js';
 import { matchUdotFiberLayerUrl, UDOT_BOX_IN_LABEL_PROP, UDOT_BOX_LABEL_FIELD, UDOT_FIBER_ROTATION_FIELD } from '../../symbology/udot-fiber/constants.js';
@@ -9,6 +9,8 @@ import { resolveLookalike } from '../../symbology/udot-fiber/lookalikes.js';
 import { clipFeaturesToSheetFrame } from './export-builder.js';
 
 const FIBER_LINE_KEYS = new Set(['fiber', 'conduit']);
+/** Live box glyph uses `rh = rw / 2.05`. */
+export const UDOT_PDF_BOX_ASPECT = 2.05;
 const FIBER_DRAW_RANK = Object.freeze({
     conduit: 41,
     fiber: 42,
@@ -121,7 +123,7 @@ export function listVisibleUdotFiberLayerIds(mapService, layers = getLayers()) {
 }
 
 /**
- * Vector PDF style for a Fiber feature. Line layers never carry along-line labels.
+ * Vector PDF style for a Fiber feature. Line layers do not carry along-line labels.
  *
  * @param {object} feature
  * @param {object|null} [layerStyle]
@@ -173,39 +175,67 @@ export function buildUdotFiberPdfStyle(feature, layerStyle = null) {
 }
 
 /**
- * Landscape box sized to hold BOXLABELS (PDF points, before pxPerPt).
+ * Split a long BOXLABELS string at the space nearest the midpoint.
+ *
+ * @param {string} [label]
+ * @returns {string[]}
+ */
+export function wrapUdotFiberPdfBoxLabel(label) {
+    const text = String(label || '').trim().replace(/\s+/g, ' ');
+    if (!text) return [];
+    if (text.length <= 10 || !text.includes(' ')) return [text];
+    const mid = text.length / 2;
+    let cut = -1;
+    let best = Infinity;
+    for (let i = 0; i < text.length; i++) {
+        if (text[i] !== ' ') continue;
+        const dist = Math.abs(i - mid);
+        if (dist < best) {
+            cut = i;
+            best = dist;
+        }
+    }
+    if (cut < 1) return [text];
+    const left = text.slice(0, cut).trim();
+    const right = text.slice(cut + 1).trim();
+    return right ? [left, right] : [left];
+}
+
+/**
+ * Landscape box matching the live Fiber glyph (aspect ~2.05). Readable PDF
+ * size; text shrinks or wraps to stay inside (the rectangle does not grow).
  *
  * @param {string|null} [label]
  * @param {number} [radius]
  * @param {(text: string, fontSize: number) => number} [measureWidth]
- * @returns {{ fontSize: number, halfWidth: number, halfHeight: number }}
+ * @returns {{ fontSize: number, halfWidth: number, halfHeight: number, lines: string[] }}
  */
 export function layoutUdotFiberPdfBox(label, radius = 4.8, measureWidth = null) {
-    const size = Math.max(2.4, Number(radius) || 4.8);
+    const size = Math.max(4.8, Number(radius) || 4.8);
+    const halfWidth = size * 1.12;
+    const halfHeight = halfWidth / UDOT_PDF_BOX_ASPECT;
     const text = String(label || '').trim();
     if (!text) {
-        return { fontSize: 0, halfWidth: size * 1.15, halfHeight: size * 0.48 };
+        return { fontSize: 0, halfWidth, halfHeight, lines: [] };
     }
 
-    const fontSize = Math.min(6.2, Math.max(3.8, size * 0.58));
     const estimate = (value, pt) => (
         typeof measureWidth === 'function'
             ? measureWidth(value, pt)
             : value.length * pt * 0.54
     );
-    let usedFont = fontSize;
-    let usedW = estimate(text, fontSize);
-    const maxInner = size * 10;
-    if (usedW > maxInner) {
-        usedFont = Math.max(3.2, fontSize * (maxInner / usedW));
-        usedW = estimate(text, usedFont);
+    const lines = wrapUdotFiberPdfBoxLabel(text);
+    const padX = 0.7;
+    const padY = 0.35;
+    const innerW = Math.max(1, halfWidth * 2 - padX * 2);
+    const innerH = Math.max(1, halfHeight * 2 - padY * 2);
+    let fontSize = Math.min(5.2, innerH / (lines.length * 1.05));
+    const widestAt = (pt) => Math.max(...lines.map((line) => estimate(line, pt)));
+    if (widestAt(fontSize) > innerW) {
+        fontSize = Math.max(2.6, fontSize * (innerW / widestAt(fontSize)));
     }
 
-    return {
-        fontSize: usedFont,
-        halfWidth: Math.max(size * 1.05, usedW / 2 + usedFont * 0.5),
-        halfHeight: Math.max(size * 0.4, usedFont * 0.72)
-    };
+    return { fontSize, halfWidth, halfHeight, lines };
 }
 
 /**

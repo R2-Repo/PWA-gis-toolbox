@@ -8,7 +8,9 @@ import {
     layoutUdotFiberPdfBox,
     listVisibleUdotFiberLayerIds,
     omitRasterizedLiveFeatures,
-    suspendUdotFiberLineLabels
+    suspendUdotFiberLineLabels,
+    UDOT_PDF_BOX_ASPECT,
+    wrapUdotFiberPdfBoxLabel
 } from '../js/widgets/sheet-cutting/sheet-pdf-fiber.js';
 
 describe('sheet PDF Fiber capture helpers', () => {
@@ -82,7 +84,7 @@ describe('sheet PDF Fiber capture helpers', () => {
         expect(visibility.get('svc-fiber-line-labels')).toBe('visible');
     });
 
-    it('builds vector Fiber/Conduit styles without line labels', () => {
+    it('builds vector Fiber/Conduit styles without along-line labels', () => {
         const fiber = buildUdotFiberPdfStyle({
             geometry: { type: 'LineString', coordinates: [[0, 0], [1, 1]] },
             properties: { FIBER_SYMBOLS: '48', Fiber_Label: 'UDOT 048 SMF', _udotFiberKey: 'fiber' }
@@ -104,14 +106,22 @@ describe('sheet PDF Fiber capture helpers', () => {
         expect(conduit.strokes[0].strokeWidth).toBeLessThan(1);
     });
 
-    it('sizes box rectangles around in-box labels', () => {
+    it('keeps landscape box aspect and wraps long in-box labels', () => {
+        expect(wrapUdotFiberPdfBoxLabel('First Digital CentraCom')).toEqual([
+            'First Digital',
+            'CentraCom'
+        ]);
         const empty = layoutUdotFiberPdfBox('', 4.8);
         const short = layoutUdotFiberPdfBox('II', 4.8);
         const long = layoutUdotFiberPdfBox('First Digital CentraCom', 4.8);
-        expect(short.fontSize).toBeGreaterThan(0);
-        expect(long.halfWidth).toBeGreaterThan(short.halfWidth);
-        expect(long.halfWidth).toBeGreaterThan(empty.halfWidth);
-        expect(short.halfHeight).toBeGreaterThanOrEqual(short.fontSize * 0.7);
+        expect(short.lines).toEqual(['II']);
+        expect(long.lines).toEqual(['First Digital', 'CentraCom']);
+        expect(short.halfWidth / short.halfHeight).toBeCloseTo(UDOT_PDF_BOX_ASPECT, 5);
+        expect(long.halfWidth / long.halfHeight).toBeCloseTo(UDOT_PDF_BOX_ASPECT, 5);
+        expect(empty.halfWidth / empty.halfHeight).toBeCloseTo(UDOT_PDF_BOX_ASPECT, 5);
+        expect(long.halfWidth).toBeCloseTo(short.halfWidth, 5);
+        expect(short.halfWidth).toBeGreaterThan(5);
+        expect(long.fontSize).toBeLessThan(short.fontSize);
     });
 
     it('paints cabinets with the map lookalike color', () => {

@@ -12,6 +12,7 @@ import {
     computeMatchlineSeeLabelPdfPlacement,
     placeMatchlineLabelOnGoldOutline,
     pickJsPdfAngleWithCapsOutward,
+    udotFiberPdfBoxTextAngle,
     MATCHLINE_SEE_LABEL_FONT_PT
 } from '../js/widgets/sheet-cutting/sheet-pdf-vector.js';
 
@@ -188,6 +189,14 @@ describe('sheet PDF vector styles', () => {
         );
         expect(style.kind).toBe('fiber_line');
         expect(style.labelField).toBeNull();
+    });
+
+    it('aligns box label jsPDF angle with the rotated rectangle', () => {
+        expect(udotFiberPdfBoxTextAngle(0)).toBeCloseTo(0, 5);
+        const tilted = udotFiberPdfBoxTextAngle(30);
+        const rad = (tilted * Math.PI) / 180;
+        expect(Math.cos(rad)).toBeCloseTo(Math.cos(Math.PI / 6), 5);
+        expect(-Math.sin(rad)).toBeCloseTo(Math.sin(Math.PI / 6), 5);
     });
 
     it('falls back to layer style for design features', () => {

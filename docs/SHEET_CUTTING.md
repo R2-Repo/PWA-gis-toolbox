@@ -139,13 +139,13 @@ Sheet PDFs combine a **modest-resolution basemap image** (whatever basemap is ac
 
 1. **Overview** (optional) — `fitBounds` to all sheet frames; **north-up** (`bearing: 0`); basemap captured at **basemap DPI** (default 150); sheet frames and route drawn as vector; saved as `{project}_overview.pdf`.
 2. **Detail pages** — per sheet: camera aligned to **export bearing** (landscape-align by default); design layers hidden; **basemap-only** capture clipped to the sheet polygon at **basemap DPI** (120–200); selected design layers + sheet outline drawn as **vector PDF** on top (no widget centerline overlay); saved as `{project}_sheet_01.pdf`, etc.
-   **UDOT Fiber** is refreshed for that sheet, then drawn as **vector** (class colors, thin fiber/conduit strokes, point marks). Fiber/Conduit **along-line labels are not exported**. Box `BOXLABELS` stay inside landscape rectangles sized to the text. Cabinets use the same lookalike color as the map.
+   **UDOT Fiber** is refreshed for that sheet, then drawn as **vector** (class colors, thin fiber/conduit strokes, point marks). Fiber/Conduit **along-line labels are not exported**. Box `BOXLABELS` stay inside landscape rectangles (map-scale size, transparent fill, jsPDF text angle follows the box). Cabinets use the same lookalike color as the map.
 3. **No multipage PDF** — each page is written immediately so memory stays flat on long routes.
 
 | Layer | Technology | Zoom behavior |
 |-------|------------|---------------|
 | Basemap underlay | MapLibre capture at basemap DPI | Soft when zoomed far (background context) |
-| UDOT Fiber live layers (if visible) | jsPDF vector (no Fiber/Conduit line labels) | Infinite zoom — always crisp |
+| UDOT Fiber live layers (if visible) | jsPDF vector (thin lines; no Fiber/Conduit line labels) | Infinite zoom — always crisp |
 | Other design + stationing + sheet outline (overview also draws the widget route) | jsPDF vector paths + text | Infinite zoom — always crisp |
 | North arrow / footer | jsPDF vector | Crisp |
 
