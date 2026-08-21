@@ -23,17 +23,25 @@ export const UDOT_FIBER_LABEL_FONT = [
     'Arial Unicode MS Regular'
 ];
 
-const CASING_COLOR = '#0a0a0a';
-const CASING_OPACITY = 0.42;
-const GLOW_BLUR = 1.35;
-const GLOW_OPACITY = 0.18;
-const CASING_EXTRA = 0.8;
-const GLOW_EXTRA = 1.55;
+export const UDOT_FIBER_CASING_COLOR = '#0a0a0a';
+export const UDOT_FIBER_CASING_OPACITY = 0.42;
+export const UDOT_FIBER_GLOW_BLUR = 1.35;
+export const UDOT_FIBER_GLOW_OPACITY = 0.18;
+export const UDOT_FIBER_CASING_EXTRA = 0.8;
+export const UDOT_FIBER_GLOW_EXTRA = 1.55;
 
-const LINE_CORE_WIDTH = Object.freeze({
+export const UDOT_FIBER_LINE_CORE_WIDTH = Object.freeze({
     fiber: 2.35,
     conduit: 2.55
 });
+
+const CASING_COLOR = UDOT_FIBER_CASING_COLOR;
+const CASING_OPACITY = UDOT_FIBER_CASING_OPACITY;
+const GLOW_BLUR = UDOT_FIBER_GLOW_BLUR;
+const GLOW_OPACITY = UDOT_FIBER_GLOW_OPACITY;
+const CASING_EXTRA = UDOT_FIBER_CASING_EXTRA;
+const GLOW_EXTRA = UDOT_FIBER_GLOW_EXTRA;
+const LINE_CORE_WIDTH = UDOT_FIBER_LINE_CORE_WIDTH;
 
 /**
  * ArcGIS geographic rotation (clockwise from north) → MapLibre icon-rotate.

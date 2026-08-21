@@ -27,7 +27,9 @@ import {
     UDOT_FIBER_NEIGHBORHOOD_ZOOM,
     buildUdotFiberIconSizeExpression,
     buildUdotFiberZoomSize,
-    udotFiberIconSizeFromEsriWidth
+    udotFiberIconSizeFromEsriWidth,
+    udotFiberIconPxAtZoom,
+    UDOT_FIBER_GROUND_LOCK_ZOOM
 } from '../js/symbology/udot-fiber/zoom-scale.js';
 import {
     makeUdotGlyphSvg,
@@ -108,6 +110,8 @@ describe('UDOT Fiber symbology', () => {
     it('holds ArcGIS box/splice size until 19.02, then grows with the map', () => {
         expect(udotFiberIconSizeFromEsriWidth(156, 'building')).toBeCloseTo(44 / 156);
         expect(udotFiberIconSizeFromEsriWidth(20, 'cabinets')).toBeCloseTo(29 / 20);
+        expect(udotFiberIconPxAtZoom('cabinets', UDOT_FIBER_GROUND_LOCK_ZOOM)).toBe(29);
+        expect(udotFiberIconPxAtZoom('boxes', 16)).toBe(Math.max(6, Math.round(16 * 0.45)));
         const held = buildUdotFiberZoomSize(2, 'fiber');
         expect(held[0]).toBe('interpolate');
         expect(held).toContain(UDOT_FIBER_NEIGHBORHOOD_ZOOM);

@@ -30,6 +30,12 @@ import { clearSheetPreview, showSheetPreview } from './sheet-preview.js';
 import { exportSheetPlanPdf } from './sheet-pdf-export.js';
 import { buildCombinedSheetGeoJson } from './export-builder.js';
 import { sanitizeExportFilename } from '../../export/folder-export.js';
+import {
+    collectSheetDesignFeatures,
+    collectSheetDesignFeaturesSync,
+    envelopeFromSheetSession
+} from './design-features.js';
+import { resolveUdotFiberLayerKey } from '../../symbology/udot-fiber/sheet-export.js';
 
 function persistSession(session, open = true) {
     upsertWidgetState(WIDGET_ID, {
@@ -89,38 +95,25 @@ function getRouteLayerOptions(ctx) {
 function getLayerLists(ctx) {
     return {
         routeLayers: getRouteLayerOptions(ctx),
-        designLayers: getSpatialLayerOptions(ctx)
+        designLayers: getSpatialLayerOptions(ctx).map((option) => {
+            const layer = ctx.getLayerById?.(option.id)
+                || ctx.getLayers().find((entry) => entry.id === option.id);
+            const layerStyle = ctx.mapService?.getLayerStyle?.(option.id) || null;
+            return {
+                ...option,
+                isUdotFiber: Boolean(resolveUdotFiberLayerKey(layer, layerStyle))
+            };
+        })
     };
 }
 
-function getLayerFeatures(ctx, layerId) {
-    const layer = ctx.getLayerById?.(layerId) || ctx.getLayers().find((entry) => entry.id === layerId);
-    const fromDataset = layer?.geojson?.features;
-    if (fromDataset?.length) return fromDataset;
-    const fromMap = ctx.mapService?.getLayerRecord?.(layerId)?.geojson?.features;
-    return fromMap?.length ? fromMap : [];
-}
-
-function collectFeaturesFromLayers(ctx, layerIds = []) {
-    const features = [];
-    for (const layerId of layerIds) {
-        for (const feature of getLayerFeatures(ctx, layerId)) {
-            if (!feature?.geometry) continue;
-            features.push({
-                ...feature,
-                properties: {
-                    ...(feature.properties || {}),
-                    _sourceLayerId: layerId
-                }
-            });
-        }
-    }
-    return features;
-}
-
-function applyDesignLayerSelection(ctx, session, layerIds = []) {
+async function applyDesignLayerSelection(ctx, session, layerIds = []) {
     const next = selectDesignLayersForSheets(session, layerIds);
-    return setSheetDesignFeatures(next, collectFeaturesFromLayers(ctx, layerIds));
+    const envelope = envelopeFromSheetSession(next);
+    const features = envelope
+        ? await collectSheetDesignFeatures(ctx, layerIds, { envelope })
+        : collectSheetDesignFeaturesSync(ctx, layerIds);
+    return setSheetDesignFeatures(next, features);
 }
 
 /**
@@ -175,12 +168,18 @@ export async function openSheetCutting(ctx, { restoreState = null } = {}) {
                 persistSession(session);
                 return session;
             },
-            onSelectDesignLayers: (layerIds) => {
-                session = applyDesignLayerSelection(ctx, session, layerIds);
+            onSelectDesignLayers: async (layerIds) => {
+                session = await applyDesignLayerSelection(ctx, session, layerIds);
                 persistSession(session);
                 return session;
             },
-            onGenerateSheets: () => {
+            onGenerateSheets: async () => {
+                session = generateSheetSet(session);
+                session = await applyDesignLayerSelection(
+                    ctx,
+                    session,
+                    session.sheets?.designLayerIds || []
+                );
                 session = generateSheetSet(session);
                 renderSheetPreview(ctx, session);
                 persistSession(session);
@@ -188,7 +187,7 @@ export async function openSheetCutting(ctx, { restoreState = null } = {}) {
             },
             onValidate: () => validateSheetSession(session),
             onExportPdf: async () => {
-                session = applyDesignLayerSelection(
+                session = await applyDesignLayerSelection(
                     ctx,
                     session,
                     session.sheets?.designLayerIds || []
@@ -239,8 +238,8 @@ export async function openSheetCutting(ctx, { restoreState = null } = {}) {
                     progress.close();
                 }
             },
-            onExportPackage: () => {
-                session = applyDesignLayerSelection(
+            onExportPackage: async () => {
+                session = await applyDesignLayerSelection(
                     ctx,
                     session,
                     session.sheets?.designLayerIds || []

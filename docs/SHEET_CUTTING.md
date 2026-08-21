@@ -153,6 +153,8 @@ Sheet PDFs combine a **modest-resolution basemap image** (whatever basemap is ac
 
 **Design layers must be selected** in the Sheet Cutter wizard for their features to appear in vector export. Layer styles are resolved from `mapService.getLayerStyle()` using `_sourceLayerId` stamped at collection time.
 
+**UDOT Fiber Network** live layers are queried along the sheet-corridor envelope (not only the current map viewport) so every sheet has complete linework. Features are decorated the same way as the live map (hide lists, multi-sheath offsets, lookalike glyphs) and drawn as vector PDF with the Fiber paint pack: class-colored fiber stacks (casing + glow + core), dashed conduit with no grey underlay, lookalike point icons, class-colored line labels, and conduit → fiber → buildings → boxes → splices → cabinets draw order. Implementation: `js/symbology/udot-fiber/sheet-export.js`, `js/widgets/sheet-cutting/design-features.js`, `js/widgets/sheet-cutting/sheet-pdf-fiber.js`.
+
 Implementation: `js/widgets/sheet-cutting/sheet-pdf-export.js`, `js/widgets/sheet-cutting/sheet-pdf-vector.js`, `js/widgets/sheet-cutting/sheet-pdf-placement.js`, `js/widgets/sheet-cutting/sheet-pdf-orientation.js`, `js/export/folder-export.js`
 
 The map camera and 3D state are restored after export. 3D is temporarily flattened for consistent plan-sheet output.
@@ -230,6 +232,9 @@ If a future change makes right-side or skewed labels drift again, check the jsPD
 | `js/widgets/sheet-cutting/controller.js` | Preview wiring |
 | `react/widgets/SheetCuttingDialog.jsx` | Wizard UI |
 | `js/widgets/sheet-cutting/sheet-pdf-export.js` | Hybrid PDF export to folder |
+| `js/widgets/sheet-cutting/design-features.js` | Corridor collect for live Fiber + other design layers |
+| `js/symbology/udot-fiber/sheet-export.js` | Fiber PDF style pack (map-matching colors, dashes, glyphs) |
+| `js/widgets/sheet-cutting/sheet-pdf-fiber.js` | Fiber glyph + line-stack PDF draw |
 | `js/widgets/sheet-cutting/sheet-pdf-vector.js` | Vector GeoJSON → jsPDF renderer; **matchline SEE SHEET draw** (`placeMatchlineLabelOnGoldOutline`) |
 | `js/widgets/sheet-cutting/sheet-matchline-labels.js` | Geographic SEE SHEET point features (cap midpoint + outward probe) |
 | `js/widgets/sheet-cutting/sheet-pdf-placement.js` | Shared map-pixel → PDF-point placement |

@@ -37,6 +37,7 @@ import {
     resolveLiveRefreshMs,
     resolveLiveViewportAction
 } from './live-layer-cache.js';
+import { queryArcgisVectorEnvelope } from './arcgis-vector-query.js';
 import logger from '../core/logger.js';
 import {
     addFirewatchPart,
@@ -580,58 +581,11 @@ async function fetchVectorData(map, runtime) {
  * @param {ServiceRuntime} runtime
  */
 async function fetchArcgisFeatureServerViewport(map, runtime) {
-    const bounds = map.getBounds();
-    const importer = new ArcGISRestImporter();
-    const cleanUrl = importer.normalizeUrl(runtime.url);
-    const padded = padEnvelope(envelopeFromMapBounds(bounds));
-    const geometry = {
-        xmin: padded.west,
-        ymin: padded.south,
-        xmax: padded.east,
-        ymax: padded.north,
-        spatialReference: { wkid: 4326 }
-    };
-
-    const pageSize = 1000;
-    let offset = 0;
-    const features = [];
-    let truncated = false;
-
-    while (features.length < RENDER_LIMITS.maxFeaturesPerSource) {
-        const remaining = RENDER_LIMITS.maxFeaturesPerSource - features.length;
-        const params = new URLSearchParams({
-            f: 'geojson',
-            where: buildUdotFiberExcludeWhere(matchUdotFiberLayerUrl(runtime.url)?.key),
-            geometry: JSON.stringify(geometry),
-            geometryType: 'esriGeometryEnvelope',
-            inSR: '4326',
-            outSR: '4326',
-            spatialRel: 'esriSpatialRelIntersects',
-            outFields: '*',
-            returnGeometry: 'true',
-            resultOffset: String(offset),
-            resultRecordCount: String(Math.min(pageSize, remaining))
-        });
-
-        const resp = await fetch(`${cleanUrl}/query?${params}`);
-        if (!resp.ok) throw new Error(`FeatureServer query failed (${resp.status})`);
-        const data = await resp.json();
-        if (data.error) throw new Error(data.error.message || 'FeatureServer query error');
-
-        const page = data.type === 'FeatureCollection' ? (data.features || []) : [];
-        features.push(...page);
-
-        const exceeded = data.exceededTransferLimit === true || data.properties?.exceededTransferLimit === true;
-        if (!page.length || !exceeded) break;
-
-        offset += page.length;
-        if (features.length >= RENDER_LIMITS.maxFeaturesPerSource) {
-            truncated = true;
-            break;
-        }
-    }
-
-    return { type: 'FeatureCollection', features, truncated };
+    const padded = padEnvelope(envelopeFromMapBounds(map.getBounds()));
+    return queryArcgisVectorEnvelope(runtime.url, padded, {
+        where: buildUdotFiberExcludeWhere(matchUdotFiberLayerUrl(runtime.url)?.key),
+        maxFeatures: RENDER_LIMITS.maxFeaturesPerSource
+    });
 }
 
 /**

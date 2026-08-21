@@ -1,11 +1,21 @@
 import { SHEET_FRAME_PREVIEW_COLOR } from './sheet-preview.js';
 import { resolveFeatureStyle } from '../../map/style-engine.js';
 import {
+    resolveUdotFiberLayerKey,
+    resolveUdotFiberSheetPdfStyle,
+    udotFiberSheetDrawOrder
+} from '../../symbology/udot-fiber/sheet-export.js';
+import {
     closestPdfRingEdge,
     pickTextAngleWithBottomTowardInterior,
     pointInPdfRing,
     probeOutwardUnitNormal
 } from './sheet-pdf-placement.js';
+import {
+    drawUdotFiberPdfGlyph,
+    keepPdfTextUpright,
+    midpointAlongPolyline
+} from './sheet-pdf-fiber.js';
 
 /** Matchline SEE SHEET label size (PDF points). Inner glyph edge sits on the cutout border. */
 export const MATCHLINE_SEE_LABEL_FONT_PT = 7.5;
@@ -56,12 +66,19 @@ function resolveLayerFlatStyle(layerStyle, feature, geometryKind) {
  * @param {object|null} labelsConfig
  * @returns {object}
  */
-function labelDrawStyleFromConfig(labelsConfig) {
+function isHexColor(value) {
+    return typeof value === 'string' && /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(value.trim());
+}
+
+function labelDrawStyleFromConfig(labelsConfig, props = {}) {
     if (!labelsConfig?.field && labelsConfig?.enabled !== true) return {};
+    const rawColor = labelsConfig.color;
+    const field = labelsConfig.field;
+    const fromField = field && props[field] != null ? String(props[field]) : '';
     return {
         fontSize: labelsConfig.size || 8,
-        color: labelsConfig.color || '#111111',
-        haloColor: labelsConfig.haloColor || '#ffffff',
+        color: isHexColor(rawColor) ? rawColor : (fromField ? '#111111' : '#111111'),
+        haloColor: isHexColor(labelsConfig.haloColor) ? labelsConfig.haloColor : '#ffffff',
         haloWidth: labelsConfig.haloWidth ?? 1.25
     };
 }
@@ -203,11 +220,15 @@ export function resolveVectorFeatureStyle(feature, layerStyle = null) {
 
     const geometryType = feature?.geometry?.type;
     const geometryKind = geometryKindFromType(geometryType);
+    const fiberKey = props._udotFiberKey || resolveUdotFiberLayerKey(null, layerStyle);
+    if (fiberKey && !preview && !featureType) {
+        return resolveUdotFiberSheetPdfStyle(fiberKey, feature, layerStyle);
+    }
     const flat = geometryKind ? resolveLayerFlatStyle(layerStyle, feature, geometryKind) : null;
     const labelsConfig = layerStyle?.labels?.enabled && layerStyle?.labels?.field
         ? layerStyle.labels
         : null;
-    const labelStyle = labelDrawStyleFromConfig(labelsConfig);
+    const labelStyle = labelDrawStyleFromConfig(labelsConfig, props);
 
     const strokeColor = flat?.strokeColor || layerStyle?.strokeColor || '#2563eb';
     const strokeWidth = flat?.strokeWidth ?? layerStyle?.strokeWidth ?? 2;
@@ -331,7 +352,26 @@ function drawPolyline(doc, points, style, pxPerPt) {
         for (let i = 1; i < points.length; i++) {
             doc.line(points[i - 1].x, points[i - 1].y, points[i].x, points[i].y);
         }
+        doc.setLineDashPattern?.([], 0);
     });
+}
+
+function drawLineStack(doc, points, style, pxPerPt) {
+    if (style.casing) {
+        drawPolyline(doc, points, {
+            strokeColor: style.casing.color,
+            strokeWidth: style.casing.width,
+            strokeOpacity: style.casing.opacity
+        }, pxPerPt);
+    }
+    if (style.glow) {
+        drawPolyline(doc, points, {
+            strokeColor: style.glow.color,
+            strokeWidth: style.glow.width,
+            strokeOpacity: style.glow.opacity
+        }, pxPerPt);
+    }
+    drawPolyline(doc, points, style, pxPerPt);
 }
 
 /**
@@ -662,10 +702,21 @@ function featureDrawOrder(feature) {
     if (props.feature_type === 'overview_sheet_label') return 200;
     if (props.feature_type === 'sheet_outline') return 100;
     if (props._preview === 'station_label' || props._preview === 'begin_end_marker') return 90;
+    const fiberOrder = udotFiberSheetDrawOrder(feature);
+    if (fiberOrder != null) return fiberOrder;
     if (props.feature_type === 'overview_sheet_outline') return 35;
     if (props._preview === 'station_tick') return 40;
     if (props.feature_type === 'route' || props._preview === 'route' || props.feature_type === 'overview_route') return 20;
     return 50;
+}
+
+function isOverlayFeature(feature) {
+    const type = feature?.properties?.feature_type;
+    return type === 'sheet_outline'
+        || type === 'matchline_see_label'
+        || type === 'overview_sheet_outline'
+        || type === 'overview_sheet_label'
+        || type === 'overview_route';
 }
 
 /**
@@ -676,7 +727,29 @@ function featureDrawOrder(feature) {
  * @param {number} captureScale
  * @param {object} style
  */
-function renderFeature(doc, feature, map, transform, captureScale, style, pdfRing = null) {
+function drawProjectedLines(doc, geometry, map, transform, captureScale, style, pxPerPt) {
+    if (geometry.type === 'LineString') {
+        drawLineStack(doc, projectRing(map, geometry.coordinates, transform, captureScale), style, pxPerPt);
+        return;
+    }
+    if (geometry.type === 'MultiLineString') {
+        for (const line of geometry.coordinates) {
+            drawLineStack(doc, projectRing(map, line, transform, captureScale), style, pxPerPt);
+        }
+    }
+}
+
+function lineLabelPoints(geometry, map, transform, captureScale) {
+    if (geometry.type === 'LineString') {
+        return [projectRing(map, geometry.coordinates, transform, captureScale)];
+    }
+    if (geometry.type === 'MultiLineString') {
+        return geometry.coordinates.map((line) => projectRing(map, line, transform, captureScale));
+    }
+    return [];
+}
+
+function renderFeatureGeometry(doc, feature, map, transform, captureScale, style, pdfRing = null) {
     const geometry = feature?.geometry;
     if (!geometry) return;
 
@@ -688,17 +761,8 @@ function renderFeature(doc, feature, map, transform, captureScale, style, pdfRin
         return;
     }
 
-    if (geometry.type === 'LineString') {
-        const points = projectRing(map, geometry.coordinates, transform, captureScale);
-        drawPolyline(doc, points, style, pxPerPt);
-        return;
-    }
-
-    if (geometry.type === 'MultiLineString') {
-        for (const line of geometry.coordinates) {
-            const points = projectRing(map, line, transform, captureScale);
-            drawPolyline(doc, points, style, pxPerPt);
-        }
+    if (geometry.type === 'LineString' || geometry.type === 'MultiLineString') {
+        drawProjectedLines(doc, geometry, map, transform, captureScale, style, pxPerPt);
         return;
     }
 
@@ -708,7 +772,7 @@ function renderFeature(doc, feature, map, transform, captureScale, style, pdfRin
             if (style.kind === 'polygon') {
                 drawPolygonRing(doc, points, style, pxPerPt);
             } else {
-                drawPolyline(doc, points, style, pxPerPt);
+                drawLineStack(doc, points, style, pxPerPt);
             }
         }
         return;
@@ -721,45 +785,95 @@ function renderFeature(doc, feature, map, transform, captureScale, style, pdfRin
                 if (style.kind === 'polygon') {
                     drawPolygonRing(doc, points, style, pxPerPt);
                 } else {
-                    drawPolyline(doc, points, style, pxPerPt);
+                    drawLineStack(doc, points, style, pxPerPt);
                 }
             }
         }
         return;
     }
 
-    if (geometry.type === 'Point') {
-        const [lng, lat] = geometry.coordinates;
-        const point = transform.projectLngLat(map, lng, lat, captureScale);
-
-        if (style.kind === 'label') {
-            const text = feature.properties?.[style.field] ?? '';
-            drawLabel(doc, point, text, style);
-            return;
-        }
-
-        drawPoint(doc, point, style, pxPerPt);
-        if (style.labelField && style.kind !== 'label') {
-            drawLabel(doc, point, feature.properties?.[style.labelField], {
-                fontSize: style.labelSize || 8,
-                color: style.color || '#111111',
-                haloColor: style.haloColor,
-                haloWidth: style.haloWidth
-            });
-        }
-        return;
-    }
-
-    if (geometry.type === 'MultiPoint') {
-        for (const coord of geometry.coordinates) {
+    if (geometry.type === 'Point' || geometry.type === 'MultiPoint') {
+        const coords = geometry.type === 'Point' ? [geometry.coordinates] : geometry.coordinates;
+        const mapBearing = map?.getBearing?.() || 0;
+        for (const coord of coords) {
             const point = transform.projectLngLat(map, coord[0], coord[1], captureScale);
-            if (style.kind === 'label') {
-                drawLabel(doc, point, feature.properties?.[style.field], style);
+            if (style.kind === 'label') continue;
+            if (style.glyph) {
+                drawUdotFiberPdfGlyph(doc, point, style.glyph, (style.radius || 10) * pxPerPt, mapBearing);
             } else {
                 drawPoint(doc, point, style, pxPerPt);
             }
         }
     }
+}
+
+function renderFeatureLabels(doc, feature, map, transform, captureScale, style) {
+    const geometry = feature?.geometry;
+    if (!geometry || !style) return;
+    const props = feature.properties || {};
+    if (props.feature_type === 'matchline_see_label' || style.kind === 'matchline_see_label') {
+        return;
+    }
+
+    if (style.kind === 'label' && (geometry.type === 'Point' || geometry.type === 'MultiPoint')) {
+        const coords = geometry.type === 'Point' ? [geometry.coordinates] : geometry.coordinates;
+        for (const coord of coords) {
+            const point = transform.projectLngLat(map, coord[0], coord[1], captureScale);
+            drawLabel(doc, point, props[style.field] ?? '', style);
+        }
+        return;
+    }
+
+    if ((geometry.type === 'Point' || geometry.type === 'MultiPoint') && style.labelField) {
+        const coords = geometry.type === 'Point' ? [geometry.coordinates] : geometry.coordinates;
+        const labelStyle = {
+            fontSize: style.labelSize || 8,
+            color: isHexColor(style.color) ? style.color : '#111111',
+            haloColor: style.haloColor,
+            haloWidth: style.haloWidth
+        };
+        for (const coord of coords) {
+            const point = transform.projectLngLat(map, coord[0], coord[1], captureScale);
+            if (style.plateHaloColor) {
+                drawLabel(doc, point, props[style.labelField], {
+                    ...labelStyle,
+                    color: '#ffffff',
+                    haloColor: style.plateHaloColor,
+                    haloWidth: style.plateHaloWidth || 2
+                });
+            }
+            drawLabel(doc, point, props[style.labelField], labelStyle);
+        }
+        return;
+    }
+
+    if (style.labelField && (geometry.type === 'LineString' || geometry.type === 'MultiLineString')) {
+        const text = props[style.labelField];
+        if (text == null || text === '') return;
+        const labelStyle = {
+            fontSize: style.labelSize || 8,
+            color: isHexColor(style.color) ? style.color : '#111827',
+            haloColor: style.haloColor || '#ffffff',
+            haloWidth: style.haloWidth ?? 1.8
+        };
+        for (const points of lineLabelPoints(geometry, map, transform, captureScale)) {
+            const mid = midpointAlongPolyline(points);
+            if (!mid) continue;
+            drawRotatedHaloText(
+                doc,
+                text,
+                mid.x,
+                mid.y,
+                keepPdfTextUpright(mid.angle),
+                labelStyle
+            );
+        }
+    }
+}
+
+function renderFeature(doc, feature, map, transform, captureScale, style, pdfRing = null) {
+    renderFeatureGeometry(doc, feature, map, transform, captureScale, style, pdfRing);
+    renderFeatureLabels(doc, feature, map, transform, captureScale, style);
 }
 
 /**
@@ -783,14 +897,38 @@ export function renderFeatureCollectionToPdf(doc, collection, map, transform, ca
         ? projectRing(map, outlineRing, transform, captureScale)
         : null;
 
+    const styled = [];
     for (const feature of features) {
         try {
             const layerId = feature.properties?._sourceLayerId;
             const layerStyle = resolveStyle.layerStyleFor?.(layerId) ?? null;
-            const style = resolveVectorFeatureStyle(feature, layerStyle);
-            renderFeature(doc, feature, map, transform, captureScale, style, pdfRing);
+            styled.push({
+                feature,
+                style: resolveVectorFeatureStyle(feature, layerStyle)
+            });
         } catch (_) {
-            // Skip features that fail to project or render.
+            // Skip features that fail to resolve.
         }
     }
+
+    const draw = (entries, mode) => {
+        for (const entry of entries) {
+            try {
+                if (mode === 'geometry') {
+                    renderFeatureGeometry(doc, entry.feature, map, transform, captureScale, entry.style, pdfRing);
+                } else {
+                    renderFeatureLabels(doc, entry.feature, map, transform, captureScale, entry.style);
+                }
+            } catch (_) {
+                // Skip features that fail to project or render.
+            }
+        }
+    };
+
+    const design = styled.filter((entry) => !isOverlayFeature(entry.feature));
+    const overlay = styled.filter((entry) => isOverlayFeature(entry.feature));
+    draw(design, 'geometry');
+    draw(design, 'labels');
+    draw(overlay, 'geometry');
+    draw(overlay, 'labels');
 }

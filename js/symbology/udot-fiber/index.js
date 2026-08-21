@@ -46,6 +46,13 @@ export {
 } from './lookalikes.js';
 export {
     UDOT_FIBER_LABEL_FONT,
+    UDOT_FIBER_CASING_COLOR,
+    UDOT_FIBER_CASING_OPACITY,
+    UDOT_FIBER_GLOW_BLUR,
+    UDOT_FIBER_GLOW_OPACITY,
+    UDOT_FIBER_CASING_EXTRA,
+    UDOT_FIBER_GLOW_EXTRA,
+    UDOT_FIBER_LINE_CORE_WIDTH,
     widenLineWidth,
     resolveUdotFiberPaintGeometry,
     buildUdotFiberIconRotateExpression,
@@ -64,6 +71,7 @@ export {
     UDOT_FIBER_ICON_SPRITE_MAX_PX,
     UDOT_FIBER_POINT_LAYER_KEYS,
     udotFiberTargetIconPx,
+    udotFiberIconPxAtZoom,
     udotFiberIconSpritePx,
     udotFiberIconSizeFromEsriWidth,
     buildUdotFiberZoomSize,
@@ -90,6 +98,15 @@ export {
     buildUdotFiberExcludeWhere,
     combineUdotFiberMapLibreFilter
 } from './display-filters.js';
+export {
+    resolveUdotFiberLayerKey,
+    resolveUdotFiberHexColor,
+    prepareUdotFiberExportFeatures,
+    udotFiberExportWhere,
+    udotFiberSheetDrawOrder,
+    resolveUdotFiberSheetPdfStyle,
+    UDOT_FIBER_SHEET_EXPORT_ZOOM
+} from './sheet-export.js';
 export {
     UDOT_FIBER_STYLE,
     UDOT_CONDUIT_STYLE,

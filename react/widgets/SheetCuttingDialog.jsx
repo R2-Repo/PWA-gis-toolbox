@@ -232,6 +232,9 @@ export function SheetCuttingDialog({
 
     const allLayersSelected = designLayerOptions.length > 0
         && designLayerOptions.every((layer) => selectedLayerIds.includes(layer.id));
+    const fiberSelected = designLayerOptions.some(
+        (layer) => layer.isUdotFiber && selectedLayerIds.includes(layer.id)
+    );
 
     const handleGenerate = async () => {
         const next = await run(async () => {
@@ -398,6 +401,11 @@ export function SheetCuttingDialog({
                         {featureCount > 0 ? ` · ${featureCount} feature${featureCount === 1 ? '' : 's'} ready for sheets` : ''}
                     </p>
                 ) : null}
+                {fiberSelected ? (
+                    <p className="text-xs" style={{ marginTop: 0, marginBottom: 8, color: 'var(--text-muted)' }}>
+                        UDOT Fiber Network is queried along the sheet corridor and drawn with the same map symbology (class colors, dashed conduit, lookalike icons, labels).
+                    </p>
+                ) : null}
                 {designLayerOptions.length ? (
                     <details className="gis-widget__details">
                         <summary>Layers ({designLayerOptions.length})</summary>
@@ -474,7 +482,15 @@ export function SheetCuttingDialog({
                         >
                             Export sheet PDFs to folder…
                         </button>
-                        <button type="button" className="btn btn-secondary btn-sm" disabled={busy} onClick={() => onExportPackage?.()}>
+                        <button
+                            type="button"
+                            className="btn btn-secondary btn-sm"
+                            disabled={busy}
+                            onClick={() => run(async () => {
+                                await onExportPackage?.();
+                                return null;
+                            })}
+                        >
                             Download GIS layers (GeoJSON)
                         </button>
                         <button type="button" className="btn btn-secondary btn-sm" disabled={busy} onClick={() => onAddResultLayers?.()}>

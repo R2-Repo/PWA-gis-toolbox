@@ -33,3 +33,5 @@ Live Fiber does not draw published ArcGIS picture-marker PNGs. Class labels map 
 ## Platform
 
 Browser-only. Styles apply on ArcGIS / live-layer import via `js/symbology/udot-fiber/` (no local SQLite sync in this repo).
+
+Sheet Cutter PDF export reuses this pack (`sheet-export.js`) so selected Fiber live layers match the map: corridor query, class colors, dashed conduit, lookalike icons, and the same draw order. See [`docs/SHEET_CUTTING.md`](SHEET_CUTTING.md).

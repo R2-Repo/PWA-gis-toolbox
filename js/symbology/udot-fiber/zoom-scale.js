@@ -96,6 +96,30 @@ export function udotFiberTargetIconPx(layerKey) {
 }
 
 /**
+ * Interpolate on-screen icon pixels at a MapLibre zoom.
+ * Sheet PDFs use ~z19 (1100 ft on tabloid ≈ approved ground-lock look).
+ * @param {string} [layerKey]
+ * @param {number} [zoom]
+ */
+export function udotFiberIconPxAtZoom(layerKey, zoom = UDOT_FIBER_GROUND_LOCK_ZOOM) {
+    const z = Number(zoom);
+    const stops = UDOT_FIBER_ICON_ZOOM_PX[layerKey];
+    if (!stops?.length || !Number.isFinite(z)) return udotFiberTargetIconPx(layerKey);
+    if (z <= stops[0][0]) return stops[0][1];
+    const last = stops[stops.length - 1];
+    if (z >= last[0]) return last[1];
+    for (let i = 1; i < stops.length; i++) {
+        const [z0, p0] = stops[i - 1];
+        const [z1, p1] = stops[i];
+        if (z <= z1) {
+            const t = (z - z0) / (z1 - z0);
+            return p0 + (p1 - p0) * t;
+        }
+    }
+    return last[1];
+}
+
+/**
  * Sprite pixel size, capped so close-up uses icon-size > 1 instead of huge SVGs.
  * @param {string} [layerKey]
  */
