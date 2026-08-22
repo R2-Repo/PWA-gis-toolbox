@@ -82,8 +82,9 @@ import { getLayers } from '../../core/state.js';
 import { getWidgetEntry } from '../widget-state-store.js';
 import { restoreCalloutSession } from '../plan-set-callouts/engine.js';
 import { isFiberCalloutSession } from '../plan-set-callouts/fiber-callout-engine.js';
-import { drawSheetCalloutsOnPdf } from '../plan-set-callouts/pdf-callouts.js';
+import { drawInsetCalloutsOnPdf, drawSheetCalloutsOnPdf } from '../plan-set-callouts/pdf-callouts.js';
 import { suspendCalloutPreview } from '../plan-set-callouts/preview.js';
+import { refreshCalloutRuntimePreview } from '../plan-set-callouts/runtime.js';
 
 const FIT_PADDING = 48;
 const FIT_MAX_ZOOM = 18;
@@ -1441,7 +1442,8 @@ export async function buildHybridPagePdfBlob({
                 layoutMargins,
                 pageW,
                 pageH,
-                goldPdfRing
+                goldPdfRing,
+                insetViews: pageOptions.insetViews || []
             });
         }
     } else if (pageOptions.pageType === 'overview') {
@@ -1585,7 +1587,8 @@ export async function buildInsetPagePdfBlob({
     mapService = null,
     projectName = 'Sheet Cutter',
     exportDate = new Date(),
-    JsPDFCtor = null
+    JsPDFCtor = null,
+    calloutSession = null
 }) {
     const orientation = template.orientation === PAGE_ORIENTATIONS.PORTRAIT
         ? PAGE_ORIENTATIONS.PORTRAIT
@@ -1644,6 +1647,19 @@ export async function buildInsetPagePdfBlob({
             INSET_NORTH_ARROW_SIZE_PT,
             0
         );
+        if (calloutSession && capture.inset && map && transform) {
+            drawInsetCalloutsOnPdf(doc, {
+                session: calloutSession,
+                insetView: capture.inset,
+                map,
+                transform,
+                captureScale: capture.underlay.captureScale,
+                layoutMargins,
+                pageW,
+                pageH,
+                clipRect: cell.mapRect
+            });
+        }
     }
 
     drawSheetTitleBlockFooter(doc, null, page.totalInsetPages || 1, layoutMargins, {
@@ -1934,7 +1950,8 @@ export async function exportSheetPlanPdf({
                         frameRing: ring,
                         projectName,
                         exportDate,
-                        calloutSession
+                        calloutSession,
+                        insetViews: session?.sheets?.insetViews || []
                     },
                     map,
                     mapService,
@@ -2046,7 +2063,8 @@ export async function exportSheetPlanPdf({
                     mapService,
                     projectName,
                     exportDate,
-                    JsPDFCtor
+                    JsPDFCtor,
+                    calloutSession
                 });
                 reportProgress({
                     step: `Writing ${pageFile}…`,
@@ -2099,6 +2117,7 @@ export async function exportSheetPlanPdf({
             resumeInteractions?.();
             restoreCalloutPreview?.();
             showSheetPreview(mapService, layers);
+            refreshCalloutRuntimePreview();
             await ensureMapFrameReady(map);
         } catch (_) {
             // Best-effort recovery so a failed export does not leave the map wedged.

@@ -64,10 +64,11 @@ export async function openReactIsland({ title, width, mountPath, mountExport, ge
 
             const props = await getProps(close);
             const mounted = mountFn(root, props);
-            watchOverlayUnmount(overlay, () => {
+            const teardown = () => {
                 mounted?.unmount?.();
                 (onOverlayDestroy || onClose)?.();
-            });
+            };
+            watchOverlayUnmount(overlay, teardown);
         }
     });
 }

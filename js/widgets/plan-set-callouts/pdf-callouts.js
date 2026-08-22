@@ -1,5 +1,5 @@
 /**
- * Draw per-sheet callout leaders + PROJECT KEY NOTES on corridor PDFs.
+ * Draw per-sheet callout leaders + PROJECT KEY NOTES on corridor and DETAILS PDFs.
  * Overlay only — does not change sheet-cutting polygons.
  */
 
@@ -19,7 +19,8 @@ export const CALLOUT_PDF_LINE_WIDTH = 0.45;
 const CALLOUT_PDF_TEXT_DY = 2.0;
 
 /**
- * Corridor sheets only. Overview and DETAILS pages never get fiber callouts.
+ * Corridor helper only. Overview pages never get fiber callouts.
+ * DETAILS pages use drawInsetCalloutsOnPdf instead of this helper.
  * @param {string} [pageType]
  * @returns {boolean}
  */
@@ -52,13 +53,23 @@ export function pickKeyNotesTableRect({
     footerReservePt,
     goldPdfRing = [],
     tableW,
-    tableH
+    tableH,
+    clipRect = null
 } = {}) {
-    const left = (marginsPt.left || 0) + 8;
-    const top = (marginsPt.top || 0) + 8;
-    const right = pageW - (marginsPt.right || 0) - tableW - 8;
+    const frame = clipRect || {
+        x: 0,
+        y: 0,
+        width: pageW,
+        height: pageH
+    };
+    const left = (clipRect ? frame.x : (marginsPt.left || 0)) + 8;
+    const top = (clipRect ? frame.y : (marginsPt.top || 0)) + 8;
+    const right = (clipRect ? frame.x + frame.width : pageW - (marginsPt.right || 0)) - tableW - 8;
     const footerY = pageH - (footerReservePt ?? ((PDF_DETAIL_FOOTER_BAND_IN + PDF_DETAIL_FOOTER_GAP_IN) * 72));
-    const bottom = Math.min(footerY - tableH - 8, pageH - tableH - 8);
+    const bottomLimit = clipRect
+        ? frame.y + frame.height - tableH - 8
+        : Math.min(footerY - tableH - 8, pageH - tableH - 8);
+    const bottom = bottomLimit;
     if (bottom < top) return { x: left, y: top, width: tableW, height: tableH };
 
     const candidates = [
@@ -69,7 +80,7 @@ export function pickKeyNotesTableRect({
     ];
 
     for (const rect of candidates) {
-        if (rectOverlapsFooter(rect, footerY)) continue;
+        if (!clipRect && rectOverlapsFooter(rect, footerY)) continue;
         if (goldPdfRing.length && rectHitsGoldCut(rect, goldPdfRing)) continue;
         return rect;
     }
@@ -97,10 +108,11 @@ function rectHitsGoldCut(rect, goldPdfRing) {
 /**
  * @param {object} session
  * @param {string|{ sheetId?: string, sheetNumber?: number }} sheetOrId
+ * @param {object} [options]
  * @returns {{ width: number, height: number }}
  */
-export function measureKeyNotesTable(session, sheetOrId) {
-    const notes = notesUsedOnSheet(session, sheetOrId);
+export function measureKeyNotesTable(session, sheetOrId, options = {}) {
+    const notes = notesUsedOnSheet(session, sheetOrId, options);
     const rows = Math.max(notes.length, 1);
     const longest = notes.reduce((max, note) => Math.max(max, String(note.text || '').length), 12);
     return {
@@ -154,20 +166,8 @@ function drawLeaders(doc, session, leaders, map, transform, captureScale) {
     }
 }
 
-function drawKeyNotesTable(doc, session, sheetOrId, options) {
-    const notes = notesUsedOnSheet(session, sheetOrId);
-    if (!notes.length) return;
-    const size = measureKeyNotesTable(session, sheetOrId);
-    const rect = pickKeyNotesTableRect({
-        pageW: options.pageW,
-        pageH: options.pageH,
-        marginsPt: options.layoutMargins,
-        goldPdfRing: options.goldPdfRing,
-        tableW: size.width,
-        tableH: size.height
-    });
-    if (!rect) return;
-
+function drawKeyNotesTable(doc, notes, rect) {
+    if (!rect || !notes.length) return;
     doc.setFillColor(255, 255, 255);
     doc.setDrawColor(30, 30, 30);
     doc.setLineWidth(0.5);
@@ -190,7 +190,8 @@ function drawKeyNotesTable(doc, session, sheetOrId, options) {
 }
 
 /**
- * Corridor sheets only (`pageType === 'detail'`). Skip overview and DETAILS pages.
+ * Corridor sheets only (`pageType === 'detail'`). Skip overview pages.
+ * Leaders covered by a detail box are omitted here and drawn on DETAILS pages.
  * @param {import('jspdf').jsPDF} doc
  * @param {object} options
  */
@@ -198,13 +199,16 @@ export function drawSheetCalloutsOnPdf(doc, options = {}) {
     const session = options.session;
     const sheet = options.sheet;
     const sheetOrId = sheet || options.sheetId;
-    const sheetId = options.sheetId || sheet?.sheetId;
-    if (!session || !doc || (!sheetOrId && !sheetId)) return;
+    if (!session || !doc || !sheetOrId) return;
     if (options.pageType && !shouldDrawCalloutsOnPdfPage(options.pageType)) return;
 
-    const lookup = sheet || sheetId;
-    const leaders = leadersForSheet(session, lookup);
-    const notes = notesUsedOnSheet(session, lookup);
+    const filter = {
+        insetViews: options.insetViews || [],
+        page: 'corridor'
+    };
+    const lookup = sheet || options.sheetId;
+    const leaders = leadersForSheet(session, lookup, filter);
+    const notes = notesUsedOnSheet(session, lookup, filter);
     if (!leaders.length && !notes.length) return;
 
     const map = options.map;
@@ -215,13 +219,64 @@ export function drawSheetCalloutsOnPdf(doc, options = {}) {
     const layoutMargins = options.layoutMargins || {};
     const goldPdfRing = options.goldPdfRing || [];
 
-    drawLeaders(doc, session, leaders, map, transform, captureScale);
-    drawKeyNotesTable(doc, session, lookup, {
+    try {
+        drawLeaders(doc, session, leaders, map, transform, captureScale);
+    } catch (error) {
+        console.warn('[plan-set-callouts] skipped leader overlay', error);
+    }
+
+    const size = measureKeyNotesTable(session, lookup, filter);
+    const rect = pickKeyNotesTableRect({
         pageW,
         pageH,
-        layoutMargins,
-        goldPdfRing
+        marginsPt: layoutMargins,
+        goldPdfRing,
+        tableW: size.width,
+        tableH: size.height
     });
+    drawKeyNotesTable(doc, notes, rect);
+}
+
+/**
+ * Draw enabled callouts whose anchors fall inside a detail box, plus that box's key notes.
+ * @param {import('jspdf').jsPDF} doc
+ * @param {object} options
+ */
+export function drawInsetCalloutsOnPdf(doc, options = {}) {
+    const session = options.session;
+    const insetView = options.insetView;
+    if (!session || !insetView || !doc) return;
+
+    const filter = {
+        insetViews: [insetView],
+        insetView,
+        page: 'inset'
+    };
+    const sheetId = insetView.parentSheetId || options.sheetId || '';
+    const leaders = leadersForSheet(session, sheetId, filter);
+    const notes = notesUsedOnSheet(session, sheetId, filter);
+    if (!leaders.length && !notes.length) return;
+
+    try {
+        drawLeaders(doc, session, leaders, options.map, options.transform, options.captureScale || 1);
+    } catch (error) {
+        console.warn('[plan-set-callouts] skipped inset leader overlay', error);
+    }
+
+    const size = measureKeyNotesTable(session, sheetId, filter);
+    const clipRect = options.clipRect || options.mapRect || null;
+    const pageW = options.pageW || doc.internal.pageSize.getWidth();
+    const pageH = options.pageH || doc.internal.pageSize.getHeight();
+    const rect = pickKeyNotesTableRect({
+        pageW,
+        pageH,
+        marginsPt: options.layoutMargins || {},
+        goldPdfRing: options.goldPdfRing || [],
+        tableW: Math.min(size.width, (clipRect?.width || pageW) - 16),
+        tableH: size.height,
+        clipRect
+    });
+    drawKeyNotesTable(doc, notes, rect);
 }
 
 export { PDF_DETAIL_FOOTER_BAND_IN };

@@ -1,12 +1,31 @@
 /**
  * Map preview for plan-set callout leaders and numbered circles.
+ * Survives widget Done/close so leaders stay editable on the map.
  */
 
 import { buildMapLabelLayerSpec } from '../../map/map-labels.js';
+import { getWidgetEntry } from '../widget-state-store.js';
+import { restoreSheetSession } from '../sheet-cutting/engine.js';
 import { buildCalloutPreviewGeoJson } from './leader-placement.js';
 
 /** @type {object[]} */
 let activePreviewEntries = [];
+/** @type {null | { map: object, onMouseDown: Function, onMouseMove: Function, onMouseUp: Function }} */
+let dragListeners = null;
+let dragging = null;
+
+/**
+ * @returns {object[]}
+ */
+export function getLinkedInsetViews() {
+    const entry = getWidgetEntry('sheet-cutting');
+    if (!entry?.state) return [];
+    try {
+        return restoreSheetSession(entry.state)?.sheets?.insetViews || [];
+    } catch {
+        return [];
+    }
+}
 
 const PREVIEW_ID_HINT = 'callout-preview-';
 
@@ -89,26 +108,118 @@ export function suspendCalloutPreview(mapService) {
 }
 
 /**
+ * @param {object} mapService
+ * @returns {() => void}
+ */
+export function hideCalloutPreviewForCapture(mapService) {
+    return suspendCalloutPreview(mapService);
+}
+
+/**
  * @returns {string[]}
  */
 export function getCalloutPreviewLayerIds() {
     return activePreviewEntries.flatMap((entry) => entry.layerIds || []);
 }
 
+function bubbleLayerIds(map) {
+    return getCalloutPreviewLayerIds().filter((id) => (
+        map?.getLayer?.(id) && (id.endsWith('-circle') || id.endsWith('-labels'))
+    ));
+}
+
+function hitBubble(map, point) {
+    const layers = bubbleLayerIds(map);
+    if (!map || !layers.length || !point) return null;
+    const hits = map.queryRenderedFeatures(point, { layers });
+    return hits.find((feature) => feature.properties?.feature_type === 'callout_bubble' && feature.properties?.leader_key)
+        || null;
+}
+
 /**
  * @param {object} mapService
- * @param {object} session
+ * @param {{
+ *   onDrag?: (leaderKey: string, coord: number[]) => void,
+ *   onCommit?: (leaderKey: string, coord: number[]) => void,
+ *   isEnabled?: () => boolean
+ * }} [handlers]
  */
-export function showCalloutPreview(mapService, session) {
-    clearCalloutPreview(mapService);
-    const collection = buildCalloutPreviewGeoJson(session);
-    if (!collection.features.length) return;
+export function installCalloutDrag(mapService, handlers = {}) {
+    const map = mapService?.getMap?.();
+    if (!map || dragListeners) return;
 
-    const map = previewMap(mapService);
-    if (!map) {
-        const entry = mapService?.showTempFeature?.(collection, 0);
-        if (entry) activePreviewEntries.push(entry);
-        return;
+    const canvas = map.getCanvas?.();
+    const onMouseDown = (e) => {
+        if (handlers.isEnabled && handlers.isEnabled() === false) return;
+        if (e.originalEvent?.button != null && e.originalEvent.button !== 0) return;
+        const hit = hitBubble(map, e.point);
+        if (!hit) return;
+        dragging = {
+            leaderKey: hit.properties.leader_key,
+            moved: false,
+            start: e.point
+        };
+        map.dragPan?.disable?.();
+        if (canvas) canvas.style.cursor = 'grabbing';
+        e.preventDefault();
+        e.originalEvent?.preventDefault?.();
+        e.originalEvent?.stopPropagation?.();
+    };
+    const onMouseMove = (e) => {
+        if (!dragging) {
+            if (canvas && hitBubble(map, e.point)) canvas.style.cursor = 'grab';
+            return;
+        }
+        const dx = e.point.x - dragging.start.x;
+        const dy = e.point.y - dragging.start.y;
+        if (!dragging.moved && (dx * dx + dy * dy) > 9) dragging.moved = true;
+        const coord = [e.lngLat.lng, e.lngLat.lat];
+        handlers.onDrag?.(dragging.leaderKey, coord);
+    };
+    const onMouseUp = (e) => {
+        if (!dragging) return;
+        const coord = [e.lngLat.lng, e.lngLat.lat];
+        const key = dragging.leaderKey;
+        const moved = dragging.moved;
+        dragging = null;
+        map.dragPan?.enable?.();
+        if (canvas) canvas.style.cursor = '';
+        if (moved) {
+            handlers.onCommit?.(key, coord);
+            const swallow = (clickEvent) => {
+                clickEvent.preventDefault();
+                map.off('click', swallow);
+            };
+            map.once('click', swallow);
+        }
+    };
+
+    map.on('mousedown', onMouseDown);
+    map.on('mousemove', onMouseMove);
+    map.on('mouseup', onMouseUp);
+    dragListeners = { map, onMouseDown, onMouseMove, onMouseUp };
+}
+
+/**
+ * @param {object} [mapService]
+ */
+export function uninstallCalloutDrag(mapService) {
+    const map = dragListeners?.map || mapService?.getMap?.();
+    if (map && dragListeners) {
+        map.off('mousedown', dragListeners.onMouseDown);
+        map.off('mousemove', dragListeners.onMouseMove);
+        map.off('mouseup', dragListeners.onMouseUp);
+    }
+    if (dragging) map?.dragPan?.enable?.();
+    dragging = null;
+    dragListeners = null;
+}
+
+function ensurePreviewLayers(map, collection) {
+    const existing = activePreviewEntries[0];
+    if (existing?.srcId && map.getSource?.(existing.srcId)) {
+        map.getSource(existing.srcId).setData(collection);
+        return existing;
     }
 
     const srcId = `${PREVIEW_ID_HINT}${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
@@ -161,7 +272,40 @@ export function showCalloutPreview(mapService, session) {
         layerIds.push(labelSpec.id);
     }
 
-    activePreviewEntries.push({ srcId, layerIds });
+    const entry = { srcId, layerIds };
+    activePreviewEntries.push(entry);
+    return entry;
+}
+
+/**
+ * @param {object} mapService
+ * @param {object} session
+ * @param {object} [options]
+ */
+export function showCalloutPreview(mapService, session, options = {}) {
+    const insetViews = options.insetViews || getLinkedInsetViews();
+    const collection = buildCalloutPreviewGeoJson(session, { insetViews });
+    const map = previewMap(mapService);
+
+    if (!collection.features.length) {
+        clearCalloutPreview(mapService);
+        return;
+    }
+
+    if (!map) {
+        clearCalloutPreview(mapService);
+        const entry = mapService?.showTempFeature?.(collection, 0);
+        if (entry) activePreviewEntries.push(entry);
+        return;
+    }
+
+    if (!activePreviewEntries[0]?.srcId || !map.getSource?.(activePreviewEntries[0].srcId)) {
+        for (const entry of activePreviewEntries) {
+            mapService?.removeTempFeature?.(entry);
+        }
+        activePreviewEntries = [];
+    }
+    ensurePreviewLayers(map, collection);
 }
 
 /**

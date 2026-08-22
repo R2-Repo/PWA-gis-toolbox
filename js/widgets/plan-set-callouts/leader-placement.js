@@ -3,10 +3,17 @@
  */
 
 import { fiberFeatureId } from './fiber-notes.js';
+import { polygonFromInsetView } from '../sheet-cutting/inset-views.js';
 
 function turfApi() {
     return typeof turf !== 'undefined' ? turf : null;
 }
+
+const CANDIDATE_BEARINGS = [45, 135, -45, -135, 90, -90, 30, 150, -30, -150, 0, 180, 60, 120];
+const CANDIDATE_OFFSETS_FT = [42, 58, 76, 96, 118];
+export const MIN_BUBBLE_SEPARATION_FT = 32;
+export const MIN_FEATURE_CLEARANCE_FT = 22;
+export const MIN_LEADER_CLEARANCE_FT = 12;
 
 /**
  * @param {object} [feature]
@@ -58,36 +65,215 @@ export function featureAnchorCoordinate(feature) {
 }
 
 /**
+ * @param {number[]} a
+ * @param {number[]} b
+ * @returns {number}
+ */
+export function distanceFeet(a, b) {
+    const t = turfApi();
+    if (!a?.length || !b?.length || !t) return Infinity;
+    try {
+        return t.distance(t.point(a), t.point(b), { units: 'feet' });
+    } catch {
+        return Infinity;
+    }
+}
+
+/**
+ * @param {number[]} origin
+ * @param {number} offsetFt
+ * @param {number} bearing
+ * @returns {number[]|null}
+ */
+export function destinationCoordinate(origin, offsetFt, bearing) {
+    const t = turfApi();
+    if (!origin?.length || !t) return origin || null;
+    try {
+        return t.destination(t.point(origin), offsetFt, bearing, { units: 'feet' }).geometry.coordinates;
+    } catch {
+        return origin;
+    }
+}
+
+/**
+ * @param {number[]} anchor
+ * @param {object|null} routeLine
+ * @returns {number}
+ */
+export function preferredBubbleBearing(anchor, routeLine = null) {
+    const t = turfApi();
+    if (!t || !anchor?.length || !routeLine?.geometry) return 45;
+    try {
+        const origin = t.point(anchor);
+        const snapped = t.nearestPointOnLine(routeLine, origin, { units: 'feet' });
+        const distanceFt = Number(snapped.properties?.location ?? 0);
+        const routeLen = t.length(routeLine, { units: 'feet' });
+        const ahead = t.along(routeLine, Math.min(distanceFt + 12, routeLen), { units: 'feet' });
+        const behind = t.along(routeLine, Math.max(distanceFt - 12, 0), { units: 'feet' });
+        return t.bearing(behind, ahead) + 90;
+    } catch {
+        return 45;
+    }
+}
+
+/**
  * @param {number[]} anchor
  * @param {object|null} routeLine
  * @param {number} [offsetFt]
  * @returns {number[]|null}
  */
 export function offsetBubbleCoordinate(anchor, routeLine = null, offsetFt = 45) {
-    const t = turfApi();
     if (!anchor?.length) return null;
-    if (!t) return anchor;
+    return destinationCoordinate(anchor, offsetFt, preferredBubbleBearing(anchor, routeLine)) || anchor;
+}
 
-    const origin = t.point(anchor);
-    let bearing = 45;
-    if (routeLine?.geometry) {
-        try {
-            const snapped = t.nearestPointOnLine(routeLine, origin, { units: 'feet' });
-            const distanceFt = Number(snapped.properties?.location ?? 0);
-            const routeLen = t.length(routeLine, { units: 'feet' });
-            const ahead = t.along(routeLine, Math.min(distanceFt + 12, routeLen), { units: 'feet' });
-            const behind = t.along(routeLine, Math.max(distanceFt - 12, 0), { units: 'feet' });
-            bearing = t.bearing(behind, ahead) + 90;
-        } catch {
-            bearing = 45;
+/**
+ * @param {object} [features]
+ * @returns {number[][]}
+ */
+export function collectFeatureObstacleCoordinates(features = {}) {
+    const coords = [];
+    for (const key of ['boxes', 'splices', 'cabinets', 'building']) {
+        for (const feature of features[key] || []) {
+            const coord = featureAnchorCoordinate(feature);
+            if (coord) coords.push(coord);
+        }
+    }
+    return coords;
+}
+
+function pointToSegmentFeet(point, start, end) {
+    const t = turfApi();
+    if (!t || !point?.length || !start?.length || !end?.length) return Infinity;
+    try {
+        return t.pointToLineDistance(
+            t.point(point),
+            t.lineString([start, end]),
+            { units: 'feet' }
+        );
+    } catch {
+        return Infinity;
+    }
+}
+
+function leadersIntersect(aStart, aEnd, bStart, bEnd) {
+    const t = turfApi();
+    if (!t || !aStart || !aEnd || !bStart || !bEnd) return false;
+    try {
+        return t.booleanIntersects(
+            t.lineString([aStart, aEnd]),
+            t.lineString([bStart, bEnd])
+        );
+    } catch {
+        return false;
+    }
+}
+
+/**
+ * @param {number[]} candidate
+ * @param {number[]} anchor
+ * @param {object} context
+ * @returns {number}
+ */
+function scoreBubbleCandidate(candidate, anchor, context) {
+    const { obstacles = [], otherLeaders = [], selfKey } = context;
+    let minFeature = Infinity;
+    for (const coord of obstacles) {
+        const feet = distanceFeet(candidate, coord);
+        if (feet < minFeature) minFeature = feet;
+    }
+
+    let minBubble = Infinity;
+    let minLine = Infinity;
+    let crosses = 0;
+    for (const other of otherLeaders) {
+        if (!other?.bubble || (other.leaderKey || other.leaderId) === selfKey) continue;
+        const bubbleFeet = distanceFeet(candidate, other.bubble);
+        if (bubbleFeet < minBubble) minBubble = bubbleFeet;
+        if (other.anchor) {
+            const lineFeet = pointToSegmentFeet(other.bubble, anchor, candidate);
+            if (lineFeet < minLine) minLine = lineFeet;
+            const selfLineFeet = pointToSegmentFeet(candidate, other.anchor, other.bubble);
+            if (selfLineFeet < minLine) minLine = selfLineFeet;
+            if (leadersIntersect(anchor, candidate, other.anchor, other.bubble)) crosses += 1;
         }
     }
 
-    try {
-        return t.destination(origin, offsetFt, bearing, { units: 'feet' }).geometry.coordinates;
-    } catch {
-        return anchor;
+    for (const coord of obstacles) {
+        const lineFeet = pointToSegmentFeet(coord, anchor, candidate);
+        if (lineFeet < minLine) minLine = lineFeet;
     }
+
+    if (minFeature < MIN_FEATURE_CLEARANCE_FT) return -1e6 + minFeature;
+    if (minBubble < MIN_BUBBLE_SEPARATION_FT) return -5e5 + minBubble;
+    if (minLine < MIN_LEADER_CLEARANCE_FT) return -2e5 + minLine;
+
+    return (Math.min(minFeature, 120) * 1.4)
+        + Math.min(minBubble, 140)
+        + Math.min(minLine, 80)
+        - crosses * 80;
+}
+
+/**
+ * @param {object} leader
+ * @param {object} [options]
+ * @returns {number[]}
+ */
+export function placeBubbleAvoidingConflicts(leader, options = {}) {
+    const locked = options.lockedKeys instanceof Set ? options.lockedKeys : new Set(options.lockedKeys || []);
+    const key = leader.leaderKey || leader.leaderId;
+    if (locked.has(key) && leader.bubble?.length) return leader.bubble;
+
+    const anchor = leader.anchor;
+    if (!anchor) return leader.bubble || null;
+
+    const preferred = offsetBubbleCoordinate(anchor, options.routeLine);
+    const candidates = [];
+    if (preferred) candidates.push(preferred);
+
+    const preferredBearing = preferredBubbleBearing(anchor, options.routeLine);
+    for (const offsetFt of CANDIDATE_OFFSETS_FT) {
+        candidates.push(destinationCoordinate(anchor, offsetFt, preferredBearing));
+        for (const bearing of CANDIDATE_BEARINGS) {
+            candidates.push(destinationCoordinate(anchor, offsetFt, bearing));
+        }
+    }
+
+    let best = preferred || anchor;
+    let bestScore = -Infinity;
+    const context = {
+        obstacles: options.obstacles || [],
+        otherLeaders: options.otherLeaders || [],
+        selfKey: key
+    };
+    for (const candidate of candidates) {
+        if (!candidate) continue;
+        const score = scoreBubbleCandidate(candidate, anchor, context);
+        if (score > bestScore) {
+            bestScore = score;
+            best = candidate;
+        }
+    }
+    return best;
+}
+
+/**
+ * @param {object[]} leaders
+ * @param {object} [options]
+ * @returns {object[]}
+ */
+export function resolveLeaderBubbles(leaders = [], options = {}) {
+    const locked = new Set(options.lockedKeys || []);
+    const placed = [];
+    for (const leader of leaders) {
+        const bubble = placeBubbleAvoidingConflicts(leader, {
+            ...options,
+            lockedKeys: locked,
+            otherLeaders: placed
+        });
+        placed.push({ ...leader, bubble: bubble || leader.bubble });
+    }
+    return placed;
 }
 
 /**
@@ -95,62 +281,108 @@ export function offsetBubbleCoordinate(anchor, routeLine = null, offsetFt = 45) 
  * @param {number} [minFt]
  * @returns {object[]}
  */
-export function nudgeBubbles(leaders = [], minFt = 28) {
+export function nudgeBubbles(leaders = [], minFt = MIN_BUBBLE_SEPARATION_FT) {
+    return resolveLeaderBubbles(leaders, { obstacles: [] });
+}
+
+/**
+ * @param {object} leader
+ * @param {object[]} [insetViews]
+ * @returns {object|null}
+ */
+export function findCoveringInset(leader, insetViews = []) {
+    if (!leader?.anchor?.length || !insetViews?.length) return null;
     const t = turfApi();
-    if (!t || leaders.length < 2) return leaders;
-
-    const next = leaders.map((leader) => ({
-        ...leader,
-        bubble: leader.bubble ? [...leader.bubble] : leader.bubble
-    }));
-
-    for (let i = 1; i < next.length; i++) {
-        const current = next[i];
-        if (!current.bubble) continue;
-        for (let j = 0; j < i; j++) {
-            const other = next[j];
-            if (!other.bubble) continue;
-            const distanceFt = t.distance(t.point(current.bubble), t.point(other.bubble), { units: 'feet' });
-            if (distanceFt >= minFt) continue;
-            current.bubble = offsetBubbleCoordinate(current.bubble, null, minFt) || current.bubble;
+    if (!t) return null;
+    try {
+        const point = t.point(leader.anchor);
+        for (const view of insetViews) {
+            const polygon = polygonFromInsetView(view);
+            if (!polygon?.geometry) continue;
+            if (t.booleanPointInPolygon(point, polygon)) return view;
         }
+    } catch {
+        return null;
     }
-    return next;
+    return null;
+}
+
+/**
+ * @param {object} leader
+ * @returns {boolean}
+ */
+export function isLeaderEnabled(leader) {
+    if (!leader) return false;
+    if (leader.suppressed) return false;
+    if (leader.enabled === false) return false;
+    return true;
 }
 
 /**
  * @param {object} session
  * @param {string|{ sheetId?: string, sheetNumber?: number }} sheetOrId
+ * @param {object} [options]
  * @returns {object[]}
  */
-export function leadersForSheet(session, sheetOrId) {
+export function leadersForSheet(session, sheetOrId, options = {}) {
     const sheetId = typeof sheetOrId === 'object' ? sheetOrId?.sheetId : sheetOrId;
     const sheetNumber = typeof sheetOrId === 'object' ? sheetOrId?.sheetNumber : undefined;
-    const active = (session?.leaders || []).filter((leader) => !leader.suppressed);
-    if (sheetId) {
-        const byId = active.filter((leader) => leader.sheetId === sheetId);
-        if (byId.length) return byId;
+    const insetViews = options.insetViews || [];
+    const page = options.page || 'all';
+    const insetView = options.insetView || null;
+
+    const enabled = (session?.leaders || []).filter(isLeaderEnabled);
+    let sheetLeaders = [];
+    if (page === 'inset' && insetView) {
+        sheetLeaders = enabled;
+    } else if (sheetId) {
+        sheetLeaders = enabled.filter((leader) => leader.sheetId === sheetId);
+        if (!sheetLeaders.length && sheetNumber != null && sheetNumber !== '') {
+            const sessionSheet = (session?.sheets || []).find((sheet) => (
+                Number(sheet.sheetNumber) === Number(sheetNumber)
+            ));
+            if (sessionSheet?.sheetId) {
+                sheetLeaders = enabled.filter((leader) => leader.sheetId === sessionSheet.sheetId);
+            }
+            if (!sheetLeaders.length) {
+                sheetLeaders = enabled.filter((leader) => Number(leader.sheetNumber) === Number(sheetNumber));
+            }
+        }
+    } else if (sheetNumber != null && sheetNumber !== '') {
+        const sessionSheet = (session?.sheets || []).find((sheet) => (
+            Number(sheet.sheetNumber) === Number(sheetNumber)
+        ));
+        if (sessionSheet?.sheetId) {
+            sheetLeaders = enabled.filter((leader) => leader.sheetId === sessionSheet.sheetId);
+        }
+        if (!sheetLeaders.length) {
+            sheetLeaders = enabled.filter((leader) => Number(leader.sheetNumber) === Number(sheetNumber));
+        }
     }
-    if (sheetNumber == null || sheetNumber === '') return [];
-    const sessionSheet = (session?.sheets || []).find((sheet) => (
-        Number(sheet.sheetNumber) === Number(sheetNumber)
-    ));
-    if (sessionSheet?.sheetId) {
-        const byMappedId = active.filter((leader) => leader.sheetId === sessionSheet.sheetId);
-        if (byMappedId.length) return byMappedId;
-    }
-    return active.filter((leader) => Number(leader.sheetNumber) === Number(sheetNumber));
+
+    return sheetLeaders.filter((leader) => {
+        if (page === 'all') return true;
+        const covering = findCoveringInset(leader, insetView ? [insetView] : insetViews);
+        if (page === 'corridor') return !covering;
+        if (page === 'inset') {
+            if (!covering) return false;
+            if (insetView?.insetId) return covering.insetId === insetView.insetId;
+            return true;
+        }
+        return true;
+    });
 }
 
 /**
  * @param {object} session
- * @param {string} sheetId
+ * @param {string|{ sheetId?: string, sheetNumber?: number }} sheetOrId
+ * @param {object} [options]
  * @returns {object[]}
  */
-export function notesUsedOnSheet(session, sheetId) {
+export function notesUsedOnSheet(session, sheetOrId, options = {}) {
     const byId = new Map((session?.notes || []).map((note) => [note.noteId, note]));
     const used = new Map();
-    for (const leader of leadersForSheet(session, sheetId)) {
+    for (const leader of leadersForSheet(session, sheetOrId, options)) {
         for (const noteId of leader.noteIds || []) {
             const note = byId.get(noteId);
             if (note) used.set(note.noteId, note);
@@ -170,14 +402,17 @@ export function leaderKey(sheetId, targetKey) {
 
 /**
  * @param {object} session
+ * @param {object} [options]
  * @returns {object}
  */
-export function buildCalloutPreviewGeoJson(session) {
+export function buildCalloutPreviewGeoJson(session, options = {}) {
     const features = [];
     const notesById = new Map((session?.notes || []).map((note) => [note.noteId, note]));
+    const insetViews = options.insetViews || [];
 
     for (const leader of session?.leaders || []) {
-        if (leader.suppressed || !leader.anchor || !leader.bubble) continue;
+        if (!isLeaderEnabled(leader) || !leader.anchor || !leader.bubble) continue;
+        if (findCoveringInset(leader, insetViews)) continue;
         const numbers = (leader.noteIds || [])
             .map((id) => notesById.get(id)?.number)
             .filter((value) => Number.isFinite(value));

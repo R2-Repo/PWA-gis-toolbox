@@ -3,7 +3,6 @@ import { describe, expect, it, beforeEach } from 'vitest';
 import { resetIdSequence } from '../js/plan-project/id-utils.js';
 import { assignStableNoteNumbers, noteTextForFeature, pointTargetKey } from '../js/widgets/plan-set-callouts/fiber-notes.js';
 import { groupSpanMembers, spanTargetKey } from '../js/widgets/plan-set-callouts/span-grouping.js';
-import { leadersForSheet } from '../js/widgets/plan-set-callouts/leader-placement.js';
 import {
     CALLOUT_PDF_CIRCLE_GAP,
     CALLOUT_PDF_CIRCLE_R,
@@ -20,11 +19,21 @@ import {
 import {
     addManualLeader,
     createFiberCalloutSession,
+    enableOrAddLeader,
     generateFiberCallouts,
+    moveLeaderBubble,
     restoreFiberCalloutSession,
     serializeFiberCalloutSession,
+    setLeaderEnabled,
     suppressLeader
 } from '../js/widgets/plan-set-callouts/fiber-callout-engine.js';
+import {
+    distanceFeet,
+    findCoveringInset,
+    leadersForSheet,
+    MIN_BUBBLE_SEPARATION_FT,
+    notesUsedOnSheet
+} from '../js/widgets/plan-set-callouts/leader-placement.js';
 import {
     createCalloutSession,
     loadDefaultCalloutProfile,
@@ -158,7 +167,7 @@ describe('fiber callout generate', () => {
         building: []
     };
 
-    it('auto-places boxes, splices, and one span leader; skips cabinets', () => {
+    it('discovers boxes, splices, and one span leader but leaves them off', () => {
         let session = createFiberCalloutSession({ projectName: 'Callout Test' });
         session = generateFiberCallouts(session, {
             sheets: [sheet],
@@ -166,17 +175,35 @@ describe('fiber callout generate', () => {
             frameFeatures: { type: 'FeatureCollection', features: [frame] },
             features
         });
-        const active = session.leaders.filter((leader) => !leader.suppressed);
-        expect(active.some((leader) => leader.targetKey === pointTargetKey('boxes', '10'))).toBe(true);
-        expect(active.every((leader) => leader.sheetNumber === 1)).toBe(true);
-        expect(active.some((leader) => leader.targetKey === pointTargetKey('splices', '99'))).toBe(true);
-        expect(active.some((leader) => leader.targetKind === 'span')).toBe(true);
-        expect(active.some((leader) => String(leader.targetKey).includes('cabinets'))).toBe(false);
-        const span = active.find((leader) => leader.targetKind === 'span');
+        expect(session.leaders.some((leader) => leader.targetKey === pointTargetKey('boxes', '10'))).toBe(true);
+        expect(session.leaders.every((leader) => leader.sheetNumber === 1)).toBe(true);
+        expect(session.leaders.some((leader) => leader.targetKey === pointTargetKey('splices', '99'))).toBe(true);
+        expect(session.leaders.some((leader) => leader.targetKind === 'span')).toBe(true);
+        expect(session.leaders.some((leader) => String(leader.targetKey).includes('cabinets'))).toBe(false);
+        expect(session.leaders.every((leader) => leader.suppressed || leader.enabled === false)).toBe(true);
+        expect(notesUsedOnSheet(session, 's1')).toEqual([]);
+        const span = session.leaders.find((leader) => leader.targetKind === 'span');
         expect(span.noteIds.length).toBeGreaterThanOrEqual(2);
     });
 
-    it('keeps suppress + note numbers across regenerate', () => {
+    it('turns a callout on and keeps the sheet table in sync', () => {
+        let session = createFiberCalloutSession();
+        session = generateFiberCallouts(session, {
+            sheets: [sheet],
+            routeLine,
+            frameFeatures: { type: 'FeatureCollection', features: [frame] },
+            features
+        });
+        const boxLeader = session.leaders.find((leader) => leader.targetKey === pointTargetKey('boxes', '10'));
+        session = setLeaderEnabled(session, boxLeader.leaderKey, true);
+        const table = notesUsedOnSheet(session, 's1');
+        expect(table.some((note) => note.text === 'JB-A')).toBe(true);
+        expect(leadersForSheet(session, 's1')).toHaveLength(1);
+        session = setLeaderEnabled(session, boxLeader.leaderKey, false);
+        expect(notesUsedOnSheet(session, 's1')).toEqual([]);
+    });
+
+    it('keeps enable + note numbers across regenerate', () => {
         let session = createFiberCalloutSession();
         session = generateFiberCallouts(session, {
             sheets: [sheet],
@@ -186,6 +213,17 @@ describe('fiber callout generate', () => {
         });
         const boxLeader = session.leaders.find((leader) => leader.targetKey === pointTargetKey('boxes', '10'));
         const boxNote = session.notes.find((note) => note.text === 'JB-A');
+        session = setLeaderEnabled(session, boxLeader.leaderKey, true);
+        session = generateFiberCallouts(session, {
+            sheets: [sheet],
+            routeLine,
+            frameFeatures: { type: 'FeatureCollection', features: [frame] },
+            features
+        });
+        expect(session.leaders.some((leader) => (
+            leader.targetKey === pointTargetKey('boxes', '10') && !leader.suppressed && leader.enabled !== false
+        ))).toBe(true);
+        expect(session.notes.find((note) => note.text === 'JB-A').number).toBe(boxNote.number);
         session = suppressLeader(session, boxLeader.leaderKey);
         session = generateFiberCallouts(session, {
             sheets: [sheet],
@@ -194,9 +232,8 @@ describe('fiber callout generate', () => {
             features
         });
         expect(session.leaders.some((leader) => (
-            leader.targetKey === pointTargetKey('boxes', '10') && !leader.suppressed
+            leader.targetKey === pointTargetKey('boxes', '10') && !leader.suppressed && leader.enabled !== false
         ))).toBe(false);
-        expect(session.notes.find((note) => note.text === 'JB-A').number).toBe(boxNote.number);
     });
 
     it('serializes a fiber session without breaking legacy restore', () => {
@@ -211,6 +248,7 @@ describe('fiber callout generate', () => {
         const restored = restoreFiberCalloutSession(bundle);
         expect(restored.project.projectName).toBe('Persist');
         expect(restored.leaders.length).toBe(session.leaders.length);
+        expect(Array.isArray(restored.overrides.enabledLeaderKeys)).toBe(true);
 
         let legacy = createCalloutSession({ projectName: 'Legacy' });
         legacy = loadDefaultCalloutProfile(legacy);
@@ -235,6 +273,88 @@ describe('fiber callout generate', () => {
         });
         const manual = session.leaders.find((leader) => leader.source === 'manual');
         expect(manual.noteIds).toContain(existing.noteId);
+        expect(manual.enabled).toBe(true);
+        expect(notesUsedOnSheet(session, 's1').some((note) => note.text === 'JB-A')).toBe(true);
+    });
+
+    it('separates nearby bubbles and keeps dragged positions', () => {
+        const closeFeatures = {
+            ...features,
+            boxes: [
+                box(10, -111.90, 40.75, 'JB-A'),
+                box(11, -111.90004, 40.75002, 'JB-B')
+            ]
+        };
+        let session = createFiberCalloutSession();
+        session = generateFiberCallouts(session, {
+            sheets: [sheet],
+            routeLine,
+            frameFeatures: { type: 'FeatureCollection', features: [frame] },
+            features: closeFeatures
+        });
+        const a = session.leaders.find((leader) => leader.targetKey === pointTargetKey('boxes', '10'));
+        const b = session.leaders.find((leader) => leader.targetKey === pointTargetKey('boxes', '11'));
+        expect(distanceFeet(a.bubble, b.bubble)).toBeGreaterThanOrEqual(MIN_BUBBLE_SEPARATION_FT - 1);
+        expect(distanceFeet(a.bubble, a.anchor)).toBeGreaterThan(MIN_BUBBLE_SEPARATION_FT / 2);
+        session = setLeaderEnabled(session, a.leaderKey, true);
+        session = moveLeaderBubble(session, a.leaderKey, [-111.895, 40.752]);
+        session = generateFiberCallouts(session, {
+            sheets: [sheet],
+            routeLine,
+            frameFeatures: { type: 'FeatureCollection', features: [frame] },
+            features: closeFeatures
+        });
+        const moved = session.leaders.find((leader) => leader.leaderKey === a.leaderKey);
+        expect(moved.bubble[0]).toBeCloseTo(-111.895, 5);
+        expect(moved.bubble[1]).toBeCloseTo(40.752, 5);
+        expect(moved.anchor).toEqual(a.anchor);
+    });
+
+    it('hides corridor callouts inside a detail box and lists them on the inset', () => {
+        let session = createFiberCalloutSession();
+        session = generateFiberCallouts(session, {
+            sheets: [sheet],
+            routeLine,
+            frameFeatures: { type: 'FeatureCollection', features: [frame] },
+            features
+        });
+        const boxLeader = session.leaders.find((leader) => leader.targetKey === pointTargetKey('boxes', '10'));
+        session = setLeaderEnabled(session, boxLeader.leaderKey, true);
+        const insetView = {
+            insetId: 'inset-a',
+            label: 'A',
+            parentSheetId: 's1',
+            bbox: [-111.901, 40.749, -111.899, 40.751],
+            geometry: turf.bboxPolygon([-111.901, 40.749, -111.899, 40.751]).geometry
+        };
+        expect(findCoveringInset(boxLeader, [insetView])?.insetId).toBe('inset-a');
+        expect(leadersForSheet(session, 's1', { insetViews: [insetView], page: 'corridor' })).toHaveLength(0);
+        expect(notesUsedOnSheet(session, 's1', { insetViews: [insetView], page: 'corridor' })).toEqual([]);
+        const insetLeaders = leadersForSheet(session, 's1', {
+            insetViews: [insetView],
+            insetView,
+            page: 'inset'
+        });
+        expect(insetLeaders).toHaveLength(1);
+        expect(notesUsedOnSheet(session, 's1', {
+            insetViews: [insetView],
+            insetView,
+            page: 'inset'
+        }).some((note) => note.text === 'JB-A')).toBe(true);
+    });
+
+    it('turns on an existing discovered leader instead of duplicating it', () => {
+        let session = createFiberCalloutSession();
+        session = generateFiberCallouts(session, {
+            sheets: [sheet],
+            routeLine,
+            frameFeatures: { type: 'FeatureCollection', features: [frame] },
+            features
+        });
+        const boxLeader = session.leaders.find((leader) => leader.targetKey === pointTargetKey('boxes', '10'));
+        session = enableOrAddLeader(session, { targetKey: boxLeader.targetKey, text: 'JB-A', anchor: boxLeader.anchor });
+        expect(session.leaders.filter((leader) => leader.targetKey === boxLeader.targetKey)).toHaveLength(1);
+        expect(session.leaders.find((leader) => leader.leaderKey === boxLeader.leaderKey).enabled).toBe(true);
     });
 });
 

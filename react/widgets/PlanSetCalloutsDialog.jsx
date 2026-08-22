@@ -1,24 +1,33 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { WidgetPanelShell } from './shared/WidgetPanelShell.jsx';
 import { WidgetStepWizard } from './shared/WidgetStepWizard.jsx';
+import { findCoveringInset, notesUsedOnSheet } from '../../js/widgets/plan-set-callouts/leader-placement.js';
 import {
     canAdvanceCalloutStep,
     isCalloutPrimaryActionDisabled
 } from '../../js/widgets/plan-set-callouts/wizard-state.js';
 
+function isOn(leader) {
+    return leader && !leader.suppressed && leader.enabled !== false;
+}
+
 export function PlanSetCalloutsDialog({
     steps = [],
     initialSession,
+    initialStep = 1,
     hasSheetSession = false,
+    insetViews = [],
     onCancel,
+    onDone,
     onCreateProject,
     onGenerate,
     onSelectSheet,
+    onToggleLeader,
     onSuppressLeader,
     onAddNote,
-    onDone
+    onSubscribeSession
 }) {
-    const [step, setStep] = useState(1);
+    const [step, setStep] = useState(Math.min(Math.max(initialStep, 1), steps.length || 1));
     const [session, setSession] = useState(initialSession);
     const [projectName, setProjectName] = useState(initialSession?.project?.projectName || '');
     const [projectNumber, setProjectNumber] = useState(initialSession?.project?.projectNumber || '');
@@ -28,23 +37,29 @@ export function PlanSetCalloutsDialog({
     const [message, setMessage] = useState('');
     const [error, setError] = useState('');
 
+    useEffect(() => {
+        setSession(initialSession);
+        if (initialSession?.selectedSheetId) setSelectedSheetId(initialSession.selectedSheetId);
+    }, [initialSession]);
+
+    useEffect(() => onSubscribeSession?.((next) => {
+        if (next) {
+            setSession(next);
+            if (next.selectedSheetId) setSelectedSheetId(next.selectedSheetId);
+        }
+    }), [onSubscribeSession]);
+
     const sheets = session?.sheets || [];
     const selectedSheet = sheets.find((sheet) => sheet.sheetId === selectedSheetId) || sheets[0];
-    const leaders = (session?.leaders || []).filter((leader) => (
-        !leader.suppressed && (!selectedSheet || leader.sheetId === selectedSheet.sheetId)
+    const sheetLeaders = (session?.leaders || []).filter((leader) => (
+        !selectedSheet || leader.sheetId === selectedSheet.sheetId
     ));
     const notesById = new Map((session?.notes || []).map((note) => [note.noteId, note]));
-    const tableNotes = [];
-    const seenNotes = new Set();
-    for (const leader of leaders) {
-        for (const noteId of leader.noteIds || []) {
-            const note = notesById.get(noteId);
-            if (!note || seenNotes.has(note.noteId)) continue;
-            seenNotes.add(note.noteId);
-            tableNotes.push(note);
-        }
-    }
-    tableNotes.sort((a, b) => a.number - b.number);
+    const onLeaders = sheetLeaders.filter(isOn);
+    const tableNotes = notesUsedOnSheet(session, selectedSheet?.sheetId, {
+        insetViews,
+        page: 'corridor'
+    });
 
     const run = async (fn, successMessage = '') => {
         setBusy(true);
@@ -79,7 +94,7 @@ export function PlanSetCalloutsDialog({
             </p>
             <p className="text-xs" style={{ color: hasSheetSession ? 'var(--text-muted)' : 'var(--danger)' }}>
                 {hasSheetSession
-                    ? 'Sheet Cutter session found.'
+                    ? 'Sheet Cutter session found. After Done, callouts stay on the map — reopen this widget anytime to continue.'
                     : 'Generate sheets in Sheet Cutter before continuing.'}
             </p>
         </>
@@ -88,21 +103,21 @@ export function PlanSetCalloutsDialog({
     const renderGenerateStep = () => (
         <>
             <p className="text-xs" style={{ color: 'var(--text-muted)', marginBottom: 12 }}>
-                Auto-places a leader on every box and splice, and one leader per conduit/fiber span
-                (lines that share the same box-to-box run). Cabinets and buildings are skipped.
-                Right-click the map to remove or add callouts.
+                Discovers a leader for every box and splice, and one per conduit/fiber span.
+                Cabinets and buildings are skipped. All callouts start off — turn on only the ones you need
+                in Review or by right-clicking a feature.
             </p>
             <button
                 type="button"
                 className="btn btn-secondary btn-sm"
                 disabled={busy || !hasSheetSession}
-                onClick={() => run(() => onGenerate?.(), 'Callouts generated. Review the per-sheet table next.')}
+                onClick={() => run(() => onGenerate?.(), 'Candidates generated. Turn on callouts in Review.')}
             >
                 Generate callouts
             </button>
             {session?.leaders?.length ? (
                 <p className="text-xs" style={{ marginTop: 8 }}>
-                    {(session.leaders || []).filter((leader) => !leader.suppressed).length} leader(s),{' '}
+                    {session.leaders.filter(isOn).length} on / {session.leaders.length} discovered,{' '}
                     {(session.notes || []).length} unique note(s).
                 </p>
             ) : null}
@@ -134,33 +149,45 @@ export function PlanSetCalloutsDialog({
                 </select>
             </div>
             <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                Table is not drawn on the map. It is added to each corridor PDF. Leaders stay on the map for editing.
+                Key notes tables only list callouts that are on. Drag a numbered circle on the map to move
+                the leader; the feature anchor stays put. After Done you can keep editing on the map or
+                reopen this widget.
             </p>
-            <div className="text-xs" style={{ marginTop: 8, maxHeight: 180, overflow: 'auto' }}>
-                <strong>PROJECT KEY NOTES</strong>
+            <div className="text-xs" style={{ marginTop: 8, maxHeight: 140, overflow: 'auto' }}>
+                <strong>PROJECT KEY NOTES (this sheet)</strong>
                 {tableNotes.length ? tableNotes.map((note) => (
                     <div key={note.noteId}>{note.number} — {note.text}</div>
-                )) : <div>No notes on this sheet.</div>}
+                )) : <div>No callouts turned on for this sheet.</div>}
             </div>
-            <div className="text-xs" style={{ marginTop: 10, maxHeight: 120, overflow: 'auto' }}>
-                <strong>Leaders ({leaders.length})</strong>
-                {leaders.map((leader) => (
-                    <div key={leader.leaderKey} style={{ marginTop: 4 }}>
-                        {(leader.noteIds || []).map((id) => notesById.get(id)?.number).filter(Boolean).join(', ') || '—'}
-                        {' '}
-                        <button
-                            type="button"
-                            className="gis-widget__link-btn"
-                            disabled={busy}
-                            onClick={() => run(() => onSuppressLeader?.(leader.leaderKey), 'Callout removed.')}
-                        >
-                            Remove
-                        </button>
-                    </div>
-                ))}
+            <div className="text-xs" style={{ marginTop: 10, maxHeight: 180, overflow: 'auto' }}>
+                <strong>Callouts ({onLeaders.length} on / {sheetLeaders.length})</strong>
+                {sheetLeaders.map((leader) => {
+                    const numbers = (leader.noteIds || []).map((id) => notesById.get(id)?.number).filter(Boolean).join(', ') || '—';
+                    const covering = findCoveringInset(leader, insetViews);
+                    return (
+                        <div key={leader.leaderKey} style={{ marginTop: 6, display: 'flex', gap: 8, alignItems: 'center' }}>
+                            <label style={{ display: 'flex', gap: 6, alignItems: 'center', flex: 1 }}>
+                                <input
+                                    type="checkbox"
+                                    checked={isOn(leader)}
+                                    disabled={busy}
+                                    onChange={(e) => run(
+                                        () => (onToggleLeader || onSuppressLeader)?.(leader.leaderKey, e.target.checked),
+                                        e.target.checked ? 'Callout on.' : 'Callout off.'
+                                    )}
+                                />
+                                <span>{numbers}</span>
+                            </label>
+                            {covering ? (
+                                <span style={{ color: 'var(--text-muted)' }}>DETAILS {covering.label || ''} only</span>
+                            ) : null}
+                        </div>
+                    );
+                })}
+                {!sheetLeaders.length ? <div>Generate callouts first.</div> : null}
             </div>
             <div className="form-group" style={{ marginTop: 12 }}>
-                <label>Add number to first leader on this sheet</label>
+                <label>Add number to first on callout on this sheet</label>
                 <div className="gis-widget__row" style={{ gap: 8 }}>
                     <input
                         value={extraNote}
@@ -170,9 +197,9 @@ export function PlanSetCalloutsDialog({
                     <button
                         type="button"
                         className="btn btn-secondary btn-sm"
-                        disabled={busy || !extraNote.trim() || !leaders.length}
+                        disabled={busy || !extraNote.trim() || !onLeaders.length}
                         onClick={() => run(async () => {
-                            const next = await onAddNote?.(leaders[0].leaderKey, extraNote.trim());
+                            const next = await onAddNote?.(onLeaders[0].leaderKey, extraNote.trim());
                             setExtraNote('');
                             return next;
                         }, 'Note added.')}
@@ -189,7 +216,7 @@ export function PlanSetCalloutsDialog({
     const canGoNext = canAdvanceCalloutStep(step, {
         projectName,
         hasSheetSession,
-        hasLeaders: (session?.leaders || []).some((leader) => !leader.suppressed)
+        hasLeaders: (session?.leaders || []).length > 0
     });
     const primaryDisabled = isCalloutPrimaryActionDisabled({ busy, canAdvance: canGoNext });
 
@@ -201,7 +228,7 @@ export function PlanSetCalloutsDialog({
         if (step === 1) {
             await run(() => onCreateProject?.({ projectName, projectNumber }), 'Project ready.');
         } else if (step === 2 && !(session?.leaders || []).length) {
-            await run(() => onGenerate?.(), 'Callouts generated.');
+            await run(() => onGenerate?.(), 'Candidates generated.');
         }
         setStep((current) => Math.min(current + 1, steps.length));
     };
