@@ -21,7 +21,7 @@
  * @property {number} featureCount
  * @property {boolean} [hasPolygons]
  * @property {string[]} [fields]
- * @property {number} [selectedCount]
+ * @property {boolean} [isUdotFiberLive]
  */
 
 /**

@@ -5,10 +5,12 @@
 
 import { clipFeaturesToSheetFrame } from './export-builder.js';
 import {
+    matchUdotFiberLayerUrl,
     SHEET_FIBER_SNAPSHOT_FORMAT,
     UDOT_FIBER_LAYER_BY_KEY
 } from '../../symbology/udot-fiber/constants.js';
 import { filterUdotFiberDisplayFeatures } from '../../symbology/udot-fiber/display-filters.js';
+import { isUdotFiberLiveDataset } from '../../symbology/udot-fiber/hover-fields.js';
 
 export { SHEET_FIBER_SNAPSHOT_FORMAT };
 
@@ -203,26 +205,112 @@ export function listSheetFiberSnapshotLayers(layers = [], projectName = '') {
 }
 
 /**
- * Live Fiber ids for PDF collect/refresh. Snapshot copies are excluded so
- * sheet PDFs keep using the live overlay styling path.
+ * @param {object} [layer]
+ * @returns {string|null}
+ */
+export function fiberKeyOfLayer(layer) {
+    if (!layer) return null;
+    return layer.source?.fiberKey
+        || layer._udotFiberLayerKey
+        || matchUdotFiberLayerUrl(layer.service?.url || layer.source?.url || layer.url)?.key
+        || null;
+}
+
+/**
+ * Pick Fiber layers for sheet PDF collect/refresh.
+ * No visible snapshots → live overlay (yesterday). Visible snapshots for a Fiber key
+ * replace that live layer so edited operational copies are what the PDF draws.
+ *
+ * @param {string[]} [visibleFiberIds]
+ * @param {object[]} [layers]
+ * @returns {{ fiberLayerIds: string[], omitIds: string[], refreshLiveIds: string[] }}
+ */
+export function resolveFiberLayerIdsForPdfExport(visibleFiberIds = [], layers = []) {
+    const byId = new Map((layers || []).map((layer) => [layer.id, layer]));
+    const visibleLayers = (visibleFiberIds || [])
+        .map((id) => byId.get(id))
+        .filter(Boolean);
+    const snapshots = visibleLayers.filter(isSheetFiberSnapshotLayer);
+
+    if (!snapshots.length) {
+        const liveIds = (visibleFiberIds || []).filter((id) => !isSheetFiberSnapshotLayer(byId.get(id)));
+        return {
+            fiberLayerIds: liveIds,
+            omitIds: liveIds,
+            refreshLiveIds: liveIds
+        };
+    }
+
+    const snapshotKeys = new Set(snapshots.map(fiberKeyOfLayer).filter(Boolean));
+    const convertedLiveIds = new Set();
+    for (const snap of snapshots) {
+        if (snap.source?.sourceLayerId) convertedLiveIds.add(snap.source.sourceLayerId);
+    }
+    for (const layer of layers || []) {
+        if (!layer?.id || isSheetFiberSnapshotLayer(layer)) continue;
+        const key = fiberKeyOfLayer(layer);
+        if (key && snapshotKeys.has(key) && (isUdotFiberLiveDataset(layer) || layer.type === 'service')) {
+            convertedLiveIds.add(layer.id);
+        }
+    }
+
+    const remainingLive = visibleLayers.filter((layer) => {
+        if (isSheetFiberSnapshotLayer(layer)) return false;
+        if (convertedLiveIds.has(layer.id)) return false;
+        const key = fiberKeyOfLayer(layer);
+        return !key || !snapshotKeys.has(key);
+    });
+
+    const fiberLayerIds = [
+        ...snapshots.map((layer) => layer.id),
+        ...remainingLive.map((layer) => layer.id)
+    ];
+    const omitIds = [...new Set([
+        ...fiberLayerIds,
+        ...convertedLiveIds,
+        ...listSheetFiberSnapshotLayers(layers).map((layer) => layer.id)
+    ])];
+
+    return {
+        fiberLayerIds,
+        omitIds,
+        refreshLiveIds: remainingLive.map((layer) => layer.id)
+    };
+}
+
+/**
  * @param {string[]} [visibleFiberIds]
  * @param {object[]} [layers]
  * @returns {string[]}
  */
 export function liveFiberIdsForPdfExport(visibleFiberIds = [], layers = []) {
-    const skip = new Set(listSheetFiberSnapshotLayers(layers).map((layer) => layer.id));
-    return (visibleFiberIds || []).filter((id) => !skip.has(id));
+    return resolveFiberLayerIdsForPdfExport(visibleFiberIds, layers).fiberLayerIds;
 }
 
 /**
- * Design-layer Fiber copies to drop from PDF vector contents.
- * Live ids stay in the list so existing omit behavior is unchanged when no snapshots exist.
  * @param {string[]} [visibleFiberIds]
  * @param {object[]} [layers]
  * @returns {string[]}
  */
 export function omitIdsForSheetPdfFiber(visibleFiberIds = [], layers = []) {
-    const live = liveFiberIdsForPdfExport(visibleFiberIds, layers);
-    const snapshots = listSheetFiberSnapshotLayers(layers).map((layer) => layer.id);
-    return [...new Set([...live, ...snapshots])];
+    return resolveFiberLayerIdsForPdfExport(visibleFiberIds, layers).omitIds;
+}
+
+/**
+ * Swap converted live Fiber ids for the operational copies on the sheet design list.
+ * @param {string[]} [designLayerIds]
+ * @param {string[]} [hiddenLiveIds]
+ * @param {string[]} [snapshotIds]
+ * @returns {string[]}
+ */
+export function replaceLiveFiberIdsInDesignList(designLayerIds = [], hiddenLiveIds = [], snapshotIds = []) {
+    const hide = new Set((hiddenLiveIds || []).filter(Boolean));
+    const kept = (designLayerIds || []).filter((id) => id && !hide.has(id));
+    const seen = new Set(kept);
+    for (const id of snapshotIds || []) {
+        if (!id || seen.has(id)) continue;
+        kept.push(id);
+        seen.add(id);
+    }
+    return kept;
 }

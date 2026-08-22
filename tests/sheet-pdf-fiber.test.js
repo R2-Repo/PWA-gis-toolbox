@@ -170,6 +170,35 @@ describe('sheet PDF Fiber capture helpers', () => {
         expect(buildUdotFiberPdfStyle(features[0], { _udotFiber: { layerKey: 'fiber' } }).labelField).toBeNull();
     });
 
+    it('collects operational Fiber copies from the map record with the same PDF style', () => {
+        const mapService = {
+            getLayerStyle: () => ({ _udotFiber: { layerKey: 'fiber' } }),
+            getLayerRecord: () => ({
+                geojson: {
+                    features: [{
+                        type: 'Feature',
+                        geometry: { type: 'LineString', coordinates: [[-112, 40.001], [-111, 40.001]] },
+                        properties: { Fiber_Label: '48 SM', _udotDisplayOffsetM: 1.75 }
+                    }]
+                }
+            })
+        };
+        const layers = [{
+            id: 'snap-fiber',
+            type: 'spatial',
+            _udotFiberLayerKey: 'fiber',
+            geojson: { features: [] }
+        }];
+        const features = collectUdotFiberSheetFeatures(mapService, ['snap-fiber'], null, layers);
+        expect(features).toHaveLength(1);
+        expect(features[0].properties._udotFiberKey).toBe('fiber');
+        expect(features[0].properties._udotDisplayOffsetM).toBe(1.75);
+        const style = buildUdotFiberPdfStyle(features[0], { _udotFiber: { layerKey: 'fiber' } });
+        expect(style.kind).toBe('fiber_line');
+        expect(style.strokes[0].strokeWidth).toBe(0.62);
+        expect(style.labelField).toBeNull();
+    });
+
     it('omits rasterized Fiber features but keeps sheet annotations', () => {
         const collection = {
             type: 'FeatureCollection',

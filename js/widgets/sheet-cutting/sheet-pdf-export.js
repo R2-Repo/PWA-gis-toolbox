@@ -69,10 +69,7 @@ import {
     omitRasterizedLiveFeatures,
     refreshUdotFiberPaintLayers
 } from './sheet-pdf-fiber.js';
-import {
-    liveFiberIdsForPdfExport,
-    omitIdsForSheetPdfFiber
-} from './fiber-operational.js';
+import { resolveFiberLayerIdsForPdfExport } from './fiber-operational.js';
 import { getLayers } from '../../core/state.js';
 
 const FIT_PADDING = 48;
@@ -1461,11 +1458,13 @@ export async function exportSheetPlanPdf({
         throw new Error('Generate sheets before exporting PDF');
     }
 
-    const fiberLayerIds = liveFiberIdsForPdfExport(
+    const fiberPdfLayers = resolveFiberLayerIdsForPdfExport(
         listVisibleUdotFiberLayerIds(mapService),
         getLayers()
     );
-    const pdfFiberOmitIds = omitIdsForSheetPdfFiber(fiberLayerIds, getLayers());
+    const fiberLayerIds = fiberPdfLayers.fiberLayerIds;
+    const pdfFiberOmitIds = fiberPdfLayers.omitIds;
+    const refreshLiveFiberIds = fiberPdfLayers.refreshLiveIds;
     const template = {
         basemapDpi: DEFAULT_BASEMAP_DPI,
         ...(session?.sheets?.template || exportPackage?.template || {})
@@ -1655,8 +1654,8 @@ export async function exportSheetPlanPdf({
                     fileIndex: pageIndex,
                     fileName: pageFile
                 });
-                if (fiberLayerIds.length) {
-                    await refreshUdotFiberPaintLayers(mapService, fiberLayerIds);
+                if (refreshLiveFiberIds.length) {
+                    await refreshUdotFiberPaintLayers(mapService, refreshLiveFiberIds);
                 }
                 const fiberFeatures = collectUdotFiberSheetFeatures(
                     mapService,
