@@ -4,16 +4,18 @@
 
 import { fiberFeatureId } from './fiber-notes.js';
 import { polygonFromInsetView } from '../sheet-cutting/inset-views.js';
+import { SHEET_BUBBLE_INSET_FT } from './callout-style.js';
 
 function turfApi() {
     return typeof turf !== 'undefined' ? turf : null;
 }
 
 const CANDIDATE_BEARINGS = [45, 135, -45, -135, 90, -90, 30, 150, -30, -150, 0, 180, 60, 120];
-const CANDIDATE_OFFSETS_FT = [42, 58, 76, 96, 118];
+const CANDIDATE_OFFSETS_FT = [16, 24, 34, 42, 58, 76, 96, 118];
 export const MIN_BUBBLE_SEPARATION_FT = 32;
 export const MIN_FEATURE_CLEARANCE_FT = 22;
 export const MIN_LEADER_CLEARANCE_FT = 12;
+export { SHEET_BUBBLE_INSET_FT };
 
 /**
  * @param {object} [feature]
@@ -170,13 +172,133 @@ function leadersIntersect(aStart, aEnd, bStart, bEnd) {
 }
 
 /**
- * @param {number[]} candidate
- * @param {number[]} anchor
- * @param {object} context
- * @returns {number}
+ * @param {object|null|undefined} geometryOrFeature
+ * @returns {object|null}
  */
+export function sheetPolygonFeature(geometryOrFeature) {
+    if (!geometryOrFeature) return null;
+    if (geometryOrFeature.type === 'Feature' && geometryOrFeature.geometry) return geometryOrFeature;
+    if (geometryOrFeature.type === 'Polygon' || geometryOrFeature.type === 'MultiPolygon') {
+        return { type: 'Feature', geometry: geometryOrFeature, properties: {} };
+    }
+    if (geometryOrFeature.geometry) return geometryOrFeature;
+    return null;
+}
+
+/**
+ * @param {object|null} geometryOrFeature
+ * @param {number} [insetFt]
+ * @returns {object|null}
+ */
+export function insetSheetPolygon(geometryOrFeature, insetFt = SHEET_BUBBLE_INSET_FT) {
+    const t = turfApi();
+    const feature = sheetPolygonFeature(geometryOrFeature);
+    if (!feature) return null;
+    if (!t || !insetFt) return feature;
+    try {
+        const buffered = t.buffer(feature, -Math.abs(insetFt), { units: 'feet' });
+        if (!buffered?.geometry) return feature;
+        if (buffered.geometry.type === 'Polygon') return buffered;
+        if (buffered.geometry.type === 'MultiPolygon') {
+            let best = null;
+            let bestArea = -1;
+            for (const coords of buffered.geometry.coordinates || []) {
+                const candidate = t.polygon(coords);
+                const area = t.area(candidate);
+                if (area > bestArea) {
+                    bestArea = area;
+                    best = candidate;
+                }
+            }
+            return best || feature;
+        }
+    } catch {
+        /* fall through */
+    }
+    return feature;
+}
+
+/**
+ * @param {number[]} coord
+ * @param {object|null} geometryOrFeature
+ * @param {number} [insetFt]
+ * @returns {boolean}
+ */
+export function coordinateInSheet(coord, geometryOrFeature, insetFt = SHEET_BUBBLE_INSET_FT) {
+    const t = turfApi();
+    const feature = sheetPolygonFeature(geometryOrFeature);
+    if (!coord?.length || !feature) return true;
+    if (!t) return true;
+    try {
+        const target = insetSheetPolygon(feature, insetFt) || feature;
+        return t.booleanPointInPolygon(t.point(coord), target);
+    } catch {
+        try {
+            return t.booleanPointInPolygon(t.point(coord), feature);
+        } catch {
+            return true;
+        }
+    }
+}
+
+/**
+ * Pull a coordinate onto the inset sheet polygon along the path to the centroid.
+ * @param {number[]} coord
+ * @param {object|null} geometryOrFeature
+ * @param {number} [insetFt]
+ * @returns {number[]}
+ */
+export function clampCoordinateToSheet(coord, geometryOrFeature, insetFt = SHEET_BUBBLE_INSET_FT) {
+    if (!coord?.length) return coord;
+    if (coordinateInSheet(coord, geometryOrFeature, insetFt)) return [...coord];
+    const t = turfApi();
+    const feature = sheetPolygonFeature(geometryOrFeature);
+    if (!t || !feature) return coord;
+    try {
+        const target = insetSheetPolygon(feature, insetFt) || feature;
+        if (t.booleanPointInPolygon(t.point(coord), target)) return [...coord];
+        const centroid = t.centroid(target);
+        const end = centroid.geometry.coordinates;
+        let lo = 0;
+        let hi = 1;
+        let best = end;
+        for (let i = 0; i < 20; i++) {
+            const mid = (lo + hi) / 2;
+            const pt = [
+                coord[0] + (end[0] - coord[0]) * mid,
+                coord[1] + (end[1] - coord[1]) * mid
+            ];
+            if (t.booleanPointInPolygon(t.point(pt), target)) {
+                best = pt;
+                hi = mid;
+            } else {
+                lo = mid;
+            }
+        }
+        return best;
+    } catch {
+        return coord;
+    }
+}
+
+/**
+ * @param {object} session
+ * @param {object} leader
+ * @returns {object|null}
+ */
+export function sheetPolygonForLeader(session, leader) {
+    if (!leader) return null;
+    const sheets = session?.sheets || [];
+    const sheet = sheets.find((entry) => entry.sheetId === leader.sheetId)
+        || sheets.find((entry) => Number(entry.sheetNumber) === Number(leader.sheetNumber));
+    return sheet?.frameGeometry || null;
+}
+
 function scoreBubbleCandidate(candidate, anchor, context) {
-    const { obstacles = [], otherLeaders = [], selfKey } = context;
+    const { obstacles = [], otherLeaders = [], selfKey, sheetPolygon } = context;
+    if (sheetPolygon && !coordinateInSheet(candidate, sheetPolygon)) {
+        return -2e7;
+    }
     let minFeature = Infinity;
     for (const coord of obstacles) {
         const feet = distanceFeet(candidate, coord);
@@ -222,7 +344,9 @@ function scoreBubbleCandidate(candidate, anchor, context) {
 export function placeBubbleAvoidingConflicts(leader, options = {}) {
     const locked = options.lockedKeys instanceof Set ? options.lockedKeys : new Set(options.lockedKeys || []);
     const key = leader.leaderKey || leader.leaderId;
-    if (locked.has(key) && leader.bubble?.length) return leader.bubble;
+    if (locked.has(key) && leader.bubble?.length) {
+        return clampCoordinateToSheet(leader.bubble, options.sheetPolygon);
+    }
 
     const anchor = leader.anchor;
     if (!anchor) return leader.bubble || null;
@@ -244,7 +368,8 @@ export function placeBubbleAvoidingConflicts(leader, options = {}) {
     const context = {
         obstacles: options.obstacles || [],
         otherLeaders: options.otherLeaders || [],
-        selfKey: key
+        selfKey: key,
+        sheetPolygon: options.sheetPolygon || null
     };
     for (const candidate of candidates) {
         if (!candidate) continue;
@@ -254,7 +379,7 @@ export function placeBubbleAvoidingConflicts(leader, options = {}) {
             best = candidate;
         }
     }
-    return best;
+    return clampCoordinateToSheet(best, options.sheetPolygon);
 }
 
 /**
@@ -266,10 +391,16 @@ export function resolveLeaderBubbles(leaders = [], options = {}) {
     const locked = new Set(options.lockedKeys || []);
     const placed = [];
     for (const leader of leaders) {
+        const sheetPolygon = options.sheetPolygonById?.[leader.sheetId]
+            || leader.sheetPolygon
+            || options.sheetPolygon
+            || null;
+        const sameSheet = placed.filter((other) => other.sheetId === leader.sheetId);
         const bubble = placeBubbleAvoidingConflicts(leader, {
             ...options,
             lockedKeys: locked,
-            otherLeaders: placed
+            sheetPolygon,
+            otherLeaders: sameSheet
         });
         placed.push({ ...leader, bubble: bubble || leader.bubble });
     }
@@ -434,13 +565,6 @@ export function buildCalloutPreviewGeoJson(session, options = {}) {
         });
 
         numbers.forEach((number, index) => {
-            const t = turfApi();
-            let coord = leader.bubble;
-            if (t && index > 0) {
-                coord = t.destination(t.point(leader.bubble), index * 10, 90, { units: 'feet' }).geometry.coordinates;
-            } else if (index > 0) {
-                coord = [leader.bubble[0] + index * 0.00003, leader.bubble[1]];
-            }
             features.push({
                 type: 'Feature',
                 properties: {
@@ -450,9 +574,10 @@ export function buildCalloutPreviewGeoJson(session, options = {}) {
                     sheet_id: leader.sheetId,
                     target_key: leader.targetKey,
                     callout_number: String(number),
+                    stack_index: index,
                     source_feature_id: fiberFeatureId({ properties: { feature_id: leader.targetKey } })
                 },
-                geometry: { type: 'Point', coordinates: coord }
+                geometry: { type: 'Point', coordinates: leader.bubble }
             });
         });
     }

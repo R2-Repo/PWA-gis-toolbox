@@ -7,10 +7,18 @@ import {
     CALLOUT_PDF_CIRCLE_GAP,
     CALLOUT_PDF_CIRCLE_R,
     calloutBubbleCenters,
+    constrainCalloutCluster,
     drawSheetCalloutsOnPdf,
     pickKeyNotesTableRect,
     shouldDrawCalloutsOnPdfPage
 } from '../js/widgets/plan-set-callouts/pdf-callouts.js';
+import {
+    CALLOUT_MAP_CIRCLE_GAP_PX,
+    CALLOUT_MAP_CIRCLE_RADIUS_PX,
+    CALLOUT_PX_PER_PT,
+    CALLOUT_STROKE_RGB,
+    CALLOUT_TEXT_RGB
+} from '../js/widgets/plan-set-callouts/callout-style.js';
 import { suspendCalloutPreview } from '../js/widgets/plan-set-callouts/preview.js';
 import {
     canAdvanceCalloutStep,
@@ -28,6 +36,8 @@ import {
     suppressLeader
 } from '../js/widgets/plan-set-callouts/fiber-callout-engine.js';
 import {
+    buildCalloutPreviewGeoJson,
+    coordinateInSheet,
     distanceFeet,
     findCoveringInset,
     leadersForSheet,
@@ -356,10 +366,77 @@ describe('fiber callout generate', () => {
         expect(session.leaders.filter((leader) => leader.targetKey === boxLeader.targetKey)).toHaveLength(1);
         expect(session.leaders.find((leader) => leader.leaderKey === boxLeader.leaderKey).enabled).toBe(true);
     });
+
+    it('keeps numbered bubbles inside the cut sheet polygon', () => {
+        const smallFrame = {
+            type: 'Feature',
+            properties: { sheet_id: 's1', sheet_number: 1, feature_type: 'sheet_frame' },
+            geometry: {
+                type: 'Polygon',
+                coordinates: [[
+                    [-111.9004, 40.7498],
+                    [-111.8996, 40.7498],
+                    [-111.8996, 40.7502],
+                    [-111.9004, 40.7502],
+                    [-111.9004, 40.7498]
+                ]]
+            }
+        };
+        let session = createFiberCalloutSession();
+        session = generateFiberCallouts(session, {
+            sheets: [sheet],
+            routeLine,
+            frameFeatures: { type: 'FeatureCollection', features: [smallFrame] },
+            features: {
+                boxes: [box(10, -111.8997, 40.75, 'JB-EDGE')],
+                splices: [],
+                conduit: [],
+                fiber: [],
+                cabinets: [],
+                building: []
+            }
+        });
+        const leader = session.leaders.find((entry) => entry.targetKey === pointTargetKey('boxes', '10'));
+        expect(leader).toBeTruthy();
+        expect(turf.booleanPointInPolygon(turf.point(leader.bubble), smallFrame)).toBe(true);
+        expect(coordinateInSheet(leader.bubble, smallFrame.geometry)).toBe(true);
+    });
+
+    it('clamps a dragged bubble back onto the same sheet', () => {
+        let session = createFiberCalloutSession();
+        session = generateFiberCallouts(session, {
+            sheets: [sheet],
+            routeLine,
+            frameFeatures: { type: 'FeatureCollection', features: [frame] },
+            features
+        });
+        const boxLeader = session.leaders.find((leader) => leader.targetKey === pointTargetKey('boxes', '10'));
+        session = moveLeaderBubble(session, boxLeader.leaderKey, [-111.93, 40.80]);
+        const moved = session.leaders.find((leader) => leader.leaderKey === boxLeader.leaderKey);
+        expect(turf.booleanPointInPolygon(turf.point(moved.bubble), frame)).toBe(true);
+        expect(coordinateInSheet(moved.bubble, frame.geometry)).toBe(true);
+    });
+
+    it('stacks map bubbles at the same geographic point', () => {
+        let session = createFiberCalloutSession();
+        session = generateFiberCallouts(session, {
+            sheets: [sheet],
+            routeLine,
+            frameFeatures: { type: 'FeatureCollection', features: [frame] },
+            features
+        });
+        const span = session.leaders.find((leader) => leader.targetKind === 'span');
+        session = setLeaderEnabled(session, span.leaderKey, true);
+        const geo = buildCalloutPreviewGeoJson(session);
+        const bubbles = geo.features.filter((feature) => feature.properties.feature_type === 'callout_bubble');
+        expect(bubbles.length).toBeGreaterThanOrEqual(2);
+        expect(bubbles[0].geometry.coordinates).toEqual(bubbles[1].geometry.coordinates);
+        expect(bubbles.map((feature) => feature.properties.stack_index).slice(0, 2)).toEqual([0, 1]);
+    });
 });
 
 describe('key notes table placement', () => {
-    it('stays above the footer and prefers a corner outside the gold cut', () => {
+    it('stays above the footer and prefers a corner inside the gold cut', () => {
         const goldPdfRing = [
             { x: 200, y: 80 },
             { x: 700, y: 80 },
@@ -376,7 +453,10 @@ describe('key notes table placement', () => {
             tableH: 90
         });
         expect(rect.y + rect.height).toBeLessThan(612 - 50);
-        expect(rect.x).toBeLessThan(200);
+        expect(rect.x).toBeGreaterThanOrEqual(200);
+        expect(rect.x + rect.width).toBeLessThanOrEqual(700);
+        expect(rect.y).toBeGreaterThanOrEqual(80);
+        expect(rect.y + rect.height).toBeLessThanOrEqual(400);
     });
 });
 
@@ -488,6 +568,36 @@ describe('pdf callout overlay', () => {
         expect(leaderCircles[0].args[2]).toBe(CALLOUT_PDF_CIRCLE_R);
         expect(leaderCircles[1].args[0] - leaderCircles[0].args[0]).toBeCloseTo(CALLOUT_PDF_CIRCLE_GAP, 5);
         expect(doc.calls.some((call) => call.name === 'line')).toBe(true);
+        expect(doc.calls.some((call) => (
+            call.name === 'setDrawColor'
+            && call.args[0] === CALLOUT_STROKE_RGB[0]
+            && call.args[1] === CALLOUT_STROKE_RGB[1]
+            && call.args[2] === CALLOUT_STROKE_RGB[2]
+        ))).toBe(true);
+        expect(doc.calls.filter((call) => call.name === 'setTextColor').every((call) => (
+            call.args[0] === CALLOUT_TEXT_RGB[0]
+            && call.args[1] === CALLOUT_TEXT_RGB[1]
+            && call.args[2] === CALLOUT_TEXT_RGB[2]
+        ))).toBe(true);
+    });
+
+    it('matches map circle size to the PDF circle', () => {
+        expect(CALLOUT_MAP_CIRCLE_RADIUS_PX).toBeCloseTo(CALLOUT_PDF_CIRCLE_R * CALLOUT_PX_PER_PT, 5);
+        expect(CALLOUT_MAP_CIRCLE_GAP_PX).toBeCloseTo(CALLOUT_PDF_CIRCLE_GAP * CALLOUT_PX_PER_PT, 5);
+    });
+
+    it('pulls projected clusters back inside the gold sheet ring', () => {
+        const goldPdfRing = [
+            { x: 100, y: 100 },
+            { x: 400, y: 100 },
+            { x: 400, y: 300 },
+            { x: 100, y: 300 }
+        ];
+        const clustered = constrainCalloutCluster({ x: 80, y: 80 }, 2, goldPdfRing);
+        expect(clustered.origin.x).toBeGreaterThan(100);
+        expect(clustered.origin.y).toBeGreaterThan(100);
+        expect(clustered.origin.x).toBeLessThan(400);
+        expect(clustered.origin.y).toBeLessThan(300);
     });
 
     it('matches leaders by sheet number when ids drifted', () => {
