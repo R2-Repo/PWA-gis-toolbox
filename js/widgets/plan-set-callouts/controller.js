@@ -180,7 +180,7 @@ export async function openPlanSetCallouts(ctx, { restoreState = null } = {}) {
         width: '560px',
         mountPath: '../../../react/widgets/mountPlanSetCalloutsDialog.jsx',
         mountExport: 'mountPlanSetCalloutsDialog',
-        onClose: () => {
+        onOverlayDestroy: () => {
             setPlanSetCalloutMenuContext(null);
             clearCalloutPreview(ctx.mapService);
             markWidgetClosed(WIDGET_ID);
@@ -193,6 +193,14 @@ export async function openPlanSetCallouts(ctx, { restoreState = null } = {}) {
                 setPlanSetCalloutMenuContext(null);
                 clearCalloutPreview(ctx.mapService);
                 markWidgetClosed(WIDGET_ID);
+                close();
+            },
+            onDone: () => {
+                persistSession(session, false);
+                setPlanSetCalloutMenuContext(null);
+                clearCalloutPreview(ctx.mapService);
+                markWidgetClosed(WIDGET_ID);
+                ctx.showToast?.('Callouts saved for sheet PDF export', 'success');
                 close();
             },
             onCreateProject: (input) => {

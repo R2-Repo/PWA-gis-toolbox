@@ -185,7 +185,7 @@ Implementation: `js/widgets/sheet-cutting/inset-views.js`, `js/widgets/sheet-cut
 
 ### Plan Set Callouts overlay
 
-**Plan Set Callouts** (GIS Widgets, Beta) draws numbered circle leaders and a **PROJECT KEY NOTES** table on **corridor** PDFs only (`pageType === 'detail'`). Overview and DETAILS pages are unchanged. Callout geometry is an overlay — it does **not** change clean sheet polygons.
+**Plan Set Callouts** (GIS Widgets, Beta) draws numbered circle leaders and a **PROJECT KEY NOTES** table on **corridor** PDFs only (`pageType === 'detail'`). Overview and DETAILS pages never include callouts (map preview layers are hidden during capture). Callout geometry is an overlay — it does **not** change clean sheet polygons. Finish the widget with **Done** so the session stays saved for export.
 
 Implementation: `js/widgets/plan-set-callouts/`, hooked from `buildHybridPagePdfBlob` in `sheet-pdf-export.js`.
 
