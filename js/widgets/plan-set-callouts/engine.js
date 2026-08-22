@@ -19,6 +19,22 @@ import {
     buildPerSheetCalloutTables
 } from './sheet-placement-engine.js';
 import { restoreSheetSession } from '../sheet-cutting/engine.js';
+import {
+    FIBER_CALLOUT_STEPS,
+    isFiberCalloutSession,
+    restoreFiberCalloutSession,
+    serializeFiberCalloutSession,
+    validateFiberCalloutSession
+} from './fiber-callout-engine.js';
+
+export {
+    FIBER_CALLOUT_PROFILE,
+    createFiberCalloutSession,
+    generateFiberCallouts,
+    serializeFiberCalloutSession,
+    restoreFiberCalloutSession,
+    isFiberCalloutSession
+} from './fiber-callout-engine.js';
 
 /**
  * @returns {object}
@@ -196,16 +212,7 @@ export function buildMasterCalloutLegend(tables = []) {
 
 export const WIDGET_ID = 'plan-set-callouts';
 
-export const CALLOUT_STEPS = [
-    'Project',
-    'Profile',
-    'Rules',
-    'Design Layers',
-    'Assign',
-    'Sheets',
-    'Review',
-    'Export'
-];
+export const CALLOUT_STEPS = FIBER_CALLOUT_STEPS;
 
 export const RULE_OPERATORS = [
     { value: 'equals', label: 'Equals' },
@@ -586,6 +593,9 @@ export function buildSessionExport(session) {
  * @returns {object}
  */
 export function serializeCalloutSession(session) {
+    if (isFiberCalloutSession(session)) {
+        return serializeFiberCalloutSession(session);
+    }
     return serializePlanProject(session.project, {
         callouts: session.callouts,
         metadata: {
@@ -605,6 +615,9 @@ export function serializeCalloutSession(session) {
  * @returns {object}
  */
 export function restoreCalloutSession(bundle) {
+    if (bundle?.callouts?.profileType === 'udot-fiber-v1' || bundle?.metadata?.widgetVersion === 2) {
+        return restoreFiberCalloutSession(bundle);
+    }
     const restored = restorePlanProject(bundle);
     if (!restored.ok) {
         throw new Error(restored.errors[0]);
@@ -627,6 +640,9 @@ export function restoreCalloutSession(bundle) {
  * @returns {{ valid: boolean, errors: string[], warnings: string[], findings: object[] }}
  */
 export function validateCalloutSession(session) {
+    if (isFiberCalloutSession(session)) {
+        return validateFiberCalloutSession(session);
+    }
     const findings = [];
     const callouts = session.callouts || {};
 

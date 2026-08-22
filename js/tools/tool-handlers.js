@@ -121,6 +121,7 @@ import { createWidgetContext } from '../widgets/widget-context.js';
 import { getPlatformBundle } from '../platform/create-platform.js';
 import { openImportStationTable } from '../widgets/project-stationing/controller.js';
 import { isProjectStationingCenterline } from '../widgets/project-stationing/route-profile.js';
+import { getPlanSetCalloutMenuItems } from '../widgets/plan-set-callouts/context-menu-bridge.js';
 import { createWorkflowController } from '../workflow/workflow-controller.js';
 import {
     getLayerGroups,
@@ -568,6 +569,12 @@ export function buildMapContextMenuItems(payload) {
     const layer = layerId ? layers.find((l) => l.id === layerId) : null;
     const layerIdx = layer ? layers.indexOf(layer) : -1;
     const items = [];
+
+    const calloutItems = getPlanSetCalloutMenuItems(payload);
+    if (calloutItems.length) {
+        items.push(...calloutItems);
+        items.push({ sep: true });
+    }
 
     if (feature && layer) {
         items.push({

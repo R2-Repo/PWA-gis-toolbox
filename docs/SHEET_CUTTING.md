@@ -183,6 +183,12 @@ Do **not** change clean sheet-cutting polygons for this feature — boxes are ov
 
 Implementation: `js/widgets/sheet-cutting/inset-views.js`, `js/widgets/sheet-cutting/controller.js`, `js/widgets/sheet-cutting/sheet-pdf-export.js`
 
+### Plan Set Callouts overlay
+
+**Plan Set Callouts** (GIS Widgets, Beta) draws numbered circle leaders and a **PROJECT KEY NOTES** table on **corridor** PDFs only (`pageType === 'detail'`). Overview and DETAILS pages are unchanged. Callout geometry is an overlay — it does **not** change clean sheet polygons.
+
+Implementation: `js/widgets/plan-set-callouts/`, hooked from `buildHybridPagePdfBlob` in `sheet-pdf-export.js`.
+
 The map camera and 3D state are restored after export. 3D is temporarily flattened for consistent plan-sheet output.
 
 ### PDF orientation
