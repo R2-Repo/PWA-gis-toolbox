@@ -20,6 +20,7 @@ import {
 } from './fiber-notes.js';
 import { groupSpanMembers } from './span-grouping.js';
 import {
+    clampCoordinateToSheet,
     collectFeatureObstacleCoordinates,
     featureAnchorCoordinate,
     isLeaderEnabled,
@@ -27,7 +28,8 @@ import {
     notesUsedOnSheet,
     offsetBubbleCoordinate,
     placeBubbleAvoidingConflicts,
-    resolveLeaderBubbles
+    resolveLeaderBubbles,
+    sheetPolygonForLeader
 } from './leader-placement.js';
 
 export { FIBER_CALLOUT_PROFILE } from './fiber-notes.js';
@@ -194,6 +196,19 @@ export function generateFiberCallouts(session, input = {}) {
     const frameCollection = input.frameFeatures
         || buildSheetFramesGeoJson(sheets, routeLine);
     const frames = frameCollection?.features || frameCollection || [];
+    const sheetsWithFrames = sheets.map((sheet) => {
+        const frame = frames.find((feature) => feature.properties?.sheet_id === sheet.sheetId)
+            || frames.find((feature) => Number(feature.properties?.sheet_number) === Number(sheet.sheetNumber));
+        return {
+            ...sheet,
+            frameGeometry: frame?.geometry || sheet.frameGeometry || null
+        };
+    });
+    const sheetPolygonById = Object.fromEntries(
+        sheetsWithFrames
+            .filter((sheet) => sheet.frameGeometry)
+            .map((sheet) => [sheet.sheetId, sheet.frameGeometry])
+    );
     const features = { ...emptyFeatures(), ...(input.features || {}) };
 
     const boxes = filterUdotFiberDisplayFeatures(
@@ -210,7 +225,7 @@ export function generateFiberCallouts(session, input = {}) {
     const warnings = [];
     const discovered = [];
 
-    for (const sheet of sheets) {
+    for (const sheet of sheetsWithFrames) {
         const frame = frames.find((feature) => feature.properties?.sheet_id === sheet.sheetId)
             || frames.find((feature) => Number(feature.properties?.sheet_number) === Number(sheet.sheetNumber));
         if (!frame) {
@@ -306,7 +321,7 @@ export function generateFiberCallouts(session, input = {}) {
     }
 
     const extraLeaders = (overrides.extraLeaders || [])
-        .filter((leader) => sheets.some((sheet) => sheet.sheetId === leader.sheetId))
+        .filter((leader) => sheetsWithFrames.some((sheet) => sheet.sheetId === leader.sheetId))
         .map((leader) => {
             const key = leader.leaderKey || leader.leaderId;
             const enabled = !suppressed.has(key);
@@ -325,15 +340,16 @@ export function generateFiberCallouts(session, input = {}) {
             ...placementObstacles,
             ...[...autoLeaders, ...extraLeaders].map((leader) => leader.anchor).filter(Boolean)
         ],
-        lockedKeys
+        lockedKeys,
+        sheetPolygonById
     });
     const extraKeys = new Set(extraLeaders.map((leader) => leader.leaderKey || leader.leaderId));
     autoLeaders = placed.filter((leader) => !extraKeys.has(leader.leaderKey || leader.leaderId));
     const placedExtra = placed.filter((leader) => extraKeys.has(leader.leaderKey || leader.leaderId));
 
-    const selectedSheetId = sheets.some((sheet) => sheet.sheetId === session.selectedSheetId)
+    const selectedSheetId = sheetsWithFrames.some((sheet) => sheet.sheetId === session.selectedSheetId)
         ? session.selectedSheetId
-        : (sheets[0]?.sheetId || '');
+        : (sheetsWithFrames[0]?.sheetId || '');
 
     return {
         ...session,
@@ -343,7 +359,7 @@ export function generateFiberCallouts(session, input = {}) {
         leaders: [...autoLeaders, ...placedExtra],
         overrides,
         placementObstacles,
-        sheets,
+        sheets: sheetsWithFrames,
         sheetSetId: input.sheetSetId || session.sheetSetId || '',
         selectedSheetId,
         routeLine: routeLine || null,
@@ -424,6 +440,7 @@ export function addManualLeader(session, input = {}) {
     const key = leaderKey(sheetId, targetKey);
     const sheetNumber = input.sheetNumber
         || (session.sheets || []).find((sheet) => sheet.sheetId === sheetId)?.sheetNumber;
+    const sheetPolygon = (session.sheets || []).find((entry) => entry.sheetId === sheetId)?.frameGeometry || null;
     const leader = {
         leaderId: key,
         leaderKey: key,
@@ -433,14 +450,21 @@ export function addManualLeader(session, input = {}) {
         targetKind: input.targetKind || 'manual',
         noteIds: [note.noteId],
         anchor: input.anchor,
-        bubble: input.bubble || placeBubbleAvoidingConflicts({
-            leaderKey: key,
-            anchor: input.anchor
-        }, {
-            routeLine: session.routeLine,
-            obstacles: session.placementObstacles || [],
-            otherLeaders: (session.leaders || []).filter((leader) => isLeaderEnabled(leader))
-        }) || offsetBubbleCoordinate(input.anchor, session.routeLine),
+        bubble: clampCoordinateToSheet(
+            input.bubble || placeBubbleAvoidingConflicts({
+                leaderKey: key,
+                sheetId,
+                anchor: input.anchor
+            }, {
+                routeLine: session.routeLine,
+                obstacles: session.placementObstacles || [],
+                otherLeaders: (session.leaders || []).filter((entry) => (
+                    isLeaderEnabled(entry) && entry.sheetId === sheetId
+                )),
+                sheetPolygon
+            }) || offsetBubbleCoordinate(input.anchor, session.routeLine),
+            sheetPolygon
+        ),
         suppressed: false,
         enabled: true,
         source: 'manual'
@@ -532,19 +556,23 @@ export function addNoteToLeader(session, leaderKeyValue, text) {
  * @returns {object}
  */
 export function moveLeaderBubble(session, leaderKeyValue, bubble) {
+    const leader = (session.leaders || []).find((entry) => (
+        (entry.leaderKey || entry.leaderId) === leaderKeyValue
+    ));
+    const clamped = clampCoordinateToSheet(bubble, sheetPolygonForLeader(session, leader));
     return {
         ...session,
         overrides: {
             ...session.overrides,
             bubbleByLeaderKey: {
                 ...(session.overrides?.bubbleByLeaderKey || {}),
-                [leaderKeyValue]: bubble
+                [leaderKeyValue]: clamped
             }
         },
-        leaders: (session.leaders || []).map((leader) => (
-            (leader.leaderKey || leader.leaderId) === leaderKeyValue
-                ? { ...leader, bubble }
-                : leader
+        leaders: (session.leaders || []).map((entry) => (
+            (entry.leaderKey || entry.leaderId) === leaderKeyValue
+                ? { ...entry, bubble: clamped }
+                : entry
         ))
     };
 }
@@ -588,7 +616,8 @@ export function serializeFiberCalloutSession(session) {
                 sheetNumber: sheet.sheetNumber,
                 sheetType: sheet.sheetType,
                 startDistanceFt: sheet.startDistanceFt,
-                endDistanceFt: sheet.endDistanceFt
+                endDistanceFt: sheet.endDistanceFt,
+                frameGeometry: sheet.frameGeometry || null
             })),
             selectedSheetId: session.selectedSheetId || '',
             warnings: session.warnings || []

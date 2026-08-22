@@ -7,6 +7,17 @@ import { buildMapLabelLayerSpec } from '../../map/map-labels.js';
 import { getWidgetEntry } from '../widget-state-store.js';
 import { restoreSheetSession } from '../sheet-cutting/engine.js';
 import { buildCalloutPreviewGeoJson } from './leader-placement.js';
+import {
+    CALLOUT_FILL_HEX,
+    CALLOUT_MAP_CIRCLE_GAP_PX,
+    CALLOUT_MAP_CIRCLE_RADIUS_PX,
+    CALLOUT_MAP_FONT_SIZE_PX,
+    CALLOUT_MAP_LINE_WIDTH_PX,
+    CALLOUT_MAP_MAX_STACK,
+    CALLOUT_MAP_STROKE_PX,
+    CALLOUT_STROKE_HEX,
+    CALLOUT_TEXT_HEX
+} from './callout-style.js';
 
 /** @type {object[]} */
 let activePreviewEntries = [];
@@ -124,7 +135,7 @@ export function getCalloutPreviewLayerIds() {
 
 function bubbleLayerIds(map) {
     return getCalloutPreviewLayerIds().filter((id) => (
-        map?.getLayer?.(id) && (id.endsWith('-circle') || id.endsWith('-labels'))
+        map?.getLayer?.(id) && (id.includes('-circle') || id.includes('-labels'))
     ));
 }
 
@@ -215,10 +226,99 @@ export function uninstallCalloutDrag(mapService) {
     dragListeners = null;
 }
 
+function stackLayerId(srcId, kind, index) {
+    return index === 0 ? `${srcId}-${kind}` : `${srcId}-${kind}-${index}`;
+}
+
+function applyCalloutPreviewStyle(map, srcId, layerIds) {
+    const lineId = `${srcId}-line`;
+    if (map.getLayer?.(lineId)) {
+        map.setPaintProperty?.(lineId, 'line-color', CALLOUT_STROKE_HEX);
+        map.setPaintProperty?.(lineId, 'line-width', CALLOUT_MAP_LINE_WIDTH_PX);
+        map.setPaintProperty?.(lineId, 'line-opacity', 1);
+    }
+
+    for (let index = 0; index < CALLOUT_MAP_MAX_STACK; index++) {
+        const bubbleFilter = ['all',
+            ['==', ['get', 'feature_type'], 'callout_bubble'],
+            ['==', ['get', 'stack_index'], index]
+        ];
+        const circleId = stackLayerId(srcId, 'circle', index);
+        if (!map.getLayer?.(circleId)) {
+            map.addLayer({
+                id: circleId,
+                type: 'circle',
+                source: srcId,
+                filter: bubbleFilter,
+                paint: {
+                    'circle-radius': CALLOUT_MAP_CIRCLE_RADIUS_PX,
+                    'circle-color': CALLOUT_FILL_HEX,
+                    'circle-stroke-color': CALLOUT_STROKE_HEX,
+                    'circle-stroke-width': CALLOUT_MAP_STROKE_PX,
+                    'circle-pitch-alignment': 'viewport',
+                    'circle-translate': [index * CALLOUT_MAP_CIRCLE_GAP_PX, 0],
+                    'circle-translate-anchor': 'viewport'
+                }
+            });
+            layerIds.push(circleId);
+        } else {
+            map.setFilter?.(circleId, bubbleFilter);
+            map.setPaintProperty?.(circleId, 'circle-radius', CALLOUT_MAP_CIRCLE_RADIUS_PX);
+            map.setPaintProperty?.(circleId, 'circle-color', CALLOUT_FILL_HEX);
+            map.setPaintProperty?.(circleId, 'circle-stroke-color', CALLOUT_STROKE_HEX);
+            map.setPaintProperty?.(circleId, 'circle-stroke-width', CALLOUT_MAP_STROKE_PX);
+            map.setPaintProperty?.(circleId, 'circle-pitch-alignment', 'viewport');
+            map.setPaintProperty?.(circleId, 'circle-translate', [index * CALLOUT_MAP_CIRCLE_GAP_PX, 0]);
+            map.setPaintProperty?.(circleId, 'circle-translate-anchor', 'viewport');
+            if (!layerIds.includes(circleId)) layerIds.push(circleId);
+        }
+
+        const labelId = stackLayerId(srcId, 'labels', index);
+        if (!map.getLayer?.(labelId)) {
+            const labelSpec = buildMapLabelLayerSpec(srcId, srcId, {
+                field: 'callout_number',
+                minZoom: 0,
+                size: CALLOUT_MAP_FONT_SIZE_PX,
+                anchor: 'center',
+                offset: [0, 0],
+                color: CALLOUT_TEXT_HEX,
+                haloColor: CALLOUT_FILL_HEX,
+                haloWidth: 0.15,
+                allowOverlap: true,
+                ignorePlacement: true
+            });
+            if (labelSpec) {
+                labelSpec.id = labelId;
+                labelSpec.filter = bubbleFilter;
+                labelSpec.paint = {
+                    ...labelSpec.paint,
+                    'text-color': CALLOUT_TEXT_HEX,
+                    'text-translate': [index * CALLOUT_MAP_CIRCLE_GAP_PX, 0],
+                    'text-translate-anchor': 'viewport'
+                };
+                labelSpec.layout = {
+                    ...labelSpec.layout,
+                    'text-pitch-alignment': 'viewport',
+                    'text-rotation-alignment': 'viewport'
+                };
+                map.addLayer(labelSpec);
+                layerIds.push(labelId);
+            }
+        } else {
+            map.setFilter?.(labelId, bubbleFilter);
+            map.setPaintProperty?.(labelId, 'text-color', CALLOUT_TEXT_HEX);
+            map.setPaintProperty?.(labelId, 'text-translate', [index * CALLOUT_MAP_CIRCLE_GAP_PX, 0]);
+            map.setPaintProperty?.(labelId, 'text-translate-anchor', 'viewport');
+            if (!layerIds.includes(labelId)) layerIds.push(labelId);
+        }
+    }
+}
+
 function ensurePreviewLayers(map, collection) {
     const existing = activePreviewEntries[0];
     if (existing?.srcId && map.getSource?.(existing.srcId)) {
         map.getSource(existing.srcId).setData(collection);
+        applyCalloutPreviewStyle(map, existing.srcId, existing.layerIds);
         return existing;
     }
 
@@ -232,45 +332,18 @@ function ensurePreviewLayers(map, collection) {
         type: 'line',
         source: srcId,
         filter: ['==', ['get', 'feature_type'], 'callout_leader'],
+        layout: {
+            'line-cap': 'round',
+            'line-join': 'round'
+        },
         paint: {
-            'line-color': '#111111',
-            'line-width': 1.2
+            'line-color': CALLOUT_STROKE_HEX,
+            'line-width': CALLOUT_MAP_LINE_WIDTH_PX,
+            'line-opacity': 1
         }
     });
     layerIds.push(lineId);
-
-    const circleId = `${srcId}-circle`;
-    map.addLayer({
-        id: circleId,
-        type: 'circle',
-        source: srcId,
-        filter: ['==', ['get', 'feature_type'], 'callout_bubble'],
-        paint: {
-            'circle-radius': 6,
-            'circle-color': '#ffffff',
-            'circle-stroke-color': '#111111',
-            'circle-stroke-width': 1.1
-        }
-    });
-    layerIds.push(circleId);
-
-    const labelSpec = buildMapLabelLayerSpec(`${srcId}-labels`, srcId, {
-        field: 'callout_number',
-        minZoom: 0,
-        size: 10,
-        anchor: 'center',
-        offset: [0, 0],
-        color: '#111111',
-        haloColor: '#ffffff',
-        haloWidth: 0.2,
-        allowOverlap: true,
-        ignorePlacement: true
-    });
-    if (labelSpec) {
-        map.addLayer(labelSpec);
-        map.setFilter(labelSpec.id, ['==', ['get', 'feature_type'], 'callout_bubble']);
-        layerIds.push(labelSpec.id);
-    }
+    applyCalloutPreviewStyle(map, srcId, layerIds);
 
     const entry = { srcId, layerIds };
     activePreviewEntries.push(entry);
