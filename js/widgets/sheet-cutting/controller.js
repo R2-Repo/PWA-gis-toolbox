@@ -30,6 +30,20 @@ import { clearSheetPreview, showSheetPreview } from './sheet-preview.js';
 import { exportSheetPlanPdf } from './sheet-pdf-export.js';
 import { buildCombinedSheetGeoJson } from './export-builder.js';
 import { sanitizeExportFilename } from '../../export/folder-export.js';
+import { applyImportLayerStyles } from '../../import/post-import.js';
+import { markDatasetForUdotFiberStyle } from '../../symbology/udot-fiber/resolve-style.js';
+import { removeLayer } from '../../core/state.js';
+import {
+    listVisibleUdotFiberLayerIds,
+    resolveUdotFiberLayerKey
+} from './sheet-pdf-fiber.js';
+import {
+    buildSheetFiberOperationalSpec,
+    clipFeaturesToSheetCoverage,
+    envelopeFromFeatures,
+    listSheetFiberSnapshotLayers
+} from './fiber-operational.js';
+import { queryFiberFeaturesByEnvelope } from './fiber-operational-fetch.js';
 
 function persistSession(session, open = true) {
     upsertWidgetState(WIDGET_ID, {
@@ -121,6 +135,87 @@ function collectFeaturesFromLayers(ctx, layerIds = []) {
 function applyDesignLayerSelection(ctx, session, layerIds = []) {
     const next = selectDesignLayersForSheets(session, layerIds);
     return setSheetDesignFeatures(next, collectFeaturesFromLayers(ctx, layerIds));
+}
+
+function viewportFiberFeatures(ctx, liveLayer) {
+    const fromRecord = ctx.mapService?.getLayerRecord?.(liveLayer.id)?.geojson?.features;
+    const fromLayer = liveLayer?.geojson?.features;
+    return fromRecord?.length ? fromRecord : (fromLayer || []);
+}
+
+async function addEditableFiberLayersFromSheets(ctx, session) {
+    const exportPackage = buildSessionExport(session);
+    const frames = exportPackage.layers?.sheetFrames?.features || [];
+    if (!frames.length) {
+        throw new Error('Generate sheets before adding Fiber map layers.');
+    }
+
+    const liveLayers = listVisibleUdotFiberLayerIds(ctx.mapService, ctx.getLayers())
+        .map((id) => ctx.getLayers().find((layer) => layer.id === id))
+        .filter(Boolean);
+    if (!liveLayers.length) {
+        throw new Error('Add UDOT Fiber Network from Live Layers and keep it visible, then try again.');
+    }
+
+    const projectName = session.project?.projectName || 'Sheets';
+    for (const existing of listSheetFiberSnapshotLayers(ctx.getLayers(), projectName)) {
+        ctx.mapService.removeLayer(existing.id);
+        removeLayer(existing.id);
+    }
+
+    const envelope = envelopeFromFeatures(frames);
+    const created = [];
+    let truncated = false;
+
+    for (const live of liveLayers) {
+        const fiberKey = resolveUdotFiberLayerKey(live, ctx.mapService.getLayerStyle?.(live.id));
+        if (!fiberKey) continue;
+
+        let features = [];
+        try {
+            const fetched = await queryFiberFeaturesByEnvelope(
+                live.service?.url || live.source?.url,
+                envelope,
+                fiberKey
+            );
+            features = fetched.features || [];
+            truncated = truncated || !!fetched.truncated;
+        } catch {
+            features = viewportFiberFeatures(ctx, live);
+        }
+
+        const clipped = clipFeaturesToSheetCoverage(features, frames);
+        if (!clipped.length) continue;
+
+        const spec = buildSheetFiberOperationalSpec({
+            projectName,
+            liveLayer: live,
+            fiberKey,
+            features: clipped
+        });
+        const dataset = ctx.createSpatialDataset(spec.name, spec.geojson, spec.source);
+        markDatasetForUdotFiberStyle(dataset, spec.source.url);
+        dataset._udotFiberLayerKey = fiberKey;
+        dataset._applyUdotFiberStyle = true;
+
+        ctx.addLayer(dataset);
+        const layerIdx = ctx.getLayers().indexOf(dataset);
+        applyImportLayerStyles(dataset, {
+            mapService: ctx.mapService,
+            getLayers: ctx.getLayers,
+            layerIndex: layerIdx
+        });
+        ctx.mapService.addLayer(dataset, layerIdx, { fit: false });
+        created.push(dataset);
+    }
+
+    if (!created.length) {
+        throw new Error('No UDOT Fiber features fall inside the sheet polygons.');
+    }
+
+    groupOutputLayers(`${projectName} Fiber (editable)`, created);
+    ctx.refreshUI();
+    return { created, truncated };
 }
 
 /**
@@ -308,6 +403,19 @@ export async function openSheetCutting(ctx, { restoreState = null } = {}) {
 
                 renderSheetPreview(ctx, session);
                 return created;
+            },
+            onAddFiberOperationalLayers: async () => {
+                const result = await addEditableFiberLayersFromSheets(ctx, session);
+                const count = result.created.length;
+                const extra = result.truncated
+                    ? ' Some dense areas were capped — zoomed-in live Fiber may show more.'
+                    : '';
+                ctx.showToast(
+                    `Added ${count} editable Fiber layer${count === 1 ? '' : 's'} from the sheet polygons.${extra}`,
+                    result.truncated ? 'warning' : 'success'
+                );
+                renderSheetPreview(ctx, session);
+                return result;
             },
             onOpenRouteCenterline: () => {
                 openRouteMilepostSegment(ctx);

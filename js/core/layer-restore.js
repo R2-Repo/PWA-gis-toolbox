@@ -101,7 +101,9 @@ export async function buildDatasetFromSavedLayer(saved, payload = {}) {
             minScale: saved.minScale,
             maxScale: saved.maxScale,
             ...(saved.locked ? { locked: true } : {}),
-            ...(saved.groupId ? { groupId: saved.groupId } : {})
+            ...(saved.groupId ? { groupId: saved.groupId } : {}),
+            ...(saved._udotFiberLayerKey ? { _udotFiberLayerKey: saved._udotFiberLayerKey } : {}),
+            ...(saved._applyUdotFiberStyle ? { _applyUdotFiberStyle: true } : {})
         };
     }
 

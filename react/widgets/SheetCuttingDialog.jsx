@@ -106,6 +106,7 @@ export function SheetCuttingDialog({
     onExportPackage,
     onExportPdf,
     onAddResultLayers,
+    onAddFiberOperationalLayers,
     onOpenRouteCenterline,
     onOpenProjectStationing,
     onRefreshLayers,
@@ -480,6 +481,20 @@ export function SheetCuttingDialog({
                         <button type="button" className="btn btn-secondary btn-sm" disabled={busy} onClick={() => onAddResultLayers?.()}>
                             Add sheet layers to map
                         </button>
+                        <button
+                            type="button"
+                            className="btn btn-secondary btn-sm"
+                            disabled={busy}
+                            onClick={() => run(async () => {
+                                await onAddFiberOperationalLayers?.();
+                            })}
+                        >
+                            Add Fiber in sheets as map layers
+                        </button>
+                        <p className="text-xs" style={{ margin: 0, color: 'var(--text-muted)' }}>
+                            Copies visible UDOT Fiber inside the sheet polygons onto the map as editable layers.
+                            Looks like live Fiber. Does not write to ArcGIS. Sheet PDFs still use the live Fiber overlay.
+                        </p>
                     </div>
                 </div>
             ) : null}

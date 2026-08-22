@@ -15,6 +15,7 @@ export function applyUdotFiberDisplayOffsets(features, opts = {}) {
 
     return features.map((feature, index) => {
         const props = feature?.properties || {};
+        if (Number(props._udotDisplayOffsetM) > 0) return feature;
         const raw = props[field];
         const sheath = Number(raw);
         // Offset alternate features slightly when MULTISHEATH missing but DESCR hints parallel

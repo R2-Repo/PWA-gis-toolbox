@@ -49,9 +49,11 @@ import {
     orderUdotFiberLiveLayers
 } from '../live-layers/live-layer-engine.js';
 import { mergeLiveLayerHitsNearClick, LIVE_LAYER_IDENTIFY_PX } from '../live-layers/live-layer-hits.js';
-import { matchUdotFiberLayerUrl } from '../symbology/udot-fiber/constants.js';
+import { matchUdotFiberLayerUrl, SHEET_FIBER_SNAPSHOT_FORMAT } from '../symbology/udot-fiber/constants.js';
 import { udotFiberDrawRank } from '../symbology/udot-fiber/draw-order.js';
 import { isUdotFiberLiveDataset } from '../symbology/udot-fiber/hover-fields.js';
+import { addUdotFiberVectorLayers } from '../symbology/udot-fiber/paint.js';
+import { prepareUdotFiberMapFeatures } from '../symbology/udot-fiber/map-prepare.js';
 import { renderProcurementIcon } from '../plan-project/symbol-icons.js';
 
 const POINT_CLUSTER_THRESHOLD = 10000;
@@ -873,6 +875,10 @@ class MapManager {
             this._layerStyles.set(dataset.id, { ...layerStyle });
         }
 
+        if (dataset.source?.format === SHEET_FIBER_SNAPSHOT_FORMAT) {
+            return this._addUdotFiberSnapshotLayer(dataset, colorIndex, { fit, layerStyle });
+        }
+
         const styPoly = compilePaint(layerStyle, 'polygon');
         const styLine = compilePaint(layerStyle, 'line');
         const styPoint = compilePaint(layerStyle, 'point');
@@ -1070,6 +1076,61 @@ class MapManager {
             featureCount: dataset.geojson.features.length,
             renderParts: taggedFeatures.length
         });
+        this._applyDatasetVisibility(dataset);
+        this._applyDatasetLock(dataset);
+        bus.emit('map:layerAdded', { id: dataset.id, name: dataset.name });
+    }
+
+    /**
+     * Editable Fiber sheet copies — same CAD paint as live Fiber.
+     * Live service layers keep using live-layer-engine; sheet PDFs still collect live Fiber only.
+     */
+    _addUdotFiberSnapshotLayer(dataset, colorIndex, { fit = false, layerStyle } = {}) {
+        const fiberKey = dataset._udotFiberLayerKey
+            || dataset.source?.fiberKey
+            || layerStyle?._udotFiber?.layerKey
+            || matchUdotFiberLayerUrl(dataset.source?.url)?.key
+            || null;
+
+        const taggedFeatures = _tagFeaturesForMap(dataset);
+        const mapFeatures = fiberKey
+            ? prepareUdotFiberMapFeatures(fiberKey, taggedFeatures, this.map)
+            : taggedFeatures;
+        const geojson = { type: 'FeatureCollection', features: mapFeatures };
+        const sourceId = `src-${dataset.id}`;
+
+        this.map.addSource(sourceId, { type: 'geojson', data: geojson });
+        const layerIds = fiberKey
+            ? addUdotFiberVectorLayers(this.map, dataset.id, sourceId, layerStyle, 1, { fiberKey })
+            : [];
+
+        const styFlat = getBaseFlatStyle(layerStyle, 'point');
+        this._bindLayerClickHandlers(dataset, layerIds, styFlat);
+        this.dataLayers.set(dataset.id, {
+            sourceId,
+            layerIds,
+            chunkSources: [{ sourceId, layerIds }],
+            colorIndex,
+            geojson,
+            scaleRange: normalizeScaleRange(dataset)
+        });
+        this._storeLayerScaleRange(dataset);
+        this._layerNames.set(dataset.id, dataset.name);
+
+        if (fit && mapFeatures.length) {
+            try {
+                const bbox = turf.bbox(geojson);
+                if (bbox && isFinite(bbox[0])) {
+                    this.scheduleMapFit({
+                        bounds: [[bbox[0], bbox[1]], [bbox[2], bbox[3]]],
+                        options: { allowZoomOut: false }
+                    });
+                }
+            } catch (e) {
+                logger.warn('Map', 'Could not fit Fiber snapshot bounds', { error: e.message });
+            }
+        }
+
         this._applyDatasetVisibility(dataset);
         this._applyDatasetLock(dataset);
         bus.emit('map:layerAdded', { id: dataset.id, name: dataset.name });
@@ -2105,7 +2166,17 @@ class MapManager {
         }
 
         const taggedFeatures = _tagFeaturesForMap(dataset);
-        const geojson = { type: 'FeatureCollection', features: taggedFeatures };
+        const fiberKey = dataset.source?.format === SHEET_FIBER_SNAPSHOT_FORMAT
+            ? (dataset._udotFiberLayerKey
+                || dataset.source?.fiberKey
+                || this._layerStyles.get(dataset.id)?._udotFiber?.layerKey
+                || matchUdotFiberLayerUrl(dataset.source?.url)?.key
+                || null)
+            : null;
+        const mapFeatures = fiberKey
+            ? prepareUdotFiberMapFeatures(fiberKey, taggedFeatures, this.map)
+            : taggedFeatures;
+        const geojson = { type: 'FeatureCollection', features: mapFeatures };
         source.setData(geojson);
         entry.geojson = geojson;
     }
