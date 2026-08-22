@@ -13,7 +13,10 @@ import {
     placeMatchlineLabelOnGoldOutline,
     pickJsPdfAngleWithCapsOutward,
     udotFiberPdfBoxTextAngle,
-    MATCHLINE_SEE_LABEL_FONT_PT
+    MATCHLINE_SEE_LABEL_FONT_PT,
+    mapCssPxToPdfPt,
+    resolveFiberGlyphPdfMetrics,
+    resolvePointMarkerPdfRadius
 } from '../js/widgets/sheet-cutting/sheet-pdf-vector.js';
 
 describe('sheet PDF placement', () => {
@@ -402,5 +405,46 @@ describe('jsPDF matchline cap direction', () => {
         const rad = (angle * Math.PI) / 180;
         const capDot = (-Math.sin(rad)) * outward.x + (-Math.cos(rad)) * outward.y;
         expect(capDot).toBeGreaterThan(0.9);
+    });
+});
+
+describe('DETAILS page point scaling', () => {
+    const style = { radius: 4.8, fiberKey: 'boxes', glyph: 'rect' };
+
+    it('keeps corridor CAD size when not matching map screen space', () => {
+        const cad = resolveFiberGlyphPdfMetrics(style, 0.2);
+        const zoomed = resolveFiberGlyphPdfMetrics(style, 0.2, {
+            matchMapScreenSpace: true,
+            captureScale: 2,
+            zoom: 16
+        });
+        expect(cad.boxRadius).toBeCloseTo(4.8, 5);
+        expect(zoomed.boxRadius).toBeCloseTo(cad.boxRadius, 5);
+        expect(mapCssPxToPdfPt(18, 0.2, 2)).toBeCloseTo(7.2, 5);
+    });
+
+    it('grows boxes/splices/cabinets to the map icon size on zoomed DETAILS pages', () => {
+        const cad = resolveFiberGlyphPdfMetrics(style, 0.12);
+        const details = resolveFiberGlyphPdfMetrics(style, 0.12, {
+            matchMapScreenSpace: true,
+            captureScale: 2,
+            zoom: 22
+        });
+        expect(details.boxRadius).toBeGreaterThan(cad.boxRadius * 3);
+
+        const spliceCad = resolveFiberGlyphPdfMetrics({ radius: 4.1, fiberKey: 'splices', glyph: 'circle' }, 0.12);
+        const spliceZoom = resolveFiberGlyphPdfMetrics({ radius: 4.1, fiberKey: 'splices', glyph: 'circle' }, 0.12, {
+            matchMapScreenSpace: true,
+            captureScale: 2,
+            zoom: 22
+        });
+        expect(spliceZoom.size).toBeGreaterThan(spliceCad.size * 3);
+
+        const cadPoint = resolvePointMarkerPdfRadius({ radius: 6 }, 0.12);
+        const mapPoint = resolvePointMarkerPdfRadius({ radius: 6 }, 0.12, {
+            matchMapScreenSpace: true,
+            captureScale: 2
+        });
+        expect(mapPoint).toBeGreaterThan(cadPoint);
     });
 });

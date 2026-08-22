@@ -94,23 +94,31 @@ function installInsetPreview(mapService, collection) {
     });
     layerIds.push(lineId);
 
-    const labelSpec = buildMapLabelLayerSpec(`${srcId}-labels`, srcId, {
-        field: 'inset_label',
-        minZoom: 0,
-        size: 12,
-        anchor: 'center',
-        offset: [0, 0],
-        color: '#1e3a8a',
-        haloColor: '#ffffff',
-        haloWidth: 1.6,
-        allowOverlap: true,
-        ignorePlacement: true
+    const labelId = `${srcId}-labels`;
+    map.addLayer({
+        id: labelId,
+        type: 'symbol',
+        source: srcId,
+        filter: ['==', ['get', 'feature_type'], 'inset_label'],
+        layout: {
+            'text-field': ['to-string', ['coalesce', ['get', 'label_text'], ['get', 'inset_label']]],
+            'text-font': ['Open Sans Regular', 'Arial Unicode MS Regular'],
+            'text-size': 12,
+            'text-anchor': ['coalesce', ['get', 'label_anchor'], 'bottom'],
+            'text-justify': 'center',
+            'text-line-height': 1.05,
+            'text-max-width': 24,
+            'text-allow-overlap': true,
+            'text-ignore-placement': true,
+            'text-padding': 2
+        },
+        paint: {
+            'text-color': '#1e3a8a',
+            'text-halo-color': '#ffffff',
+            'text-halo-width': 1.6
+        }
     });
-    if (labelSpec) {
-        map.addLayer(labelSpec);
-        map.setFilter(labelSpec.id, ['==', ['get', 'feature_type'], 'inset_label']);
-        layerIds.push(labelSpec.id);
-    }
+    layerIds.push(labelId);
 
     return { srcId, layerIds };
 }

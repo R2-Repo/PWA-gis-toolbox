@@ -8,9 +8,77 @@ import {
     probeOutwardUnitNormal
 } from './sheet-pdf-placement.js';
 import { buildUdotFiberPdfStyle, layoutUdotFiberPdfBox, udotFiberPdfDrawRank } from './sheet-pdf-fiber.js';
+import { interpolateUdotFiberIconPx } from '../../symbology/udot-fiber/zoom-scale.js';
 
 /** Matchline SEE SHEET label size (PDF points). Inner glyph edge sits on the cutout border. */
 export const MATCHLINE_SEE_LABEL_FONT_PT = 7.5;
+
+/**
+ * Convert map CSS pixels to PDF points via the capture transform.
+ *
+ * @param {number} cssPx
+ * @param {number} pxPerPt
+ * @param {number} [captureScale]
+ * @returns {number}
+ */
+export function mapCssPxToPdfPt(cssPx, pxPerPt, captureScale = 1) {
+    const px = Math.max(0, Number(cssPx) || 0);
+    const scale = Math.max(0, Number(captureScale) || 0);
+    const perPt = Math.max(0, Number(pxPerPt) || 0);
+    return px * scale * perPt;
+}
+
+/**
+ * Fiber point / box glyph size. Corridor pages keep CAD sizes; DETAILS pages
+ * grow to the on-screen map size at the capture zoom.
+ *
+ * @param {object} style
+ * @param {number} pxPerPt
+ * @param {{ captureScale?: number, zoom?: number, matchMapScreenSpace?: boolean, maxPt?: number }} [options]
+ * @returns {{ size: number, boxRadius: number }}
+ */
+export function resolveFiberGlyphPdfMetrics(style, pxPerPt, options = {}) {
+    const cadSize = Math.max(2.4, (style?.radius || 4) * pxPerPt);
+    const cadBoxRadius = Math.max(4.8, (style?.radius || 4.8) * Math.max(pxPerPt, 0.7));
+    if (!options.matchMapScreenSpace) {
+        return { size: cadSize, boxRadius: cadBoxRadius };
+    }
+
+    const iconPx = interpolateUdotFiberIconPx(style?.fiberKey, options.zoom);
+    let mapPt = mapCssPxToPdfPt(iconPx, pxPerPt, options.captureScale);
+    const capPt = Number(options.maxPt);
+    if (Number.isFinite(capPt) && capPt > 0) {
+        mapPt = Math.min(mapPt, capPt);
+    }
+    const glyph = style?.glyph || 'circle';
+    const mapSize = glyph === 'rect'
+        ? mapPt / 2.24
+        : glyph === 'bowtie'
+            ? mapPt / 2
+            : glyph === 'square-x'
+                ? mapPt / 1.4
+                : mapPt / 1.1;
+    return {
+        size: Math.max(cadSize, mapSize),
+        boxRadius: Math.max(cadBoxRadius, mapPt / 2.24)
+    };
+}
+
+/**
+ * Generic point marker radius. DETAILS pages convert map circle-radius CSS px.
+ *
+ * @param {object} style
+ * @param {number} pxPerPt
+ * @param {{ captureScale?: number, matchMapScreenSpace?: boolean }} [options]
+ * @returns {number}
+ */
+export function resolvePointMarkerPdfRadius(style, pxPerPt, options = {}) {
+    const cad = Math.max(0.5, (style?.radius ?? 4) * pxPerPt * 0.5);
+    if (style?.radius === 0) return 0;
+    if (!options.matchMapScreenSpace) return cad;
+    const mapR = mapCssPxToPdfPt(style?.radius ?? 4, pxPerPt, options.captureScale);
+    return Math.max(cad, mapR);
+}
 
 /**
  * @param {string} hex
@@ -472,14 +540,15 @@ function drawInBoxLabel(doc, point, lines, fontSize, jsPdfAngleDeg, color = '#11
  * @param {number} pxPerPt
  * @param {number} mapBearing
  */
-function drawFiberPoint(doc, point, style, pxPerPt, mapBearing = 0) {
-    const size = Math.max(2.4, (style.radius || 4) * pxPerPt);
+function drawFiberPoint(doc, point, style, pxPerPt, mapBearing = 0, screen = null) {
+    const metrics = resolveFiberGlyphPdfMetrics(style, pxPerPt, screen || {});
+    const size = metrics.size;
     const angle = (Number(style.rotation) || 0) - (Number(mapBearing) || 0);
     const color = style.fillColor || '#111111';
     const ink = style.strokeColor || '#111111';
     applyFillColor(doc, color);
     applyStrokeColor(doc, ink);
-    doc.setLineWidth(Math.max(0.35, 0.55 * pxPerPt));
+    doc.setLineWidth(Math.max(0.35, 0.55 * pxPerPt * Math.max(1, Number(screen?.captureScale) || 1)));
     doc.setLineDashPattern?.([], 0);
 
     const at = (dx, dy) => rotatePdfPoint(point.x, point.y, point.x + dx, point.y + dy, angle);
@@ -494,7 +563,7 @@ function drawFiberPoint(doc, point, style, pxPerPt, mapBearing = 0) {
         };
         const box = layoutUdotFiberPdfBox(
             style.boxLabel,
-            Math.max(4.8, (style.radius || 4.8) * Math.max(pxPerPt, 0.7)),
+            metrics.boxRadius,
             measure
         );
         const a = at(-box.halfWidth, -box.halfHeight);
@@ -582,15 +651,15 @@ function drawPolygonRing(doc, ring, style, pxPerPt) {
  * @param {object} style
  * @param {number} pxPerPt
  */
-function drawPoint(doc, point, style, pxPerPt) {
-    const rawRadius = (style.radius ?? 4) * pxPerPt * 0.5;
-    if (style.radius === 0 || rawRadius <= 0) return;
+function drawPoint(doc, point, style, pxPerPt, screen = null) {
+    const radius = resolvePointMarkerPdfRadius(style, pxPerPt, screen || {});
+    if (style.radius === 0 || radius <= 0) return;
 
-    const radius = Math.max(0.5, rawRadius);
+    const captureScale = Math.max(1, Number(screen?.captureScale) || 1);
     withPdfOpacity(doc, style.fillOpacity ?? 1, () => {
         applyFillColor(doc, style.fillColor || '#2563eb');
         applyStrokeColor(doc, style.strokeColor || '#ffffff');
-        doc.setLineWidth(Math.max(0.2, (style.strokeWidth || 1) * pxPerPt * 0.5));
+        doc.setLineWidth(Math.max(0.2, (style.strokeWidth || 1) * pxPerPt * (screen?.matchMapScreenSpace ? captureScale : 0.5)));
         doc.circle(point.x, point.y, radius, 'FD');
     });
 }
@@ -608,8 +677,11 @@ function drawLabel(doc, point, text, style) {
     const { r, g, b } = parseHexColor(style.color || '#111111');
     doc.setFontSize(fontSize);
 
-    const y = point.y - 2;
-    const options = { align: 'center', baseline: 'bottom' };
+    const y = point.y + (Number.isFinite(style.dy) ? style.dy : -2);
+    const options = {
+        align: style.align || 'center',
+        baseline: style.baseline || 'bottom'
+    };
 
     if (style.haloColor) {
         const halo = parseHexColor(style.haloColor);
@@ -626,6 +698,52 @@ function drawLabel(doc, point, text, style) {
 
     doc.setTextColor(r, g, b);
     doc.text(String(text), point.x, y, options);
+}
+
+/**
+ * Two-line DETAIL / SEE DETAILS label, stacked entirely on the outward side of `anchor`.
+ *
+ * @param {import('jspdf').jsPDF} doc
+ * @param {{ x: number, y: number }} point
+ * @param {object} props
+ * @param {object} style
+ */
+export function drawInsetCalloutLabel(doc, point, props, style) {
+    const line1 = props?.inset_label || '';
+    const line2 = props?.see_details || '';
+    if (!line1 && !line2) return;
+
+    const font1 = style.fontSize || 8;
+    const font2 = Math.max(6, font1 - 1);
+    const gap = 1.5;
+    const blockH = (line1 ? font1 : 0) + (line2 ? font2 + gap : 0);
+    const anchor = String(props?.label_anchor || 'bottom');
+
+    let align = 'center';
+    if (anchor === 'left' || anchor === 'top-left' || anchor === 'bottom-left') align = 'left';
+    else if (anchor === 'right' || anchor === 'top-right' || anchor === 'bottom-right') align = 'right';
+
+    let topBaseline;
+    if (anchor === 'bottom' || anchor === 'bottom-left' || anchor === 'bottom-right') {
+        topBaseline = point.y - blockH + font1;
+    } else if (anchor === 'top' || anchor === 'top-left' || anchor === 'top-right') {
+        topBaseline = point.y + font1;
+    } else {
+        topBaseline = point.y - blockH / 2 + font1;
+    }
+
+    const shared = { ...style, align, dy: 0, baseline: 'bottom' };
+    if (line1) {
+        drawLabel(doc, { x: point.x, y: topBaseline }, line1, { ...shared, fontSize: font1 });
+    }
+    if (line2) {
+        drawLabel(
+            doc,
+            { x: point.x, y: topBaseline + (line1 ? font1 + gap : 0) },
+            line2,
+            { ...shared, fontSize: font2 }
+        );
+    }
 }
 
 /**
@@ -926,12 +1044,19 @@ function featureDrawOrder(feature) {
  * @param {number} captureScale
  * @param {object} style
  */
-function renderFeature(doc, feature, map, transform, captureScale, style, pdfRing = null) {
+function renderFeature(doc, feature, map, transform, captureScale, style, pdfRing = null, screen = null) {
     const geometry = feature?.geometry;
     if (!geometry) return;
 
     const pxPerPt = transform.pxPerPt;
     const props = feature.properties || {};
+    const screenOpts = screen || {
+        pxPerPt,
+        captureScale,
+        zoom: Number(map?.getZoom?.()) || 0,
+        matchMapScreenSpace: false,
+        maxPt: Math.max(12, (transform.placedRect?.width || 0) * 0.4)
+    };
 
     if (props.feature_type === 'matchline_see_label' || style.kind === 'matchline_see_label') {
         drawMatchlineSeeLabel(doc, feature, map, transform, captureScale, style, pdfRing);
@@ -942,13 +1067,7 @@ function renderFeature(doc, feature, map, transform, captureScale, style, pdfRin
         const [lng, lat] = geometry.coordinates || [];
         if (lng == null || lat == null || !transform?.projectLngLat || !map) return;
         const point = transform.projectLngLat(map, lng, lat, captureScale);
-        drawLabel(doc, point, props.inset_label || '', style);
-        if (props.see_details) {
-            drawLabel(doc, { x: point.x, y: point.y + (style.fontSize || 8) + 2 }, props.see_details, {
-                ...style,
-                fontSize: Math.max(6, (style.fontSize || 8) - 1)
-            });
-        }
+        drawInsetCalloutLabel(doc, point, props, style);
         return;
     }
 
@@ -1005,11 +1124,11 @@ function renderFeature(doc, feature, map, transform, captureScale, style, pdfRin
         }
 
         if (style.kind === 'fiber_point') {
-            drawFiberPoint(doc, point, style, pxPerPt, map.getBearing?.() || 0);
+            drawFiberPoint(doc, point, style, pxPerPt, map.getBearing?.() || 0, screenOpts);
             return;
         }
 
-        drawPoint(doc, point, style, pxPerPt);
+        drawPoint(doc, point, style, pxPerPt, screenOpts);
         if (style.labelField && style.kind !== 'label') {
             drawLabel(doc, point, feature.properties?.[style.labelField], {
                 fontSize: style.labelSize || 8,
@@ -1027,9 +1146,9 @@ function renderFeature(doc, feature, map, transform, captureScale, style, pdfRin
             if (style.kind === 'label') {
                 drawLabel(doc, point, feature.properties?.[style.field], style);
             } else if (style.kind === 'fiber_point') {
-                drawFiberPoint(doc, point, style, pxPerPt, map.getBearing?.() || 0);
+                drawFiberPoint(doc, point, style, pxPerPt, map.getBearing?.() || 0, screenOpts);
             } else {
-                drawPoint(doc, point, style, pxPerPt);
+                drawPoint(doc, point, style, pxPerPt, screenOpts);
             }
         }
     }
@@ -1055,13 +1174,19 @@ export function renderFeatureCollectionToPdf(doc, collection, map, transform, ca
     const pdfRing = outlineRing?.length && map && transform?.projectLngLat
         ? projectRing(map, outlineRing, transform, captureScale)
         : null;
+    const screen = {
+        captureScale,
+        zoom: Number(map?.getZoom?.()) || 0,
+        matchMapScreenSpace: Boolean(resolveStyle?.matchMapScreenSpace),
+        maxPt: Math.max(12, (transform?.placedRect?.width || 0) * 0.4)
+    };
 
     for (const feature of features) {
         try {
             const layerId = feature.properties?._sourceLayerId;
             const layerStyle = resolveStyle.layerStyleFor?.(layerId) ?? null;
             const style = resolveVectorFeatureStyle(feature, layerStyle);
-            renderFeature(doc, feature, map, transform, captureScale, style, pdfRing);
+            renderFeature(doc, feature, map, transform, captureScale, style, pdfRing, screen);
         } catch (_) {
             // Skip features that fail to project or render.
         }

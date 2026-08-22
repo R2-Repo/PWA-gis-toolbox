@@ -96,6 +96,64 @@ export function udotFiberTargetIconPx(layerKey) {
 }
 
 /**
+ * MapLibre interpolate between numeric zoom stops (`linear` or `exponential` base 2).
+ *
+ * @param {ReadonlyArray<readonly [number, number]>} stops
+ * @param {number} zoom
+ * @param {'linear'|'exponential'} [easing]
+ * @param {number} [base]
+ * @returns {number}
+ */
+export function interpolateZoomStops(stops, zoom, easing = 'linear', base = 2) {
+    const list = (stops || []).filter((stop) => (
+        Array.isArray(stop)
+        && Number.isFinite(Number(stop[0]))
+        && Number.isFinite(Number(stop[1]))
+    ));
+    if (!list.length) return 0;
+
+    const z = Number(zoom);
+    if (!Number.isFinite(z) || z <= list[0][0]) return list[0][1];
+    const last = list[list.length - 1];
+    if (z >= last[0]) return last[1];
+
+    for (let i = 1; i < list.length; i += 1) {
+        const z0 = list[i - 1][0];
+        const v0 = list[i - 1][1];
+        const z1 = list[i][0];
+        const v1 = list[i][1];
+        if (z > z1) continue;
+        const span = z1 - z0;
+        if (Math.abs(span) < 1e-9) return v1;
+        let t;
+        if (easing === 'exponential') {
+            const b = Number(base) > 0 ? Number(base) : 2;
+            t = (b ** (z - z0) - 1) / (b ** span - 1);
+        } else {
+            t = (z - z0) / span;
+        }
+        return v0 + (v1 - v0) * t;
+    }
+    return last[1];
+}
+
+/**
+ * On-screen Fiber icon width in CSS pixels at a MapLibre zoom.
+ *
+ * @param {string} [layerKey]
+ * @param {number} [zoom]
+ * @returns {number}
+ */
+export function interpolateUdotFiberIconPx(layerKey, zoom) {
+    const stops = UDOT_FIBER_ICON_ZOOM_PX[layerKey];
+    if (!stops?.length) return udotFiberTargetIconPx(layerKey);
+    const easing = layerKey === 'building' || layerKey === 'cabinets'
+        ? 'linear'
+        : 'exponential';
+    return interpolateZoomStops(stops, zoom, easing, 2);
+}
+
+/**
  * Sprite pixel size, capped so close-up uses icon-size > 1 instead of huge SVGs.
  * @param {string} [layerKey]
  */

@@ -174,10 +174,14 @@ A **Convert selected Fiber to editable map layers** button remains after generat
 
 After sheets are generated, **Draw detail box** lets you drag a north-up rectangle that overlaps a gold sheet polygon. Boxes are labeled **DETAIL A, B, C…**, stored on the sheet session (`insetViews`), and shown on the map in blue. Regenerating corridor sheets clears the boxes.
 
+**Callout text** (`DETAIL A` + `SEE DETAILS nn`) sits **outside the blue box**, still **inside that sheet’s gold cutout**, and is nudged away from other features on the sheet (other detail boxes, design / Fiber points and lines). It is not drawn in the box center — features inside the box stay visible on the map and on the corridor PDF.
+
 Export then:
 
-1. Draws each box on its parent corridor PDF with `SEE DETAILS nn`.
+1. Draws each box on its parent corridor PDF with `SEE DETAILS nn` (label outside the box).
 2. Adds packed **DETAILS** pages, four boxes per tabloid landscape sheet (`pageType: 'inset'`). Fiber uses the same live-or-converted path as corridor pages, clipped to the box.
+
+On DETAILS pages, Fiber/Conduit **lines** stay geographic. Boxes, splices, cabinets, and other point marks use the **map’s on-screen size at the capture zoom** (converted through `pxPerPt` × capture scale), never smaller than the CAD size used on corridor sheets. That keeps a zoomed 4-up cell matching the map instead of shrinking glyphs to corridor-sheet paper size.
 
 Do **not** change clean sheet-cutting polygons for this feature — boxes are overlay annotations plus extra PDF pages.
 
