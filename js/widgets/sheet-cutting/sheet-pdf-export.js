@@ -79,6 +79,10 @@ import {
     polygonFromInsetView
 } from './inset-views.js';
 import { getLayers } from '../../core/state.js';
+import { getWidgetEntry } from '../widget-state-store.js';
+import { restoreCalloutSession } from '../plan-set-callouts/engine.js';
+import { isFiberCalloutSession } from '../plan-set-callouts/fiber-callout-engine.js';
+import { drawSheetCalloutsOnPdf } from '../plan-set-callouts/pdf-callouts.js';
 
 const FIT_PADDING = 48;
 const FIT_MAX_ZOOM = 18;
@@ -99,6 +103,21 @@ export const BASEMAP_JPEG_QUALITY = 0.88;
 /** Distance from cutout border to the label visual center so the inner glyph edge sits on the border. */
 export const EDGE_SEE_LABEL_OFFSET_PT = EDGE_SEE_LABEL_GAP_PT + EDGE_SEE_LABEL_FONT_PT * 0.5;
 const EDGE_SEE_LABEL_INTERIOR_EPS_FT = 2;
+
+/**
+ * Fiber callouts overlay corridor PDFs only (`pageType === 'detail'`).
+ * @returns {object|null}
+ */
+function loadCalloutSessionForPdf() {
+    const entry = getWidgetEntry('plan-set-callouts');
+    if (!entry?.state) return null;
+    try {
+        const session = restoreCalloutSession(entry.state);
+        return isFiberCalloutSession(session) ? session : null;
+    } catch {
+        return isFiberCalloutSession(entry.state) ? entry.state : null;
+    }
+}
 
 /**
  * Measure SEE SHEET text width in PDF points at the label font size.
@@ -1401,6 +1420,23 @@ export async function buildHybridPagePdfBlob({
                 exportDate: pageOptions.exportDate
             }
         );
+        if (pageOptions.calloutSession && map && transform) {
+            const frameRing = pageOptions.frameRing || [];
+            const goldPdfRing = frameRing.map((coord) => (
+                transform.projectLngLat(map, coord[0], coord[1], captureScale)
+            )).filter((point) => Number.isFinite(point?.x) && Number.isFinite(point?.y));
+            drawSheetCalloutsOnPdf(doc, {
+                session: pageOptions.calloutSession,
+                sheetId: pageOptions.sheet.sheetId,
+                map,
+                transform,
+                captureScale,
+                layoutMargins,
+                pageW,
+                pageH,
+                goldPdfRing
+            });
+        }
     } else if (pageOptions.pageType === 'overview') {
         drawNorthArrowOnPdf(
             doc,
@@ -1683,6 +1719,7 @@ export async function exportSheetPlanPdf({
     const insetCallouts = exportPackage?.layers?.insetViews?.features?.length
         ? exportPackage.layers.insetViews.features
         : buildInsetCalloutFeatures(session?.sheets?.insetViews || [], packedInsets.detailsPageByInsetId);
+    const calloutSession = loadCalloutSessionForPdf();
     const totalPages = (includeOverview ? 1 : 0) + detailSheets.length + packedInsets.pages.length;
     let completedPages = 0;
 
@@ -1888,7 +1925,8 @@ export async function exportSheetPlanPdf({
                         matchLineRegistry,
                         frameRing: ring,
                         projectName,
-                        exportDate
+                        exportDate,
+                        calloutSession
                     },
                     map,
                     mapService,

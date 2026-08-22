@@ -101,6 +101,15 @@ export const GIS_WIDGETS = [
         tip: 'Cut a project route into numbered plan sheet extents with matchlines and export.',
         badge: 'Beta',
         open: openSheetCutting
+    },
+    {
+        type: 'plan-set-callouts',
+        action: 'openPlanSetCallouts',
+        label: 'Plan Set Callouts',
+        icon: '🔺',
+        tip: 'Add per-sheet numbered callout leaders and a key-notes table for UDOT Fiber on Sheet Cutter PDFs.',
+        badge: 'Beta',
+        open: openPlanSetCallouts
     }
 ];
 
@@ -116,14 +125,6 @@ export const GIS_WIDGETS_HIDDEN = [
         icon: '🧵',
         tip: 'Design fiber infrastructure, generate conduit segments, route fiber, and calculate procurement quantities.',
         open: openFiberProcurementDesign
-    },
-    {
-        type: 'plan-set-callouts',
-        action: 'openPlanSetCallouts',
-        label: 'Plan Set Callouts',
-        icon: '🔺',
-        tip: 'Manage callout definitions, rules, and automated feature assignments for plan sets.',
-        open: openPlanSetCallouts
     },
     {
         type: 'layer-summary',

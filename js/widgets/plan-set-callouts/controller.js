@@ -1,41 +1,39 @@
 /**
- * Plan Set Callouts controller.
+ * Plan Set Callouts controller — UDOT Fiber leaders + per-sheet key notes.
  */
 
 import { openReactIsland } from '../../ui/open-react-island.js';
-import { getSpatialLayerOptions } from '../widget-context.js';
-import { isProjectStationingCenterline } from '../project-stationing/route-profile.js';
 import { markWidgetClosed, upsertWidgetState, getWidgetEntry } from '../widget-state-store.js';
-import { openPlanProductionExport } from '../plan-production-export/controller.js';
+import { buildSheetFramesGeoJson } from '../sheet-cutting/export-builder.js';
+import {
+    envelopeFromFeatures,
+    fiberKeyOfLayer,
+    isSheetFiberSnapshotLayer,
+    listSheetFiberSnapshotLayers
+} from '../sheet-cutting/fiber-operational.js';
+import { queryFiberFeaturesByEnvelope } from '../sheet-cutting/fiber-operational-fetch.js';
+import { isUdotFiberLiveDataset } from '../../symbology/udot-fiber/hover-fields.js';
+import { UDOT_FIBER_LAYERS } from '../../symbology/udot-fiber/constants.js';
 import {
     WIDGET_ID,
-    CALLOUT_STEPS,
-    RULE_OPERATORS,
-    createCalloutSession,
-    loadDefaultCalloutProfile,
-    updateCalloutProject,
-    addCalloutDefinition,
-    updateCalloutDefinition,
-    removeCalloutDefinition,
-    addCalloutRule,
-    updateCalloutRule,
-    removeCalloutRule,
-    selectDesignLayers,
-    setDesignFeatures,
-    runCalloutAssignment,
-    linkSheetSetFromBundle,
-    linkSheetSetFromLayers,
-    runSheetAwarePlacement,
-    getCalloutLegend,
-    getSheetPlacements,
-    buildSessionExport,
     serializeCalloutSession,
-    restoreCalloutSession,
-    validateCalloutSession
+    restoreCalloutSession
 } from './engine.js';
-import { parseRouteFromLayerFeatures } from './sheet-placement-engine.js';
-
-const PREVIEW_LAYER_PREFIX = 'callout_preview_';
+import {
+    FIBER_CALLOUT_STEPS,
+    addManualLeader,
+    addNoteToLeader,
+    createFiberCalloutSession,
+    generateFiberCallouts,
+    isFiberCalloutSession,
+    restoreSheetSessionFromStore,
+    selectCalloutSheet,
+    suppressLeader,
+    updateFiberCalloutProject
+} from './fiber-callout-engine.js';
+import { notesUsedOnSheet } from './leader-placement.js';
+import { clearCalloutPreview, showCalloutPreview } from './preview.js';
+import { setPlanSetCalloutMenuContext } from './context-menu-bridge.js';
 
 function persistSession(session, open = true) {
     upsertWidgetState(WIDGET_ID, {
@@ -44,90 +42,78 @@ function persistSession(session, open = true) {
     });
 }
 
-function downloadTextFile(filename, content, mimeType = 'text/plain') {
-    const blob = new Blob([content], { type: mimeType });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement('a');
-    anchor.href = url;
-    anchor.download = filename;
-    anchor.click();
-    URL.revokeObjectURL(url);
+function emptyFiberFeatures() {
+    return { boxes: [], splices: [], conduit: [], fiber: [], cabinets: [], building: [] };
 }
 
-function clearPreviewLayers(ctx) {
-    for (const key of ['assigned', 'markers']) {
-        ctx.mapService.removeTempLayer?.(`${PREVIEW_LAYER_PREFIX}${key}`);
-    }
-}
-
-function renderAssignmentPreview(ctx, session) {
-    clearPreviewLayers(ctx);
-    const exportPackage = buildSessionExport(session);
-
-    if (exportPackage.geojson?.assignments?.features?.length) {
-        ctx.mapService.showTempFeature?.(
-            exportPackage.geojson.assignments,
-            0,
-            `${PREVIEW_LAYER_PREFIX}assigned`
-        );
-    }
-
-    if (exportPackage.geojson?.calloutMarkers?.features?.length) {
-        ctx.mapService.showTempFeature?.(
-            exportPackage.geojson.calloutMarkers,
-            0,
-            `${PREVIEW_LAYER_PREFIX}markers`
-        );
-    }
-}
-
-function collectFeaturesFromLayers(ctx, layerIds = []) {
-    const features = [];
-    for (const layerId of layerIds) {
-        const layer = ctx.getLayerById?.(layerId) || ctx.getLayers().find((entry) => entry.id === layerId);
-        if (!layer?.geojson?.features?.length) continue;
-        for (const feature of layer.geojson.features) {
-            features.push({
-                ...feature,
-                properties: {
-                    ...(feature.properties || {}),
-                    source_layer: layer.name
-                }
-            });
+function stampFeatures(features, fiberKey, layerId) {
+    return (features || []).map((feature) => ({
+        type: 'Feature',
+        ...feature,
+        properties: {
+            ...(feature.properties || {}),
+            _udotFiberKey: fiberKey,
+            _sourceLayerId: layerId
         }
+    }));
+}
+
+/**
+ * Prefer Sheet Cutter operational snapshots; otherwise envelope-query live Fiber.
+ * @param {import('../widget-types.js').WidgetContext} ctx
+ * @param {object} sheetSession
+ * @returns {Promise<object>}
+ */
+async function collectFiberFeatures(ctx, sheetSession) {
+    const byKey = emptyFiberFeatures();
+    const layers = ctx.getLayers() || [];
+    const projectName = sheetSession?.project?.projectName || '';
+    const snapshots = listSheetFiberSnapshotLayers(layers, projectName);
+    const snapshotKeys = new Set(snapshots.map((layer) => fiberKeyOfLayer(layer)).filter(Boolean));
+
+    for (const layer of snapshots) {
+        const key = fiberKeyOfLayer(layer);
+        if (!key || !byKey[key]) continue;
+        byKey[key].push(...stampFeatures(layer.geojson?.features, key, layer.id));
     }
-    return features;
-}
 
-function layerHasSheetFrames(layer) {
-    return (layer?.geojson?.features || []).some((feature) => feature.properties?.feature_type === 'sheet_frame');
-}
+    const frames = buildSheetFramesGeoJson(
+        (sheetSession.sheets?.sheets || []).filter((sheet) => sheet.sheetType !== 'overview'),
+        sheetSession.routeLine
+    );
+    const envelope = envelopeFromFeatures(frames.features || []);
 
-function resolveRouteLine(ctx, routeLayerId, featurePool = []) {
-    if (routeLayerId) {
-        const layer = ctx.getLayerById?.(routeLayerId) || ctx.getLayers().find((entry) => entry.id === routeLayerId);
-        if (layer?.geojson?.features?.length) {
-            const route = parseRouteFromLayerFeatures(layer.geojson.features);
-            if (route) {
-                return {
-                    type: 'Feature',
-                    geometry: route.geometry,
-                    properties: route.properties || {}
-                };
-            }
-            const line = layer.geojson.features.find((feature) => feature.geometry?.type === 'LineString');
-            if (line) {
-                return { type: 'Feature', geometry: line.geometry, properties: line.properties || {} };
+    for (const meta of UDOT_FIBER_LAYERS) {
+        const key = meta.key;
+        if (!byKey[key] || snapshotKeys.has(key) && byKey[key].length) continue;
+
+        const live = layers.find((layer) => fiberKeyOfLayer(layer) === key && (
+            isUdotFiberLiveDataset(layer) || isSheetFiberSnapshotLayer(layer)
+        ));
+        const fallback = layers.find((layer) => fiberKeyOfLayer(layer) === key);
+        const layer = live || fallback;
+        if (!layer) continue;
+
+        const url = layer.service?.url || layer.source?.url;
+        if (envelope && url && isUdotFiberLiveDataset(layer) && !isSheetFiberSnapshotLayer(layer)) {
+            try {
+                const result = await queryFiberFeaturesByEnvelope(url, envelope, key);
+                byKey[key] = stampFeatures(result.features, key, layer.id);
+                continue;
+            } catch {
+                /* fall through to in-memory */
             }
         }
+        byKey[key] = stampFeatures(layer.geojson?.features, key, layer.id);
     }
 
-    const parsed = parseRouteFromLayerFeatures(featurePool);
-    if (parsed) {
-        return { type: 'Feature', geometry: parsed.geometry, properties: parsed.properties || {} };
-    }
+    return byKey;
+}
 
-    return null;
+function linkedSheetSession() {
+    const entry = getWidgetEntry('sheet-cutting');
+    if (!entry?.state) return null;
+    return restoreSheetSessionFromStore(entry.state);
 }
 
 /**
@@ -135,178 +121,130 @@ function resolveRouteLine(ctx, routeLayerId, featurePool = []) {
  * @param {{ restoreState?: object }} [options]
  */
 export async function openPlanSetCallouts(ctx, { restoreState = null } = {}) {
-    let session = restoreState
-        ? restoreCalloutSession(restoreState)
-        : createCalloutSession();
+    let session = createFiberCalloutSession();
+    const raw = restoreState || getWidgetEntry(WIDGET_ID)?.state;
+    if (raw) {
+        try {
+            const restored = restoreCalloutSession(raw);
+            session = isFiberCalloutSession(restored)
+                ? restored
+                : createFiberCalloutSession({
+                    projectName: restored.project?.projectName,
+                    projectNumber: restored.project?.projectNumber
+                });
+        } catch {
+            session = createFiberCalloutSession();
+        }
+    }
 
-    const sheetCuttingEntry = getWidgetEntry('sheet-cutting');
+    const applyPreview = (next) => {
+        session = next;
+        persistSession(session);
+        showCalloutPreview(ctx.mapService, session);
+        return session;
+    };
+
+    setPlanSetCalloutMenuContext({
+        isOpen: () => getWidgetEntry(WIDGET_ID)?.open === true,
+        getSession: () => session,
+        mapService: ctx.mapService,
+        getLayers: () => ctx.getLayers() || [],
+        onRemoveLeader: (leaderKey) => {
+            applyPreview(suppressLeader(session, leaderKey));
+            ctx.showToast?.('Callout removed', 'success');
+        },
+        onAddNote: (leaderKey) => {
+            const text = window.prompt('Additional key note text');
+            if (!text) return;
+            try {
+                applyPreview(addNoteToLeader(session, leaderKey, text));
+            } catch (err) {
+                ctx.showToast?.(err?.message || 'Could not add note', 'warning');
+            }
+        },
+        onAddLeader: (input) => {
+            try {
+                applyPreview(addManualLeader(session, input));
+                ctx.showToast?.('Callout added', 'success');
+            } catch (err) {
+                ctx.showToast?.(err?.message || 'Could not add callout', 'warning');
+            }
+        }
+    });
+
+    persistSession(session, true);
+    if (session.leaders?.length) showCalloutPreview(ctx.mapService, session);
 
     await openReactIsland({
         title: 'Plan Set Callouts',
-        width: '620px',
+        width: '560px',
         mountPath: '../../../react/widgets/mountPlanSetCalloutsDialog.jsx',
         mountExport: 'mountPlanSetCalloutsDialog',
         onClose: () => {
-            clearPreviewLayers(ctx);
+            setPlanSetCalloutMenuContext(null);
+            clearCalloutPreview(ctx.mapService);
             markWidgetClosed(WIDGET_ID);
         },
         getProps: (close) => ({
-            steps: CALLOUT_STEPS,
-            ruleOperators: RULE_OPERATORS,
-            designLayers: getSpatialLayerOptions(ctx),
-            sheetLayers: getSpatialLayerOptions(ctx).filter((layer) => {
-                const full = ctx.getLayerById?.(layer.id) || ctx.getLayers().find((entry) => entry.id === layer.id);
-                return layerHasSheetFrames(full);
-            }),
-            stationingLayers: getSpatialLayerOptions(ctx).filter((layer) => {
-                const full = ctx.getLayerById?.(layer.id) || ctx.getLayers().find((entry) => entry.id === layer.id);
-                return isProjectStationingCenterline(full);
-            }),
-            hasLinkedSheetWidget: Boolean(sheetCuttingEntry?.state?.sheets?.sheets?.length),
+            steps: FIBER_CALLOUT_STEPS,
             initialSession: session,
+            hasSheetSession: Boolean(linkedSheetSession()?.sheets?.sheets?.length),
             onCancel: () => {
-                clearPreviewLayers(ctx);
+                setPlanSetCalloutMenuContext(null);
+                clearCalloutPreview(ctx.mapService);
                 markWidgetClosed(WIDGET_ID);
                 close();
             },
             onCreateProject: (input) => {
-                session = createCalloutSession(input);
-                session = loadDefaultCalloutProfile(session);
-                persistSession(session);
-                return session;
-            },
-            onLoadProfile: () => {
-                session = loadDefaultCalloutProfile(session);
+                session = (isFiberCalloutSession(session) && (session.leaders || []).length)
+                    ? updateFiberCalloutProject(session, input)
+                    : createFiberCalloutSession(input);
                 persistSession(session);
                 return session;
             },
             onUpdateProject: (patch) => {
-                session = updateCalloutProject(session, patch);
+                session = updateFiberCalloutProject(session, patch);
                 persistSession(session);
                 return session;
             },
-            onAddDefinition: (input) => {
-                session = addCalloutDefinition(session, input);
+            onSelectSheet: (sheetId) => {
+                session = selectCalloutSheet(session, sheetId);
                 persistSession(session);
                 return session;
             },
-            onUpdateDefinition: (calloutId, patch) => {
-                session = updateCalloutDefinition(session, calloutId, patch);
-                persistSession(session);
-                return session;
-            },
-            onRemoveDefinition: (calloutId) => {
-                session = removeCalloutDefinition(session, calloutId);
-                persistSession(session);
-                return session;
-            },
-            onAddRule: (input) => {
-                session = addCalloutRule(session, input);
-                persistSession(session);
-                return session;
-            },
-            onUpdateRule: (ruleId, patch) => {
-                session = updateCalloutRule(session, ruleId, patch);
-                persistSession(session);
-                return session;
-            },
-            onRemoveRule: (ruleId) => {
-                session = removeCalloutRule(session, ruleId);
-                persistSession(session);
-                return session;
-            },
-            onSelectDesignLayers: (layerIds) => {
-                session = selectDesignLayers(session, layerIds);
-                const features = collectFeaturesFromLayers(ctx, layerIds);
-                session = setDesignFeatures(session, features);
-                persistSession(session);
-                return session;
-            },
-            onRunAssignment: () => {
-                session = runCalloutAssignment(session);
-                renderAssignmentPreview(ctx, session);
-                persistSession(session);
-                return session;
-            },
-            onLinkSheetSetFromWidget: () => {
-                const entry = getWidgetEntry('sheet-cutting');
-                if (!entry?.state) {
-                    throw new Error('Open Sheet Cutter and generate sheets first, or link sheet layers from the map.');
+            onGenerate: async () => {
+                const sheetSession = linkedSheetSession();
+                if (!sheetSession) {
+                    throw new Error('Open Sheet Cutter and generate sheets first.');
                 }
-                session = linkSheetSetFromBundle(session, entry.state);
-                persistSession(session);
-                return session;
+                const features = await collectFiberFeatures(ctx, sheetSession);
+                const next = generateFiberCallouts(session, {
+                    sheets: sheetSession.sheets?.sheets || [],
+                    routeLine: sheetSession.routeLine,
+                    sheetSetId: sheetSession.sheets?.sheetSetId,
+                    frameFeatures: buildSheetFramesGeoJson(
+                        (sheetSession.sheets?.sheets || []).filter((sheet) => sheet.sheetType !== 'overview'),
+                        sheetSession.routeLine
+                    ),
+                    features
+                });
+                applyPreview(next);
+                const count = (next.leaders || []).filter((leader) => !leader.suppressed).length;
+                ctx.showToast?.(`Placed ${count} callout(s)`, 'success');
+                return next;
             },
-            onLinkSheetSetFromLayers: (sheetLayerIds, routeLayerId) => {
-                const features = collectFeaturesFromLayers(ctx, sheetLayerIds);
-                const routeLine = resolveRouteLine(ctx, routeLayerId, features);
-                if (!routeLine) {
-                    throw new Error('Select a route centerline layer for sheet-aware placement.');
-                }
-                session = linkSheetSetFromLayers(session, features, routeLine, sheetLayerIds);
-                persistSession(session);
-                return session;
+            onSuppressLeader: (leaderKey) => applyPreview(suppressLeader(session, leaderKey)),
+            onAddNote: (leaderKey, text) => applyPreview(addNoteToLeader(session, leaderKey, text)),
+            onAddManualNote: (text) => {
+                const sheetId = session.selectedSheetId;
+                const sheetLeaders = (session.leaders || []).filter((leader) => (
+                    leader.sheetId === sheetId && !leader.suppressed
+                ));
+                const target = sheetLeaders[0];
+                if (target) return applyPreview(addNoteToLeader(session, target.leaderKey, text));
+                throw new Error('Generate callouts or right-click a feature to add a leader first.');
             },
-            onRunSheetPlacement: () => {
-                session = runSheetAwarePlacement(session);
-                renderAssignmentPreview(ctx, session);
-                persistSession(session);
-                return session;
-            },
-            onGetLegend: () => getCalloutLegend(session),
-            onGetSheetPlacements: () => getSheetPlacements(session),
-            onValidate: () => validateCalloutSession(session),
-            onExportPackage: () => {
-                const exportPackage = buildSessionExport(session);
-                const base = session.project.projectName || 'plan_callouts';
-                downloadTextFile(`${base}_assignments.csv`, exportPackage.csv.assignments, 'text/csv');
-                downloadTextFile(`${base}_legend.csv`, exportPackage.csv.legend, 'text/csv');
-                if (exportPackage.csv.perSheetTables) {
-                    downloadTextFile(`${base}_per_sheet_callouts.csv`, exportPackage.csv.perSheetTables, 'text/csv');
-                }
-                downloadTextFile(`${base}_callouts.json`, JSON.stringify(exportPackage, null, 2), 'application/json');
-                ctx.showToast('Callout export files downloaded', 'success');
-                return exportPackage;
-            },
-            onAddResultLayers: () => {
-                const exportPackage = buildSessionExport(session);
-                const created = [];
-                const baseName = session.project.projectName || 'Plan_Callouts';
-
-                const layerDefs = [
-                    { name: `${baseName}_Callout_Assignments`, data: exportPackage.geojson.assignments },
-                    { name: `${baseName}_Callout_Markers`, data: exportPackage.geojson.calloutMarkers }
-                ];
-
-                for (const def of layerDefs) {
-                    if (!def.data?.features?.length) continue;
-                    const dataset = ctx.createSpatialDataset(def.name, def.data, { format: 'derived' });
-                    ctx.addLayer(dataset);
-                    ctx.mapService.addLayer(dataset, ctx.getLayers().indexOf(dataset));
-                    created.push(dataset);
-                }
-
-                if (created.length) {
-                    ctx.refreshUI();
-                    ctx.showToast(`Added ${created.length} callout layer(s)`, 'success');
-                } else {
-                    ctx.showToast('No callout layers to add', 'warning');
-                }
-
-                renderAssignmentPreview(ctx, session);
-                return created;
-            },
-            onSaveSession: () => {
-                persistSession(session);
-                downloadTextFile(
-                    `${session.project.projectName || 'plan_callouts'}.json`,
-                    JSON.stringify(serializeCalloutSession(session), null, 2),
-                    'application/json'
-                );
-            },
-            onOpenFullPlanExport: () => {
-                openPlanProductionExport(ctx);
-            }
+            onNotesForSheet: (sheetId) => notesUsedOnSheet(session, sheetId)
         })
     });
 }
