@@ -26,9 +26,12 @@ import {
     isUdotFiberFeatureExcluded
 } from '../js/symbology/udot-fiber/display-filters.js';
 import {
+    UDOT_FIBER_GROUND_LOCK_ZOOM,
     UDOT_FIBER_NEIGHBORHOOD_ZOOM,
     buildUdotFiberIconSizeExpression,
     buildUdotFiberZoomSize,
+    interpolateUdotFiberIconPx,
+    interpolateZoomStops,
     udotFiberIconSizeFromEsriWidth
 } from '../js/symbology/udot-fiber/zoom-scale.js';
 import {
@@ -132,6 +135,13 @@ describe('UDOT Fiber symbology', () => {
         expect(spliceIcon).toContain('36');
         const cabinetIcon = JSON.stringify(buildUdotFiberIconSizeExpression('cabinets'));
         expect(cabinetIcon).toContain('42');
+        expect(interpolateUdotFiberIconPx('boxes', UDOT_FIBER_GROUND_LOCK_ZOOM)).toBe(18);
+        expect(interpolateUdotFiberIconPx('boxes', 17)).toBe(10);
+        expect(interpolateUdotFiberIconPx('boxes', 22)).toBeGreaterThan(70);
+        expect(interpolateUdotFiberIconPx('splices', 22)).toBeGreaterThan(
+            interpolateUdotFiberIconPx('splices', 18)
+        );
+        expect(interpolateZoomStops([[14, 10], [16, 20]], 15, 'linear')).toBe(15);
     });
 
     it('hides listed UDOT Boxes enclosure names', () => {

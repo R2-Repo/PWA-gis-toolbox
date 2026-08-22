@@ -1211,7 +1211,11 @@ export function buildSheetExportPackage(session) {
     const packedInsets = packInsetPages(sheetSet.insetViews || []);
     const insetCallouts = buildInsetCalloutFeatures(
         sheetSet.insetViews || [],
-        packedInsets.detailsPageByInsetId
+        packedInsets.detailsPageByInsetId,
+        {
+            frameFeatures: sheetFrames.features || [],
+            obstacleFeatures: designFeatures
+        }
     );
 
     return {

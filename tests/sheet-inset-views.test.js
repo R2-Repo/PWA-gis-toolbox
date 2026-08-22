@@ -15,6 +15,7 @@ import {
     formatSeeDetailsLabel,
     insetLetterFromIndex,
     packInsetPages,
+    placeInsetLabelOutsideBox,
     polygonFromInsetView,
     relabelInsetViews,
     removeInsetView,
@@ -102,11 +103,13 @@ describe('sheet cutter inset views', () => {
             [west]
         );
         const view = session.sheets.insetViews[0];
-        const features = buildInsetCalloutFeatures([view], { [view.insetId]: 1 });
+        const features = buildInsetCalloutFeatures([view], { [view.insetId]: 1 }, { frameFeatures: [west] });
         expect(features.some((feature) => feature.properties.feature_type === 'inset_outline')).toBe(true);
         const label = features.find((feature) => feature.properties.feature_type === 'inset_label');
         expect(label.properties.inset_label).toBe('DETAIL A');
         expect(label.properties.see_details).toBe('SEE DETAILS 01');
+        expect(label.properties.label_text).toContain('DETAIL A');
+        expect(label.properties.label_anchor).toBeTruthy();
         expect(formatSeeDetailsLabel(3)).toBe('SEE DETAILS 03');
         expect(formatDetailsPageLabel(1, 2)).toBe('DETAILS 01 of 02');
     });
@@ -184,5 +187,48 @@ describe('sheet cutter inset views', () => {
         const restored = polygonFromInsetView(session.sheets.insetViews[0]);
         expect(restored.geometry.type).toBe('Polygon');
         expect(turf.booleanIntersects(restored, west)).toBe(true);
+    });
+
+    it('places DETAIL text outside the box and inside the sheet', () => {
+        const box = turf.bboxPolygon([-111.99, 40.005, -111.98, 40.012]);
+        const placed = placeInsetLabelOutsideBox(box, west, []);
+        expect(placed).toBeTruthy();
+        expect(turf.booleanPointInPolygon(placed.point, box, { ignoreBoundary: true })).toBe(false);
+        expect(turf.booleanPointInPolygon(placed.point, west)).toBe(true);
+        const center = turf.center(box);
+        expect(turf.distance(placed.point, center, { units: 'feet' })).toBeGreaterThan(8);
+    });
+
+    it('moves the label off a blocking feature on the preferred side', () => {
+        const box = turf.bboxPolygon([-111.99, 40.005, -111.98, 40.012]);
+        const northBlock = turf.bboxPolygon([-111.995, 40.012, -111.975, 40.019]);
+        const placed = placeInsetLabelOutsideBox(box, west, [northBlock]);
+        expect(placed).toBeTruthy();
+        expect(turf.booleanPointInPolygon(placed.point, box, { ignoreBoundary: true })).toBe(false);
+        expect(turf.booleanPointInPolygon(placed.point, west)).toBe(true);
+        expect(turf.booleanPointInPolygon(placed.point, northBlock, { ignoreBoundary: true })).toBe(false);
+        expect(placed.bearing === 0).toBe(false);
+    });
+
+    it('keeps sequential labels off neighboring detail boxes', () => {
+        const a = turf.bboxPolygon([-111.99, 40.002, -111.985, 40.008]);
+        const b = turf.bboxPolygon([-111.984, 40.002, -111.979, 40.008]);
+        let session = addInsetView({ sheets: { insetViews: [] } }, a, [west]);
+        session = addInsetView(session, b, [west]);
+        const features = buildInsetCalloutFeatures(
+            session.sheets.insetViews,
+            { [session.sheets.insetViews[0].insetId]: 1, [session.sheets.insetViews[1].insetId]: 1 },
+            { frameFeatures: [west] }
+        );
+        const labels = features.filter((feature) => feature.properties.feature_type === 'inset_label');
+        const outlines = features.filter((feature) => feature.properties.feature_type === 'inset_outline');
+        expect(labels).toHaveLength(2);
+        for (const label of labels) {
+            for (const outline of outlines) {
+                expect(turf.booleanPointInPolygon(label, outline, { ignoreBoundary: true })).toBe(false);
+            }
+            expect(turf.booleanPointInPolygon(label, west)).toBe(true);
+        }
+        expect(turf.distance(labels[0], labels[1], { units: 'feet' })).toBeGreaterThan(20);
     });
 });

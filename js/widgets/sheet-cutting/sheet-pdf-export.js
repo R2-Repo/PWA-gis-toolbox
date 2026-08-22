@@ -1630,7 +1630,8 @@ export async function buildInsetPagePdfBlob({
                 transform,
                 capture.underlay.captureScale,
                 {
-                    layerStyleFor: (layerId) => (layerId ? mapService?.getLayerStyle?.(layerId) : null)
+                    layerStyleFor: (layerId) => (layerId ? mapService?.getLayerStyle?.(layerId) : null),
+                    matchMapScreenSpace: true
                 }
             );
         }
@@ -1725,7 +1726,14 @@ export async function exportSheetPlanPdf({
         : packInsetPages(session?.sheets?.insetViews || []);
     const insetCallouts = exportPackage?.layers?.insetViews?.features?.length
         ? exportPackage.layers.insetViews.features
-        : buildInsetCalloutFeatures(session?.sheets?.insetViews || [], packedInsets.detailsPageByInsetId);
+        : buildInsetCalloutFeatures(
+            session?.sheets?.insetViews || [],
+            packedInsets.detailsPageByInsetId,
+            {
+                frameFeatures: sheetFrames.features || [],
+                obstacleFeatures: session?.designFeatures || []
+            }
+        );
     const calloutSession = loadCalloutSessionForPdf();
     const totalPages = (includeOverview ? 1 : 0) + detailSheets.length + packedInsets.pages.length;
     let completedPages = 0;
