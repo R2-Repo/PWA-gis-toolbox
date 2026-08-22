@@ -1718,6 +1718,10 @@ textarea { resize: vertical; min-height: 60px; }
 .modal--panel-dock[data-height-mode="half"] {
     max-height: var(--widget-panel-half-max, 45vh);
 }
+.modal--panel-dock[data-panel-fill="true"][data-height-mode="expanded"] {
+    height: var(--widget-panel-expanded-max);
+    max-height: var(--widget-panel-expanded-max);
+}
 .modal--panel-dock[data-height-mode="minimized"] {
     height: auto;
     max-height: fit-content;

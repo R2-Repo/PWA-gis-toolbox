@@ -198,7 +198,7 @@ import { openMyWidget } from './my-widget/controller.js';
 
 `WidgetPanel.jsx` and `APP_ACTIONS` update automatically.
 
-**Hidden widgets:** add to `GIS_WIDGETS_HIDDEN` instead of `GIS_WIDGETS`. Example: **CRS Manager** (`crs-manager`) — implemented but not shown in the panel. To re-enable, move its entry into `GIS_WIDGETS`.
+**Hidden widgets:** add to `GIS_WIDGETS_HIDDEN` instead of `GIS_WIDGETS`. Example: **CRS Manager** (`crs-manager`) — implemented but not shown in the panel. **Plan Set Callouts** is also hidden; Sheet Cutter opens it after sheets are generated. To re-enable a hidden widget in the panel, move its entry into `GIS_WIDGETS`.
 
 ### Step 6 — Re-export shim (optional)
 
@@ -239,6 +239,7 @@ Helper: `getSpatialLayerOptions(ctx, opts)` — layer picker options (`includeFi
 | **Complex** | Route Centerline | `js/widgets/route-milepost-segment/` | ArcGIS REST, route search components |
 | **Most complex** | Project Stationing | `js/widgets/project-stationing/` | Large engine, table import sub-module |
 | **Hidden pattern** | CRS Manager | `js/widgets/crs-manager/` | `GIS_WIDGETS_HIDDEN` only |
+| **Hidden + host** | Plan Set Callouts | `js/widgets/plan-set-callouts/` | Hidden; opened from Sheet Cutter |
 
 Re-export shims at `js/widgets/` root (`*-engine.js`) are for old import paths only.
 

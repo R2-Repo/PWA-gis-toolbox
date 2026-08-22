@@ -101,15 +101,6 @@ export const GIS_WIDGETS = [
         tip: 'Cut a route into plan sheets and export PDFs with vector linework.',
         badge: 'Beta',
         open: openSheetCutting
-    },
-    {
-        type: 'plan-set-callouts',
-        action: 'openPlanSetCallouts',
-        label: 'Plan Set Callouts',
-        icon: '🔺',
-        tip: 'Add per-sheet numbered callout leaders and a key-notes table for UDOT Fiber on Sheet Cutter PDFs.',
-        badge: 'Beta',
-        open: openPlanSetCallouts
     }
 ];
 
@@ -118,6 +109,15 @@ export const GIS_WIDGETS = [
  * @type {typeof GIS_WIDGETS}
  */
 export const GIS_WIDGETS_HIDDEN = [
+    {
+        type: 'plan-set-callouts',
+        action: 'openPlanSetCallouts',
+        label: 'Plan Set Callouts',
+        icon: '🔺',
+        tip: 'Opened from Sheet Cutter after sheets are generated. Numbered Fiber leaders and a key notes table on sheet PDFs.',
+        badge: 'Beta',
+        open: openPlanSetCallouts
+    },
     {
         type: 'fiber-procurement-design',
         action: 'openFiberProcurementDesign',

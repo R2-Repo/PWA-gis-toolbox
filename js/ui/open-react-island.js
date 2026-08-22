@@ -37,18 +37,20 @@ function watchOverlayUnmount(overlay, onUnmount) {
  * @param {object} options
  * @param {string} options.title
  * @param {string} [options.width]
+ * @param {boolean} [options.fillPanel] — docked right-panel widgets fill the panel height
  * @param {string} options.mountPath - path suffix under react/ (resolved via import.meta.glob)
  * @param {string} [options.mountExport] - named export to call
  * @param {(close: () => void) => object | Promise<object>} options.getProps
  * @param {() => void} [options.onOverlayDestroy]
  * @param {() => void} [options.onClose] — alias for onOverlayDestroy
  */
-export async function openReactIsland({ title, width, mountPath, mountExport, getProps, onOverlayDestroy, onClose }) {
+export async function openReactIsland({ title, width, fillPanel, mountPath, mountExport, getProps, onOverlayDestroy, onClose }) {
     const rootId = `react-dialog-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
     showModal(title, `<div id="${rootId}"></div>`, {
         width,
         docked: true,
+        fillPanel: fillPanel === true,
         onMount: async (overlay, close) => {
             const root = overlay.querySelector(`#${rootId}`);
             if (!root) return;

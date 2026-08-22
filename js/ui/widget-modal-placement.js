@@ -4,6 +4,7 @@ export const WIDGET_MODAL_HEADER_HEIGHT = 34;
 export const WIDGET_PANEL_DOCK_SELECTOR = '#widget-panel-dock';
 export const WIDGET_PANEL_DOCK_MIN_WIDTH = 180;
 export const WIDGET_PANEL_DOCK_GAP = 8;
+export const WIDGET_PANEL_DOCK_PAD = 8;
 export const WIDGET_PANEL_EXPANDED_RATIO = 0.75;
 export const WIDGET_PANEL_HALF_RATIO = 0.45;
 
@@ -127,13 +128,21 @@ export function getRightPanelBodyHeight(doc = document) {
 
 /**
  * @param {number} panelHeight
+ * @param {{ fillPanel?: boolean }} [options]
  * @returns {{ expandedMax: number, halfMax: number }}
  */
-export function computeWidgetDockHeights(panelHeight) {
-    const safeHeight = Math.max(0, panelHeight);
+export function computeWidgetDockHeights(panelHeight, options = {}) {
+    const safeHeight = Math.max(0, Number(panelHeight) || 0);
+    const halfMax = Math.floor(safeHeight * WIDGET_PANEL_HALF_RATIO);
+    if (options.fillPanel) {
+        return {
+            expandedMax: Math.max(0, safeHeight - WIDGET_PANEL_DOCK_PAD * 2),
+            halfMax
+        };
+    }
     return {
         expandedMax: Math.floor(safeHeight * WIDGET_PANEL_EXPANDED_RATIO),
-        halfMax: Math.floor(safeHeight * WIDGET_PANEL_HALF_RATIO)
+        halfMax
     };
 }
 
