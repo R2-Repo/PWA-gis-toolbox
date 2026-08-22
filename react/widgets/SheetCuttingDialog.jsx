@@ -127,6 +127,7 @@ export function SheetCuttingDialog({
         String(initialSession?.sheets?.template?.basemapDpi ?? initialSession?.sheets?.template?.exportDpi ?? defaultTemplate.basemapDpi ?? 150)
     );
     const [selectedLayerIds, setSelectedLayerIds] = useState(initialSession?.sheets?.designLayerIds || []);
+    const [fiberMode, setFiberMode] = useState('live');
     const [busy, setBusy] = useState(false);
     const [message, setMessage] = useState('');
     const [error, setError] = useState('');
@@ -233,6 +234,10 @@ export function SheetCuttingDialog({
 
     const allLayersSelected = designLayerOptions.length > 0
         && designLayerOptions.every((layer) => selectedLayerIds.includes(layer.id));
+    const selectedLiveFiberIds = selectedLayerIds.filter((id) => (
+        designLayerOptions.find((layer) => layer.id === id)?.isUdotFiberLive
+    ));
+    const hasSelectedLiveFiber = selectedLiveFiberIds.length > 0;
 
     const handleGenerate = async () => {
         const next = await run(async () => {
@@ -259,10 +264,17 @@ export function SheetCuttingDialog({
                 current = await onSelectDesignLayers?.(selectedLayerIds) || current;
             }
 
-            return onGenerateSheets?.() || current;
+            return onGenerateSheets?.({
+                fiberMode,
+                designLayerIds: selectedLayerIds
+            }) || current;
         });
 
         if (!next) return;
+
+        if (next.sheets?.designLayerIds) {
+            setSelectedLayerIds(next.sheets.designLayerIds);
+        }
 
         const detailSheets = (next.sheets?.sheets || []).filter((entry) => entry.sheetType !== 'overview');
         setMessage(`Generated ${detailSheets.length} sheet(s).`);
@@ -422,6 +434,45 @@ export function SheetCuttingDialog({
                         No map layers yet. Add layers, then refresh this list.
                     </p>
                 )}
+                {hasSelectedLiveFiber ? (
+                    <div className="form-group" style={{ marginTop: 12, marginBottom: 0 }}>
+                        <span className="gis-widget__section-title">UDOT Fiber</span>
+                        <label className="text-xs" style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginBottom: 8 }}>
+                            <input
+                                type="radio"
+                                name="sheet-fiber-mode"
+                                value="live"
+                                checked={fiberMode === 'live'}
+                                onChange={() => setFiberMode('live')}
+                                disabled={busy}
+                                style={{ marginTop: 2 }}
+                            />
+                            <span>
+                                Keep live overlay
+                                <span style={{ display: 'block', color: 'var(--text-muted)' }}>
+                                    Same as always. Live Fiber is used on the map and in sheet PDFs.
+                                </span>
+                            </span>
+                        </label>
+                        <label className="text-xs" style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+                            <input
+                                type="radio"
+                                name="sheet-fiber-mode"
+                                value="convert"
+                                checked={fiberMode === 'convert'}
+                                onChange={() => setFiberMode('convert')}
+                                disabled={busy}
+                                style={{ marginTop: 2 }}
+                            />
+                            <span>
+                                Convert to editable map layer
+                                <span style={{ display: 'block', color: 'var(--text-muted)' }}>
+                                    Copies Fiber inside the sheet polygons, turns the live overlay off, and uses that copy for edits and PDF export. Looks the same unless you edit it.
+                                </span>
+                            </span>
+                        </label>
+                    </div>
+                ) : null}
             </div>
 
             {sheets.length > 0 ? (
@@ -481,20 +532,23 @@ export function SheetCuttingDialog({
                         <button type="button" className="btn btn-secondary btn-sm" disabled={busy} onClick={() => onAddResultLayers?.()}>
                             Add sheet layers to map
                         </button>
-                        <button
-                            type="button"
-                            className="btn btn-secondary btn-sm"
-                            disabled={busy}
-                            onClick={() => run(async () => {
-                                await onAddFiberOperationalLayers?.();
-                            })}
-                        >
-                            Add Fiber in sheets as map layers
-                        </button>
-                        <p className="text-xs" style={{ margin: 0, color: 'var(--text-muted)' }}>
-                            Copies visible UDOT Fiber inside the sheet polygons onto the map as editable layers.
-                            Looks like live Fiber. Does not write to ArcGIS. Sheet PDFs still use the live Fiber overlay.
-                        </p>
+                        {hasSelectedLiveFiber ? (
+                            <button
+                                type="button"
+                                className="btn btn-secondary btn-sm"
+                                disabled={busy}
+                                onClick={() => run(async () => {
+                                    const next = await onAddFiberOperationalLayers?.(selectedLayerIds);
+                                    if (next?.sheets?.designLayerIds) {
+                                        setSelectedLayerIds(next.sheets.designLayerIds);
+                                        setFiberMode('convert');
+                                    }
+                                    return next;
+                                }, 'Converted Fiber to editable map layers.')}
+                            >
+                                Convert selected Fiber to editable map layers
+                            </button>
+                        ) : null}
                     </div>
                 </div>
             ) : null}

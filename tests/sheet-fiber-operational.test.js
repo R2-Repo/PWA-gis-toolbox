@@ -1,7 +1,7 @@
 import * as turf from '@turf/turf';
 import { describe, expect, it } from 'vitest';
 import { applyUdotFiberDisplayOffsets } from '../js/symbology/udot-fiber/display-offsets.js';
-import { SHEET_FIBER_SNAPSHOT_FORMAT } from '../js/symbology/udot-fiber/constants.js';
+import { SHEET_FIBER_SNAPSHOT_FORMAT, UDOT_FIBER_SERVICE_URL } from '../js/symbology/udot-fiber/constants.js';
 import {
     buildSheetFiberOperationalSpec,
     clipFeaturesToSheetCoverage,
@@ -9,6 +9,8 @@ import {
     isSheetFiberSnapshotLayer,
     liveFiberIdsForPdfExport,
     omitIdsForSheetPdfFiber,
+    replaceLiveFiberIdsInDesignList,
+    resolveFiberLayerIdsForPdfExport,
     stripLiveFiberDisplayProps,
     unionSheetFrameCoverage
 } from '../js/widgets/sheet-cutting/fiber-operational.js';
@@ -70,23 +72,116 @@ describe('sheet Fiber operational copies', () => {
         ];
         expect(liveFiberIdsForPdfExport(liveIds, layers)).toEqual(liveIds);
         expect(omitIdsForSheetPdfFiber(liveIds, layers)).toEqual(liveIds);
+        expect(resolveFiberLayerIdsForPdfExport(liveIds, layers).refreshLiveIds).toEqual(liveIds);
     });
 
-    it('keeps live Fiber ids for PDF and omits snapshot copies so they cannot double-draw', () => {
-        const liveIds = ['live-fiber', 'snap-fiber'];
+    it('uses visible snapshot copies for PDF collect and omits the converted live layer', () => {
+        const liveUrl = `${UDOT_FIBER_SERVICE_URL}/6`;
+        const liveIds = ['snap-fiber'];
         const layers = [
-            { id: 'live-fiber', type: 'service' },
+            {
+                id: 'live-fiber',
+                type: 'service',
+                service: { url: liveUrl },
+                _udotFiberLayerKey: 'fiber'
+            },
             {
                 id: 'snap-fiber',
                 type: 'spatial',
-                source: { format: SHEET_FIBER_SNAPSHOT_FORMAT, projectName: 'Job' },
+                source: {
+                    format: SHEET_FIBER_SNAPSHOT_FORMAT,
+                    projectName: 'Job',
+                    fiberKey: 'fiber',
+                    sourceLayerId: 'live-fiber',
+                    url: liveUrl
+                },
                 _udotFiberLayerKey: 'fiber'
             }
         ];
-        expect(liveFiberIdsForPdfExport(liveIds, layers)).toEqual(['live-fiber']);
-        expect(omitIdsForSheetPdfFiber(liveIds, layers)).toEqual(['live-fiber', 'snap-fiber']);
+        const resolved = resolveFiberLayerIdsForPdfExport(liveIds, layers);
+        expect(resolved.fiberLayerIds).toEqual(['snap-fiber']);
+        expect(resolved.refreshLiveIds).toEqual([]);
+        expect(resolved.omitIds).toEqual(expect.arrayContaining(['snap-fiber', 'live-fiber']));
+        expect(liveFiberIdsForPdfExport(liveIds, layers)).toEqual(['snap-fiber']);
         expect(isSheetFiberSnapshotLayer(layers[1])).toBe(true);
         expect(isSheetFiberSnapshotLayer(layers[0])).toBe(false);
+    });
+
+    it('mixes converted Fiber with remaining live Conduit by key', () => {
+        const fiberUrl = `${UDOT_FIBER_SERVICE_URL}/6`;
+        const conduitUrl = `${UDOT_FIBER_SERVICE_URL}/7`;
+        const layers = [
+            {
+                id: 'live-fiber',
+                type: 'service',
+                service: { url: fiberUrl },
+                _udotFiberLayerKey: 'fiber'
+            },
+            {
+                id: 'live-conduit',
+                type: 'service',
+                service: { url: conduitUrl },
+                _udotFiberLayerKey: 'conduit'
+            },
+            {
+                id: 'snap-fiber',
+                type: 'spatial',
+                source: {
+                    format: SHEET_FIBER_SNAPSHOT_FORMAT,
+                    fiberKey: 'fiber',
+                    sourceLayerId: 'live-fiber',
+                    url: fiberUrl
+                },
+                _udotFiberLayerKey: 'fiber'
+            }
+        ];
+        const resolved = resolveFiberLayerIdsForPdfExport(['snap-fiber', 'live-conduit'], layers);
+        expect(resolved.fiberLayerIds).toEqual(['snap-fiber', 'live-conduit']);
+        expect(resolved.refreshLiveIds).toEqual(['live-conduit']);
+        expect(resolved.omitIds).toEqual(expect.arrayContaining(['snap-fiber', 'live-fiber', 'live-conduit']));
+        expect(resolved.omitIds).not.toContain(undefined);
+    });
+
+    it('prefers the snapshot when converted live Fiber is still visible', () => {
+        const liveUrl = `${UDOT_FIBER_SERVICE_URL}/6`;
+        const layers = [
+            {
+                id: 'live-fiber',
+                type: 'service',
+                service: { url: liveUrl },
+                _udotFiberLayerKey: 'fiber'
+            },
+            {
+                id: 'snap-fiber',
+                type: 'spatial',
+                source: {
+                    format: SHEET_FIBER_SNAPSHOT_FORMAT,
+                    fiberKey: 'fiber',
+                    sourceLayerId: 'live-fiber'
+                },
+                _udotFiberLayerKey: 'fiber'
+            }
+        ];
+        const resolved = resolveFiberLayerIdsForPdfExport(['live-fiber', 'snap-fiber'], layers);
+        expect(resolved.fiberLayerIds).toEqual(['snap-fiber']);
+        expect(resolved.refreshLiveIds).toEqual([]);
+        expect(resolved.omitIds).toEqual(expect.arrayContaining(['snap-fiber', 'live-fiber']));
+    });
+
+    it('swaps converted live ids for snapshot ids on the design layer list', () => {
+        expect(replaceLiveFiberIdsInDesignList(
+            ['design-a', 'live-fiber', 'live-boxes'],
+            ['live-fiber', 'live-boxes'],
+            ['snap-fiber', 'snap-boxes']
+        )).toEqual(['design-a', 'snap-fiber', 'snap-boxes']);
+    });
+
+    it('drops prior snapshot ids when converting again', () => {
+        expect(replaceLiveFiberIdsInDesignList(
+            ['design-a', 'old-snap', 'live-fiber'],
+            ['live-fiber', 'old-snap'],
+            ['new-snap']
+        )).toEqual(['design-a', 'new-snap']);
     });
 
     it('builds a spatial snapshot spec without mutating live layer identity', () => {

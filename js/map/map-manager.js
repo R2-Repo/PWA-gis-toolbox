@@ -1083,7 +1083,7 @@ class MapManager {
 
     /**
      * Editable Fiber sheet copies — same CAD paint as live Fiber.
-     * Live service layers keep using live-layer-engine; sheet PDFs still collect live Fiber only.
+     * Live service layers keep using live-layer-engine.
      */
     _addUdotFiberSnapshotLayer(dataset, colorIndex, { fit = false, layerStyle } = {}) {
         const fiberKey = dataset._udotFiberLayerKey

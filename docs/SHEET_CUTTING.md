@@ -145,7 +145,7 @@ Sheet PDFs combine a **modest-resolution basemap image** (whatever basemap is ac
 | Layer | Technology | Zoom behavior |
 |-------|------------|---------------|
 | Basemap underlay | MapLibre capture at basemap DPI | Soft when zoomed far (background context) |
-| UDOT Fiber live layers (if visible) | jsPDF vector (thin lines; no Fiber/Conduit line labels) | Infinite zoom — always crisp |
+| UDOT Fiber (live overlay, or converted operational copy) | jsPDF vector (thin lines; no Fiber/Conduit line labels) | Infinite zoom — always crisp |
 | Other design + stationing + sheet outline (overview also draws the widget route) | jsPDF vector paths + text | Infinite zoom — always crisp |
 | North arrow / footer | jsPDF vector | Crisp |
 
@@ -157,11 +157,18 @@ Sheet PDFs combine a **modest-resolution basemap image** (whatever basemap is ac
 
 ### Editable Fiber from sheets
 
-After sheets are generated, **Add Fiber in sheets as map layers** copies visible live UDOT Fiber that intersects the sheet polygons into normal spatial layers (grouped as `{project} Fiber (editable)`). Those layers use the same CAD paint as live Fiber, can be edited, and are included in Toolbox Export. Nothing is written back to ArcGIS.
+If live **UDOT Fiber** is selected under **Add Current map layers to sheets**, the wizard offers:
 
-**Sheet PDF export is unchanged.** Detail pages still refresh and draw the **live** Fiber overlay with the existing jsPDF line/box styling. Snapshot copies are omitted from PDF vector contents so they cannot double-draw or replace that live Fiber path.
+1. **Keep live overlay** (default) — yesterday’s behavior. Live Fiber stays on the map and is refreshed/drawn on sheet PDFs with the existing jsPDF Fiber rules.
+2. **Convert to editable map layer** — on **Generate Sheets**, selected live Fiber that intersects the sheet polygons is copied onto the map (grouped as `{project} Fiber (editable)`), the live overlay is turned off, and that operational copy is used for editing **and** PDF export.
 
-Implementation: `js/widgets/sheet-cutting/sheet-pdf-export.js`, `js/widgets/sheet-cutting/sheet-pdf-fiber.js`, `js/widgets/sheet-cutting/sheet-pdf-vector.js`, `js/widgets/sheet-cutting/sheet-pdf-placement.js`, `js/widgets/sheet-cutting/sheet-pdf-orientation.js`, `js/export/folder-export.js`
+The copy uses the same CAD paint as live Fiber (class colors, sheath offsets, glyphs, box labels). Nothing is written back to ArcGIS. If you skip convert, PDFs still use live Fiber only.
+
+After convert, **Export sheet PDFs** collects the operational copy (or remaining live Fiber for keys you did not convert) and draws it with the same `buildUdotFiberPdfStyle` / box-layout path as live Fiber. Edits on the operational layer are what appear in the PDFs.
+
+A **Convert selected Fiber to editable map layers** button remains after generate if live Fiber is still selected (for example after generating with **Keep live overlay**).
+
+Implementation: `js/widgets/sheet-cutting/fiber-operational.js`, `js/widgets/sheet-cutting/controller.js`, `js/widgets/sheet-cutting/sheet-pdf-export.js`, `js/widgets/sheet-cutting/sheet-pdf-fiber.js`, `js/widgets/sheet-cutting/sheet-pdf-vector.js`
 
 The map camera and 3D state are restored after export. 3D is temporarily flattened for consistent plan-sheet output.
 
