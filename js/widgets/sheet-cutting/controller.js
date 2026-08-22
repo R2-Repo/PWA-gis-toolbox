@@ -8,7 +8,7 @@ import { showProgressModal } from '../../ui/modals.js';
 import { createLayerGroup, assignLayersToGroup } from '../../core/layer-groups.js';
 import { getSpatialLayerOptions } from '../widget-context.js';
 import { isProjectStationingCenterline } from '../project-stationing/route-profile.js';
-import { markWidgetClosed, upsertWidgetState } from '../widget-state-store.js';
+import { markWidgetClosed, upsertWidgetState, getWidgetEntry } from '../widget-state-store.js';
 import { openRouteMilepostSegment } from '../route-milepost-segment/controller.js';
 import { openProjectStationing } from '../project-stationing/controller.js';
 import {
@@ -53,6 +53,7 @@ import {
 } from './pdf-layer-eligibility.js';
 import { queryFiberFeaturesByEnvelope } from './fiber-operational-fetch.js';
 import { addInsetView, removeInsetView } from './inset-views.js';
+import { openPlanSetCallouts } from '../plan-set-callouts/controller.js';
 
 function persistSession(session, open = true) {
     upsertWidgetState(WIDGET_ID, {
@@ -293,14 +294,16 @@ export async function openSheetCutting(ctx, { restoreState = null } = {}) {
     let session = restoreState
         ? restoreSheetSession(restoreState)
         : createSheetCuttingSession();
+    let leaveForCallouts = false;
 
     await openReactIsland({
         title: 'Sheet Cutter',
         width: '600px',
+        fillPanel: true,
         mountPath: '../../../react/widgets/mountSheetCuttingDialog.jsx',
         mountExport: 'mountSheetCuttingDialog',
         onClose: () => {
-            clearPreviewLayers(ctx);
+            if (!leaveForCallouts) clearPreviewLayers(ctx);
             markWidgetClosed(WIDGET_ID);
         },
         getProps: (close) => {
@@ -516,6 +519,21 @@ export async function openSheetCutting(ctx, { restoreState = null } = {}) {
                 persistSession(session);
                 renderSheetPreview(ctx, session);
                 return session;
+            },
+            onOpenCallouts: () => {
+                persistSession(session);
+                leaveForCallouts = true;
+                close();
+                queueMicrotask(() => {
+                    openPlanSetCallouts(ctx, {
+                        onClosed: () => {
+                            const saved = getWidgetEntry(WIDGET_ID)?.state;
+                            queueMicrotask(() => {
+                                openSheetCutting(ctx, { restoreState: saved || null });
+                            });
+                        }
+                    });
+                });
             },
             onOpenRouteCenterline: () => {
                 openRouteMilepostSegment(ctx);

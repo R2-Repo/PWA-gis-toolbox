@@ -111,6 +111,7 @@ export function SheetCuttingDialog({
     onRemoveInsetView,
     onOpenRouteCenterline,
     onOpenProjectStationing,
+    onOpenCallouts,
     onRefreshLayers,
     onSubscribeLayerRefresh
 }) {
@@ -527,6 +528,21 @@ export function SheetCuttingDialog({
                                 ))}
                             </ul>
                         ) : null}
+                    </div>
+
+                    <div className="form-group" style={{ marginBottom: 12 }}>
+                        <span className="gis-widget__section-title">Fiber callouts</span>
+                        <p className="text-xs" style={{ marginTop: 0, marginBottom: 8, color: 'var(--text-muted)' }}>
+                            Optional. Numbered leaders and a PROJECT KEY NOTES table on the PDFs. Returns here when you are done.
+                        </p>
+                        <button
+                            type="button"
+                            className="btn btn-secondary btn-sm"
+                            disabled={busy}
+                            onClick={() => onOpenCallouts?.()}
+                        >
+                            Add Fiber callouts…
+                        </button>
                     </div>
 
                     <div className="form-group" style={{ marginBottom: 12 }}>

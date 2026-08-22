@@ -138,7 +138,7 @@ export function hydratePlanSetCallouts(ctx) {
  * @param {import('../widget-types.js').WidgetContext} ctx
  * @param {{ restoreState?: object }} [options]
  */
-export async function openPlanSetCallouts(ctx, { restoreState = null } = {}) {
+export async function openPlanSetCallouts(ctx, { restoreState = null, onClosed = null } = {}) {
     let session = restoreState
         ? (isFiberCalloutSession(restoreState)
             ? restoreState
@@ -159,25 +159,28 @@ export async function openPlanSetCallouts(ctx, { restoreState = null } = {}) {
     await openReactIsland({
         title: 'Plan Set Callouts',
         width: '560px',
+        fillPanel: Boolean(onClosed),
         mountPath: '../../../react/widgets/mountPlanSetCalloutsDialog.jsx',
         mountExport: 'mountPlanSetCalloutsDialog',
-        onClose: () => calloutRuntimeApi.onDialogClosed(),
+        onClose: () => {
+            calloutRuntimeApi.onDialogClosed();
+            onClosed?.();
+        },
         getProps: (close) => ({
             steps: FIBER_CALLOUT_STEPS,
             initialSession: session,
             initialStep: initialStepFor(session),
             hasSheetSession: Boolean(linkedSheetSession()?.sheets?.sheets?.length),
             insetViews: linkedSheetSession()?.sheets?.insetViews || [],
-            onCancel: () => {
-                calloutRuntimeApi.onDialogClosed();
-                close();
-            },
+            fromSheetCutter: Boolean(onClosed),
+            onCancel: () => close(),
             onDone: () => {
                 ctx.showToast?.(
-                    'Callouts stay on the map. Drag a number to move it; right-click a feature to turn one on or off. Reopen this widget to continue.',
+                    onClosed
+                        ? 'Callouts stay on the map. Drag a number to move it; right-click a feature to turn one on or off. Sheet Cutter will reopen so you can export.'
+                        : 'Callouts stay on the map. Drag a number to move it; right-click a feature to turn one on or off.',
                     'success'
                 );
-                calloutRuntimeApi.onDialogClosed();
                 close();
             },
             onCreateProject: (input) => {
@@ -191,7 +194,7 @@ export async function openPlanSetCallouts(ctx, { restoreState = null } = {}) {
             onGenerate: async () => {
                 const sheetSession = linkedSheetSession();
                 if (!sheetSession) {
-                    throw new Error('Open Sheet Cutter and generate sheets first.');
+                    throw new Error('Generate sheets in Sheet Cutter, then open Add Fiber callouts.');
                 }
                 const features = await collectFiberFeatures(ctx, sheetSession);
                 const next = calloutRuntimeApi.generate({

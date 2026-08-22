@@ -96,9 +96,10 @@ export function DockedWidgetModal({ modal }) {
     );
     const [position, setPosition] = useState(null);
     const [heightMode, setHeightMode] = useState('expanded');
+    const fillPanel = modal.options?.fillPanel === true;
     const [dockHeights, setDockHeights] = useState(() => {
         const panelHeight = getRightPanelBodyHeight();
-        return computeWidgetDockHeights(panelHeight);
+        return computeWidgetDockHeights(panelHeight, { fillPanel });
     });
 
     const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
@@ -116,8 +117,8 @@ export function DockedWidgetModal({ modal }) {
 
     const updateDockHeights = useCallback(() => {
         const panelHeight = getRightPanelBodyHeight();
-        setDockHeights(computeWidgetDockHeights(panelHeight));
-    }, []);
+        setDockHeights(computeWidgetDockHeights(panelHeight, { fillPanel }));
+    }, [fillPanel]);
 
     const scheduleReserveRefresh = useCallback(() => {
         requestAnimationFrame(() => refreshWidgetPanelDockReserve());
@@ -368,6 +369,7 @@ export function DockedWidgetModal({ modal }) {
                 className={`modal modal--docked${usePanelDock ? ' modal--panel-dock' : ''}`}
                 style={floatingStyle}
                 data-height-mode={usePanelDock ? heightMode : undefined}
+                data-panel-fill={usePanelDock && fillPanel ? 'true' : undefined}
             >
                 <div
                     className={`modal-header modal-header--draggable${usePanelDock ? ' modal-header--panel-dock' : ''}`}

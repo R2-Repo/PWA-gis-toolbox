@@ -128,7 +128,7 @@ That's it — `WidgetPanel` and `APP_ACTIONS` update automatically from the regi
 
 ### Hidden widgets
 
-Some widgets stay in the repo but are omitted from `GIS_WIDGETS` (panel + `APP_ACTIONS`). They live in `GIS_WIDGETS_HIDDEN` in `js/widgets/registry.js`. Example: **CRS Manager** — see [CRS_MANAGER.md](CRS_MANAGER.md). To re-enable, move the entry from `GIS_WIDGETS_HIDDEN` into `GIS_WIDGETS`.
+Some widgets stay in the repo but are omitted from `GIS_WIDGETS` (panel + `APP_ACTIONS`). They live in `GIS_WIDGETS_HIDDEN` in `js/widgets/registry.js`. Example: **CRS Manager**. **Plan Set Callouts** is hidden and launched from Sheet Cutter after generate. To re-enable a hidden widget in the panel, move the entry from `GIS_WIDGETS_HIDDEN` into `GIS_WIDGETS`.
 
 ### 7. Re-export shim (optional, for old import paths)
 

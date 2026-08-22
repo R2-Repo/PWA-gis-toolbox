@@ -17,6 +17,7 @@ export function PlanSetCalloutsDialog({
     initialStep = 1,
     hasSheetSession = false,
     insetViews = [],
+    fromSheetCutter = false,
     onCancel,
     onDone,
     onCreateProject,
@@ -94,8 +95,10 @@ export function PlanSetCalloutsDialog({
             </p>
             <p className="text-xs" style={{ color: hasSheetSession ? 'var(--text-muted)' : 'var(--danger)' }}>
                 {hasSheetSession
-                    ? 'Sheet Cutter session found. After Done, callouts stay on the map — reopen this widget anytime to continue.'
-                    : 'Generate sheets in Sheet Cutter before continuing.'}
+                    ? (fromSheetCutter
+                        ? 'Using the current Sheet Cutter sheets. After Done, Sheet Cutter reopens so you can export PDFs.'
+                        : 'Sheet Cutter session found. After Done, callouts stay on the map.')
+                    : 'Generate sheets in Sheet Cutter, then open callouts from that widget.'}
             </p>
         </>
     );
@@ -150,8 +153,8 @@ export function PlanSetCalloutsDialog({
             </div>
             <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
                 Key notes tables only list callouts that are on. Drag a numbered circle on the map to move
-                the leader; the feature anchor stays put. After Done you can keep editing on the map or
-                reopen this widget.
+                the leader; the feature anchor stays put. After Done you can keep editing on the map
+                {fromSheetCutter ? ' or use Add Fiber callouts in Sheet Cutter to continue.' : '.'}
             </p>
             <div className="text-xs" style={{ marginTop: 8, maxHeight: 140, overflow: 'auto' }}>
                 <strong>PROJECT KEY NOTES (this sheet)</strong>
