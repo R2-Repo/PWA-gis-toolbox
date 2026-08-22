@@ -3,16 +3,15 @@ import { WidgetPanelShell } from './shared/WidgetPanelShell.jsx';
 import { LayerSelect } from './shared/LayerSelect.jsx';
 import { INSETS_PER_PAGE } from '../../js/widgets/sheet-cutting/inset-views.js';
 
-function formatFeet(value) {
-    if (value == null || !Number.isFinite(Number(value))) return '—';
-    return `${Math.round(Number(value)).toLocaleString()} ft`;
-}
-
 const SHEET_PAPER_SIZE = 'TABLOID';
 const SHEET_ORIENTATION = 'landscape';
 const DEFAULT_SHEET_LENGTH_FT = 1100;
 const DEFAULT_CORRIDOR_WIDTH_FT = 350;
-const BASEMAP_DPI_OPTIONS = [120, 150, 200];
+const BASEMAP_DPI_OPTIONS = [
+    { value: '120', label: 'Smaller files' },
+    { value: '150', label: 'Balanced (recommended)' },
+    { value: '200', label: 'Sharper background' }
+];
 const SHEET_LENGTH_LABEL = 'Sheet length along route (ft)';
 const CORRIDOR_WIDTH_LABEL = 'Corridor width (ft)';
 
@@ -130,7 +129,6 @@ export function SheetCuttingDialog({
         String(initialSession?.sheets?.template?.basemapDpi ?? initialSession?.sheets?.template?.exportDpi ?? defaultTemplate.basemapDpi ?? 150)
     );
     const [selectedLayerIds, setSelectedLayerIds] = useState(initialSession?.sheets?.designLayerIds || []);
-    const [fiberMode, setFiberMode] = useState('live');
     const [busy, setBusy] = useState(false);
     const [message, setMessage] = useState('');
     const [error, setError] = useState('');
@@ -153,9 +151,12 @@ export function SheetCuttingDialog({
 
     const sheets = (session?.sheets?.sheets || []).filter((entry) => entry.sheetType !== 'overview');
     const insetViews = session?.sheets?.insetViews || [];
-    const frameDims = session?.sheets?.frameDimensions;
     const featureCount = session?.designFeatures?.length || 0;
-    const matchLines = session?.sheets?.matchLines || [];
+    const eligibleLayers = designLayerOptions.filter((layer) => layer.eligible);
+    const skippedLayers = designLayerOptions.filter((layer) => !layer.eligible);
+    const selectedEligibleCount = selectedLayerIds.filter((id) => (
+        eligibleLayers.some((layer) => layer.id === id)
+    )).length;
 
     const run = async (fn, successMessage = '') => {
         setBusy(true);
@@ -210,6 +211,15 @@ export function SheetCuttingDialog({
     }, [onSubscribeLayerRefresh, refreshLayerLists]);
 
     useEffect(() => {
+        if (!designLayerOptions.length) return;
+        const known = new Map(designLayerOptions.map((layer) => [layer.id, layer.eligible]));
+        setSelectedLayerIds((current) => {
+            const next = current.filter((id) => (known.has(id) ? known.get(id) : true));
+            return next.length === current.length ? current : next;
+        });
+    }, [designLayerOptions]);
+
+    useEffect(() => {
         let cancelled = false;
         (async () => {
             const next = await onSelectDesignLayers?.(selectedLayerIds);
@@ -233,11 +243,11 @@ export function SheetCuttingDialog({
     };
 
     const handleSelectAllLayers = () => {
-        setSelectedLayerIds(designLayerOptions.map((layer) => layer.id));
+        setSelectedLayerIds(eligibleLayers.map((layer) => layer.id));
     };
 
-    const allLayersSelected = designLayerOptions.length > 0
-        && designLayerOptions.every((layer) => selectedLayerIds.includes(layer.id));
+    const allLayersSelected = eligibleLayers.length > 0
+        && eligibleLayers.every((layer) => selectedLayerIds.includes(layer.id));
     const selectedLiveFiberIds = selectedLayerIds.filter((id) => (
         designLayerOptions.find((layer) => layer.id === id)?.isUdotFiberLive
     ));
@@ -268,10 +278,7 @@ export function SheetCuttingDialog({
                 current = await onSelectDesignLayers?.(selectedLayerIds) || current;
             }
 
-            return onGenerateSheets?.({
-                fiberMode,
-                designLayerIds: selectedLayerIds
-            }) || current;
+            return onGenerateSheets?.() || current;
         });
 
         if (!next) return;
@@ -321,30 +328,32 @@ export function SheetCuttingDialog({
                 )}
             />
             {!stationingLayerOptions.length ? (
-                <div className="info-box text-xs" style={{ marginBottom: 12 }}>
-                    Select existing layer or create new layers using the widgets below.
-                </div>
+                <>
+                    <div className="info-box text-xs" style={{ marginBottom: 12 }}>
+                        Select a centerline, or create one with the widgets below.
+                    </div>
+                    <div className="gis-widget__btn-row gis-widget__btn-row--split" style={{ marginBottom: 16 }}>
+                        <button
+                            type="button"
+                            className="btn btn-secondary btn-sm"
+                            disabled={busy}
+                            onClick={() => onOpenRouteCenterline?.()}
+                        >
+                            Route Centerline Widget
+                        </button>
+                        <button
+                            type="button"
+                            className="btn btn-secondary btn-sm"
+                            disabled={busy}
+                            onClick={() => onOpenProjectStationing?.()}
+                        >
+                            Project Stationing Widget
+                        </button>
+                    </div>
+                </>
             ) : null}
-            <div className="gis-widget__btn-row gis-widget__btn-row--split" style={{ marginBottom: 16 }}>
-                <button
-                    type="button"
-                    className="btn btn-secondary btn-sm"
-                    disabled={busy}
-                    onClick={() => onOpenRouteCenterline?.()}
-                >
-                    Route Centerline Widget
-                </button>
-                <button
-                    type="button"
-                    className="btn btn-secondary btn-sm"
-                    disabled={busy}
-                    onClick={() => onOpenProjectStationing?.()}
-                >
-                    Project Stationing Widget
-                </button>
-            </div>
 
-            <div className="form-group">
+            <div className="form-group" style={{ marginBottom: 16 }}>
                 <div
                     className="gis-widget__row"
                     style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 0 }}
@@ -376,18 +385,12 @@ export function SheetCuttingDialog({
                 </div>
             </div>
 
-            {frameDims ? (
-                <p className="text-xs" style={{ marginTop: -4, marginBottom: 12, color: 'var(--text-muted)' }}>
-                    Map frame: {formatFeet(frameDims.mapFrameWidthFt)} × {formatFeet(frameDims.mapFrameHeightFt)}
-                </p>
-            ) : null}
-
             <div className="form-group">
                 <div
                     className="gis-widget__row"
                     style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}
                 >
-                    <span className="gis-widget__section-title" style={{ marginBottom: 0 }}>Add Current map layers to sheets</span>
+                    <span className="gis-widget__section-title" style={{ marginBottom: 0 }}>Include on PDF sheets</span>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                         <button
                             type="button"
@@ -402,102 +405,81 @@ export function SheetCuttingDialog({
                         <button
                             type="button"
                             className="btn btn-secondary btn-sm"
-                            disabled={busy || allLayersSelected || !designLayerOptions.length}
+                            disabled={busy || allLayersSelected || !eligibleLayers.length}
                             onClick={handleSelectAllLayers}
                         >
                             Select all
                         </button>
                     </div>
                 </div>
-                {selectedLayerIds.length > 0 ? (
+                <p className="text-xs" style={{ marginTop: 0, marginBottom: 8, color: 'var(--text-muted)' }}>
+                    Checked layers are redrawn as linework on the PDF. Streets and aerials stay a background photo. Image and tiled layers stay on the map only.
+                </p>
+                {selectedEligibleCount > 0 ? (
                     <p className="text-xs" style={{ marginTop: 0, marginBottom: 6, color: 'var(--text-muted)' }}>
-                        {selectedLayerIds.length} of {designLayerOptions.length} selected
-                        {featureCount > 0 ? ` · ${featureCount} feature${featureCount === 1 ? '' : 's'} ready for sheets` : ''}
+                        {selectedEligibleCount} of {eligibleLayers.length} included
+                        {featureCount > 0 ? ` · ${featureCount.toLocaleString()} feature${featureCount === 1 ? '' : 's'} ready` : ''}
                     </p>
                 ) : null}
-                {designLayerOptions.length ? (
-                    <details className="gis-widget__details">
-                        <summary>Layers ({designLayerOptions.length})</summary>
-                        <div className="gis-widget__details-body">
-                            <div className="text-xs">
-                                {designLayerOptions.map((layer) => (
-                                    <label key={layer.id} style={{ display: 'block', marginBottom: 4 }}>
-                                        <input
-                                            type="checkbox"
-                                            checked={selectedLayerIds.includes(layer.id)}
-                                            onChange={() => toggleLayer(layer.id)}
-                                        />
-                                        {' '}{layer.name} ({layer.featureCount})
-                                    </label>
-                                ))}
-                            </div>
-                        </div>
-                    </details>
+                {eligibleLayers.length ? (
+                    <div className="text-xs">
+                        {eligibleLayers.map((layer) => (
+                            <label key={layer.id} style={{ display: 'block', marginBottom: 6 }}>
+                                <input
+                                    type="checkbox"
+                                    checked={selectedLayerIds.includes(layer.id)}
+                                    onChange={() => toggleLayer(layer.id)}
+                                />
+                                {' '}{layer.name}
+                                {layer.isUdotFiberLive
+                                    ? ' (live Fiber)'
+                                    : layer.featureCount > 0
+                                        ? ` (${layer.featureCount.toLocaleString()})`
+                                        : ''}
+                                {layer.note ? (
+                                    <span style={{ display: 'block', marginLeft: 18, color: 'var(--text-muted)' }}>
+                                        {layer.note}
+                                    </span>
+                                ) : null}
+                            </label>
+                        ))}
+                    </div>
                 ) : (
                     <p className="text-xs" style={{ margin: 0, color: 'var(--text-muted)' }}>
-                        No map layers yet. Add layers, then refresh this list.
+                        No vector layers with loaded features yet. Import a layer, then refresh this list.
                     </p>
                 )}
-                {hasSelectedLiveFiber ? (
-                    <div className="form-group" style={{ marginTop: 12, marginBottom: 0 }}>
-                        <span className="gis-widget__section-title">UDOT Fiber</span>
-                        <label className="text-xs" style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginBottom: 8 }}>
-                            <input
-                                type="radio"
-                                name="sheet-fiber-mode"
-                                value="live"
-                                checked={fiberMode === 'live'}
-                                onChange={() => setFiberMode('live')}
-                                disabled={busy}
-                                style={{ marginTop: 2 }}
-                            />
-                            <span>
-                                Keep live overlay
-                                <span style={{ display: 'block', color: 'var(--text-muted)' }}>
-                                    Same as always. Live Fiber is used on the map and in sheet PDFs.
-                                </span>
-                            </span>
-                        </label>
-                        <label className="text-xs" style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
-                            <input
-                                type="radio"
-                                name="sheet-fiber-mode"
-                                value="convert"
-                                checked={fiberMode === 'convert'}
-                                onChange={() => setFiberMode('convert')}
-                                disabled={busy}
-                                style={{ marginTop: 2 }}
-                            />
-                            <span>
-                                Convert to editable map layer
-                                <span style={{ display: 'block', color: 'var(--text-muted)' }}>
-                                    Copies Fiber inside the sheet polygons, turns the live overlay off, and uses that copy for edits and PDF export. Looks the same unless you edit it.
-                                </span>
-                            </span>
-                        </label>
-                    </div>
+                {skippedLayers.length ? (
+                    <details className="gis-widget__details" style={{ marginTop: 8 }}>
+                        <summary>Not on PDFs ({skippedLayers.length})</summary>
+                        <div className="gis-widget__details-body">
+                            <ul className="text-xs" style={{ margin: 0, paddingLeft: 18, color: 'var(--text-muted)' }}>
+                                {skippedLayers.map((layer) => (
+                                    <li key={layer.id} style={{ marginBottom: 4 }}>
+                                        {layer.name} — {layer.reason}
+                                    </li>
+                                ))}
+                            </ul>
+                        </div>
+                    </details>
                 ) : null}
             </div>
 
             {sheets.length > 0 ? (
                 <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid var(--border)' }}>
                     <div className="text-xs" style={{ marginBottom: 12 }}>
-                        <div><strong>{sheets.length}</strong> detail sheets · {matchLines.length} match lines</div>
-                        {featureCount > 0 ? <div>{featureCount} design features assigned</div> : null}
+                        <div><strong>{sheets.length}</strong> sheet{sheets.length === 1 ? '' : 's'}</div>
+                        {featureCount > 0 ? <div>{featureCount.toLocaleString()} feature{featureCount === 1 ? '' : 's'} on PDFs</div> : null}
                         {insetViews.length > 0 ? (
                             <div>{insetViews.length} detail box{insetViews.length === 1 ? '' : 'es'} · {Math.ceil(insetViews.length / INSETS_PER_PAGE)} details page{insetViews.length > INSETS_PER_PAGE ? 's' : ''}</div>
                         ) : null}
                     </div>
 
-                    {validation ? (
+                    {validation?.warnings?.length ? (
                         <div className="text-xs" style={{ marginBottom: 12 }}>
-                            {validation.warnings?.length ? (
-                                <ul style={{ margin: 0, paddingLeft: 18 }}>
-                                    {validation.warnings.map((entry) => <li key={entry}>{entry}</li>)}
-                                </ul>
-                            ) : (
-                                <div style={{ color: 'var(--text-muted)' }}>Coverage check passed.</div>
-                            )}
+                            <ul style={{ margin: 0, paddingLeft: 18 }}>
+                                {validation.warnings.map((entry) => <li key={entry}>{entry}</li>)}
+                            </ul>
                         </div>
                     ) : null}
 
@@ -548,18 +530,18 @@ export function SheetCuttingDialog({
                     </div>
 
                     <div className="form-group" style={{ marginBottom: 12 }}>
-                        <label>Basemap quality</label>
+                        <label>Background sharpness</label>
                         <select
                             value={basemapDpi}
                             onChange={(e) => setBasemapDpi(e.target.value)}
                             disabled={busy}
                         >
-                            {BASEMAP_DPI_OPTIONS.map((dpi) => (
-                                <option key={dpi} value={String(dpi)}>{dpi} DPI{dpi === 150 ? ' (recommended)' : ''}</option>
+                            {BASEMAP_DPI_OPTIONS.map((option) => (
+                                <option key={option.value} value={option.value}>{option.label}</option>
                             ))}
                         </select>
                         <p className="text-xs" style={{ marginTop: 4, color: 'var(--text-muted)' }}>
-                            Linework and labels stay vector. Basemap is JPEG so a combined 10-sheet set usually stays emailable. Higher DPI only grows the background.
+                            Only the streets/aerial photo. Linework stays sharp. Widen the map if the background still looks soft.
                         </p>
                     </div>
 
@@ -579,12 +561,6 @@ export function SheetCuttingDialog({
                         >
                             Export sheet PDFs to folder…
                         </button>
-                        <button type="button" className="btn btn-secondary btn-sm" disabled={busy} onClick={() => onExportPackage?.()}>
-                            Download GIS layers (GeoJSON)
-                        </button>
-                        <button type="button" className="btn btn-secondary btn-sm" disabled={busy} onClick={() => onAddResultLayers?.()}>
-                            Add sheet layers to map
-                        </button>
                         {hasSelectedLiveFiber ? (
                             <button
                                 type="button"
@@ -594,14 +570,24 @@ export function SheetCuttingDialog({
                                     const next = await onAddFiberOperationalLayers?.(selectedLayerIds);
                                     if (next?.sheets?.designLayerIds) {
                                         setSelectedLayerIds(next.sheets.designLayerIds);
-                                        setFiberMode('convert');
                                     }
                                     return next;
-                                }, 'Converted Fiber to editable map layers.')}
+                                }, 'Copied Fiber to an editable map layer.')}
                             >
-                                Convert selected Fiber to editable map layers
+                                Copy Fiber to the map for editing
                             </button>
                         ) : null}
+                        <details className="gis-widget__details">
+                            <summary>GIS files</summary>
+                            <div className="gis-widget__details-body" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                                <button type="button" className="btn btn-secondary btn-sm" disabled={busy} onClick={() => onExportPackage?.()}>
+                                    Download GeoJSON
+                                </button>
+                                <button type="button" className="btn btn-secondary btn-sm" disabled={busy} onClick={() => onAddResultLayers?.()}>
+                                    Add sheet layers to map
+                                </button>
+                            </div>
+                        </details>
                     </div>
                 </div>
             ) : null}

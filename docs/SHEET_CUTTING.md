@@ -151,24 +151,25 @@ Sheet PDFs combine a **modest-resolution basemap image** (whatever basemap is ac
 | Other design + stationing + sheet outline (overview also draws the widget route) | jsPDF vector paths + text | Infinite zoom — always crisp |
 | North arrow / footer | jsPDF vector | Crisp |
 
-**Basemap quality** (`basemapDpi`, default 150) affects only the background image and file size. The underlay is JPEG (~88% quality) so a combined 10-sheet set usually stays emailable. Linework and labels are vector regardless of this setting.
+**Design layers on PDFs** are opt-in under **Include on PDF sheets**. Only layers the exporter can redraw as vector linework can be checked:
+
+| Included | Not on PDFs |
+|----------|-------------|
+| In-memory vector layers with loaded features | WMS / MapServer image / COG / other rasters |
+| Live vector services (FeatureServer, WFS, GeoJSON feed) using **currently loaded** features | Stored / tiled / PMTiles layers with no in-memory features |
+| UDOT Fiber (live or converted operational copy) | Empty layers |
+
+The picker shows loaded feature counts, not the full stored schema count. Layer styles come from `mapService.getLayerStyle()` using `_sourceLayerId`. Checking a layer does **not** screenshot map paint — PDFs redraw simple CAD (strokes, fills, circles) plus the Fiber lookalike path.
+
+**Background sharpness** (`basemapDpi`, default 150) affects only the streets/aerial JPEG underlay and file size. Linework and labels are vector regardless of this setting.
 
 **Remnant (short last) sheets** keep the **same map scale and corridor height** as full-length sheets. Placement fits a **nominal** frame (`sheetLengthFt` × `corridorWidthFt` at the current zoom), then draws the actual clip at that scale — a shorter remnant is a shorter image, not a zoomed-up fill of the page. Without that reference, a square leftover would scale to page height.
 
-**Design layers must be selected** in the Sheet Cutter wizard for their features to appear in vector export. Layer styles are resolved from `mapService.getLayerStyle()` using `_sourceLayerId` stamped at collection time. **UDOT Fiber** that is on the map is drawn as vector on detail sheets (hide the group first if you do not want it).
-
 ### Editable Fiber from sheets
 
-If live **UDOT Fiber** is selected under **Add Current map layers to sheets**, the wizard offers:
-
-1. **Keep live overlay** (default) — yesterday’s behavior. Live Fiber stays on the map and is refreshed/drawn on sheet PDFs with the existing jsPDF Fiber rules.
-2. **Convert to editable map layer** — on **Generate Sheets**, selected live Fiber that intersects the sheet polygons is copied onto the map (grouped as `{project} Fiber (editable)`), the live overlay is turned off, and that operational copy is used for editing **and** PDF export.
+Live **UDOT Fiber** checked under **Include on PDF sheets** is drawn on PDFs from the live overlay (refreshed per sheet). After sheets are generated, **Copy Fiber to the map for editing** copies Fiber inside the sheet polygons, turns the live overlay off, and uses that operational copy for edits and later PDF export.
 
 The copy uses the same CAD paint as live Fiber (class colors, sheath offsets, glyphs, box labels). Nothing is written back to ArcGIS. If you skip convert, PDFs still use live Fiber only.
-
-After convert, **Export sheet PDFs** collects the operational copy (or remaining live Fiber for keys you did not convert) and draws it with the same `buildUdotFiberPdfStyle` / box-layout path as live Fiber. Edits on the operational layer are what appear in the PDFs.
-
-A **Convert selected Fiber to editable map layers** button remains after generate if live Fiber is still selected (for example after generating with **Keep live overlay**).
 
 ### Detail boxes / DETAILS sheets
 
@@ -263,6 +264,7 @@ If a future change makes right-side or skewed labels drift again, check the jsPD
 
 | Path | Purpose |
 |------|---------|
+| `js/widgets/sheet-cutting/pdf-layer-eligibility.js` | Which map layers can be redrawn as PDF linework |
 | `js/widgets/sheet-cutting/engine.js` | Station stepping, match-line metadata, validation |
 | `js/widgets/sheet-cutting/export-builder.js` | **Clean polygon geometry** |
 | `js/widgets/sheet-cutting/controller.js` | Preview wiring |

@@ -98,7 +98,7 @@ export const GIS_WIDGETS = [
         action: 'openSheetCutting',
         label: 'Sheet Cutter',
         icon: '✂️',
-        tip: 'Cut a project route into numbered plan sheet extents with matchlines and export.',
+        tip: 'Cut a route into plan sheets and export PDFs with vector linework.',
         badge: 'Beta',
         open: openSheetCutting
     },
