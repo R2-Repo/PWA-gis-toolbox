@@ -252,6 +252,7 @@ export function generateFiberCallouts(session, input = {}) {
             leaderId: key,
             leaderKey: key,
             sheetId: item.sheetId,
+            sheetNumber: item.sheetNumber,
             targetKey: item.targetKey,
             targetKind: item.kind,
             noteIds,
@@ -335,10 +336,13 @@ export function addManualLeader(session, input = {}) {
     ));
     const targetKey = input.targetKey || `manual:${createStableId('manual')}`;
     const key = leaderKey(sheetId, targetKey);
+    const sheetNumber = input.sheetNumber
+        || (session.sheets || []).find((sheet) => sheet.sheetId === sheetId)?.sheetNumber;
     const leader = {
         leaderId: key,
         leaderKey: key,
         sheetId,
+        sheetNumber,
         targetKey,
         targetKind: input.targetKind || 'manual',
         noteIds: [note.noteId],

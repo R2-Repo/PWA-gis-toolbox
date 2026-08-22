@@ -120,11 +120,26 @@ export function nudgeBubbles(leaders = [], minFt = 28) {
 
 /**
  * @param {object} session
- * @param {string} sheetId
+ * @param {string|{ sheetId?: string, sheetNumber?: number }} sheetOrId
  * @returns {object[]}
  */
-export function leadersForSheet(session, sheetId) {
-    return (session?.leaders || []).filter((leader) => leader.sheetId === sheetId && !leader.suppressed);
+export function leadersForSheet(session, sheetOrId) {
+    const sheetId = typeof sheetOrId === 'object' ? sheetOrId?.sheetId : sheetOrId;
+    const sheetNumber = typeof sheetOrId === 'object' ? sheetOrId?.sheetNumber : undefined;
+    const active = (session?.leaders || []).filter((leader) => !leader.suppressed);
+    if (sheetId) {
+        const byId = active.filter((leader) => leader.sheetId === sheetId);
+        if (byId.length) return byId;
+    }
+    if (sheetNumber == null || sheetNumber === '') return [];
+    const sessionSheet = (session?.sheets || []).find((sheet) => (
+        Number(sheet.sheetNumber) === Number(sheetNumber)
+    ));
+    if (sessionSheet?.sheetId) {
+        const byMappedId = active.filter((leader) => leader.sheetId === sessionSheet.sheetId);
+        if (byMappedId.length) return byMappedId;
+    }
+    return active.filter((leader) => Number(leader.sheetNumber) === Number(sheetNumber));
 }
 
 /**
@@ -187,9 +202,9 @@ export function buildCalloutPreviewGeoJson(session) {
             const t = turfApi();
             let coord = leader.bubble;
             if (t && index > 0) {
-                coord = t.destination(t.point(leader.bubble), index * 18, 90, { units: 'feet' }).geometry.coordinates;
+                coord = t.destination(t.point(leader.bubble), index * 10, 90, { units: 'feet' }).geometry.coordinates;
             } else if (index > 0) {
-                coord = [leader.bubble[0] + index * 0.00005, leader.bubble[1]];
+                coord = [leader.bubble[0] + index * 0.00003, leader.bubble[1]];
             }
             features.push({
                 type: 'Feature',
