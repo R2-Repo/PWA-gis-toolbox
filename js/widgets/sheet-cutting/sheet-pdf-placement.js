@@ -18,8 +18,15 @@ import { coordsEqual } from './export-builder.js';
  * @returns {{ x: number, y: number, width: number, height: number, scale: number }}
  */
 export function computeSheetImagePlacement(pageW, pageH, marginsPt, contentWidthPx, contentHeightPx, options = {}) {
-    const availW = pageW - marginsPt.left - marginsPt.right;
-    const availH = pageH - marginsPt.top - marginsPt.bottom;
+    const target = options.targetRect;
+    const availW = target?.width > 0
+        ? target.width
+        : pageW - marginsPt.left - marginsPt.right;
+    const availH = target?.height > 0
+        ? target.height
+        : pageH - marginsPt.top - marginsPt.bottom;
+    const originX = Number.isFinite(target?.x) ? target.x : marginsPt.left;
+    const originY = Number.isFinite(target?.y) ? target.y : marginsPt.top;
     const preferLandscapeFlow = options.preferLandscapeFlow !== false;
     const widthPx = Math.max(1, contentWidthPx);
     const heightPx = Math.max(1, contentHeightPx);
@@ -40,8 +47,8 @@ export function computeSheetImagePlacement(pageW, pageH, marginsPt, contentWidth
 
     const width = widthPx * scale;
     const height = heightPx * scale;
-    const x = marginsPt.left + (availW - width) / 2;
-    const y = marginsPt.top + (availH - height) / 2;
+    const x = originX + (availW - width) / 2;
+    const y = originY + (availH - height) / 2;
 
     return { x, y, width, height, scale };
 }

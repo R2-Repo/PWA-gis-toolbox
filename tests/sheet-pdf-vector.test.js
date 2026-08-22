@@ -30,6 +30,24 @@ describe('sheet PDF placement', () => {
         expect(placement.x).toBe(36);
     });
 
+    it('places an inset capture inside a target quadrant rect', () => {
+        const targetRect = { x: 40, y: 60, width: 500, height: 300 };
+        const placement = computeSheetImagePlacement(1224, 792, {
+            left: 36,
+            right: 36,
+            top: 36,
+            bottom: 50
+        }, 200, 100, {
+            preferLandscapeFlow: false,
+            targetRect
+        });
+        expect(placement.x).toBeGreaterThanOrEqual(targetRect.x);
+        expect(placement.y).toBeGreaterThanOrEqual(targetRect.y);
+        expect(placement.x + placement.width).toBeLessThanOrEqual(targetRect.x + targetRect.width + 0.01);
+        expect(placement.y + placement.height).toBeLessThanOrEqual(targetRect.y + targetRect.height + 0.01);
+        expect(placement.width / placement.height).toBeCloseTo(2, 5);
+    });
+
     it('keeps a short remnant at the same scale as a full-length sheet', () => {
         const margins = { left: 36, right: 36, top: 36, bottom: 36 };
         const full = computeSheetImagePlacement(1224, 792, margins, 4800, 1500, {
@@ -160,6 +178,20 @@ describe('sheet PDF vector styles', () => {
         });
         expect(outline.kind).toBe('line');
         expect(outline.dash).toBeDefined();
+
+        const insetBox = resolveVectorFeatureStyle({
+            properties: { feature_type: 'inset_outline' },
+            geometry: { type: 'Polygon' }
+        });
+        expect(insetBox.kind).toBe('polygon');
+        expect(insetBox.strokeColor).toBe('#2563eb');
+        expect(insetBox.dash).toBeDefined();
+
+        const insetLabel = resolveVectorFeatureStyle({
+            properties: { feature_type: 'inset_label', inset_label: 'DETAIL A' },
+            geometry: { type: 'Point' }
+        });
+        expect(insetLabel.kind).toBe('inset_label');
 
         const route = resolveVectorFeatureStyle({
             properties: { feature_type: 'route' },
