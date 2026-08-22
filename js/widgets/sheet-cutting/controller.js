@@ -45,6 +45,12 @@ import {
     listSheetFiberSnapshotLayers,
     replaceLiveFiberIdsInDesignList
 } from './fiber-operational.js';
+import {
+    buildSheetPdfLayerOption,
+    countLoadedSheetPdfFeatures,
+    isSheetCutterLayerCandidate,
+    keepEligibleSheetPdfLayerIds
+} from './pdf-layer-eligibility.js';
 import { queryFiberFeaturesByEnvelope } from './fiber-operational-fetch.js';
 import { addInsetView, removeInsetView } from './inset-views.js';
 
@@ -104,17 +110,21 @@ function getRouteLayerOptions(ctx) {
     return [...byId.values()];
 }
 
+function getDesignLayerOptions(ctx) {
+    return (ctx.getLayers() || [])
+        .filter(isSheetCutterLayerCandidate)
+        .map((layer) => {
+            const record = ctx.mapService?.getLayerRecord?.(layer.id);
+            return buildSheetPdfLayerOption(layer, {
+                loadedFeatureCount: countLoadedSheetPdfFeatures(layer, record)
+            });
+        });
+}
+
 function getLayerLists(ctx) {
     return {
         routeLayers: getRouteLayerOptions(ctx),
-        designLayers: getSpatialLayerOptions(ctx).map((option) => {
-            const full = ctx.getLayerById?.(option.id)
-                || ctx.getLayers().find((entry) => entry.id === option.id);
-            return {
-                ...option,
-                isUdotFiberLive: isUdotFiberLiveDataset(full)
-            };
-        })
+        designLayers: getDesignLayerOptions(ctx)
     };
 }
 
@@ -144,8 +154,9 @@ function collectFeaturesFromLayers(ctx, layerIds = []) {
 }
 
 function applyDesignLayerSelection(ctx, session, layerIds = []) {
-    const next = selectDesignLayersForSheets(session, layerIds);
-    return setSheetDesignFeatures(next, collectFeaturesFromLayers(ctx, layerIds));
+    const eligibleIds = keepEligibleSheetPdfLayerIds(layerIds, getDesignLayerOptions(ctx));
+    const next = selectDesignLayersForSheets(session, eligibleIds);
+    return setSheetDesignFeatures(next, collectFeaturesFromLayers(ctx, eligibleIds));
 }
 
 function viewportFiberFeatures(ctx, liveLayer) {
@@ -179,7 +190,7 @@ async function addEditableFiberLayersFromSheets(ctx, session, options = {}) {
         return layer.visible !== false;
     });
     if (!liveLayers.length) {
-        throw new Error('Select a UDOT Fiber live layer in Add map layers, then convert it.');
+        throw new Error('Select a UDOT Fiber live layer under Include on PDF sheets, then convert it.');
     }
 
     const projectName = session.project?.projectName || 'Sheets';
@@ -331,41 +342,10 @@ export async function openSheetCutting(ctx, { restoreState = null } = {}) {
                 persistSession(session);
                 return session;
             },
-            onGenerateSheets: async ({ fiberMode, designLayerIds } = {}) => {
+            onGenerateSheets: async () => {
                 session = generateSheetSet(session);
                 renderSheetPreview(ctx, session);
                 persistSession(session);
-                if (fiberMode === 'convert') {
-                    const hasLiveFiber = (designLayerIds || session.sheets?.designLayerIds || []).some((id) => {
-                        const layer = ctx.getLayerById?.(id) || ctx.getLayers().find((entry) => entry.id === id);
-                        return isUdotFiberLiveDataset(layer);
-                    });
-                    if (hasLiveFiber) {
-                        try {
-                            const converted = await convertSelectedFiberToOperational(
-                                ctx,
-                                session,
-                                designLayerIds
-                            );
-                            session = converted.session;
-                            persistSession(session);
-                            renderSheetPreview(ctx, session);
-                            const count = converted.created.length;
-                            const extra = converted.truncated
-                                ? ' Some dense areas were capped — zoomed-in live Fiber may show more.'
-                                : '';
-                            ctx.showToast(
-                                `Converted ${count} Fiber layer${count === 1 ? '' : 's'} to editable map layers. Live Fiber is off. Sheet PDFs use the editable copy.${extra}`,
-                                converted.truncated ? 'warning' : 'success'
-                            );
-                        } catch (err) {
-                            ctx.showToast(
-                                err?.message || 'Could not convert Fiber to an editable map layer.',
-                                'warning'
-                            );
-                        }
-                    }
-                }
                 return session;
             },
             onValidate: () => validateSheetSession(session),
