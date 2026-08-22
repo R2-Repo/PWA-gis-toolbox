@@ -41,7 +41,7 @@ function watchOverlayUnmount(overlay, onUnmount) {
  * @param {string} [options.mountExport] - named export to call
  * @param {(close: () => void) => object | Promise<object>} options.getProps
  */
-export async function openReactIsland({ title, width, mountPath, mountExport, getProps, onOverlayDestroy }) {
+export async function openReactIsland({ title, width, mountPath, mountExport, getProps, onOverlayDestroy, onClose }) {
     const rootId = `react-dialog-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
     showModal(title, `<div id="${rootId}"></div>`, {
@@ -62,10 +62,12 @@ export async function openReactIsland({ title, width, mountPath, mountExport, ge
 
             const props = await getProps(close);
             const mounted = mountFn(root, props);
-            watchOverlayUnmount(overlay, () => {
+            const teardown = () => {
                 mounted?.unmount?.();
                 onOverlayDestroy?.();
-            });
+                onClose?.();
+            };
+            watchOverlayUnmount(overlay, teardown);
         }
     });
 }

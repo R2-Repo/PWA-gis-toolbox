@@ -444,6 +444,8 @@ async function applyProjectKitSnapshot(snapshot, { sections, mode = 'replace' })
             for (const entry of widgetsToRestore) {
                 await restoreOpenWidget(entry.type, getWidgetContext());
             }
+            const { hydratePlanSetCallouts } = await import('../widgets/plan-set-callouts/controller.js');
+            hydratePlanSetCallouts(getWidgetContext());
         }
     } finally {
         sessionStore.resumeSessionSave(true);

@@ -82,7 +82,9 @@ import { getLayers } from '../../core/state.js';
 import { getWidgetEntry } from '../widget-state-store.js';
 import { restoreCalloutSession } from '../plan-set-callouts/engine.js';
 import { isFiberCalloutSession } from '../plan-set-callouts/fiber-callout-engine.js';
-import { drawSheetCalloutsOnPdf } from '../plan-set-callouts/pdf-callouts.js';
+import { drawInsetCalloutsOnPdf, drawSheetCalloutsOnPdf } from '../plan-set-callouts/pdf-callouts.js';
+import { hideCalloutPreviewForCapture } from '../plan-set-callouts/preview.js';
+import { refreshCalloutRuntimePreview } from '../plan-set-callouts/runtime.js';
 
 const FIT_PADDING = 48;
 const FIT_MAX_ZOOM = 18;
@@ -1199,6 +1201,7 @@ async function bumpMapToExportRatio(map, template) {
 async function captureBasemapUnderlay(mapService, template, ring, options = {}) {
     clearSheetPreview(mapService);
     const restoreDataLayers = suppressMapDataLayersForCapture(mapService, options.keepLayerIds || []);
+    const restoreCallouts = hideCalloutPreviewForCapture(mapService);
     const map = mapService?.getMap?.();
 
     try {
@@ -1243,6 +1246,7 @@ async function captureBasemapUnderlay(mapService, template, ring, options = {}) 
 
         throw new Error('Sheet polygon extends outside the map capture area — try widening the map panel or lowering basemap quality');
     } finally {
+        restoreCallouts();
         restoreDataLayers();
     }
 }
@@ -1257,6 +1261,7 @@ async function captureBasemapUnderlay(mapService, template, ring, options = {}) 
 async function captureOverviewBasemap(mapService, template) {
     clearSheetPreview(mapService);
     const restoreDataLayers = suppressMapDataLayersForCapture(mapService);
+    const restoreCallouts = hideCalloutPreviewForCapture(mapService);
     const map = mapService?.getMap?.();
 
     try {
@@ -1267,6 +1272,7 @@ async function captureOverviewBasemap(mapService, template) {
         }, { preservePixelRatio: true, rewaitAfterBeforeCapture: false });
         return { canvas, captureScale };
     } finally {
+        restoreCallouts();
         restoreDataLayers();
         if (map) {
             await ensureMapFrameReady(map);
@@ -1434,7 +1440,8 @@ export async function buildHybridPagePdfBlob({
                 layoutMargins,
                 pageW,
                 pageH,
-                goldPdfRing
+                goldPdfRing,
+                insetViews: pageOptions.insetViews || []
             });
         }
     } else if (pageOptions.pageType === 'overview') {
@@ -1578,7 +1585,8 @@ export async function buildInsetPagePdfBlob({
     mapService = null,
     projectName = 'Sheet Cutter',
     exportDate = new Date(),
-    JsPDFCtor = null
+    JsPDFCtor = null,
+    calloutSession = null
 }) {
     const orientation = template.orientation === PAGE_ORIENTATIONS.PORTRAIT
         ? PAGE_ORIENTATIONS.PORTRAIT
@@ -1637,6 +1645,19 @@ export async function buildInsetPagePdfBlob({
             INSET_NORTH_ARROW_SIZE_PT,
             0
         );
+        if (calloutSession && capture.inset && map && transform) {
+            drawInsetCalloutsOnPdf(doc, {
+                session: calloutSession,
+                insetView: capture.inset,
+                map,
+                transform,
+                captureScale: capture.underlay.captureScale,
+                layoutMargins,
+                pageW,
+                pageH,
+                clipRect: cell.mapRect
+            });
+        }
     }
 
     drawSheetTitleBlockFooter(doc, null, page.totalInsetPages || 1, layoutMargins, {
@@ -1926,7 +1947,8 @@ export async function exportSheetPlanPdf({
                         frameRing: ring,
                         projectName,
                         exportDate,
-                        calloutSession
+                        calloutSession,
+                        insetViews: session?.sheets?.insetViews || []
                     },
                     map,
                     mapService,
@@ -2038,7 +2060,8 @@ export async function exportSheetPlanPdf({
                     mapService,
                     projectName,
                     exportDate,
-                    JsPDFCtor
+                    JsPDFCtor,
+                    calloutSession
                 });
                 reportProgress({
                     step: `Writing ${pageFile}…`,
@@ -2090,6 +2113,7 @@ export async function exportSheetPlanPdf({
             restoreMapCamera(map, savedCamera);
             resumeInteractions?.();
             showSheetPreview(mapService, layers);
+            refreshCalloutRuntimePreview();
             await ensureMapFrameReady(map);
         } catch (_) {
             // Best-effort recovery so a failed export does not leave the map wedged.

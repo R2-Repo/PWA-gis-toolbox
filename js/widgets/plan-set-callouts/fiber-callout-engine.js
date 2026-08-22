@@ -20,11 +20,14 @@ import {
 } from './fiber-notes.js';
 import { groupSpanMembers } from './span-grouping.js';
 import {
+    collectFeatureObstacleCoordinates,
     featureAnchorCoordinate,
+    isLeaderEnabled,
     leaderKey,
     notesUsedOnSheet,
-    nudgeBubbles,
-    offsetBubbleCoordinate
+    offsetBubbleCoordinate,
+    placeBubbleAvoidingConflicts,
+    resolveLeaderBubbles
 } from './leader-placement.js';
 
 export { FIBER_CALLOUT_PROFILE } from './fiber-notes.js';
@@ -32,7 +35,9 @@ export {
     buildCalloutPreviewGeoJson,
     leadersForSheet,
     notesUsedOnSheet,
-    leaderKey
+    leaderKey,
+    isLeaderEnabled,
+    findCoveringInset
 } from './leader-placement.js';
 
 export const FIBER_CALLOUT_STEPS = ['Project', 'Generate', 'Review'];
@@ -53,10 +58,12 @@ export function createFiberCalloutSession(input = {}) {
         leaders: [],
         overrides: {
             suppressedLeaderKeys: [],
+            enabledLeaderKeys: [],
             bubbleByLeaderKey: {},
             extraLeaders: [],
             extraNotes: []
         },
+        placementObstacles: [],
         sheets: [],
         sheetSetId: '',
         selectedSheetId: '',
@@ -102,6 +109,38 @@ function stampFiberKey(feature, fiberKey) {
             _udotFiberKey: feature.properties?._udotFiberKey || fiberKey
         }
     };
+}
+
+function emptyOverrides() {
+    return {
+        suppressedLeaderKeys: [],
+        enabledLeaderKeys: [],
+        bubbleByLeaderKey: {},
+        extraLeaders: [],
+        extraNotes: []
+    };
+}
+
+/**
+ * Opt-in mode: empty enabledLeaderKeys means all auto callouts start off.
+ * Legacy sessions without the field keep currently visible leaders on.
+ * @param {object} session
+ * @returns {object}
+ */
+export function withOptInOverrides(session) {
+    const overrides = { ...emptyOverrides(), ...(session?.overrides || {}) };
+    if (!Array.isArray(session?.overrides?.enabledLeaderKeys)) {
+        const live = (session?.leaders || []).filter((leader) => isLeaderEnabled(leader));
+        overrides.enabledLeaderKeys = live.length
+            ? live.map((leader) => leader.leaderKey || leader.leaderId)
+            : [];
+    }
+    return overrides;
+}
+
+function isAutoLeaderOn(overrides, key) {
+    if ((overrides.suppressedLeaderKeys || []).includes(key)) return false;
+    return (overrides.enabledLeaderKeys || []).includes(key);
 }
 
 function textsForTarget(kind, members) {
@@ -233,13 +272,14 @@ export function generateFiberCallouts(session, input = {}) {
     }
 
     const notes = assignStableNoteNumbers(existingNotes, textsInOrder);
-    const suppressed = new Set(session.overrides?.suppressedLeaderKeys || []);
-    const bubbleByLeaderKey = session.overrides?.bubbleByLeaderKey || {};
+    const overrides = withOptInOverrides(session);
+    const suppressed = new Set(overrides.suppressedLeaderKeys || []);
+    const bubbleByLeaderKey = overrides.bubbleByLeaderKey || {};
+    const placementObstacles = collectFeatureObstacleCoordinates(features);
 
     let autoLeaders = [];
     for (const item of discovered) {
         const key = leaderKey(item.sheetId, item.targetKey);
-        if (suppressed.has(key)) continue;
         const noteIds = item.texts
             .map((text) => findNoteByText(notes, text)?.noteId)
             .filter(Boolean);
@@ -247,33 +287,49 @@ export function generateFiberCallouts(session, input = {}) {
         const anchorFeature = pickAnchorFeature(item.members);
         const anchor = featureAnchorCoordinate(anchorFeature);
         if (!anchor) continue;
-        const bubble = bubbleByLeaderKey[key] || offsetBubbleCoordinate(anchor, routeLine);
+        const enabled = isAutoLeaderOn(overrides, key);
         autoLeaders.push({
             leaderId: key,
             leaderKey: key,
             sheetId: item.sheetId,
+            sheetNumber: item.sheetNumber,
             targetKey: item.targetKey,
             targetKind: item.kind,
+            memberIds: item.members.map((feature) => fiberFeatureId(feature)).filter(Boolean),
             noteIds,
             anchor,
-            bubble,
-            suppressed: false,
+            bubble: bubbleByLeaderKey[key] || offsetBubbleCoordinate(anchor, routeLine),
+            suppressed: !enabled,
+            enabled,
             source: 'auto'
         });
     }
 
-    autoLeaders = nudgeBubbles(autoLeaders);
-
-    const extraLeaders = (session.overrides?.extraLeaders || [])
+    const extraLeaders = (overrides.extraLeaders || [])
         .filter((leader) => sheets.some((sheet) => sheet.sheetId === leader.sheetId))
         .map((leader) => {
             const key = leader.leaderKey || leader.leaderId;
+            const enabled = !suppressed.has(key);
             return {
                 ...leader,
                 bubble: bubbleByLeaderKey[key] || leader.bubble,
-                suppressed: suppressed.has(key)
+                suppressed: !enabled,
+                enabled
             };
         });
+
+    const lockedKeys = new Set(Object.keys(bubbleByLeaderKey));
+    const placed = resolveLeaderBubbles([...autoLeaders, ...extraLeaders], {
+        routeLine,
+        obstacles: [
+            ...placementObstacles,
+            ...[...autoLeaders, ...extraLeaders].map((leader) => leader.anchor).filter(Boolean)
+        ],
+        lockedKeys
+    });
+    const extraKeys = new Set(extraLeaders.map((leader) => leader.leaderKey || leader.leaderId));
+    autoLeaders = placed.filter((leader) => !extraKeys.has(leader.leaderKey || leader.leaderId));
+    const placedExtra = placed.filter((leader) => extraKeys.has(leader.leaderKey || leader.leaderId));
 
     const selectedSheetId = sheets.some((sheet) => sheet.sheetId === session.selectedSheetId)
         ? session.selectedSheetId
@@ -284,7 +340,9 @@ export function generateFiberCallouts(session, input = {}) {
         version: 2,
         profileType: FIBER_CALLOUT_PROFILE,
         notes,
-        leaders: [...autoLeaders, ...extraLeaders],
+        leaders: [...autoLeaders, ...placedExtra],
+        overrides,
+        placementObstacles,
         sheets,
         sheetSetId: input.sheetSetId || session.sheetSetId || '',
         selectedSheetId,
@@ -296,22 +354,51 @@ export function generateFiberCallouts(session, input = {}) {
 /**
  * @param {object} session
  * @param {string} key
+ * @param {boolean} enabled
  * @returns {object}
  */
-export function suppressLeader(session, key) {
-    const suppressedLeaderKeys = [...new Set([
-        ...(session.overrides?.suppressedLeaderKeys || []),
-        key
-    ])];
+export function setLeaderEnabled(session, key, enabled) {
+    const overrides = withOptInOverrides(session);
+    const suppressed = new Set(overrides.suppressedLeaderKeys || []);
+    const opted = new Set(overrides.enabledLeaderKeys || []);
+    if (enabled) {
+        suppressed.delete(key);
+        opted.add(key);
+    } else {
+        suppressed.add(key);
+        opted.delete(key);
+    }
     return {
         ...session,
-        overrides: { ...session.overrides, suppressedLeaderKeys },
+        overrides: {
+            ...overrides,
+            suppressedLeaderKeys: [...suppressed],
+            enabledLeaderKeys: [...opted]
+        },
         leaders: (session.leaders || []).map((leader) => (
             (leader.leaderKey || leader.leaderId) === key
-                ? { ...leader, suppressed: true }
+                ? { ...leader, suppressed: !enabled, enabled: Boolean(enabled) }
                 : leader
         ))
     };
+}
+
+/**
+ * @param {object} session
+ * @param {string} key
+ * @returns {object}
+ */
+export function suppressLeader(session, key) {
+    return setLeaderEnabled(session, key, false);
+}
+
+/**
+ * @param {object} session
+ * @param {string} key
+ * @returns {object}
+ */
+export function enableLeader(session, key) {
+    return setLeaderEnabled(session, key, true);
 }
 
 /**
@@ -343,28 +430,61 @@ export function addManualLeader(session, input = {}) {
         targetKind: input.targetKind || 'manual',
         noteIds: [note.noteId],
         anchor: input.anchor,
-        bubble: input.bubble || offsetBubbleCoordinate(input.anchor, session.routeLine),
+        bubble: input.bubble || placeBubbleAvoidingConflicts({
+            leaderKey: key,
+            anchor: input.anchor
+        }, {
+            routeLine: session.routeLine,
+            obstacles: session.placementObstacles || [],
+            otherLeaders: (session.leaders || []).filter((leader) => isLeaderEnabled(leader))
+        }) || offsetBubbleCoordinate(input.anchor, session.routeLine),
         suppressed: false,
+        enabled: true,
         source: 'manual'
     };
     const extraLeaders = [
         ...(session.overrides?.extraLeaders || []).filter((entry) => entry.leaderKey !== key),
         leader
     ];
+    const overrides = withOptInOverrides(session);
+    const enabledLeaderKeys = [...new Set([...(overrides.enabledLeaderKeys || []), key])];
+    const suppressedLeaderKeys = (overrides.suppressedLeaderKeys || []).filter((item) => item !== key);
     return {
         ...session,
         notes,
         overrides: {
-            ...session.overrides,
+            ...overrides,
             extraNotes,
             extraLeaders,
-            suppressedLeaderKeys: (session.overrides?.suppressedLeaderKeys || []).filter((item) => item !== key)
+            enabledLeaderKeys,
+            suppressedLeaderKeys
         },
         leaders: [
             ...(session.leaders || []).filter((entry) => entry.leaderKey !== key),
-            leader
+            { ...leader, enabled: true, suppressed: false }
         ]
     };
+}
+
+/**
+ * Turn on an existing discovered leader, or add a manual one.
+ * @param {object} session
+ * @param {object} input
+ * @returns {object}
+ */
+export function enableOrAddLeader(session, input = {}) {
+    const targetKey = input.targetKey;
+    if (targetKey) {
+        const matches = (session.leaders || []).filter((leader) => leader.targetKey === targetKey);
+        if (matches.length) {
+            let next = session;
+            for (const leader of matches) {
+                next = setLeaderEnabled(next, leader.leaderKey || leader.leaderId, true);
+            }
+            return next;
+        }
+    }
+    return addManualLeader(session, input);
 }
 
 /**
@@ -459,6 +579,7 @@ export function serializeFiberCalloutSession(session) {
             notes: session.notes || [],
             leaders: session.leaders || [],
             overrides: session.overrides || {},
+            placementObstacles: session.placementObstacles || [],
             sheets: (session.sheets || []).map((sheet) => ({
                 sheetId: sheet.sheetId,
                 sheetNumber: sheet.sheetNumber,
@@ -497,10 +618,12 @@ export function restoreFiberCalloutSession(bundle) {
         leaders: callouts.leaders || [],
         overrides: callouts.overrides || {
             suppressedLeaderKeys: [],
+            enabledLeaderKeys: [],
             bubbleByLeaderKey: {},
             extraLeaders: [],
             extraNotes: []
         },
+        placementObstacles: callouts.placementObstacles || [],
         sheets: callouts.sheets || [],
         sheetSetId: bundle.metadata?.sheetSetId || '',
         selectedSheetId: callouts.selectedSheetId || '',
@@ -525,7 +648,7 @@ export function validateFiberCalloutSession(session) {
             step: 'Generate'
         });
     }
-    if (!(session.leaders || []).filter((leader) => !leader.suppressed).length) {
+    if (!(session.leaders || []).filter((leader) => isLeaderEnabled(leader)).length) {
         findings.push({
             severity: 'warning',
             code: 'missing_leaders',

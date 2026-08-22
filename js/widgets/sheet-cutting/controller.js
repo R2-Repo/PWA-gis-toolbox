@@ -28,6 +28,7 @@ import {
 } from './engine.js';
 import { clearSheetPreview, showSheetPreview } from './sheet-preview.js';
 import { exportSheetPlanPdf } from './sheet-pdf-export.js';
+import { refreshCalloutRuntimePreview } from '../plan-set-callouts/runtime.js';
 import { buildCombinedSheetGeoJson } from './export-builder.js';
 import { sanitizeExportFilename } from '../../export/folder-export.js';
 import { applyImportLayerStyles } from '../../import/post-import.js';
@@ -86,6 +87,7 @@ function clearPreviewLayers(ctx) {
 function renderSheetPreview(ctx, session) {
     const exportPackage = buildSessionExport(session);
     showSheetPreview(ctx.mapService, exportPackage.layers || {});
+    refreshCalloutRuntimePreview();
 }
 
 function getRouteLayerOptions(ctx) {

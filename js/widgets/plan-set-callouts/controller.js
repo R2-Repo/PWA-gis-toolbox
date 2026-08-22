@@ -3,7 +3,7 @@
  */
 
 import { openReactIsland } from '../../ui/open-react-island.js';
-import { markWidgetClosed, upsertWidgetState, getWidgetEntry } from '../widget-state-store.js';
+import { getWidgetEntry } from '../widget-state-store.js';
 import { buildSheetFramesGeoJson } from '../sheet-cutting/export-builder.js';
 import {
     envelopeFromFeatures,
@@ -14,33 +14,21 @@ import {
 import { queryFiberFeaturesByEnvelope } from '../sheet-cutting/fiber-operational-fetch.js';
 import { isUdotFiberLiveDataset } from '../../symbology/udot-fiber/hover-fields.js';
 import { UDOT_FIBER_LAYERS } from '../../symbology/udot-fiber/constants.js';
-import {
-    WIDGET_ID,
-    serializeCalloutSession,
-    restoreCalloutSession
-} from './engine.js';
+import { restoreCalloutSession } from './engine.js';
 import {
     FIBER_CALLOUT_STEPS,
-    addManualLeader,
-    addNoteToLeader,
     createFiberCalloutSession,
-    generateFiberCallouts,
     isFiberCalloutSession,
-    restoreSheetSessionFromStore,
-    selectCalloutSheet,
-    suppressLeader,
-    updateFiberCalloutProject
+    restoreSheetSessionFromStore
 } from './fiber-callout-engine.js';
 import { notesUsedOnSheet } from './leader-placement.js';
-import { clearCalloutPreview, showCalloutPreview } from './preview.js';
-import { setPlanSetCalloutMenuContext } from './context-menu-bridge.js';
-
-function persistSession(session, open = true) {
-    upsertWidgetState(WIDGET_ID, {
-        open,
-        state: serializeCalloutSession(session)
-    });
-}
+import {
+    calloutRuntimeApi,
+    ensureCalloutRuntime,
+    hydratePlanSetCallouts as hydrateRuntime,
+    setCalloutDialogOpen,
+    subscribeCalloutSession
+} from './runtime.js';
 
 function emptyFiberFeatures() {
     return { boxes: [], splices: [], conduit: [], fiber: [], cabinets: [], building: [] };
@@ -116,109 +104,97 @@ function linkedSheetSession() {
     return restoreSheetSessionFromStore(entry.state);
 }
 
+function loadStoredSession() {
+    const raw = getWidgetEntry('plan-set-callouts')?.state;
+    if (!raw) return createFiberCalloutSession();
+    try {
+        const restored = restoreCalloutSession(raw);
+        return isFiberCalloutSession(restored)
+            ? restored
+            : createFiberCalloutSession({
+                projectName: restored.project?.projectName,
+                projectNumber: restored.project?.projectNumber
+            });
+    } catch {
+        return createFiberCalloutSession();
+    }
+}
+
+function initialStepFor(session) {
+    if ((session?.leaders || []).length) return 3;
+    if (session?.project?.projectName && session.project.projectName !== 'Plan Set Callouts') return 2;
+    return 1;
+}
+
+/**
+ * Restore map callouts after a workspace import even if the dialog is closed.
+ * @param {import('../widget-types.js').WidgetContext} ctx
+ */
+export function hydratePlanSetCallouts(ctx) {
+    return hydrateRuntime(ctx);
+}
+
 /**
  * @param {import('../widget-types.js').WidgetContext} ctx
  * @param {{ restoreState?: object }} [options]
  */
 export async function openPlanSetCallouts(ctx, { restoreState = null } = {}) {
-    let session = createFiberCalloutSession();
-    const raw = restoreState || getWidgetEntry(WIDGET_ID)?.state;
-    if (raw) {
-        try {
-            const restored = restoreCalloutSession(raw);
-            session = isFiberCalloutSession(restored)
-                ? restored
-                : createFiberCalloutSession({
-                    projectName: restored.project?.projectName,
-                    projectNumber: restored.project?.projectNumber
-                });
-        } catch {
-            session = createFiberCalloutSession();
-        }
-    }
+    let session = restoreState
+        ? (isFiberCalloutSession(restoreState)
+            ? restoreState
+            : (() => {
+                try {
+                    const restored = restoreCalloutSession(restoreState);
+                    return isFiberCalloutSession(restored) ? restored : loadStoredSession();
+                } catch {
+                    return loadStoredSession();
+                }
+            })())
+        : loadStoredSession();
 
-    const applyPreview = (next) => {
-        session = next;
-        persistSession(session);
-        showCalloutPreview(ctx.mapService, session);
-        return session;
-    };
-
-    setPlanSetCalloutMenuContext({
-        isOpen: () => getWidgetEntry(WIDGET_ID)?.open === true,
-        getSession: () => session,
-        mapService: ctx.mapService,
-        getLayers: () => ctx.getLayers() || [],
-        onRemoveLeader: (leaderKey) => {
-            applyPreview(suppressLeader(session, leaderKey));
-            ctx.showToast?.('Callout removed', 'success');
-        },
-        onAddNote: (leaderKey) => {
-            const text = window.prompt('Additional key note text');
-            if (!text) return;
-            try {
-                applyPreview(addNoteToLeader(session, leaderKey, text));
-            } catch (err) {
-                ctx.showToast?.(err?.message || 'Could not add note', 'warning');
-            }
-        },
-        onAddLeader: (input) => {
-            try {
-                applyPreview(addManualLeader(session, input));
-                ctx.showToast?.('Callout added', 'success');
-            } catch (err) {
-                ctx.showToast?.(err?.message || 'Could not add callout', 'warning');
-            }
-        }
-    });
-
-    persistSession(session, true);
-    if (session.leaders?.length) showCalloutPreview(ctx.mapService, session);
+    const runtime = ensureCalloutRuntime(ctx, session);
+    session = runtime.session;
+    setCalloutDialogOpen(true);
 
     await openReactIsland({
         title: 'Plan Set Callouts',
         width: '560px',
         mountPath: '../../../react/widgets/mountPlanSetCalloutsDialog.jsx',
         mountExport: 'mountPlanSetCalloutsDialog',
-        onClose: () => {
-            setPlanSetCalloutMenuContext(null);
-            clearCalloutPreview(ctx.mapService);
-            markWidgetClosed(WIDGET_ID);
-        },
+            onClose: () => calloutRuntimeApi.onDialogClosed(),
         getProps: (close) => ({
             steps: FIBER_CALLOUT_STEPS,
             initialSession: session,
+            initialStep: initialStepFor(session),
             hasSheetSession: Boolean(linkedSheetSession()?.sheets?.sheets?.length),
+            insetViews: linkedSheetSession()?.sheets?.insetViews || [],
             onCancel: () => {
-                setPlanSetCalloutMenuContext(null);
-                clearCalloutPreview(ctx.mapService);
-                markWidgetClosed(WIDGET_ID);
+                calloutRuntimeApi.onDialogClosed();
+                close();
+            },
+            onDone: () => {
+                ctx.showToast?.(
+                    'Callouts stay on the map. Drag a number to move it; right-click a feature to turn one on or off. Reopen this widget to continue.',
+                    'success'
+                );
+                calloutRuntimeApi.onDialogClosed();
                 close();
             },
             onCreateProject: (input) => {
-                session = (isFiberCalloutSession(session) && (session.leaders || []).length)
-                    ? updateFiberCalloutProject(session, input)
-                    : createFiberCalloutSession(input);
-                persistSession(session);
-                return session;
+                const current = calloutRuntimeApi.getSession();
+                return (isFiberCalloutSession(current) && (current.leaders || []).length)
+                    ? calloutRuntimeApi.updateProject(input)
+                    : calloutRuntimeApi.persistSession(createFiberCalloutSession(input), true);
             },
-            onUpdateProject: (patch) => {
-                session = updateFiberCalloutProject(session, patch);
-                persistSession(session);
-                return session;
-            },
-            onSelectSheet: (sheetId) => {
-                session = selectCalloutSheet(session, sheetId);
-                persistSession(session);
-                return session;
-            },
+            onUpdateProject: (patch) => calloutRuntimeApi.updateProject(patch),
+            onSelectSheet: (sheetId) => calloutRuntimeApi.selectSheet(sheetId),
             onGenerate: async () => {
                 const sheetSession = linkedSheetSession();
                 if (!sheetSession) {
                     throw new Error('Open Sheet Cutter and generate sheets first.');
                 }
                 const features = await collectFiberFeatures(ctx, sheetSession);
-                const next = generateFiberCallouts(session, {
+                const next = calloutRuntimeApi.generate({
                     sheets: sheetSession.sheets?.sheets || [],
                     routeLine: sheetSession.routeLine,
                     sheetSetId: sheetSession.sheets?.sheetSetId,
@@ -228,23 +204,36 @@ export async function openPlanSetCallouts(ctx, { restoreState = null } = {}) {
                     ),
                     features
                 });
-                applyPreview(next);
-                const count = (next.leaders || []).filter((leader) => !leader.suppressed).length;
-                ctx.showToast?.(`Placed ${count} callout(s)`, 'success');
+                const onCount = (next.leaders || []).filter((leader) => (
+                    !leader.suppressed && leader.enabled !== false
+                )).length;
+                ctx.showToast?.(
+                    onCount
+                        ? `Placed ${onCount} callout(s)`
+                        : 'Candidates ready — all callouts start off. Turn them on from Review or right-click a feature.',
+                    'success'
+                );
                 return next;
             },
-            onSuppressLeader: (leaderKey) => applyPreview(suppressLeader(session, leaderKey)),
-            onAddNote: (leaderKey, text) => applyPreview(addNoteToLeader(session, leaderKey, text)),
+            onToggleLeader: (leaderKey, enabled) => calloutRuntimeApi.setLeaderEnabled(leaderKey, enabled),
+            onSuppressLeader: (leaderKey) => calloutRuntimeApi.setLeaderEnabled(leaderKey, false),
+            onAddNote: (leaderKey, text) => calloutRuntimeApi.addNote(leaderKey, text),
             onAddManualNote: (text) => {
-                const sheetId = session.selectedSheetId;
-                const sheetLeaders = (session.leaders || []).filter((leader) => (
-                    leader.sheetId === sheetId && !leader.suppressed
+                const current = calloutRuntimeApi.getSession();
+                const sheetId = current.selectedSheetId;
+                const sheetLeaders = (current.leaders || []).filter((leader) => (
+                    leader.sheetId === sheetId && !leader.suppressed && leader.enabled !== false
                 ));
                 const target = sheetLeaders[0];
-                if (target) return applyPreview(addNoteToLeader(session, target.leaderKey, text));
-                throw new Error('Generate callouts or right-click a feature to add a leader first.');
+                if (target) return calloutRuntimeApi.addNote(target.leaderKey, text);
+                throw new Error('Turn on a callout first, or right-click a feature on the map.');
             },
-            onNotesForSheet: (sheetId) => notesUsedOnSheet(session, sheetId)
+            onNotesForSheet: (sheetId) => notesUsedOnSheet(
+                calloutRuntimeApi.getSession(),
+                sheetId,
+                { insetViews: linkedSheetSession()?.sheets?.insetViews || [], page: 'corridor' }
+            ),
+            onSubscribeSession: (listener) => subscribeCalloutSession(listener)
         })
     });
 }
