@@ -3,7 +3,19 @@ import { describe, expect, it, beforeEach } from 'vitest';
 import { resetIdSequence } from '../js/plan-project/id-utils.js';
 import { assignStableNoteNumbers, noteTextForFeature, pointTargetKey } from '../js/widgets/plan-set-callouts/fiber-notes.js';
 import { groupSpanMembers, spanTargetKey } from '../js/widgets/plan-set-callouts/span-grouping.js';
-import { pickKeyNotesTableRect } from '../js/widgets/plan-set-callouts/pdf-callouts.js';
+import {
+    CALLOUT_PDF_CIRCLE_GAP,
+    CALLOUT_PDF_CIRCLE_R,
+    calloutBubbleCenters,
+    drawSheetCalloutsOnPdf,
+    pickKeyNotesTableRect,
+    shouldDrawCalloutsOnPdfPage
+} from '../js/widgets/plan-set-callouts/pdf-callouts.js';
+import { suspendCalloutPreview } from '../js/widgets/plan-set-callouts/preview.js';
+import {
+    canAdvanceCalloutStep,
+    isCalloutPrimaryActionDisabled
+} from '../js/widgets/plan-set-callouts/wizard-state.js';
 import {
     addManualLeader,
     createFiberCalloutSession,
@@ -164,6 +176,7 @@ describe('fiber callout generate', () => {
             features
         });
         expect(session.leaders.some((leader) => leader.targetKey === pointTargetKey('boxes', '10'))).toBe(true);
+        expect(session.leaders.every((leader) => leader.sheetNumber === 1)).toBe(true);
         expect(session.leaders.some((leader) => leader.targetKey === pointTargetKey('splices', '99'))).toBe(true);
         expect(session.leaders.some((leader) => leader.targetKind === 'span')).toBe(true);
         expect(session.leaders.some((leader) => String(leader.targetKey).includes('cabinets'))).toBe(false);
@@ -364,5 +377,151 @@ describe('key notes table placement', () => {
         });
         expect(rect.y + rect.height).toBeLessThan(612 - 50);
         expect(rect.x).toBeLessThan(200);
+    });
+});
+
+describe('callout wizard done button', () => {
+    it('keeps Done enabled on the last step', () => {
+        expect(canAdvanceCalloutStep(3, {
+            projectName: 'Fiber',
+            hasSheetSession: true,
+            hasLeaders: true
+        })).toBe(true);
+        expect(isCalloutPrimaryActionDisabled({ busy: false, canAdvance: true })).toBe(false);
+        expect(isCalloutPrimaryActionDisabled({ busy: true, canAdvance: true })).toBe(true);
+    });
+});
+
+describe('pdf callout overlay', () => {
+    function mockDoc() {
+        const calls = [];
+        const rec = (name) => (...args) => { calls.push({ name, args }); };
+        return {
+            calls,
+            setDrawColor: rec('setDrawColor'),
+            setLineWidth: rec('setLineWidth'),
+            setFillColor: rec('setFillColor'),
+            setFont: rec('setFont'),
+            setFontSize: rec('setFontSize'),
+            setTextColor: rec('setTextColor'),
+            line: rec('line'),
+            circle: rec('circle'),
+            rect: rec('rect'),
+            text: rec('text'),
+            internal: { pageSize: { getWidth: () => 792, getHeight: () => 612 } }
+        };
+    }
+
+    function twoNumberSession() {
+        return {
+            notes: [
+                { noteId: 'n1', number: 1, text: 'JB-A' },
+                { noteId: 'n2', number: 2, text: 'UDOT 048 SMF' }
+            ],
+            leaders: [{
+                leaderId: 's1::span',
+                leaderKey: 's1::span',
+                sheetId: 's1',
+                sheetNumber: 1,
+                noteIds: ['n1', 'n2'],
+                anchor: [-111.90, 40.75],
+                bubble: [-111.899, 40.751],
+                suppressed: false
+            }],
+            sheets: [sheet]
+        };
+    }
+
+    it('skips overview and DETAILS pages', () => {
+        expect(shouldDrawCalloutsOnPdfPage('overview')).toBe(false);
+        expect(shouldDrawCalloutsOnPdfPage('inset')).toBe(false);
+        expect(shouldDrawCalloutsOnPdfPage('detail')).toBe(true);
+        const doc = mockDoc();
+        drawSheetCalloutsOnPdf(doc, {
+            session: twoNumberSession(),
+            sheetId: 's1',
+            pageType: 'overview'
+        });
+        expect(doc.calls).toHaveLength(0);
+    });
+
+    it('draws stacked numbers tightly and still writes PROJECT KEY NOTES if leaders fail to project', () => {
+        expect(CALLOUT_PDF_CIRCLE_GAP).toBeLessThan(CALLOUT_PDF_CIRCLE_R * 2 + 1);
+        const centers = calloutBubbleCenters({ x: 100, y: 80 }, 3);
+        expect(centers[1].x - centers[0].x).toBeCloseTo(CALLOUT_PDF_CIRCLE_GAP, 5);
+        expect(centers[2].x - centers[1].x).toBeCloseTo(CALLOUT_PDF_CIRCLE_GAP, 5);
+
+        const doc = mockDoc();
+        drawSheetCalloutsOnPdf(doc, {
+            session: twoNumberSession(),
+            sheet: { sheetId: 's1', sheetNumber: 1 },
+            pageType: 'detail',
+            map: {},
+            transform: {
+                projectLngLat: () => {
+                    throw new Error('project failed');
+                }
+            },
+            layoutMargins: { left: 36, right: 36, top: 36, bottom: 36 },
+            pageW: 792,
+            pageH: 612
+        });
+        expect(doc.calls.some((call) => call.name === 'text' && call.args[0] === 'PROJECT KEY NOTES')).toBe(true);
+        expect(doc.calls.some((call) => call.name === 'text' && String(call.args[0]).includes('JB-A'))).toBe(true);
+    });
+
+    it('draws crisp vector circles with the tighter gap when projection works', () => {
+        const doc = mockDoc();
+        drawSheetCalloutsOnPdf(doc, {
+            session: twoNumberSession(),
+            sheetId: 's1',
+            pageType: 'detail',
+            map: {},
+            transform: {
+                projectLngLat: (_map, lng, lat) => ({ x: Math.abs(lng) * 10, y: lat * 10 })
+            },
+            layoutMargins: { left: 36, right: 36, top: 36, bottom: 36 },
+            pageW: 792,
+            pageH: 612
+        });
+        const leaderCircles = doc.calls.filter((call) => call.name === 'circle').slice(0, 2);
+        expect(leaderCircles[0].args[2]).toBe(CALLOUT_PDF_CIRCLE_R);
+        expect(leaderCircles[1].args[0] - leaderCircles[0].args[0]).toBeCloseTo(CALLOUT_PDF_CIRCLE_GAP, 5);
+        expect(doc.calls.some((call) => call.name === 'line')).toBe(true);
+    });
+
+    it('matches leaders by sheet number when ids drifted', () => {
+        const session = twoNumberSession();
+        session.leaders[0].sheetId = 'old-s1';
+        const found = leadersForSheet(session, { sheetId: 's1', sheetNumber: 1 });
+        expect(found).toHaveLength(1);
+    });
+});
+
+describe('callout preview capture hide', () => {
+    it('hides leftover preview layers and restores them', () => {
+        const vis = new Map([
+            ['callout-preview-abc-circle', 'visible'],
+            ['draw-callout-preview-1-line', 'visible']
+        ]);
+        const map = {
+            getStyle: () => ({
+                layers: [
+                    { id: 'callout-preview-abc-circle' },
+                    { id: 'draw-callout-preview-1-line' }
+                ],
+                sources: { 'callout-preview-abc': {} }
+            }),
+            getLayer: (id) => (vis.has(id) ? { id } : null),
+            getLayoutProperty: (id, prop) => (prop === 'visibility' ? vis.get(id) : undefined),
+            setLayoutProperty: (id, prop, value) => {
+                if (prop === 'visibility') vis.set(id, value);
+            }
+        };
+        const restore = suspendCalloutPreview({ getMap: () => map });
+        expect(vis.get('callout-preview-abc-circle')).toBe('none');
+        expect(vis.get('draw-callout-preview-1-line')).toBe('visible');
+        restore();
+        expect(vis.get('callout-preview-abc-circle')).toBe('visible');
     });
 });

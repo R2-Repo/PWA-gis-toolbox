@@ -83,7 +83,7 @@ import { getWidgetEntry } from '../widget-state-store.js';
 import { restoreCalloutSession } from '../plan-set-callouts/engine.js';
 import { isFiberCalloutSession } from '../plan-set-callouts/fiber-callout-engine.js';
 import { drawInsetCalloutsOnPdf, drawSheetCalloutsOnPdf } from '../plan-set-callouts/pdf-callouts.js';
-import { hideCalloutPreviewForCapture } from '../plan-set-callouts/preview.js';
+import { suspendCalloutPreview } from '../plan-set-callouts/preview.js';
 import { refreshCalloutRuntimePreview } from '../plan-set-callouts/runtime.js';
 
 const FIT_PADDING = 48;
@@ -1200,8 +1200,8 @@ async function bumpMapToExportRatio(map, template) {
  */
 async function captureBasemapUnderlay(mapService, template, ring, options = {}) {
     clearSheetPreview(mapService);
+    const restoreCalloutPreview = suspendCalloutPreview(mapService);
     const restoreDataLayers = suppressMapDataLayersForCapture(mapService, options.keepLayerIds || []);
-    const restoreCallouts = hideCalloutPreviewForCapture(mapService);
     const map = mapService?.getMap?.();
 
     try {
@@ -1246,8 +1246,8 @@ async function captureBasemapUnderlay(mapService, template, ring, options = {}) 
 
         throw new Error('Sheet polygon extends outside the map capture area — try widening the map panel or lowering basemap quality');
     } finally {
-        restoreCallouts();
         restoreDataLayers();
+        restoreCalloutPreview();
     }
 }
 
@@ -1260,8 +1260,8 @@ async function captureBasemapUnderlay(mapService, template, ring, options = {}) 
  */
 async function captureOverviewBasemap(mapService, template) {
     clearSheetPreview(mapService);
+    const restoreCalloutPreview = suspendCalloutPreview(mapService);
     const restoreDataLayers = suppressMapDataLayersForCapture(mapService);
-    const restoreCallouts = hideCalloutPreviewForCapture(mapService);
     const map = mapService?.getMap?.();
 
     try {
@@ -1272,8 +1272,8 @@ async function captureOverviewBasemap(mapService, template) {
         }, { preservePixelRatio: true, rewaitAfterBeforeCapture: false });
         return { canvas, captureScale };
     } finally {
-        restoreCallouts();
         restoreDataLayers();
+        restoreCalloutPreview();
         if (map) {
             await ensureMapFrameReady(map);
         }
@@ -1433,7 +1433,9 @@ export async function buildHybridPagePdfBlob({
             )).filter((point) => Number.isFinite(point?.x) && Number.isFinite(point?.y));
             drawSheetCalloutsOnPdf(doc, {
                 session: pageOptions.calloutSession,
+                sheet: pageOptions.sheet,
                 sheetId: pageOptions.sheet.sheetId,
+                pageType: pageOptions.pageType,
                 map,
                 transform,
                 captureScale,
@@ -1782,6 +1784,7 @@ export async function exportSheetPlanPdf({
     const sessionOriginalPixelRatio = typeof map?.getPixelRatio === 'function' ? map.getPixelRatio() : 1;
     const was3d = mapService.is3DEnabled?.() ?? false;
     const resumeInteractions = suspendMapInteractions(map);
+    const restoreCalloutPreview = suspendCalloutPreview(mapService);
     const writtenFiles = [];
     let dpiWarningShown = false;
     const maybeWarnDpi = () => {
@@ -2112,6 +2115,7 @@ export async function exportSheetPlanPdf({
             }
             restoreMapCamera(map, savedCamera);
             resumeInteractions?.();
+            restoreCalloutPreview?.();
             showSheetPreview(mapService, layers);
             refreshCalloutRuntimePreview();
             await ensureMapFrameReady(map);

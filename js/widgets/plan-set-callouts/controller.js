@@ -161,7 +161,7 @@ export async function openPlanSetCallouts(ctx, { restoreState = null } = {}) {
         width: '560px',
         mountPath: '../../../react/widgets/mountPlanSetCalloutsDialog.jsx',
         mountExport: 'mountPlanSetCalloutsDialog',
-            onClose: () => calloutRuntimeApi.onDialogClosed(),
+        onClose: () => calloutRuntimeApi.onDialogClosed(),
         getProps: (close) => ({
             steps: FIBER_CALLOUT_STEPS,
             initialSession: session,

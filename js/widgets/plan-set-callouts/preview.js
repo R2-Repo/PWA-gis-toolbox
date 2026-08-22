@@ -10,7 +10,7 @@ import { buildCalloutPreviewGeoJson } from './leader-placement.js';
 
 /** @type {object[]} */
 let activePreviewEntries = [];
-/** @type {null | { map: object, onMouseDown: Function, onMouseMove: Function, onMouseUp: Function, onMouseEnter: Function }} */
+/** @type {null | { map: object, onMouseDown: Function, onMouseMove: Function, onMouseUp: Function }} */
 let dragListeners = null;
 let dragging = null;
 
@@ -27,14 +27,92 @@ export function getLinkedInsetViews() {
     }
 }
 
+const PREVIEW_ID_HINT = 'callout-preview-';
+
+function previewMap(mapService) {
+    return mapService?.getMap?.() || null;
+}
+
+function isPlanSetCalloutPreviewId(id) {
+    return String(id).startsWith(PREVIEW_ID_HINT);
+}
+
+function collectPreviewLayerIds(map) {
+    const ids = new Set(activePreviewEntries.flatMap((entry) => entry.layerIds || []));
+    for (const layer of map?.getStyle?.()?.layers || []) {
+        if (isPlanSetCalloutPreviewId(layer.id)) ids.add(layer.id);
+    }
+    return [...ids];
+}
+
+function collectPreviewSourceIds(map) {
+    const ids = new Set(activePreviewEntries.map((entry) => entry.srcId).filter(Boolean));
+    for (const srcId of Object.keys(map?.getStyle?.()?.sources || {})) {
+        if (isPlanSetCalloutPreviewId(srcId)) ids.add(srcId);
+    }
+    return [...ids];
+}
+
 /**
  * @param {object} mapService
  */
 export function clearCalloutPreview(mapService) {
-    for (const entry of activePreviewEntries) {
-        mapService?.removeTempFeature?.(entry);
+    const map = previewMap(mapService);
+    const entries = [...activePreviewEntries];
+
+    if (!map) {
+        activePreviewEntries = [];
+        for (const entry of entries) {
+            mapService?.removeTempFeature?.(entry);
+        }
+        return;
     }
+
+    const layerIds = collectPreviewLayerIds(map);
+    const sourceIds = collectPreviewSourceIds(map);
     activePreviewEntries = [];
+
+    for (const lid of layerIds) {
+        if (map.getLayer?.(lid)) map.removeLayer(lid);
+    }
+    for (const srcId of sourceIds) {
+        if (map.getSource?.(srcId)) map.removeSource(srcId);
+    }
+}
+
+/**
+ * Hide preview paint during PDF capture so callouts are vector-only on corridor sheets
+ * and absent from the overview raster.
+ * @param {object} mapService
+ * @returns {() => void}
+ */
+export function suspendCalloutPreview(mapService) {
+    const map = previewMap(mapService);
+    if (!map) return () => {};
+
+    const restored = [];
+    for (const id of collectPreviewLayerIds(map)) {
+        if (!map.getLayer?.(id)) continue;
+        const prev = map.getLayoutProperty?.(id, 'visibility');
+        if (prev === 'none') continue;
+        map.setLayoutProperty?.(id, 'visibility', 'none');
+        restored.push({ id, prev: prev || 'visible' });
+    }
+
+    return () => {
+        for (const { id, prev } of restored) {
+            if (!map.getLayer?.(id)) continue;
+            map.setLayoutProperty?.(id, 'visibility', prev);
+        }
+    };
+}
+
+/**
+ * @param {object} mapService
+ * @returns {() => void}
+ */
+export function hideCalloutPreviewForCapture(mapService) {
+    return suspendCalloutPreview(mapService);
 }
 
 /**
@@ -42,29 +120,6 @@ export function clearCalloutPreview(mapService) {
  */
 export function getCalloutPreviewLayerIds() {
     return activePreviewEntries.flatMap((entry) => entry.layerIds || []);
-}
-
-/**
- * Hide preview during PDF basemap capture so leaders are not rasterized twice.
- * @param {object} mapService
- * @returns {() => void}
- */
-export function hideCalloutPreviewForCapture(mapService) {
-    const map = mapService?.getMap?.();
-    const hidden = [];
-    for (const id of getCalloutPreviewLayerIds()) {
-        if (!map?.getLayer?.(id)) continue;
-        const visibility = map.getLayoutProperty(id, 'visibility');
-        if (visibility !== 'none') {
-            map.setLayoutProperty(id, 'visibility', 'none');
-            hidden.push(id);
-        }
-    }
-    return () => {
-        for (const id of hidden) {
-            if (map?.getLayer?.(id)) map.setLayoutProperty(id, 'visibility', 'visible');
-        }
-    };
 }
 
 function bubbleLayerIds(map) {
@@ -167,7 +222,7 @@ function ensurePreviewLayers(map, collection) {
         return existing;
     }
 
-    const srcId = `callout-preview-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    const srcId = `${PREVIEW_ID_HINT}${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
     map.addSource(srcId, { type: 'geojson', data: collection });
     const layerIds = [];
 
@@ -179,7 +234,7 @@ function ensurePreviewLayers(map, collection) {
         filter: ['==', ['get', 'feature_type'], 'callout_leader'],
         paint: {
             'line-color': '#111111',
-            'line-width': 1.4
+            'line-width': 1.2
         }
     });
     layerIds.push(lineId);
@@ -191,10 +246,10 @@ function ensurePreviewLayers(map, collection) {
         source: srcId,
         filter: ['==', ['get', 'feature_type'], 'callout_bubble'],
         paint: {
-            'circle-radius': 8,
+            'circle-radius': 6,
             'circle-color': '#ffffff',
             'circle-stroke-color': '#111111',
-            'circle-stroke-width': 1.4
+            'circle-stroke-width': 1.1
         }
     });
     layerIds.push(circleId);
@@ -202,7 +257,7 @@ function ensurePreviewLayers(map, collection) {
     const labelSpec = buildMapLabelLayerSpec(`${srcId}-labels`, srcId, {
         field: 'callout_number',
         minZoom: 0,
-        size: 11,
+        size: 10,
         anchor: 'center',
         offset: [0, 0],
         color: '#111111',
@@ -230,7 +285,7 @@ function ensurePreviewLayers(map, collection) {
 export function showCalloutPreview(mapService, session, options = {}) {
     const insetViews = options.insetViews || getLinkedInsetViews();
     const collection = buildCalloutPreviewGeoJson(session, { insetViews });
-    const map = mapService?.getMap?.();
+    const map = previewMap(mapService);
 
     if (!collection.features.length) {
         clearCalloutPreview(mapService);
@@ -259,8 +314,8 @@ export function showCalloutPreview(mapService, session, options = {}) {
  * @returns {object|null}
  */
 export function hitCalloutPreview(mapService, lngLat) {
-    const map = mapService?.getMap?.();
-    const layerIds = getCalloutPreviewLayerIds().filter((id) => map?.getLayer?.(id));
+    const map = previewMap(mapService);
+    const layerIds = collectPreviewLayerIds(map).filter((id) => map?.getLayer?.(id));
     if (!map || !layerIds.length || lngLat?.lng == null) return null;
     const point = map.project([lngLat.lng, lngLat.lat]);
     const hits = map.queryRenderedFeatures(point, { layers: layerIds });

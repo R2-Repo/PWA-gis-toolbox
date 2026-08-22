@@ -2,6 +2,10 @@ import { useEffect, useState } from 'react';
 import { WidgetPanelShell } from './shared/WidgetPanelShell.jsx';
 import { WidgetStepWizard } from './shared/WidgetStepWizard.jsx';
 import { findCoveringInset, notesUsedOnSheet } from '../../js/widgets/plan-set-callouts/leader-placement.js';
+import {
+    canAdvanceCalloutStep,
+    isCalloutPrimaryActionDisabled
+} from '../../js/widgets/plan-set-callouts/wizard-state.js';
 
 function isOn(leader) {
     return leader && !leader.suppressed && leader.enabled !== false;
@@ -208,23 +212,23 @@ export function PlanSetCalloutsDialog({
     );
 
     const stepContent = [renderProjectStep, renderGenerateStep, renderReviewStep][step - 1]();
-    const canGoNext = !busy && (
-        step === 1 ? projectName.trim() && hasSheetSession :
-        step === 2 ? hasSheetSession :
-        true
-    );
-    const isLast = step >= steps.length;
+    const isLastStep = step >= steps.length;
+    const canGoNext = canAdvanceCalloutStep(step, {
+        projectName,
+        hasSheetSession,
+        hasLeaders: (session?.leaders || []).length > 0
+    });
+    const primaryDisabled = isCalloutPrimaryActionDisabled({ busy, canAdvance: canGoNext });
 
     const handleNext = async () => {
+        if (isLastStep) {
+            (onDone || onCancel)?.();
+            return;
+        }
         if (step === 1) {
             await run(() => onCreateProject?.({ projectName, projectNumber }), 'Project ready.');
         } else if (step === 2 && !(session?.leaders || []).length) {
             await run(() => onGenerate?.(), 'Candidates generated.');
-        }
-        if (isLast) {
-            if (onDone) onDone();
-            else onCancel?.();
-            return;
         }
         setStep((current) => Math.min(current + 1, steps.length));
     };
@@ -239,8 +243,8 @@ export function PlanSetCalloutsDialog({
                     <button type="button" className="gis-widget__link-btn" disabled={busy || step <= 1} onClick={() => setStep((current) => Math.max(1, current - 1))}>
                         Back
                     </button>
-                    <button type="button" className="gis-widget__primary-btn" disabled={!canGoNext || busy} onClick={handleNext}>
-                        {isLast ? 'Done' : 'Next'}
+                    <button type="button" className="gis-widget__primary-btn" disabled={primaryDisabled} onClick={handleNext}>
+                        {isLastStep ? 'Done' : 'Next'}
                     </button>
                 </div>
             )}

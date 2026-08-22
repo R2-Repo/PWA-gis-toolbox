@@ -320,17 +320,47 @@ export function isLeaderEnabled(leader) {
 
 /**
  * @param {object} session
- * @param {string} sheetId
+ * @param {string|{ sheetId?: string, sheetNumber?: number }} sheetOrId
  * @param {object} [options]
  * @returns {object[]}
  */
-export function leadersForSheet(session, sheetId, options = {}) {
+export function leadersForSheet(session, sheetOrId, options = {}) {
+    const sheetId = typeof sheetOrId === 'object' ? sheetOrId?.sheetId : sheetOrId;
+    const sheetNumber = typeof sheetOrId === 'object' ? sheetOrId?.sheetNumber : undefined;
     const insetViews = options.insetViews || [];
     const page = options.page || 'all';
     const insetView = options.insetView || null;
-    return (session?.leaders || []).filter((leader) => {
-        if (!isLeaderEnabled(leader)) return false;
-        if (page !== 'inset' && sheetId && leader.sheetId !== sheetId) return false;
+
+    const enabled = (session?.leaders || []).filter(isLeaderEnabled);
+    let sheetLeaders = [];
+    if (page === 'inset' && insetView) {
+        sheetLeaders = enabled;
+    } else if (sheetId) {
+        sheetLeaders = enabled.filter((leader) => leader.sheetId === sheetId);
+        if (!sheetLeaders.length && sheetNumber != null && sheetNumber !== '') {
+            const sessionSheet = (session?.sheets || []).find((sheet) => (
+                Number(sheet.sheetNumber) === Number(sheetNumber)
+            ));
+            if (sessionSheet?.sheetId) {
+                sheetLeaders = enabled.filter((leader) => leader.sheetId === sessionSheet.sheetId);
+            }
+            if (!sheetLeaders.length) {
+                sheetLeaders = enabled.filter((leader) => Number(leader.sheetNumber) === Number(sheetNumber));
+            }
+        }
+    } else if (sheetNumber != null && sheetNumber !== '') {
+        const sessionSheet = (session?.sheets || []).find((sheet) => (
+            Number(sheet.sheetNumber) === Number(sheetNumber)
+        ));
+        if (sessionSheet?.sheetId) {
+            sheetLeaders = enabled.filter((leader) => leader.sheetId === sessionSheet.sheetId);
+        }
+        if (!sheetLeaders.length) {
+            sheetLeaders = enabled.filter((leader) => Number(leader.sheetNumber) === Number(sheetNumber));
+        }
+    }
+
+    return sheetLeaders.filter((leader) => {
         if (page === 'all') return true;
         const covering = findCoveringInset(leader, insetView ? [insetView] : insetViews);
         if (page === 'corridor') return !covering;
@@ -345,14 +375,14 @@ export function leadersForSheet(session, sheetId, options = {}) {
 
 /**
  * @param {object} session
- * @param {string} sheetId
+ * @param {string|{ sheetId?: string, sheetNumber?: number }} sheetOrId
  * @param {object} [options]
  * @returns {object[]}
  */
-export function notesUsedOnSheet(session, sheetId, options = {}) {
+export function notesUsedOnSheet(session, sheetOrId, options = {}) {
     const byId = new Map((session?.notes || []).map((note) => [note.noteId, note]));
     const used = new Map();
-    for (const leader of leadersForSheet(session, sheetId, options)) {
+    for (const leader of leadersForSheet(session, sheetOrId, options)) {
         for (const noteId of leader.noteIds || []) {
             const note = byId.get(noteId);
             if (note) used.set(note.noteId, note);
@@ -407,9 +437,9 @@ export function buildCalloutPreviewGeoJson(session, options = {}) {
             const t = turfApi();
             let coord = leader.bubble;
             if (t && index > 0) {
-                coord = t.destination(t.point(leader.bubble), index * 18, 90, { units: 'feet' }).geometry.coordinates;
+                coord = t.destination(t.point(leader.bubble), index * 10, 90, { units: 'feet' }).geometry.coordinates;
             } else if (index > 0) {
-                coord = [leader.bubble[0] + index * 0.00005, leader.bubble[1]];
+                coord = [leader.bubble[0] + index * 0.00003, leader.bubble[1]];
             }
             features.push({
                 type: 'Feature',

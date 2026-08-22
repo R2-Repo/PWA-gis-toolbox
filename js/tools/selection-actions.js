@@ -171,93 +171,112 @@ export function buildSelectionActionItems(deps) {
         onCopyAttribute,
         onCopyToLayer,
         onMoveToLayer,
+        onPlaceImportFence,
         onClear
     } = deps;
 
-    if (!layer || count <= 0) return { items: [], layerName: layer?.name || null, count: 0 };
-
-    const items = [
-        {
-            label: 'Invert selection',
-            icon: '🔄',
-            action: () => onInvert?.()
-        },
-        {
-            label: 'Delete selected',
-            icon: '🗑',
-            action: () => onDelete?.()
-        },
-        {
-            label: 'New layer from selected',
-            icon: '📄',
-            action: () => onNewLayer?.()
-        }
-    ];
-
-    if (layerHasLineGeometry(layer) && Array.isArray(bbox) && bbox.length >= 4) {
-        items.push({
-            label: 'Clip selected (lines)',
-            icon: '✂',
-            title: 'Clip selected lines to the selection box and create a new layer',
-            action: () => onClip?.()
-        });
+    const hasSelection = !!(layer && count > 0);
+    const hasFenceAction = Array.isArray(bbox) && bbox.length >= 4 && typeof onPlaceImportFence === 'function';
+    if (!hasSelection && !hasFenceAction) {
+        return { items: [], layerName: layer?.name || null, count: 0 };
     }
 
-    items.push({
-        label: 'Bulk edit attributes',
-        icon: '✎',
-        action: () => onBulkEdit?.()
-    });
+    const items = [];
 
-    const fields = Array.isArray(attributeFields)
-        ? attributeFields
-        : attributeFieldsFromSelection(layer);
-    if (fields.length && onCopyAttribute) {
-        items.push({
-            label: 'Copy attribute to clipboard',
-            icon: '📋',
-            title: 'Copy one field from selected features as a newline-separated list',
-            children: fields.map((fieldName) => ({
-                label: fieldName,
+    if (hasSelection) {
+        items.push(
+            {
+                label: 'Invert selection',
+                icon: '🔄',
+                action: () => onInvert?.()
+            },
+            {
+                label: 'Delete selected',
+                icon: '🗑',
+                action: () => onDelete?.()
+            },
+            {
+                label: 'New layer from selected',
                 icon: '📄',
-                action: () => onCopyAttribute?.(fieldName)
-            }))
-        });
-    }
+                action: () => onNewLayer?.()
+            }
+        );
 
-    if (formats.length) {
-        items.push({
-            label: 'Export selected',
-            icon: '⬇',
-            children: formats.map((fmt) => ({
-                label: fmt.label,
-                icon: '💾',
-                action: () => onExport?.(fmt.key)
-            }))
-        });
-    }
+        if (layerHasLineGeometry(layer) && Array.isArray(bbox) && bbox.length >= 4) {
+            items.push({
+                label: 'Clip selected (lines)',
+                icon: '✂',
+                title: 'Clip selected lines to the selection box and create a new layer',
+                action: () => onClip?.()
+            });
+        }
 
-    const editableTargets = targetLayers.filter((l) => l.id !== layer.id && isSpatialLayer(l) && l.type === 'spatial');
-    if (editableTargets.length) {
         items.push({
-            label: 'Copy to existing layer',
-            icon: '📋',
-            title: 'Duplicate selected features into another layer (keep on this layer)',
-            children: editableTargets.map((t) => ({
-                label: t.name,
-                icon: '＋',
-                action: () => onCopyToLayer?.(t.id)
-            }))
+            label: 'Bulk edit attributes',
+            icon: '✎',
+            action: () => onBulkEdit?.()
         });
-        items.push({
-            label: 'Move to existing layer',
-            icon: '➜',
-            title: 'Move selected features into another layer (remove from this layer)',
-            children: editableTargets.map((t) => ({
-                label: t.name,
+
+        const fields = Array.isArray(attributeFields)
+            ? attributeFields
+            : attributeFieldsFromSelection(layer);
+        if (fields.length && onCopyAttribute) {
+            items.push({
+                label: 'Copy attribute to clipboard',
+                icon: '📋',
+                title: 'Copy one field from selected features as a newline-separated list',
+                children: fields.map((fieldName) => ({
+                    label: fieldName,
+                    icon: '📄',
+                    action: () => onCopyAttribute?.(fieldName)
+                }))
+            });
+        }
+
+        if (formats.length) {
+            items.push({
+                label: 'Export selected',
+                icon: '⬇',
+                children: formats.map((fmt) => ({
+                    label: fmt.label,
+                    icon: '💾',
+                    action: () => onExport?.(fmt.key)
+                }))
+            });
+        }
+
+        const editableTargets = targetLayers.filter((l) => l.id !== layer.id && isSpatialLayer(l) && l.type === 'spatial');
+        if (editableTargets.length) {
+            items.push({
+                label: 'Copy to existing layer',
+                icon: '📋',
+                title: 'Duplicate selected features into another layer (keep on this layer)',
+                children: editableTargets.map((t) => ({
+                    label: t.name,
+                    icon: '＋',
+                    action: () => onCopyToLayer?.(t.id)
+                }))
+            });
+            items.push({
+                label: 'Move to existing layer',
                 icon: '➜',
-                action: () => onMoveToLayer?.(t.id)
-            }))
+                title: 'Move selected features into another layer (remove from this layer)',
+                children: editableTargets.map((t) => ({
+                    label: t.name,
+                    icon: '➜',
+                    action: () => onMoveToLayer?.(t.id)
+                }))
+            });
+        }
+    }
+
+    if (hasFenceAction) {
+        items.push({
+            label: 'Place import fence',
+            icon: '⛶',
+            title: 'Use this box as an import fence, then open Import',
+            closeMenu: true,
+            action: () => onPlaceImportFence(bbox)
         });
     }
 
@@ -271,7 +290,11 @@ export function buildSelectionActionItems(deps) {
         action: () => onClear?.()
     });
 
-    return { items, layerName: layer.name, count };
+    return {
+        items,
+        layerName: hasSelection ? layer.name : 'Selection box',
+        count: hasSelection ? count : 0
+    };
 }
 
 /**

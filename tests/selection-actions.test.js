@@ -122,6 +122,7 @@ describe('selection-actions helpers', () => {
             onCopyAttribute: () => {},
             onCopyToLayer: () => {},
             onMoveToLayer: () => {},
+            onPlaceImportFence: () => {},
             onClear: () => {}
         });
 
@@ -136,11 +137,28 @@ describe('selection-actions helpers', () => {
         expect(labels).toContain('Export selected');
         expect(labels).toContain('Copy to existing layer');
         expect(labels).toContain('Move to existing layer');
+        expect(labels).toContain('Place import fence');
         expect(labels).toContain('Clear selection');
         const copyAttr = items.find((i) => i.label === 'Copy attribute to clipboard');
         expect(copyAttr.children.map((c) => c.label)).toEqual(['name', 'code']);
         const clear = items.find((i) => i.label === 'Clear selection');
         expect(clear.hint).toMatch(/Esc/i);
+    });
+
+    it('offers place import fence when the box has no selected features', () => {
+        const { items, layerName, count } = buildSelectionActionItems({
+            layer: null,
+            count: 0,
+            bbox: [-111, 40, -110, 41],
+            onPlaceImportFence: () => {},
+            onClear: () => {}
+        });
+        const labels = items.filter((i) => !i.sep).map((i) => i.label);
+        expect(labels).toEqual(['Place import fence', 'Clear selection']);
+        expect(layerName).toBe('Selection box');
+        expect(count).toBe(0);
+        const fence = items.find((i) => i.label === 'Place import fence');
+        expect(fence.closeMenu).toBe(true);
     });
 
     it('hides clip when no bbox or non-line layer', () => {
