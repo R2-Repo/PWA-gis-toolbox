@@ -283,6 +283,43 @@ export function buildSheetTitleBlockFooterModel({
 }
 
 /**
+ * Pure model for a DETAILS-series title-block footer.
+ * @param {object} params
+ * @param {string} [params.projectName]
+ * @param {Date|string|number} [params.exportDate]
+ * @param {number} [params.insetPageNumber]
+ * @param {number} [params.totalInsetPages]
+ * @returns {{
+ *   projectLabel: string,
+ *   projectValue: string,
+ *   dateLabel: string,
+ *   dateValue: string,
+ *   sheetLabel: string,
+ *   cellRatios: number[]
+ * }}
+ */
+export function buildInsetTitleBlockFooterModel({
+    projectName = 'Sheet Cutter',
+    exportDate = new Date(),
+    insetPageNumber = 1,
+    totalInsetPages = 1
+} = {}) {
+    const dateValue = typeof exportDate === 'string' && /^\d{2}\/\d{2}\/\d{4}$/.test(exportDate)
+        ? exportDate
+        : formatSheetExportDate(exportDate);
+    const page = String(Math.max(1, Number(insetPageNumber) || 1)).padStart(2, '0');
+    const total = String(Math.max(1, Number(totalInsetPages) || 1)).padStart(2, '0');
+    return {
+        projectLabel: 'Project:',
+        projectValue: String(projectName || 'Sheet Cutter').trim() || 'Sheet Cutter',
+        dateLabel: 'Date:',
+        dateValue,
+        sheetLabel: `DETAILS ${page} of ${total}`,
+        cellRatios: [...TITLE_BLOCK_CELL_RATIOS]
+    };
+}
+
+/**
  * @param {number} sheetNumber
  * @returns {string}
  */

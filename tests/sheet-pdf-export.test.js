@@ -45,6 +45,7 @@ import {
     buildSheetContinuationLabels,
     buildSheetEdgeSeeLabelSpecs,
     buildSheetTitleBlockFooterModel,
+    buildInsetTitleBlockFooterModel,
     formatRouteStationFt,
     formatSeeSheetLabel,
     formatSheetExportDate,
@@ -279,6 +280,18 @@ describe('sheet PDF orientation', () => {
         expect(model.cellRatios.reduce((sum, r) => sum + r, 0)).toBeCloseTo(1, 5);
     });
 
+    it('builds a DETAILS-series title-block footer', () => {
+        const model = buildInsetTitleBlockFooterModel({
+            projectName: 'Belt Route',
+            exportDate: '07/14/2026',
+            insetPageNumber: 2,
+            totalInsetPages: 3
+        });
+        expect(model.sheetLabel).toBe('DETAILS 02 of 03');
+        expect(model.projectValue).toBe('Belt Route');
+        expect(model.dateValue).toBe('07/14/2026');
+    });
+
     it('accepts a preformatted export date string for the title-block model', () => {
         const model = buildSheetTitleBlockFooterModel({
             projectName: 'Fiber',
@@ -427,6 +440,32 @@ describe('sheet PDF orientation', () => {
         expect(plan.pages[1].continueToSheet).toBe(2);
         expect(plan.pages[2].continueFromSheet).toBe(1);
         expect(plan.pages[2].stationRange).toBe('1+100 – 2+200');
+    });
+
+    it('appends packed inset pages after corridor sheets', () => {
+        const plan = buildSheetPdfPagePlan({
+            routeLine: curvedRoute,
+            sheets: {
+                template: DEFAULT_SHEET_TEMPLATE,
+                overviewSheet: { sheetNumber: 0 },
+                sheets: [
+                    { sheetId: 'a', sheetNumber: 1, sheetType: 'detail', startDistanceFt: 0, endDistanceFt: 1100 }
+                ],
+                insetViews: [
+                    { insetId: 'i1', label: 'A', bbox: [-111.9, 40.75, -111.89, 40.751], parentSheetId: 'a' },
+                    { insetId: 'i2', label: 'B', bbox: [-111.89, 40.75, -111.88, 40.751], parentSheetId: 'a' },
+                    { insetId: 'i3', label: 'C', bbox: [-111.88, 40.75, -111.87, 40.751], parentSheetId: 'a' },
+                    { insetId: 'i4', label: 'D', bbox: [-111.87, 40.75, -111.86, 40.751], parentSheetId: 'a' },
+                    { insetId: 'i5', label: 'E', bbox: [-111.86, 40.75, -111.85, 40.751], parentSheetId: 'a' }
+                ]
+            }
+        });
+        const insetPages = plan.pages.filter((page) => page.pageType === 'inset');
+        expect(insetPages).toHaveLength(2);
+        expect(insetPages[0].insetPageNumber).toBe(1);
+        expect(insetPages[0].insetIds).toHaveLength(4);
+        expect(insetPages[1].title).toBe('DETAILS 02 of 02');
+        expect(insetPages[1].exportBearingDeg).toBe(0);
     });
 });
 

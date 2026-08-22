@@ -1,4 +1,5 @@
 import { SHEET_FRAME_PREVIEW_COLOR } from './sheet-preview.js';
+import { INSET_PREVIEW_COLOR } from './inset-views.js';
 import { resolveFeatureStyle } from '../../map/style-engine.js';
 import {
     closestPdfRingEdge,
@@ -121,6 +122,28 @@ export function resolveVectorFeatureStyle(feature, layerStyle = null) {
             strokeWidth: 1.25,
             strokeOpacity: 1,
             dash: [5, 3]
+        };
+    }
+
+    if (featureType === 'inset_outline') {
+        return {
+            kind: 'polygon',
+            strokeColor: INSET_PREVIEW_COLOR,
+            strokeWidth: 1.15,
+            strokeOpacity: 1,
+            fillColor: INSET_PREVIEW_COLOR,
+            fillOpacity: 0,
+            dash: [4, 2.5]
+        };
+    }
+
+    if (featureType === 'inset_label') {
+        return {
+            kind: 'inset_label',
+            fontSize: 8,
+            color: '#1e3a8a',
+            haloColor: '#ffffff',
+            haloWidth: 1.1
         };
     }
 
@@ -883,7 +906,9 @@ function drawMatchlineSeeLabel(doc, feature, map, transform, captureScale, style
 function featureDrawOrder(feature) {
     const props = feature?.properties || {};
     if (props.feature_type === 'matchline_see_label') return 210;
+    if (props.feature_type === 'inset_label') return 205;
     if (props.feature_type === 'overview_sheet_label') return 200;
+    if (props.feature_type === 'inset_outline') return 110;
     if (props.feature_type === 'sheet_outline') return 100;
     if (props._preview === 'station_label' || props._preview === 'begin_end_marker') return 90;
     if (props.feature_type === 'overview_sheet_outline') return 35;
@@ -910,6 +935,20 @@ function renderFeature(doc, feature, map, transform, captureScale, style, pdfRin
 
     if (props.feature_type === 'matchline_see_label' || style.kind === 'matchline_see_label') {
         drawMatchlineSeeLabel(doc, feature, map, transform, captureScale, style, pdfRing);
+        return;
+    }
+
+    if (style.kind === 'inset_label' || props.feature_type === 'inset_label') {
+        const [lng, lat] = geometry.coordinates || [];
+        if (lng == null || lat == null || !transform?.projectLngLat || !map) return;
+        const point = transform.projectLngLat(map, lng, lat, captureScale);
+        drawLabel(doc, point, props.inset_label || '', style);
+        if (props.see_details) {
+            drawLabel(doc, { x: point.x, y: point.y + (style.fontSize || 8) + 2 }, props.see_details, {
+                ...style,
+                fontSize: Math.max(6, (style.fontSize || 8) - 1)
+            });
+        }
         return;
     }
 

@@ -8,6 +8,7 @@ import { serializePlanProject, restorePlanProject } from '../../plan-project/ser
 import { getStationingRoutes } from '../../plan-project/stationing-adapter.js';
 import { getLocalTangentBearing } from '../project-stationing/engine.js';
 import { buildSheetExportPackage, buildSheetFramesGeoJson } from './export-builder.js';
+import { normalizeInsetView, validateInsetViews } from './inset-views.js';
 import { DEFAULT_PDF_MAP_BEARING_MODE } from './sheet-pdf-orientation.js';
 
 export const PAPER_SIZES = {
@@ -53,6 +54,7 @@ export {
     formatSheetExportDate,
     buildSheetContinuationLabels,
     buildSheetTitleBlockFooterModel,
+    buildInsetTitleBlockFooterModel,
     tangentToLandscapeMapBearing,
     landscapeBearingCandidates,
     northPointsUpOnPage,
@@ -563,7 +565,10 @@ export function createSheetSetState(input = {}) {
         overviewSheet: input.overviewSheet || null,
         matchLines: Array.isArray(input.matchLines) ? [...input.matchLines] : [],
         featureAssignments: input.featureAssignments || {},
-        designLayerIds: Array.isArray(input.designLayerIds) ? [...input.designLayerIds] : []
+        designLayerIds: Array.isArray(input.designLayerIds) ? [...input.designLayerIds] : [],
+        insetViews: Array.isArray(input.insetViews)
+            ? input.insetViews.map((view) => normalizeInsetView(view)).filter(Boolean)
+            : []
     };
 }
 
@@ -755,7 +760,8 @@ export function generateSheetSet(session) {
             overviewSheet,
             matchLines,
             featureAssignments,
-            frameDimensions: frameDims
+            frameDimensions: frameDims,
+            insetViews: []
         }
     };
 }
@@ -842,6 +848,20 @@ export function validateSheetSession(session) {
         findings.push({
             severity: 'warning',
             code: 'coverage_warning',
+            message: warning,
+            step: 'Review'
+        });
+    }
+
+    const detailSheets = (sheetSet.sheets || []).filter((sheet) => sheet.sheetType !== 'overview');
+    const insetFrames = session.routeLine && detailSheets.length
+        ? (buildSheetFramesGeoJson(detailSheets, session.routeLine).features || [])
+        : [];
+    const insetWarnings = validateInsetViews(session, insetFrames);
+    for (const warning of insetWarnings) {
+        findings.push({
+            severity: 'warning',
+            code: 'inset_warning',
             message: warning,
             step: 'Review'
         });

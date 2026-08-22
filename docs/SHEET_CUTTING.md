@@ -129,7 +129,7 @@ Sheet Cutter produces **two deliverable types** only:
 | `layers.sheetFrames` | Clean clipped `sheet_frame` polygons |
 | `layers.overview` | Route + all sheet outlines (for overview page) |
 | `layers.perSheet[]` | Per-sheet GeoJSON: gold `sheet_outline`, matchline labels, and design features **clipped to the sheet polygon**. Does **not** include the widget centerline — that stays on the overview only. |
-| `pdf` | Page plan (overview + detail pages) — renderer not yet implemented |
+| `pdf` | Page plan (overview + corridor pages + optional 4-up details pages) |
 
 Feature assignment for export uses **polygon intersection** (`clipFeaturesToSheetFrame`), not station distance alone.
 
@@ -140,7 +140,9 @@ Sheet PDFs combine a **modest-resolution basemap image** (whatever basemap is ac
 1. **Overview** (optional) — `fitBounds` to all sheet frames; **north-up** (`bearing: 0`); basemap captured at **basemap DPI** (default 150); sheet frames and route drawn as vector; saved as `{project}_overview.pdf`.
 2. **Detail pages** — per sheet: camera aligned to **export bearing** (landscape-align by default); design layers hidden; **basemap-only** capture clipped to the sheet polygon at **basemap DPI** (120–200); selected design layers + sheet outline drawn as **vector PDF** on top (no widget centerline overlay); saved as `{project}_sheet_01.pdf`, etc.
    **UDOT Fiber** is refreshed for that sheet, then drawn as **vector** (class colors, thin fiber/conduit strokes, point marks). Fiber/Conduit **along-line labels are not exported**. Box `BOXLABELS` stay inside landscape rectangles (map-scale size, transparent fill, jsPDF text angle follows the box). Cabinets use the same lookalike color as the map.
-3. **No multipage PDF** — each page is written immediately so memory stays flat on long routes.
+   Corridor pages also draw any **detail boxes** that belong to that sheet (`DETAIL A` + `SEE DETAILS nn`).
+3. **Details pages** (optional) — after corridor sheets, packed **4-up** zoomed cutouts (`{project}_details_01.pdf`). Each quadrant is north-up, fitted to that box, with its own scale. Leftover 1–3 boxes leave empty cells (same remnant rule: do not stretch to fill the page). Footer uses a **DETAILS nn of N** series, separate from **Sheet NN of N**.
+4. **No multipage PDF** — each page is written immediately so memory stays flat on long routes.
 
 | Layer | Technology | Zoom behavior |
 |-------|------------|---------------|
@@ -168,7 +170,18 @@ After convert, **Export sheet PDFs** collects the operational copy (or remaining
 
 A **Convert selected Fiber to editable map layers** button remains after generate if live Fiber is still selected (for example after generating with **Keep live overlay**).
 
-Implementation: `js/widgets/sheet-cutting/fiber-operational.js`, `js/widgets/sheet-cutting/controller.js`, `js/widgets/sheet-cutting/sheet-pdf-export.js`, `js/widgets/sheet-cutting/sheet-pdf-fiber.js`, `js/widgets/sheet-cutting/sheet-pdf-vector.js`
+### Detail boxes / DETAILS sheets
+
+After sheets are generated, **Draw detail box** lets you drag a north-up rectangle that overlaps a gold sheet polygon. Boxes are labeled **DETAIL A, B, C…**, stored on the sheet session (`insetViews`), and shown on the map in blue. Regenerating corridor sheets clears the boxes.
+
+Export then:
+
+1. Draws each box on its parent corridor PDF with `SEE DETAILS nn`.
+2. Adds packed **DETAILS** pages, four boxes per tabloid landscape sheet (`pageType: 'inset'`). Fiber uses the same live-or-converted path as corridor pages, clipped to the box.
+
+Do **not** change clean sheet-cutting polygons for this feature — boxes are overlay annotations plus extra PDF pages.
+
+Implementation: `js/widgets/sheet-cutting/inset-views.js`, `js/widgets/sheet-cutting/controller.js`, `js/widgets/sheet-cutting/sheet-pdf-export.js`
 
 The map camera and 3D state are restored after export. 3D is temporarily flattened for consistent plan-sheet output.
 
@@ -244,6 +257,7 @@ If a future change makes right-side or skewed labels drift again, check the jsPD
 | `js/widgets/sheet-cutting/export-builder.js` | **Clean polygon geometry** |
 | `js/widgets/sheet-cutting/controller.js` | Preview wiring |
 | `react/widgets/SheetCuttingDialog.jsx` | Wizard UI |
+| `js/widgets/sheet-cutting/inset-views.js` | Detail-box session, 4-up packing, callout features |
 | `js/widgets/sheet-cutting/sheet-pdf-export.js` | Hybrid PDF export to folder |
 | `js/widgets/sheet-cutting/sheet-pdf-fiber.js` | Keep live Fiber paint in the detail underlay |
 | `js/widgets/sheet-cutting/sheet-pdf-vector.js` | Vector GeoJSON → jsPDF renderer; **matchline SEE SHEET draw** (`placeMatchlineLabelOnGoldOutline`) |

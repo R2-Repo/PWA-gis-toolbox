@@ -25,7 +25,9 @@ const ANNOTATION_FEATURE_TYPES = new Set([
     'matchline_see_label',
     'overview_sheet_outline',
     'overview_sheet_label',
-    'overview_route'
+    'overview_route',
+    'inset_outline',
+    'inset_label'
 ]);
 
 /**

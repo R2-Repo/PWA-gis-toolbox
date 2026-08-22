@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { WidgetPanelShell } from './shared/WidgetPanelShell.jsx';
 import { LayerSelect } from './shared/LayerSelect.jsx';
+import { INSETS_PER_PAGE } from '../../js/widgets/sheet-cutting/inset-views.js';
 
 function formatFeet(value) {
     if (value == null || !Number.isFinite(Number(value))) return '—';
@@ -107,6 +108,8 @@ export function SheetCuttingDialog({
     onExportPdf,
     onAddResultLayers,
     onAddFiberOperationalLayers,
+    onDrawInsetBox,
+    onRemoveInsetView,
     onOpenRouteCenterline,
     onOpenProjectStationing,
     onRefreshLayers,
@@ -149,6 +152,7 @@ export function SheetCuttingDialog({
     }, [applyLayerLists, onRefreshLayers]);
 
     const sheets = (session?.sheets?.sheets || []).filter((entry) => entry.sheetType !== 'overview');
+    const insetViews = session?.sheets?.insetViews || [];
     const frameDims = session?.sheets?.frameDimensions;
     const featureCount = session?.designFeatures?.length || 0;
     const matchLines = session?.sheets?.matchLines || [];
@@ -480,6 +484,9 @@ export function SheetCuttingDialog({
                     <div className="text-xs" style={{ marginBottom: 12 }}>
                         <div><strong>{sheets.length}</strong> detail sheets · {matchLines.length} match lines</div>
                         {featureCount > 0 ? <div>{featureCount} design features assigned</div> : null}
+                        {insetViews.length > 0 ? (
+                            <div>{insetViews.length} detail box{insetViews.length === 1 ? '' : 'es'} · {Math.ceil(insetViews.length / INSETS_PER_PAGE)} details page{insetViews.length > INSETS_PER_PAGE ? 's' : ''}</div>
+                        ) : null}
                     </div>
 
                     {validation ? (
@@ -493,6 +500,52 @@ export function SheetCuttingDialog({
                             )}
                         </div>
                     ) : null}
+
+                    <div className="form-group" style={{ marginBottom: 12 }}>
+                        <span className="gis-widget__section-title">Detail boxes</span>
+                        <p className="text-xs" style={{ marginTop: 0, marginBottom: 8, color: 'var(--text-muted)' }}>
+                            Draw a box on a sheet for a zoomed DETAILS page. Four boxes share one page; leftovers keep empty quadrants.
+                        </p>
+                        <button
+                            type="button"
+                            className="btn btn-secondary btn-sm"
+                            disabled={busy}
+                            onClick={() => run(async () => onDrawInsetBox?.(), '')}
+                        >
+                            Draw detail box
+                        </button>
+                        {insetViews.length ? (
+                            <ul className="text-xs" style={{ margin: '8px 0 0', paddingLeft: 0, listStyle: 'none' }}>
+                                {insetViews.map((view) => (
+                                    <li
+                                        key={view.insetId}
+                                        style={{
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'space-between',
+                                            gap: 8,
+                                            marginBottom: 4
+                                        }}
+                                    >
+                                        <span>
+                                            DETAIL {view.label}
+                                            {view.parentSheetNumber
+                                                ? ` · Sheet ${String(view.parentSheetNumber).padStart(2, '0')}`
+                                                : ''}
+                                        </span>
+                                        <button
+                                            type="button"
+                                            className="btn btn-secondary btn-sm"
+                                            disabled={busy}
+                                            onClick={() => run(async () => onRemoveInsetView?.(view.insetId), '')}
+                                        >
+                                            Remove
+                                        </button>
+                                    </li>
+                                ))}
+                            </ul>
+                        ) : null}
+                    </div>
 
                     <div className="form-group" style={{ marginBottom: 12 }}>
                         <label>Basemap quality</label>

@@ -4,6 +4,7 @@
 
 import { buildMapLabelLayerSpec } from '../../map/map-labels.js';
 import { buildSheetLabelCollection } from './sheet-labels.js';
+import { INSET_PREVIEW_COLOR } from './inset-views.js';
 
 /** Map preview + overview PDF frame color (matches showTempFeature). */
 export const SHEET_FRAME_PREVIEW_COLOR = '#d4a24e';
@@ -50,6 +51,68 @@ function installSheetPreviewLabels(mapService, labelCollection) {
 
     map.addLayer(labelSpec);
     return { srcId, layerIds: [labelSpec.id] };
+}
+
+/**
+ * @param {object} mapService
+ * @param {import('geojson').FeatureCollection} collection
+ * @returns {object|null}
+ */
+function installInsetPreview(mapService, collection) {
+    const map = mapService?.getMap?.();
+    const features = collection?.features || [];
+    if (!map || !features.length) return null;
+
+    const srcId = `sheet-inset-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    map.addSource(srcId, { type: 'geojson', data: collection });
+    const layerIds = [];
+
+    const fillId = `${srcId}-fill`;
+    map.addLayer({
+        id: fillId,
+        type: 'fill',
+        source: srcId,
+        filter: ['==', ['get', 'feature_type'], 'inset_outline'],
+        paint: {
+            'fill-color': INSET_PREVIEW_COLOR,
+            'fill-opacity': 0.08
+        }
+    });
+    layerIds.push(fillId);
+
+    const lineId = `${srcId}-line`;
+    map.addLayer({
+        id: lineId,
+        type: 'line',
+        source: srcId,
+        filter: ['==', ['get', 'feature_type'], 'inset_outline'],
+        paint: {
+            'line-color': INSET_PREVIEW_COLOR,
+            'line-width': 2.25,
+            'line-dasharray': [1.6, 1.1]
+        }
+    });
+    layerIds.push(lineId);
+
+    const labelSpec = buildMapLabelLayerSpec(`${srcId}-labels`, srcId, {
+        field: 'inset_label',
+        minZoom: 0,
+        size: 12,
+        anchor: 'center',
+        offset: [0, 0],
+        color: '#1e3a8a',
+        haloColor: '#ffffff',
+        haloWidth: 1.6,
+        allowOverlap: true,
+        ignorePlacement: true
+    });
+    if (labelSpec) {
+        map.addLayer(labelSpec);
+        map.setFilter(labelSpec.id, ['==', ['get', 'feature_type'], 'inset_label']);
+        layerIds.push(labelSpec.id);
+    }
+
+    return { srcId, layerIds };
 }
 
 /**
@@ -216,6 +279,11 @@ export function showSheetPreview(mapService, layers = {}, options = {}) {
         const labelCollection = buildSheetLabelCollection(layers.sheetFrames, layers.route?.features?.[0] ?? null);
         const labelEntry = installSheetPreviewLabels(mapService, labelCollection);
         if (labelEntry) activePreviewEntries.push(labelEntry);
+    }
+
+    if (!overviewOnly && !options.singleFrame && layers.insetViews?.features?.length) {
+        const insetEntry = installInsetPreview(mapService, layers.insetViews);
+        if (insetEntry) activePreviewEntries.push(insetEntry);
     }
 }
 

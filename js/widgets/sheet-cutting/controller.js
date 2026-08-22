@@ -45,6 +45,7 @@ import {
     replaceLiveFiberIdsInDesignList
 } from './fiber-operational.js';
 import { queryFiberFeaturesByEnvelope } from './fiber-operational-fetch.js';
+import { addInsetView, removeInsetView } from './inset-views.js';
 
 function persistSession(session, open = true) {
     upsertWidgetState(WIDGET_ID, {
@@ -402,9 +403,13 @@ export async function openSheetCutting(ctx, { restoreState = null } = {}) {
                     });
                     const count = result?.pageCount ?? 0;
                     const folder = result?.folderName ? ` in “${result.folderName}”` : '';
-                    const skipped = result?.skippedSheets?.length
+                    const skippedSheets = result?.skippedSheets?.length
                         ? ` Skipped sheet ${result.skippedSheets.join(', ')}.`
                         : '';
+                    const skippedInsets = result?.skippedInsets?.length
+                        ? ` Skipped detail ${result.skippedInsets.join(', ')}.`
+                        : '';
+                    const skipped = `${skippedSheets}${skippedInsets}`;
                     ctx.showToast(`Saved ${count} sheet PDF(s)${folder}.${skipped}`, skipped ? 'warning' : 'success');
                     return result;
                 } catch (err) {
@@ -500,6 +505,33 @@ export async function openSheetCutting(ctx, { restoreState = null } = {}) {
                     `Converted ${count} Fiber layer${count === 1 ? '' : 's'} to editable map layers. Live Fiber is off. Sheet PDFs use the editable copy.${extra}`,
                     converted.truncated ? 'warning' : 'success'
                 );
+                renderSheetPreview(ctx, session);
+                return session;
+            },
+            onDrawInsetBox: async () => {
+                const frames = buildSessionExport(session).layers?.sheetFrames?.features || [];
+                if (!frames.length) {
+                    throw new Error('Generate sheets before drawing a detail box.');
+                }
+                const bbox = await ctx.mapService.startRectangleDraw(
+                    'Click and drag a detail box on a sheet polygon. Esc cancels.'
+                );
+                if (!bbox) return session;
+                const turfLib = ctx.turf || (typeof turf !== 'undefined' ? turf : null);
+                if (!turfLib?.bboxPolygon) {
+                    throw new Error('Unable to build the detail box.');
+                }
+                session = addInsetView(session, turfLib.bboxPolygon(bbox), frames);
+                persistSession(session);
+                renderSheetPreview(ctx, session);
+                const view = session.sheets.insetViews.at(-1);
+                const sheetNo = String(view?.parentSheetNumber || 0).padStart(2, '0');
+                ctx.showToast(`Added DETAIL ${view?.label || ''} on Sheet ${sheetNo}.`, 'success');
+                return session;
+            },
+            onRemoveInsetView: (insetId) => {
+                session = removeInsetView(session, insetId);
+                persistSession(session);
                 renderSheetPreview(ctx, session);
                 return session;
             },

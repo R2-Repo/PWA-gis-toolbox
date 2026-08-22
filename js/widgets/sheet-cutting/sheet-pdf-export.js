@@ -24,7 +24,7 @@ import {
     SHEET_EXPORT_MAX_PIXEL_RATIO,
     suspendMapInteractions
 } from '../../map/map-export.js';
-import { extractPrimaryRing, buildCorridorMatchLineRegistry, stationKey } from './export-builder.js';
+import { extractPrimaryRing, buildCorridorMatchLineRegistry, stationKey, clipFeaturesToSheetFrame } from './export-builder.js';
 import {
     boundsFromGeoJson,
     buildSingleSheetFrameCollection,
@@ -47,6 +47,7 @@ import {
     DEFAULT_PDF_MAP_BEARING_MODE,
     buildSheetEdgeSeeLabelSpecs,
     buildSheetTitleBlockFooterModel,
+    buildInsetTitleBlockFooterModel,
     resolveSheetPdfBearing,
     resolveSheetPdfBearings
 } from './sheet-pdf-orientation.js';
@@ -70,6 +71,13 @@ import {
     refreshUdotFiberPaintLayers
 } from './sheet-pdf-fiber.js';
 import { resolveFiberLayerIdsForPdfExport } from './fiber-operational.js';
+import {
+    buildInsetCalloutFeatures,
+    computeInsetQuadrantRects,
+    formatInsetScaleLabel,
+    packInsetPages,
+    polygonFromInsetView
+} from './inset-views.js';
 import { getLayers } from '../../core/state.js';
 
 const FIT_PADDING = 48;
@@ -81,6 +89,8 @@ const CAMERA_SETTLE_OPTIONS = { maxWaitMs: 5000, stableFrames: 0, styleTimeoutMs
 /** Single tile pass before reading pixels from the GL canvas. */
 const CAPTURE_READY_OPTIONS = { maxWaitMs: 8000, stableFrames: 1 };
 const NORTH_ARROW_SIZE_PT = 28;
+const INSET_NORTH_ARROW_SIZE_PT = 16;
+const INSET_CAPTURE_MAX_ZOOM = 22;
 const EDGE_SEE_LABEL_FONT_PT = 7.5;
 /** Extra gap from the cutout border to the inner edge of matchline text. 0 = touching. */
 export const EDGE_SEE_LABEL_GAP_PT = 0;
@@ -746,7 +756,7 @@ export function drawNorthArrowOnPdf(doc, centerX, centerY, sizePt, mapBearingDeg
  * @param {{ projectName?: string, exportDate?: Date|string }} [options]
  */
 export function drawSheetTitleBlockFooter(doc, sheet, totalSheets, marginsPt, options = {}) {
-    const model = buildSheetTitleBlockFooterModel({
+    const model = options.model || buildSheetTitleBlockFooterModel({
         projectName: options.projectName,
         exportDate: options.exportDate,
         sheet,
@@ -799,6 +809,43 @@ export function drawSheetTitleBlockFooter(doc, sheet, totalSheets, marginsPt, op
     const sheetCenterX = cellXs[4] + cellWidths[4] / 2;
     const sheetCenterY = boxTop + boxHeight / 2 + 3;
     doc.text(model.sheetLabel, sheetCenterX, sheetCenterY, { align: 'center' });
+    doc.setFont('helvetica', 'normal');
+}
+
+/**
+ * @param {import('jspdf').jsPDF} doc
+ * @param {object} cell
+ * @param {object} inset
+ * @param {number} [parentSheetNumber]
+ * @param {string} [scaleLabel]
+ */
+export function drawInsetCellChrome(doc, cell, inset, parentSheetNumber = 0, scaleLabel = '') {
+    if (!doc || !cell?.chromeRect) return;
+    const { chromeRect, headerRect } = cell;
+    doc.setDrawColor(37, 99, 235);
+    doc.setLineWidth(0.85);
+    doc.rect(chromeRect.x, chromeRect.y, chromeRect.width, chromeRect.height);
+    doc.setLineWidth(0.4);
+    doc.setDrawColor(180, 180, 180);
+    doc.line(headerRect.x, headerRect.y + headerRect.height, headerRect.x + headerRect.width, headerRect.y + headerRect.height);
+
+    doc.setTextColor(20, 20, 20);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9);
+    const title = `DETAIL ${inset?.label || ''}`.trim();
+    doc.text(title, headerRect.x + 4, headerRect.y + Math.min(11, headerRect.height - 2), { align: 'left' });
+
+    const see = Number(parentSheetNumber) > 0
+        ? `SEE SHEET ${String(parentSheetNumber).padStart(2, '0')}`
+        : '';
+    const right = [see, scaleLabel].filter(Boolean).join('  ·  ');
+    if (right) {
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(7);
+        doc.text(right, headerRect.x + headerRect.width - 4, headerRect.y + Math.min(11, headerRect.height - 2), {
+            align: 'right'
+        });
+    }
     doc.setFont('helvetica', 'normal');
 }
 
@@ -1420,6 +1467,156 @@ function throwIfAborted(signal) {
     }
 }
 
+const INSET_FIT_PADDING = 28;
+
+/**
+ * @param {object} params
+ * @returns {Promise<object>}
+ */
+async function captureInsetQuadrant({
+    mapService,
+    template,
+    inset,
+    fiberLayerIds = [],
+    refreshLiveFiberIds = [],
+    pdfFiberOmitIds = [],
+    designFeatures = []
+}) {
+    const polygon = polygonFromInsetView(inset);
+    const ring = extractPrimaryRing(polygon);
+    if (!ring?.length) {
+        throw new Error(`Detail ${inset?.label || ''} is missing a bounding box`);
+    }
+
+    await fitMapToPolygonRing(mapService, ring, {
+        bearing: 0,
+        pitch: 0,
+        maxZoom: INSET_CAPTURE_MAX_ZOOM,
+        padding: INSET_FIT_PADDING
+    });
+
+    if (refreshLiveFiberIds.length) {
+        await refreshUdotFiberPaintLayers(mapService, refreshLiveFiberIds);
+    }
+
+    const fiberFeatures = collectUdotFiberSheetFeatures(mapService, fiberLayerIds, polygon);
+    const underlay = await captureBasemapUnderlay(mapService, template, ring, {
+        skipViewportFit: true
+    });
+    const clippedDesign = omitRasterizedLiveFeatures(
+        { type: 'FeatureCollection', features: clipFeaturesToSheetFrame(polygon, designFeatures) },
+        pdfFiberOmitIds
+    );
+    const outline = {
+        type: 'Feature',
+        geometry: polygon.geometry,
+        properties: {
+            ...(polygon.properties || {}),
+            feature_type: 'inset_outline',
+            inset_id: inset.insetId,
+            inset_label: inset.label
+        }
+    };
+
+    return {
+        inset,
+        parentSheetNumber: inset.parentSheetNumber || 0,
+        polygon,
+        underlay,
+        vectorFeatures: {
+            type: 'FeatureCollection',
+            features: [outline, ...(clippedDesign?.features || []), ...fiberFeatures]
+        }
+    };
+}
+
+/**
+ * @param {object} params
+ * @returns {Promise<Blob>}
+ */
+export async function buildInsetPagePdfBlob({
+    template = {},
+    page = {},
+    captures = [],
+    map = null,
+    mapService = null,
+    projectName = 'Sheet Cutter',
+    exportDate = new Date(),
+    JsPDFCtor = null
+}) {
+    const orientation = template.orientation === PAGE_ORIENTATIONS.PORTRAIT
+        ? PAGE_ORIENTATIONS.PORTRAIT
+        : PAGE_ORIENTATIONS.LANDSCAPE;
+    const format = resolvePdfPageFormat(template);
+    const basemapDpi = resolveBasemapDpi(template);
+    const { marginsPt } = computeSheetExportPixelDimensions(template, basemapDpi);
+    const layoutMargins = resolveDetailPageMarginsPt(marginsPt, true);
+    const JsPDF = JsPDFCtor ?? await loadJsPDF();
+    const doc = new JsPDF({
+        orientation,
+        unit: 'pt',
+        format,
+        compress: true
+    });
+    const pageW = doc.internal.pageSize.getWidth();
+    const pageH = doc.internal.pageSize.getHeight();
+    const cells = computeInsetQuadrantRects(pageW, pageH, layoutMargins);
+
+    for (let i = 0; i < cells.length; i += 1) {
+        const capture = captures[i];
+        const cell = cells[i];
+        if (!capture?.underlay?.canvas || !cell) continue;
+
+        const placementOptions = {
+            preferLandscapeFlow: false,
+            targetRect: cell.mapRect,
+            imageFormat: 'JPEG'
+        };
+        placeSheetCanvasOnPdfPage(doc, capture.underlay.canvas, layoutMargins, placementOptions);
+        const transform = buildSheetPageTransform(
+            capture.underlay.pixelRing,
+            layoutMargins,
+            { width: pageW, height: pageH },
+            placementOptions
+        );
+        if (capture.vectorFeatures?.features?.length && map && transform) {
+            renderFeatureCollectionToPdf(
+                doc,
+                capture.vectorFeatures,
+                map,
+                transform,
+                capture.underlay.captureScale,
+                {
+                    layerStyleFor: (layerId) => (layerId ? mapService?.getLayerStyle?.(layerId) : null)
+                }
+            );
+        }
+
+        const scaleLabel = formatInsetScaleLabel(capture.polygon, transform.placedRect?.width);
+        drawInsetCellChrome(doc, cell, capture.inset, capture.parentSheetNumber, scaleLabel);
+        drawNorthArrowOnPdf(
+            doc,
+            cell.mapRect.x + cell.mapRect.width - 16,
+            cell.mapRect.y + 18,
+            INSET_NORTH_ARROW_SIZE_PT,
+            0
+        );
+    }
+
+    drawSheetTitleBlockFooter(doc, null, page.totalInsetPages || 1, layoutMargins, {
+        projectName,
+        exportDate,
+        model: buildInsetTitleBlockFooterModel({
+            projectName,
+            exportDate,
+            insetPageNumber: page.insetPageNumber || 1,
+            totalInsetPages: page.totalInsetPages || 1
+        })
+    });
+
+    return doc.output('blob');
+}
+
 /**
  * @param {object} params
  * @returns {Promise<{ pageCount: number, folderName: string, files: string[] }>}
@@ -1480,7 +1677,13 @@ export async function exportSheetPlanPdf({
         ? buildCorridorMatchLineRegistry(detailSheets, routeLine)
         : null;
     const JsPDFCtor = await loadJsPDF();
-    const totalPages = (includeOverview ? 1 : 0) + detailSheets.length;
+    const packedInsets = exportPackage?.insets?.pages
+        ? exportPackage.insets
+        : packInsetPages(session?.sheets?.insetViews || []);
+    const insetCallouts = exportPackage?.layers?.insetViews?.features?.length
+        ? exportPackage.layers.insetViews.features
+        : buildInsetCalloutFeatures(session?.sheets?.insetViews || [], packedInsets.detailsPageByInsetId);
+    const totalPages = (includeOverview ? 1 : 0) + detailSheets.length + packedInsets.pages.length;
     let completedPages = 0;
 
     const reportProgress = ({
@@ -1694,7 +1897,13 @@ export async function exportSheetPlanPdf({
                     captureScale: underlay.captureScale,
                     vectorFeatures: {
                         type: 'FeatureCollection',
-                        features: [...(cleaned?.features || []), ...fiberFeatures]
+                        features: [
+                            ...(cleaned?.features || []),
+                            ...fiberFeatures,
+                            ...insetCallouts.filter((feature) => (
+                                feature?.properties?.parent_sheet_id === sheet.sheetId
+                            ))
+                        ]
                     },
                     JsPDFCtor,
                     matchLineRegistry
@@ -1725,6 +1934,100 @@ export async function exportSheetPlanPdf({
             }
         }
 
+        const skippedInsets = [];
+        const designFeatures = session?.designFeatures || [];
+        for (let pageIndex = 0; pageIndex < packedInsets.pages.length; pageIndex += 1) {
+            throwIfAborted(signal);
+            const insetPage = packedInsets.pages[pageIndex];
+            const label = String(insetPage.insetPageNumber).padStart(2, '0');
+            const pageFile = buildSheetPageFilename(projectName, `details_${label}`);
+            const fileIndex = (includeOverview ? 1 : 0) + detailSheets.length + pageIndex;
+            reportProgress({
+                step: `Rendering details page ${label} (${pageIndex + 1} of ${packedInsets.pages.length})…`,
+                fileIndex,
+                fileName: pageFile
+            });
+
+            try {
+                const captures = [];
+                for (const inset of insetPage.quadrants) {
+                    throwIfAborted(signal);
+                    if (!inset) {
+                        captures.push(null);
+                        continue;
+                    }
+                    reportProgress({
+                        step: `Capturing DETAIL ${inset.label} for details ${label}…`,
+                        fileIndex,
+                        fileName: pageFile
+                    });
+                    try {
+                        const capture = await captureInsetQuadrant({
+                            mapService,
+                            template,
+                            inset,
+                            fiberLayerIds,
+                            refreshLiveFiberIds,
+                            pdfFiberOmitIds,
+                            designFeatures
+                        });
+                        captures.push(capture);
+                    } catch (err) {
+                        throwIfAborted(signal);
+                        if (err?.name === 'AbortError') throw err;
+                        skippedInsets.push(`${inset.label}`);
+                        onWarning?.(err?.message || `Detail ${inset.label} export failed — other boxes will still export.`);
+                        captures.push(null);
+                    }
+                }
+
+                if (!captures.some(Boolean)) {
+                    skippedInsets.push(`page ${label}`);
+                    onWarning?.(`Details page ${label} had no usable detail boxes — skipped.`);
+                    continue;
+                }
+
+                reportProgress({
+                    step: `Building details PDF ${label}…`,
+                    fileIndex,
+                    fileName: pageFile
+                });
+                const pageBlob = await buildInsetPagePdfBlob({
+                    template,
+                    page: insetPage,
+                    captures,
+                    map,
+                    mapService,
+                    projectName,
+                    exportDate,
+                    JsPDFCtor
+                });
+                reportProgress({
+                    step: `Writing ${pageFile}…`,
+                    fileIndex,
+                    fileName: pageFile
+                });
+                await writeBlobToFolder(folderHandle, pageFile, pageBlob);
+                writtenFiles.push(pageFile);
+                completedPages += 1;
+                reportProgress({
+                    step: `Details ${label} saved.`,
+                    fileIndex,
+                    fileName: pageFile
+                });
+            } catch (err) {
+                throwIfAborted(signal);
+                if (err?.name === 'AbortError') throw err;
+                skippedInsets.push(`page ${label}`);
+                onWarning?.(err?.message || `Details page ${label} export failed — later pages will still export.`);
+                reportProgress({
+                    step: `Skipped details ${label}.`,
+                    fileIndex,
+                    fileName: pageFile
+                });
+            }
+        }
+
         if (writtenFiles.length <= (includeOverview ? 1 : 0)) {
             throw new Error('No detail sheet PDFs were produced');
         }
@@ -1737,7 +2040,8 @@ export async function exportSheetPlanPdf({
             pageCount: writtenFiles.length,
             folderName,
             files: writtenFiles,
-            skippedSheets
+            skippedSheets,
+            skippedInsets
         };
     } finally {
         try {

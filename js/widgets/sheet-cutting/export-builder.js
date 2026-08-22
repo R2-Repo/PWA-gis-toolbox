@@ -13,6 +13,10 @@ import {
     buildSheetContinuationLabels,
     resolveSheetPdfBearing
 } from './sheet-pdf-orientation.js';
+import {
+    buildInsetCalloutFeatures,
+    packInsetPages
+} from './inset-views.js';
 
 const STATION_KEY_SCALE = 1000;
 const COORD_EPSILON = 1e-8;
@@ -1169,6 +1173,18 @@ export function buildSheetPdfPagePlan(session) {
         });
     }
 
+    const packedInsets = packInsetPages(sheetSet.insetViews || []);
+    for (const page of packedInsets.pages) {
+        pages.push({
+            pageType: 'inset',
+            insetPageNumber: page.insetPageNumber,
+            totalInsetPages: page.totalInsetPages,
+            title: page.title,
+            exportBearingDeg: 0,
+            insetIds: page.insetIds
+        });
+    }
+
     return {
         paperSize: template.paperSize || 'TABLOID',
         orientation: template.orientation || 'landscape',
@@ -1192,10 +1208,16 @@ export function buildSheetExportPackage(session) {
         session.routeLine,
         designFeatures
     );
+    const packedInsets = packInsetPages(sheetSet.insetViews || []);
+    const insetCallouts = buildInsetCalloutFeatures(
+        sheetSet.insetViews || [],
+        packedInsets.detailsPageByInsetId
+    );
 
     return {
         projectName: session.project?.projectName || 'Sheet Cutter',
         sheetCount: detailSheets.length,
+        insetCount: (sheetSet.insetViews || []).length,
         template: sheetSet.template || {},
         layers: {
             route: session.routeLine?.geometry
@@ -1203,9 +1225,11 @@ export function buildSheetExportPackage(session) {
                 : { type: 'FeatureCollection', features: [] },
             sheetFrames,
             overview: buildOverviewGeoJson(sheetSet.overviewSheet, session.routeLine, sheetFrames),
-            perSheet
+            perSheet,
+            insetViews: { type: 'FeatureCollection', features: insetCallouts }
         },
-        pdf: buildSheetPdfPagePlan(session)
+        pdf: buildSheetPdfPagePlan(session),
+        insets: packedInsets
     };
 }
 
@@ -1235,6 +1259,7 @@ export function buildCombinedSheetGeoJson(exportPackage) {
 
     appendFeatures(layers.sheetFrames, 'sheet_frames');
     appendFeatures(layers.overview, 'overview');
+    appendFeatures(layers.insetViews, 'inset_views');
 
     for (const sheetLayer of layers.perSheet || []) {
         if (!sheetLayer.contents?.features?.length) continue;
