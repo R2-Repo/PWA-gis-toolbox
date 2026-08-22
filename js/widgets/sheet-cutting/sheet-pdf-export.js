@@ -69,6 +69,11 @@ import {
     omitRasterizedLiveFeatures,
     refreshUdotFiberPaintLayers
 } from './sheet-pdf-fiber.js';
+import {
+    liveFiberIdsForPdfExport,
+    omitIdsForSheetPdfFiber
+} from './fiber-operational.js';
+import { getLayers } from '../../core/state.js';
 
 const FIT_PADDING = 48;
 const FIT_MAX_ZOOM = 18;
@@ -1456,7 +1461,11 @@ export async function exportSheetPlanPdf({
         throw new Error('Generate sheets before exporting PDF');
     }
 
-    const fiberLayerIds = listVisibleUdotFiberLayerIds(mapService);
+    const fiberLayerIds = liveFiberIdsForPdfExport(
+        listVisibleUdotFiberLayerIds(mapService),
+        getLayers()
+    );
+    const pdfFiberOmitIds = omitIdsForSheetPdfFiber(fiberLayerIds, getLayers());
     const template = {
         basemapDpi: DEFAULT_BASEMAP_DPI,
         ...(session?.sheets?.template || exportPackage?.template || {})
@@ -1664,7 +1673,7 @@ export async function exportSheetPlanPdf({
                     fileName: pageFile
                 });
                 const sheetLayer = perSheetLayers.find((entry) => entry.sheetId === sheet.sheetId);
-                const cleaned = omitRasterizedLiveFeatures(sheetLayer?.contents || null, fiberLayerIds);
+                const cleaned = omitRasterizedLiveFeatures(sheetLayer?.contents || null, pdfFiberOmitIds);
                 const pageBlob = await buildHybridPagePdfBlob({
                     template,
                     pageOptions: {

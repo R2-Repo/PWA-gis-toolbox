@@ -26,6 +26,9 @@ export const UDOT_FIBER_LAYER_BY_ID = Object.freeze(
 /** Catalog / style pack id prefix. */
 export const UDOT_FIBER_CATALOG_ID = 'udot-fiber-network';
 
+/** Editable spatial copy of live Fiber clipped to sheet polygons. Not used for sheet PDF. */
+export const SHEET_FIBER_SNAPSHOT_FORMAT = 'sheet-fiber-snapshot';
+
 /** Live Fiber is hidden (no ArcGIS query) below this MapLibre zoom. */
 export const UDOT_FIBER_MIN_ZOOM = 14;
 

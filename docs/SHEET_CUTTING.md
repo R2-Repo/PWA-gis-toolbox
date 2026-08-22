@@ -155,6 +155,12 @@ Sheet PDFs combine a **modest-resolution basemap image** (whatever basemap is ac
 
 **Design layers must be selected** in the Sheet Cutter wizard for their features to appear in vector export. Layer styles are resolved from `mapService.getLayerStyle()` using `_sourceLayerId` stamped at collection time. **UDOT Fiber** that is on the map is drawn as vector on detail sheets (hide the group first if you do not want it).
 
+### Editable Fiber from sheets
+
+After sheets are generated, **Add Fiber in sheets as map layers** copies visible live UDOT Fiber that intersects the sheet polygons into normal spatial layers (grouped as `{project} Fiber (editable)`). Those layers use the same CAD paint as live Fiber, can be edited, and are included in Toolbox Export. Nothing is written back to ArcGIS.
+
+**Sheet PDF export is unchanged.** Detail pages still refresh and draw the **live** Fiber overlay with the existing jsPDF line/box styling. Snapshot copies are omitted from PDF vector contents so they cannot double-draw or replace that live Fiber path.
+
 Implementation: `js/widgets/sheet-cutting/sheet-pdf-export.js`, `js/widgets/sheet-cutting/sheet-pdf-fiber.js`, `js/widgets/sheet-cutting/sheet-pdf-vector.js`, `js/widgets/sheet-cutting/sheet-pdf-placement.js`, `js/widgets/sheet-cutting/sheet-pdf-orientation.js`, `js/export/folder-export.js`
 
 The map camera and 3D state are restored after export. 3D is temporarily flattened for consistent plan-sheet output.

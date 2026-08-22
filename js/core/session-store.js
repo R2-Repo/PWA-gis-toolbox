@@ -147,6 +147,8 @@ function _serializeLayer(layer) {
     if (layer.minScale != null && layer.minScale > 0) out.minScale = layer.minScale;
     if (layer.maxScale != null && layer.maxScale > 0) out.maxScale = layer.maxScale;
     if (layer.groupId) out.groupId = layer.groupId;
+    if (layer._udotFiberLayerKey) out._udotFiberLayerKey = layer._udotFiberLayerKey;
+    if (layer._applyUdotFiberStyle) out._applyUdotFiberStyle = true;
     return out;
 }
 
