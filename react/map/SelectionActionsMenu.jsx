@@ -288,7 +288,7 @@ export function SelectionActionsMenu({ buildItems }) {
         >
             <div className="selection-actions-menu__header">
                 <div className="selection-actions-menu__title">{title}</div>
-                {menu.count != null ? (
+                {menu.count > 0 ? (
                     <span className="selection-actions-menu__count">{menu.count} selected</span>
                 ) : null}
                 <button

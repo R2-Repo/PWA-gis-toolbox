@@ -5138,23 +5138,19 @@ class MapManager {
             void this._selectFeaturesInBounds(bbox, addToExisting).then(() => {
                 const layerId = this._activeLayerId;
                 const count = layerId ? this.getSelectionCount(layerId) : 0;
-                if (count > 0) {
-                    bus.emit('selection:boxComplete', {
-                        layerId,
-                        count,
-                        bbox,
-                        screenBbox: geographicBboxToClientRect(this.map, bbox),
-                        clientX: clientPoint?.clientX ?? 0,
-                        clientY: clientPoint?.clientY ?? 0
-                    });
-                } else {
-                    bus.emit('selection:boxEmpty', { layerId, bbox });
-                }
+                bus.emit('selection:boxComplete', {
+                    layerId,
+                    count,
+                    bbox,
+                    screenBbox: geographicBboxToClientRect(this.map, bbox),
+                    clientX: clientPoint?.clientX ?? 0,
+                    clientY: clientPoint?.clientY ?? 0
+                });
             });
         };
 
         const onMouseDown = (e) => {
-            if (!this._canSelect() || !this._activeLayerId) return;
+            if (!this._canSelect()) return;
             if (!shouldStartBoxSelectDrag(e.originalEvent)) return;
             if (this._queryFeaturesAtPoint(e.point).length > 0) return;
             if (cornerA) clearCornerA();
@@ -5213,7 +5209,7 @@ class MapManager {
                 markMapInteractionHandled(e);
                 return;
             }
-            if (!cornerA || !this._canSelect() || !this._activeLayerId) return;
+            if (!cornerA || !this._canSelect()) return;
             markMapInteractionHandled(e);
             const start = cornerA;
             clearCornerA({ clearRect: false });
@@ -5228,7 +5224,7 @@ class MapManager {
         };
 
         const onTouchStart = (e) => {
-            if (!this._canSelect() || !this._activeLayerId || e.touches.length !== 1) return;
+            if (!this._canSelect() || e.touches.length !== 1) return;
             if (!shouldStartBoxSelectDrag(e)) return;
             const point = this._touchClientToPoint(e.touches[0].clientX, e.touches[0].clientY);
             if (this._queryFeaturesAtPoint(point).length > 0) return;

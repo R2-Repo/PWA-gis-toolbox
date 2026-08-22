@@ -1731,10 +1731,6 @@ export function setupAppWiring() {
         isDrawToolActive: () => !!drawManager.activeTool
     });
 
-    bus.on('selection:boxEmpty', () => {
-        showToast('No features in selection box', 'info');
-    });
-
     bus.on('coord-search:add-new', _coordSearchAddNew);
     bus.on('coord-search:add-existing', _coordSearchAddToExisting);
     bus.on('coord-search:clear', _coordSearchClear);
@@ -2978,6 +2974,9 @@ export function buildSelectionActionMenuItems(payload = {}) {
         onCopyAttribute: (fieldName) => { void handlers.copyAttributeToClipboard(fieldName); },
         onCopyToLayer: (id) => handlers.copyToLayer(id),
         onMoveToLayer: (id) => handlers.moveToLayer(id),
+        onPlaceImportFence: (bbox) => {
+            applyImportFenceFromBbox(bbox, { after: () => openImportFlow() });
+        },
         onClear: () => handlers.clear()
     });
 }
@@ -4546,6 +4545,27 @@ function clearImportFenceState() {
 
 function defaultFenceRestore() {
     _openImportFlowModal();
+}
+
+/**
+ * Apply an existing bbox as the import fence (no draw).
+ * @param {[number, number, number, number]} bbox
+ * @param {{ after?: null | (() => void), toast?: boolean }} [options]
+ */
+function applyImportFenceFromBbox(bbox, { after = null, toast = true } = {}) {
+    if (!Array.isArray(bbox) || bbox.length < 4) return false;
+    mapService.setImportFenceFromBbox(bbox);
+    _fenceBbox = bbox;
+    updateFenceButtonState();
+    if (dualScreenCoordinator.isActive) {
+        dualScreenCoordinator.setFenceBbox(bbox);
+        dualScreenCoordinator.broadcastDrawCmd({ action: 'applyFence', bbox });
+    }
+    if (toast) {
+        showToast('Import fence placed — all imports will be filtered to this area', 'success');
+    }
+    if (typeof after === 'function') after();
+    return true;
 }
 
 /**
