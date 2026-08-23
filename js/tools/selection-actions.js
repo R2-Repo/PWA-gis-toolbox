@@ -172,7 +172,8 @@ export function buildSelectionActionItems(deps) {
         onCopyToLayer,
         onMoveToLayer,
         onPlaceImportFence,
-        onClear
+        onClear,
+        extraItems = []
     } = deps;
 
     const hasSelection = !!(layer && count > 0);
@@ -184,6 +185,9 @@ export function buildSelectionActionItems(deps) {
     const items = [];
 
     if (hasSelection) {
+        if (Array.isArray(extraItems) && extraItems.length) {
+            items.push(...extraItems);
+        }
         items.push(
             {
                 label: 'Invert selection',

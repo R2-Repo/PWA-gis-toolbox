@@ -56,6 +56,19 @@ export {
     buildUdotFiberLabelSpecs,
     addUdotFiberVectorLayers
 } from './paint.js';
+export {
+    UDOT_PROTECT_IN_PLACE_PROP,
+    UDOT_PIP_GLYPH_PROP,
+    UDOT_PIP_COLOR,
+    UDOT_PIP_LINE_DASH,
+    UDOT_PIP_PDF_DASH,
+    isProtectInPlaceFeature,
+    setProtectInPlaceFlag,
+    excludeProtectInPlaceFilter,
+    includeProtectInPlaceFilter,
+    makeProtectInPlaceSvg,
+    protectInPlaceOutlineKind
+} from './protect-in-place.js';
 
 export { downloadUdotFiberLayer, downloadAllUdotFiberLayers } from './download.js';
 export { applyUdotFiberDisplayOffsets } from './display-offsets.js';

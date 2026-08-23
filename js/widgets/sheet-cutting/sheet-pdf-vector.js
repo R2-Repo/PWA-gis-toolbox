@@ -544,15 +544,36 @@ function drawFiberPoint(doc, point, style, pxPerPt, mapBearing = 0, screen = nul
     const metrics = resolveFiberGlyphPdfMetrics(style, pxPerPt, screen || {});
     const size = metrics.size;
     const angle = (Number(style.rotation) || 0) - (Number(mapBearing) || 0);
+    const at = (dx, dy) => rotatePdfPoint(point.x, point.y, point.x + dx, point.y + dy, angle);
+    const glyph = style.glyph || 'circle';
+
+    if (style.protectInPlace) {
+        applyStrokeColor(doc, style.strokeColor || '#000000');
+        doc.setLineWidth(Math.max(0.35, 0.55 * pxPerPt * Math.max(1, Number(screen?.captureScale) || 1)));
+        doc.setLineDashPattern?.(style.dash?.length ? style.dash : [2.4, 1.8], 0);
+        if (glyph === 'rect') {
+            const box = layoutUdotFiberPdfBox(null, metrics.boxRadius, null);
+            const a = at(-box.halfWidth, -box.halfHeight);
+            const b = at(box.halfWidth, -box.halfHeight);
+            const c = at(box.halfWidth, box.halfHeight);
+            const d = at(-box.halfWidth, box.halfHeight);
+            doc.line(a.x, a.y, b.x, b.y);
+            doc.line(b.x, b.y, c.x, c.y);
+            doc.line(c.x, c.y, d.x, d.y);
+            doc.line(d.x, d.y, a.x, a.y);
+        } else {
+            doc.circle(point.x, point.y, size * 0.55, 'S');
+        }
+        doc.setLineDashPattern?.([], 0);
+        return;
+    }
+
     const color = style.fillColor || '#111111';
     const ink = style.strokeColor || '#111111';
     applyFillColor(doc, color);
     applyStrokeColor(doc, ink);
     doc.setLineWidth(Math.max(0.35, 0.55 * pxPerPt * Math.max(1, Number(screen?.captureScale) || 1)));
     doc.setLineDashPattern?.([], 0);
-
-    const at = (dx, dy) => rotatePdfPoint(point.x, point.y, point.x + dx, point.y + dy, angle);
-    const glyph = style.glyph || 'circle';
 
     if (glyph === 'rect') {
         const measure = (text, fontSize) => {
