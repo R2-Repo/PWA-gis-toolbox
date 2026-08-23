@@ -171,20 +171,28 @@ Live **UDOT Fiber** checked under **Include on PDF sheets** is drawn on PDFs fro
 
 The copy uses the same CAD paint as live Fiber (class colors, sheath offsets, glyphs, box labels). Nothing is written back to ArcGIS. If you skip convert, PDFs still use live Fiber only.
 
+**Collapse conduit banks** (off by default) is a view on remade Fiber / Conduit layers and their PDF linework. It does **not** rewrite stored features. When on, each **span** draws one carrier (a 3″ / 1D-style bank). Sibling bank lines plus Fiber, IMD, and microduct on that span are hidden. A split node still ends the bank, so laterals to other boxes stay drawn. Callouts keep using the full span membership — clicking the visible carrier turns on the same span notes. Expand by turning the checkbox off. Live ArcGIS Fiber is unchanged. Protect-in-place on a hidden member stays on the stored feature and shows again when expanded.
+
 **Existing protect in place** restyles operational Fiber features as a **dashed black** line (or a dashed black outline around points/boxes) with **no fill and no class color**. Right-click a feature on any Fiber operational layer to mark or restore it. While Sheet Cutter is open, Shift+drag box-select also offers **Existing protect in place** and **Restore original style** for the selected features. The flag stays on the operational copy (`_udotProtectInPlace`) for map paint and sheet PDFs. Callout right-click actions stay available independently.
 
 ### Detail boxes / DETAILS sheets
 
 After sheets are generated, **Draw detail box** lets you drag a north-up rectangle that overlaps a gold sheet polygon. Boxes are labeled **DETAIL A, B, C…**, stored on the sheet session (`insetViews`), and shown on the map in blue. Regenerating corridor sheets clears the boxes.
 
+A box that **crosses a match line** belongs to every overlapping corridor sheet (tiny sliver nicks are ignored). The same **DETAIL** letter is drawn on each of those sheets. The DETAILS page still captures the **full** box once, without the page break. Corridor sheets keep drawing the split features — the matching boxes are pointers only.
+
 **Callout text** (`DETAIL A` + `SEE DETAILS nn`) sits **outside the blue box**, still **inside that sheet’s gold cutout**, and is nudged away from other features on the sheet (other detail boxes, design / Fiber points and lines). It is not drawn in the box center — features inside the box stay visible on the map and on the corridor PDF.
 
 Export then:
 
-1. Draws each box on its parent corridor PDF with `SEE DETAILS nn` (label outside the box).
-2. Adds packed **DETAILS** pages, four boxes per tabloid landscape sheet (`pageType: 'inset'`). Fiber uses the same live-or-converted path as corridor pages, clipped to the box.
+1. Draws each box on every overlapping corridor PDF with `SEE DETAILS nn` (label outside the box; outline clipped to that sheet).
+2. Adds packed **DETAILS** pages, four boxes per tabloid landscape sheet (`pageType: 'inset'`). Fiber uses the same live-or-converted path as corridor pages, clipped to the box. A spanning box’s header lists `SEE SHEETS nn, nn`.
 
-On DETAILS pages, Fiber/Conduit **lines** stay geographic. Boxes, splices, cabinets, and other point marks use the **map’s on-screen size at the capture zoom** (converted through `pxPerPt` × capture scale), never smaller than the CAD size used on corridor sheets. That keeps a zoomed 4-up cell matching the map instead of shrinking glyphs to corridor-sheet paper size.
+On DETAILS pages, Fiber/Conduit **lines** stay geographic and use the same paper stroke recipe as corridor sheets. Boxes, splices, cabinets, and other point marks use the **approved map size at ground-lock zoom (19.02)** (converted through that cell’s `pxPerPt` × capture scale), never smaller than the CAD size used on corridor sheets. Capture zoom 22 is not used for glyph size — that exploded marks on 4-up cells.
+
+Each DETAILS cell is assembled with the **camera saved when that box was captured**. Vector overlays and callouts re-project with that camera so a 4-up page does not draw boxes 1–3 with the last cell’s view.
+
+**PROJECT KEY NOTES** on DETAILS pages sit in a **reserved strip under that cell’s map** (that box’s notes only). The map shrinks to make room. The table never overlays the DETAIL map. Cells with no notes keep the full map height.
 
 Do **not** change clean sheet-cutting polygons for this feature — boxes are overlay annotations plus extra PDF pages.
 
@@ -192,9 +200,11 @@ Implementation: `js/widgets/sheet-cutting/inset-views.js`, `js/widgets/sheet-cut
 
 ### Plan Set Callouts overlay
 
-**Plan Set Callouts** is not a left-panel GIS Widget. After sheets are generated, **Add Fiber callouts…** in Sheet Cutter opens the callouts wizard. It draws numbered circle leaders and a **PROJECT KEY NOTES** table on corridor PDFs (`pageType === 'detail'`). Callouts start **off**; turn them on from Review or by right-clicking a feature. After **Done**, Sheet Cutter reopens so you can export; leaders stay on the map (drag the numbered circle; the feature anchor stays put). Features inside a Sheet Cutter **detail box** hide on the corridor sheet and appear on that box’s **DETAILS** page instead. Overview pages never include callouts. Map preview layers are hidden during basemap capture so they are not burned into the raster. Callout geometry is an overlay — it does **not** change clean sheet polygons.
+**Plan Set Callouts** is not a left-panel GIS Widget. After sheets are generated, **Add Fiber callouts…** in Sheet Cutter opens the callouts wizard. It draws numbered circle leaders and a **PROJECT KEY NOTES** table on corridor PDFs (`pageType === 'detail'`). UDOT Fiber labels use type prefixes with per-type numbers (**F**iber, **B**ox, **D**uct/conduit, **S**plice); other notes stay plain integers. Key notes list Fiber, then Box, then Conduit, then Splice, then unprefixed numbers. On corridor sheets the table is laid out **per page** in the sheet’s blank white space — never on the gold map cutout and never on the title-block footer. If the leftover height is tight, the list splits into extra columns and grows wider. On DETAILS pages the table is pinned under that cell’s map (see **Detail boxes / DETAILS sheets**). Callouts start **off**; turn them on from Review, by right-clicking a feature, or from the Shift+drag selection box (**Turn callout on**). After **Done**, Sheet Cutter reopens so you can export; leaders stay on the map (drag the numbered circle; the feature anchor stays put).
 
-Implementation: `js/widgets/plan-set-callouts/`, hooked from `buildHybridPagePdfBlob` in `sheet-pdf-export.js`.
+A **span** is one **carrier** duct-bank path between two nodes (a box within ~25 ft, or a cluster of carrier endpoints such as a split just short of several boxes). A carrier is a 3″ (or similar) conduit or a 1D-style bank of grouped conduits. Fiber, IMD / innerduct / microduct, and microfiber are **contents** — they ride the carrier and share that span’s single anchor. A 1D bank that stops at a split, then four stubs into four boxes, is five spans; the stub that still carries IMD + fiber is still one span. **Collapse conduit banks** hides those contents (and extra parallel carriers) so the map and PDF show one line per span; callouts still attach to the whole span from the visible carrier. Right-click lists nearby callout targets when stacked lines overlap. Turning a span on applies to the sheet under the click or selection box, not every sheet that path crosses. Features inside a Sheet Cutter **detail box** hide on the corridor sheet and appear on that box’s **DETAILS** page instead. Overview pages never include callouts. Map preview layers are hidden during basemap capture so they are not burned into the raster. Callout geometry is an overlay — it does **not** change clean sheet polygons.
+
+Implementation: `js/widgets/plan-set-callouts/` (`key-notes-layout.js` for per-page table packing), hooked from `buildHybridPagePdfBlob` in `sheet-pdf-export.js`.
 
 The map camera and 3D state are restored after export. 3D is temporarily flattened for consistent plan-sheet output.
 
@@ -278,6 +288,10 @@ If a future change makes right-side or skewed labels drift again, check the jsPD
 | `js/widgets/sheet-cutting/sheet-matchline-labels.js` | Geographic SEE SHEET point features (cap midpoint + outward probe) |
 | `js/widgets/sheet-cutting/sheet-pdf-placement.js` | Shared map-pixel → PDF-point placement |
 | `js/widgets/sheet-cutting/sheet-pdf-orientation.js` | PDF export bearing + continuation labels |
+| `js/widgets/plan-set-callouts/key-notes-layout.js` | Per-page PROJECT KEY NOTES packing (white space, multi-column) |
+| `js/widgets/plan-set-callouts/span-grouping.js` | Carrier span nodes (boxes / splits); IMD and fiber attach as contents; collapsed-bank representative |
+| `js/widgets/sheet-cutting/conduit-bank-collapse.js` | View-only collapse stamp + PDF filter for remade Fiber / Conduit |
+| `js/widgets/plan-set-callouts/callout-targets.js` | Map a Fiber feature to the sheet-local discovered leader |
 | `js/widgets/sheet-cutting/protect-in-place.js` | Existing protect in place (operational Fiber) |
 | `js/symbology/udot-fiber/protect-in-place.js` | Dashed-black PIP paint helpers |
 | `js/export/folder-export.js` | File System Access API folder writer |

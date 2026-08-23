@@ -19,6 +19,7 @@ import {
     selectRouteSource,
     configureSheetTemplate,
     selectDesignLayersForSheets,
+    setCollapseConduitBanks,
     setSheetDesignFeatures,
     generateSheetSet,
     buildSessionExport,
@@ -52,7 +53,8 @@ import {
     keepEligibleSheetPdfLayerIds
 } from './pdf-layer-eligibility.js';
 import { queryFiberFeaturesByEnvelope } from './fiber-operational-fetch.js';
-import { addInsetView, removeInsetView } from './inset-views.js';
+import { addInsetView, formatInsetParentSheetsLabel, removeInsetView } from './inset-views.js';
+import { syncConduitBankCollapseView } from './conduit-bank-collapse.js';
 import { openPlanSetCallouts } from '../plan-set-callouts/controller.js';
 
 function persistSession(session, open = true) {
@@ -295,6 +297,9 @@ export async function openSheetCutting(ctx, { restoreState = null } = {}) {
         ? restoreSheetSession(restoreState)
         : createSheetCuttingSession();
     let leaveForCallouts = false;
+    if (session.sheets?.collapseConduitBanks) {
+        syncConduitBankCollapseView(ctx, true);
+    }
 
     await openReactIsland({
         title: 'Sheet Cutter',
@@ -342,6 +347,12 @@ export async function openSheetCutting(ctx, { restoreState = null } = {}) {
             },
             onSelectDesignLayers: (layerIds) => {
                 session = applyDesignLayerSelection(ctx, session, layerIds);
+                persistSession(session);
+                return session;
+            },
+            onSetCollapseConduitBanks: (collapse) => {
+                session = setCollapseConduitBanks(session, collapse);
+                syncConduitBankCollapseView(ctx, session.sheets.collapseConduitBanks);
                 persistSession(session);
                 return session;
             },
@@ -490,6 +501,7 @@ export async function openSheetCutting(ctx, { restoreState = null } = {}) {
                     `Converted ${count} Fiber layer${count === 1 ? '' : 's'} to editable map layers. Live Fiber is off. Sheet PDFs use the editable copy.${extra}`,
                     converted.truncated ? 'warning' : 'success'
                 );
+                syncConduitBankCollapseView(ctx, session.sheets?.collapseConduitBanks === true);
                 renderSheetPreview(ctx, session);
                 return session;
             },
@@ -510,8 +522,11 @@ export async function openSheetCutting(ctx, { restoreState = null } = {}) {
                 persistSession(session);
                 renderSheetPreview(ctx, session);
                 const view = session.sheets.insetViews.at(-1);
-                const sheetNo = String(view?.parentSheetNumber || 0).padStart(2, '0');
-                ctx.showToast(`Added DETAIL ${view?.label || ''} on Sheet ${sheetNo}.`, 'success');
+                const sheetsLabel = formatInsetParentSheetsLabel(view);
+                ctx.showToast(
+                    `Added DETAIL ${view?.label || ''}${sheetsLabel ? ` on ${sheetsLabel}` : ''}.`,
+                    'success'
+                );
                 return session;
             },
             onRemoveInsetView: (insetId) => {

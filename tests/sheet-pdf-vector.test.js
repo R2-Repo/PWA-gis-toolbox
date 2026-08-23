@@ -16,8 +16,10 @@ import {
     MATCHLINE_SEE_LABEL_FONT_PT,
     mapCssPxToPdfPt,
     resolveFiberGlyphPdfMetrics,
-    resolvePointMarkerPdfRadius
+    resolvePointMarkerPdfRadius,
+    DETAILS_FIBER_GLYPH_ZOOM
 } from '../js/widgets/sheet-cutting/sheet-pdf-vector.js';
+import { UDOT_FIBER_GROUND_LOCK_ZOOM } from '../js/symbology/udot-fiber/zoom-scale.js';
 
 describe('sheet PDF placement', () => {
     it('computes landscape-flow image placement', () => {
@@ -423,22 +425,31 @@ describe('DETAILS page point scaling', () => {
         expect(mapCssPxToPdfPt(18, 0.2, 2)).toBeCloseTo(7.2, 5);
     });
 
-    it('grows boxes/splices/cabinets to the map icon size on zoomed DETAILS pages', () => {
+    it('locks DETAILS glyphs to ground-lock zoom instead of capture zoom 22', () => {
+        expect(DETAILS_FIBER_GLYPH_ZOOM).toBe(UDOT_FIBER_GROUND_LOCK_ZOOM);
         const cad = resolveFiberGlyphPdfMetrics(style, 0.12);
-        const details = resolveFiberGlyphPdfMetrics(style, 0.12, {
+        const locked = resolveFiberGlyphPdfMetrics(style, 0.12, {
+            matchMapScreenSpace: true,
+            captureScale: 2,
+            zoom: DETAILS_FIBER_GLYPH_ZOOM
+        });
+        const exploded = resolveFiberGlyphPdfMetrics(style, 0.12, {
             matchMapScreenSpace: true,
             captureScale: 2,
             zoom: 22
         });
-        expect(details.boxRadius).toBeGreaterThan(cad.boxRadius * 3);
+        expect(locked.boxRadius).toBeGreaterThanOrEqual(cad.boxRadius);
+        expect(exploded.boxRadius).toBeGreaterThan(locked.boxRadius * 3);
+        expect(locked.boxRadius).toBeLessThan(40);
 
         const spliceCad = resolveFiberGlyphPdfMetrics({ radius: 4.1, fiberKey: 'splices', glyph: 'circle' }, 0.12);
-        const spliceZoom = resolveFiberGlyphPdfMetrics({ radius: 4.1, fiberKey: 'splices', glyph: 'circle' }, 0.12, {
+        const spliceLocked = resolveFiberGlyphPdfMetrics({ radius: 4.1, fiberKey: 'splices', glyph: 'circle' }, 0.12, {
             matchMapScreenSpace: true,
             captureScale: 2,
-            zoom: 22
+            zoom: DETAILS_FIBER_GLYPH_ZOOM
         });
-        expect(spliceZoom.size).toBeGreaterThan(spliceCad.size * 3);
+        expect(spliceLocked.size).toBeGreaterThanOrEqual(spliceCad.size);
+        expect(spliceLocked.size).toBeLessThan(30);
 
         const cadPoint = resolvePointMarkerPdfRadius({ radius: 6 }, 0.12);
         const mapPoint = resolvePointMarkerPdfRadius({ radius: 6 }, 0.12, {

@@ -1,8 +1,35 @@
 import * as turf from '@turf/turf';
 import { describe, expect, it, beforeEach } from 'vitest';
 import { resetIdSequence } from '../js/plan-project/id-utils.js';
-import { assignStableNoteNumbers, noteTextForFeature, pointTargetKey } from '../js/widgets/plan-set-callouts/fiber-notes.js';
-import { groupSpanMembers, spanTargetKey } from '../js/widgets/plan-set-callouts/span-grouping.js';
+import {
+    assignStableNoteNumbers,
+    compareCalloutNotes,
+    formatCalloutLabel,
+    noteTextForFeature,
+    pointTargetKey
+} from '../js/widgets/plan-set-callouts/fiber-notes.js';
+import {
+    filterLinesForCollapsedView,
+    groupSpanMembers,
+    isCarrierLineFeature,
+    isInnerDuctFeature,
+    pickSpanRepresentative,
+    spanMemberKey,
+    spanTargetKey
+} from '../js/widgets/plan-set-callouts/span-grouping.js';
+import {
+    isLeaderOn,
+    labelForLeader,
+    leaderMatchesFeature,
+    leadersMatchingFeature,
+    sheetIdForCoordinate
+} from '../js/widgets/plan-set-callouts/callout-targets.js';
+import {
+    getCalloutSelectionItems,
+    getPlanSetCalloutMenuItems,
+    setPlanSetCalloutMenuContext
+} from '../js/widgets/plan-set-callouts/context-menu-bridge.js';
+import { SHEET_FIBER_SNAPSHOT_FORMAT } from '../js/symbology/udot-fiber/constants.js';
 import {
     CALLOUT_PDF_CIRCLE_GAP,
     CALLOUT_PDF_CIRCLE_R,
@@ -33,6 +60,7 @@ import {
     restoreFiberCalloutSession,
     serializeFiberCalloutSession,
     setLeaderEnabled,
+    setLeadersEnabledForFeatures,
     suppressLeader
 } from '../js/widgets/plan-set-callouts/fiber-callout-engine.js';
 import {
@@ -121,6 +149,71 @@ describe('fiber callout notes', () => {
         expect(second.find((note) => note.text === 'UDOT 048 SMF').number).toBe(2);
         expect(second.find((note) => note.text === 'Box B').number).toBe(3);
     });
+
+    it('reuses numbers per UDOT layer type and prefixes labels', () => {
+        const notes = assignStableNoteNumbers([], [
+            { text: 'UDOT 048 SMF', fiberKey: 'fiber' },
+            { text: 'JB-A', fiberKey: 'boxes' },
+            { text: '4D', fiberKey: 'conduit' },
+            { text: 'SPL-1', fiberKey: 'splices' },
+            { text: 'See detail' }
+        ]);
+        expect(formatCalloutLabel(notes.find((note) => note.fiberKey === 'fiber'))).toBe('F1');
+        expect(formatCalloutLabel(notes.find((note) => note.fiberKey === 'boxes'))).toBe('B1');
+        expect(formatCalloutLabel(notes.find((note) => note.fiberKey === 'conduit'))).toBe('D1');
+        expect(formatCalloutLabel(notes.find((note) => note.fiberKey === 'splices'))).toBe('S1');
+        expect(formatCalloutLabel(notes.find((note) => note.text === 'See detail'))).toBe('1');
+        expect([...notes].sort(compareCalloutNotes).map((note) => formatCalloutLabel(note)))
+            .toEqual(['F1', 'B1', 'D1', 'S1', '1']);
+    });
+
+    it('keeps per-type numbers when the same typed text reappears', () => {
+        const first = assignStableNoteNumbers([], [
+            { text: 'JB-A', fiberKey: 'boxes' },
+            { text: 'UDOT 048 SMF', fiberKey: 'fiber' }
+        ]);
+        const second = assignStableNoteNumbers(first, [
+            { text: 'UDOT 048 SMF', fiberKey: 'fiber' },
+            { text: 'JB-B', fiberKey: 'boxes' }
+        ]);
+        expect(second.find((note) => note.text === 'UDOT 048 SMF').number).toBe(1);
+        expect(second.find((note) => note.text === 'UDOT 048 SMF').fiberKey).toBe('fiber');
+        expect(second.find((note) => note.text === 'JB-B').number).toBe(2);
+        expect(formatCalloutLabel(second.find((note) => note.text === 'JB-B'))).toBe('B2');
+    });
+
+    it('remints unprefixed auto notes into typed labels and keeps manual extras', () => {
+        const next = assignStableNoteNumbers([
+            { noteId: 'note-7', number: 7, text: 'JB-A', source: 'auto' },
+            { noteId: 'note-3', number: 3, text: 'See detail', source: 'manual' }
+        ], [
+            { text: 'JB-A', fiberKey: 'boxes' },
+            { text: 'See detail' }
+        ]);
+        expect(formatCalloutLabel(next.find((note) => note.text === 'JB-A'))).toBe('B1');
+        expect(next.filter((note) => note.text === 'JB-A')).toHaveLength(1);
+        expect(next.find((note) => note.text === 'See detail').number).toBe(3);
+        expect(formatCalloutLabel(next.find((note) => note.text === 'See detail'))).toBe('3');
+    });
+
+    it('sorts key notes Fiber, Box, Conduit, Splice, then plain numbers', () => {
+        const table = notesUsedOnSheet({
+            notes: [
+                { noteId: 'n1', number: 1, text: 'See detail' },
+                { noteId: 'n2', number: 1, text: 'JB-A', fiberKey: 'boxes' },
+                { noteId: 'n3', number: 1, text: 'UDOT 048 SMF', fiberKey: 'fiber' },
+                { noteId: 'n4', number: 1, text: '4D', fiberKey: 'conduit' },
+                { noteId: 'n5', number: 1, text: 'SPL-1', fiberKey: 'splices' }
+            ],
+            leaders: [{
+                sheetId: 's1',
+                noteIds: ['n1', 'n2', 'n3', 'n4', 'n5'],
+                suppressed: false,
+                enabled: true
+            }]
+        }, 's1');
+        expect(table.map((note) => formatCalloutLabel(note))).toEqual(['F1', 'B1', 'D1', 'S1', '1']);
+    });
 });
 
 describe('span grouping', () => {
@@ -144,6 +237,159 @@ describe('span grouping', () => {
         expect(spanTargetKey(trunk, boxes)).not.toBe(spanTargetKey(lateral, boxes));
         const groups = groupSpanMembers([trunk, lateral], boxes);
         expect(groups.size).toBe(2);
+    });
+
+    it('treats IMD as contents and counted innerduct banks as carriers', () => {
+        expect(isInnerDuctFeature({
+            properties: { _udotFiberKey: 'conduit', CONDUIT_SYM: 'MicroDuct', CustNameRight: '2 IMD 10mm' }
+        })).toBe(true);
+        expect(isInnerDuctFeature({
+            properties: { _udotFiberKey: 'conduit', CustNameRight: '4 - 1" Innerduct' }
+        })).toBe(false);
+        expect(isCarrierLineFeature({
+            properties: { _udotFiberKey: 'conduit', CustNameRight: '4D' }
+        })).toBe(true);
+        expect(isCarrierLineFeature({
+            properties: { _udotFiberKey: 'fiber', Fiber_Label: 'UDOT 048 SMF' }
+        })).toBe(false);
+    });
+
+    it('groups a 1D bank that stops at a split with IMD and fiber as one span', () => {
+        const split = [-111.89, 40.75];
+        const bankBoxes = [box(10, -111.90, 40.75, 'A'), box(20, -111.88, 40.75, 'B')];
+        const bank = [
+            line(1, 'conduit', [[-111.90, 40.75], split], 'CustNameRight', '1D'),
+            line(2, 'conduit', [[-111.90, 40.75], split], 'CustNameRight', '1D'),
+            line(3, 'conduit', [[-111.90, 40.75], split], 'CustNameRight', '1D'),
+            line(4, 'conduit', [[-111.90, 40.75], split], 'CustNameRight', '1D')
+        ];
+        const imd = {
+            type: 'Feature',
+            id: 50,
+            properties: {
+                OBJECTID: 50,
+                CONDUIT_SYM: 'MicroDuct',
+                CustNameRight: '1 IMD 10mm',
+                _udotFiberKey: 'conduit'
+            },
+            geometry: { type: 'LineString', coordinates: [[-111.90, 40.75], split] }
+        };
+        const fiber = line(60, 'fiber', [[-111.90, 40.75], split], 'Fiber_Label', 'microfiber');
+        const groups = groupSpanMembers([...bank, imd, fiber], bankBoxes);
+        expect(groups.size).toBe(1);
+        expect([...groups.values()][0]).toHaveLength(6);
+    });
+
+    it('keeps four stubs as four spans and attaches IMD plus fiber to one stub', () => {
+        const split = [-111.89, 40.75];
+        const stubBoxes = [
+            box(20, -111.88, 40.75, 'B'),
+            box(30, -111.89, 40.751, 'C'),
+            box(40, -111.89, 40.749, 'D'),
+            box(50, -111.889, 40.7508, 'E')
+        ];
+        const stubB = line(11, 'conduit', [split, [-111.88, 40.75]], 'CustNameRight', '1"');
+        const stubC = line(12, 'conduit', [split, [-111.89, 40.751]], 'CustNameRight', '1"');
+        const stubD = line(13, 'conduit', [split, [-111.89, 40.749]], 'CustNameRight', '1"');
+        const stubE = line(14, 'conduit', [split, [-111.889, 40.7508]], 'CustNameRight', '1"');
+        const imd = {
+            type: 'Feature',
+            id: 51,
+            properties: {
+                OBJECTID: 51,
+                CONDUIT_SYM: 'MicroDuct',
+                CustNameRight: '1 IMD 10mm',
+                _udotFiberKey: 'conduit'
+            },
+            geometry: { type: 'LineString', coordinates: [split, [-111.88, 40.75]] }
+        };
+        const fiber = line(61, 'fiber', [split, [-111.88, 40.75]], 'Fiber_Label', 'microfiber');
+        const groups = groupSpanMembers([stubB, stubC, stubD, stubE, imd, fiber], stubBoxes);
+        expect(groups.size).toBe(4);
+        const stubBGroup = [...groups.values()].find((members) => (
+            members.some((feature) => String(feature.id) === '11')
+        ));
+        expect(stubBGroup).toHaveLength(3);
+        expect(stubBGroup.some((feature) => feature.properties.CONDUIT_SYM === 'MicroDuct')).toBe(true);
+        expect(stubBGroup.some((feature) => feature.properties._udotFiberKey === 'fiber')).toBe(true);
+    });
+
+    it('picks a carrier as the collapsed representative, not IMD or fiber', () => {
+        const bank = line(1, 'conduit', [[-111.90, 40.75], [-111.88, 40.75]], 'CustNameRight', '1D');
+        const imd = {
+            type: 'Feature',
+            id: 50,
+            properties: {
+                OBJECTID: 50,
+                CONDUIT_SYM: 'MicroDuct',
+                CustNameRight: '1 IMD 10mm',
+                _udotFiberKey: 'conduit'
+            },
+            geometry: { type: 'LineString', coordinates: [[-111.90, 40.75], [-111.88, 40.75]] }
+        };
+        const fiber = line(60, 'fiber', [[-111.90, 40.75], [-111.88, 40.75]], 'Fiber_Label', 'microfiber');
+        const representative = pickSpanRepresentative([imd, fiber, bank]);
+        expect(representative).toBe(bank);
+        expect(spanMemberKey(bank)).toBe('conduit:1');
+    });
+
+    it('collapses a 1D bank plus contents to one line and keeps four split stubs', () => {
+        const split = [-111.89, 40.75];
+        const boxesForCollapse = [
+            box(10, -111.90, 40.75, 'A'),
+            box(20, -111.88, 40.75, 'B'),
+            box(30, -111.89, 40.751, 'C'),
+            box(40, -111.89, 40.749, 'D'),
+            box(50, -111.889, 40.7508, 'E')
+        ];
+        const bank = [
+            line(1, 'conduit', [[-111.90, 40.75], split], 'CustNameRight', '1D'),
+            line(2, 'conduit', [[-111.90, 40.75], split], 'CustNameRight', '1D'),
+            line(3, 'conduit', [[-111.90, 40.75], split], 'CustNameRight', '1D'),
+            line(4, 'conduit', [[-111.90, 40.75], split], 'CustNameRight', '1D')
+        ];
+        const bankImd = {
+            type: 'Feature',
+            id: 50,
+            properties: {
+                OBJECTID: 50,
+                CONDUIT_SYM: 'MicroDuct',
+                CustNameRight: '1 IMD 10mm',
+                _udotFiberKey: 'conduit'
+            },
+            geometry: { type: 'LineString', coordinates: [[-111.90, 40.75], split] }
+        };
+        const bankFiber = line(60, 'fiber', [[-111.90, 40.75], split], 'Fiber_Label', 'microfiber');
+        const stubs = [
+            line(11, 'conduit', [split, [-111.88, 40.75]], 'CustNameRight', '1"'),
+            line(12, 'conduit', [split, [-111.89, 40.751]], 'CustNameRight', '1"'),
+            line(13, 'conduit', [split, [-111.89, 40.749]], 'CustNameRight', '1"'),
+            line(14, 'conduit', [split, [-111.889, 40.7508]], 'CustNameRight', '1"')
+        ];
+        const stubImd = {
+            type: 'Feature',
+            id: 51,
+            properties: {
+                OBJECTID: 51,
+                CONDUIT_SYM: 'MicroDuct',
+                CustNameRight: '1 IMD 10mm',
+                _udotFiberKey: 'conduit'
+            },
+            geometry: { type: 'LineString', coordinates: [split, [-111.88, 40.75]] }
+        };
+        const stubFiber = line(61, 'fiber', [split, [-111.88, 40.75]], 'Fiber_Label', 'microfiber');
+        const allLines = [...bank, bankImd, bankFiber, ...stubs, stubImd, stubFiber];
+        expect(filterLinesForCollapsedView(allLines, boxesForCollapse)).toHaveLength(allLines.length);
+
+        const collapsed = filterLinesForCollapsedView(allLines, boxesForCollapse, { collapsed: true });
+        const ids = collapsed.map((feature) => String(feature.id)).sort();
+        expect(collapsed).toHaveLength(5);
+        expect(ids.filter((id) => ['1', '2', '3', '4'].includes(id))).toHaveLength(1);
+        expect(ids).toEqual(expect.arrayContaining(['11', '12', '13', '14']));
+        expect(ids).not.toContain('50');
+        expect(ids).not.toContain('51');
+        expect(ids).not.toContain('60');
+        expect(ids).not.toContain('61');
     });
 });
 
@@ -194,6 +440,10 @@ describe('fiber callout generate', () => {
         expect(notesUsedOnSheet(session, 's1')).toEqual([]);
         const span = session.leaders.find((leader) => leader.targetKind === 'span');
         expect(span.noteIds.length).toBeGreaterThanOrEqual(2);
+        expect(formatCalloutLabel(session.notes.find((note) => note.text === 'JB-A'))).toBe('B1');
+        expect(formatCalloutLabel(session.notes.find((note) => note.text === 'SPL-1'))).toBe('S1');
+        expect(formatCalloutLabel(session.notes.find((note) => note.text === '4D'))).toBe('D1');
+        expect(formatCalloutLabel(session.notes.find((note) => note.text === 'UDOT 048 SMF'))).toBe('F1');
     });
 
     it('turns a callout on and keeps the sheet table in sync', () => {
@@ -432,11 +682,14 @@ describe('fiber callout generate', () => {
         expect(bubbles.length).toBeGreaterThanOrEqual(2);
         expect(bubbles[0].geometry.coordinates).toEqual(bubbles[1].geometry.coordinates);
         expect(bubbles.map((feature) => feature.properties.stack_index).slice(0, 2)).toEqual([0, 1]);
+        expect(bubbles.map((feature) => feature.properties.callout_number)).toEqual(
+            expect.arrayContaining(['D1', 'F1'])
+        );
     });
 });
 
 describe('key notes table placement', () => {
-    it('stays above the footer and prefers a corner inside the gold cut', () => {
+    it('stays in white space outside the gold cut and above the footer', () => {
         const goldPdfRing = [
             { x: 200, y: 80 },
             { x: 700, y: 80 },
@@ -449,14 +702,19 @@ describe('key notes table placement', () => {
             marginsPt: { left: 36, right: 36, top: 36, bottom: 36 },
             footerReservePt: 50,
             goldPdfRing,
-            tableW: 160,
-            tableH: 90
+            tableW: 140,
+            tableH: 90,
+            reserveNorthArrow: false
         });
+        expect(rect).toBeTruthy();
         expect(rect.y + rect.height).toBeLessThan(612 - 50);
-        expect(rect.x).toBeGreaterThanOrEqual(200);
-        expect(rect.x + rect.width).toBeLessThanOrEqual(700);
-        expect(rect.y).toBeGreaterThanOrEqual(80);
-        expect(rect.y + rect.height).toBeLessThanOrEqual(400);
+        const overlapsGold = !(
+            rect.x + rect.width <= 200
+            || 700 <= rect.x
+            || rect.y + rect.height <= 80
+            || 400 <= rect.y
+        );
+        expect(overlapsGold).toBe(false);
     });
 });
 
@@ -492,11 +750,11 @@ describe('pdf callout overlay', () => {
         };
     }
 
-    function twoNumberSession() {
+    function twoNumberSession(withPrefixes = false) {
         return {
             notes: [
-                { noteId: 'n1', number: 1, text: 'JB-A' },
-                { noteId: 'n2', number: 2, text: 'UDOT 048 SMF' }
+                { noteId: 'n1', number: 1, text: 'JB-A', ...(withPrefixes ? { fiberKey: 'boxes' } : {}) },
+                { noteId: 'n2', number: 2, text: 'UDOT 048 SMF', ...(withPrefixes ? { fiberKey: 'fiber' } : {}) }
             ],
             leaders: [{
                 leaderId: 's1::span',
@@ -581,6 +839,24 @@ describe('pdf callout overlay', () => {
         ))).toBe(true);
     });
 
+    it('draws prefixed UDOT labels in circles and key notes', () => {
+        const doc = mockDoc();
+        drawSheetCalloutsOnPdf(doc, {
+            session: twoNumberSession(true),
+            sheetId: 's1',
+            pageType: 'detail',
+            map: {},
+            transform: {
+                projectLngLat: (_map, lng, lat) => ({ x: Math.abs(lng) * 10, y: lat * 10 })
+            },
+            layoutMargins: { left: 36, right: 36, top: 36, bottom: 36 },
+            pageW: 792,
+            pageH: 612
+        });
+        const labels = doc.calls.filter((call) => call.name === 'text').map((call) => call.args[0]);
+        expect(labels).toEqual(expect.arrayContaining(['B1', 'F2', 'PROJECT KEY NOTES']));
+    });
+
     it('matches map circle size to the PDF circle', () => {
         expect(CALLOUT_MAP_CIRCLE_RADIUS_PX).toBeCloseTo(CALLOUT_PDF_CIRCLE_R * CALLOUT_PX_PER_PT, 5);
         expect(CALLOUT_MAP_CIRCLE_GAP_PX).toBeCloseTo(CALLOUT_PDF_CIRCLE_GAP * CALLOUT_PX_PER_PT, 5);
@@ -633,5 +909,308 @@ describe('callout preview capture hide', () => {
         expect(vis.get('draw-callout-preview-1-line')).toBe('visible');
         restore();
         expect(vis.get('callout-preview-abc-circle')).toBe('visible');
+    });
+});
+
+describe('callout target matching', () => {
+    it('does not treat a box id inside a span key as a match', () => {
+        const boxFeature = box(10, -111.90, 40.75, 'JB-A');
+        boxFeature.properties._udotFiberKey = 'boxes';
+        const spanLeader = {
+            targetKey: 'span:box:10|box:20',
+            targetKind: 'span',
+            memberIds: ['1', '2'],
+            sheetId: 's1'
+        };
+        const boxLeader = {
+            targetKey: pointTargetKey('boxes', '10'),
+            targetKind: 'boxes',
+            memberIds: ['10'],
+            sheetId: 's1'
+        };
+        expect(leaderMatchesFeature(spanLeader, boxFeature)).toBe(false);
+        expect(leaderMatchesFeature(boxLeader, boxFeature)).toBe(true);
+    });
+
+    it('turns a span callout on from the collapsed representative carrier', () => {
+        const conduit = line(1, 'conduit', [[-111.90, 40.75], [-111.88, 40.75]], 'CustNameRight', '4D');
+        const fiber = line(2, 'fiber', [[-111.90, 40.75], [-111.88, 40.75]], 'Fiber_Label', 'UDOT 048 SMF');
+        let session = createFiberCalloutSession();
+        session = generateFiberCallouts(session, {
+            sheets: [sheet],
+            routeLine,
+            frameFeatures: { type: 'FeatureCollection', features: [frame] },
+            features: {
+                boxes: [box(10, -111.90, 40.75, 'A'), box(20, -111.88, 40.75, 'B')],
+                splices: [],
+                conduit: [conduit],
+                fiber: [fiber],
+                cabinets: [],
+                building: []
+            }
+        });
+        const representative = pickSpanRepresentative([conduit, fiber]);
+        expect(representative).toBe(conduit);
+        const { session: next, changed } = setLeadersEnabledForFeatures(session, [representative], {
+            enabled: true,
+            sheetId: 's1'
+        });
+        expect(changed).toBe(1);
+        const span = next.leaders.find((leader) => leader.targetKind === 'span' && isLeaderOn(leader));
+        expect(span.memberIds).toEqual(expect.arrayContaining(['1', '2']));
+        expect(span.noteIds.length).toBeGreaterThanOrEqual(2);
+        expect(leaderMatchesFeature(span, conduit)).toBe(true);
+        expect(leaderMatchesFeature(span, fiber)).toBe(true);
+    });
+
+    it('enables only the sheet under the click for a shared span', () => {
+        const frameWest = {
+            type: 'Feature',
+            properties: { sheet_id: 's1', sheet_number: 1, feature_type: 'sheet_frame' },
+            geometry: {
+                type: 'Polygon',
+                coordinates: [[
+                    [-111.91, 40.74],
+                    [-111.89, 40.74],
+                    [-111.89, 40.76],
+                    [-111.91, 40.76],
+                    [-111.91, 40.74]
+                ]]
+            }
+        };
+        const frameEast = {
+            type: 'Feature',
+            properties: { sheet_id: 's2', sheet_number: 2, feature_type: 'sheet_frame' },
+            geometry: {
+                type: 'Polygon',
+                coordinates: [[
+                    [-111.89, 40.74],
+                    [-111.87, 40.74],
+                    [-111.87, 40.76],
+                    [-111.89, 40.76],
+                    [-111.89, 40.74]
+                ]]
+            }
+        };
+        const sheetEast = {
+            sheetId: 's2',
+            sheetNumber: 2,
+            sheetType: 'detail',
+            startDistanceFt: 2500,
+            endDistanceFt: 5000
+        };
+        let session = createFiberCalloutSession();
+        session = generateFiberCallouts(session, {
+            sheets: [sheet, sheetEast],
+            routeLine,
+            frameFeatures: { type: 'FeatureCollection', features: [frameWest, frameEast] },
+            features: {
+                boxes: [
+                    box(10, -111.90, 40.75, 'JB-A'),
+                    box(20, -111.88, 40.75, 'JB-B')
+                ],
+                splices: [],
+                conduit: [
+                    line(1, 'conduit', [[-111.90, 40.75], [-111.88, 40.75]], 'CustNameRight', '4D')
+                ],
+                fiber: [],
+                cabinets: [],
+                building: []
+            }
+        });
+        const spans = session.leaders.filter((leader) => leader.targetKind === 'span');
+        expect(spans.length).toBeGreaterThanOrEqual(2);
+        const targetKey = spans[0].targetKey;
+        expect(spans.every((leader) => leader.targetKey === targetKey)).toBe(true);
+        session = enableOrAddLeader(session, {
+            targetKey,
+            text: '4D',
+            anchor: [-111.875, 40.75]
+        });
+        const east = session.leaders.find((leader) => leader.sheetId === 's2' && leader.targetKind === 'span');
+        const west = session.leaders.find((leader) => leader.sheetId === 's1' && leader.targetKind === 'span');
+        expect(east.enabled).toBe(true);
+        expect(west.enabled === false || west.suppressed).toBe(true);
+        expect(sheetIdForCoordinate(session, [-111.875, 40.75])).toBe('s2');
+    });
+
+    it('turns on selected features only for matching leaders', () => {
+        let session = createFiberCalloutSession();
+        session = generateFiberCallouts(session, {
+            sheets: [sheet],
+            routeLine,
+            frameFeatures: { type: 'FeatureCollection', features: [frame] },
+            features: {
+                boxes: [box(10, -111.90, 40.75, 'JB-A')],
+                splices: [],
+                conduit: [
+                    line(1, 'conduit', [[-111.90, 40.75], [-111.88, 40.75]], 'CustNameRight', '4D')
+                ],
+                fiber: [],
+                cabinets: [],
+                building: []
+            }
+        });
+        const conduit = {
+            type: 'Feature',
+            id: 1,
+            properties: { OBJECTID: 1, _udotFiberKey: 'conduit' },
+            geometry: { type: 'LineString', coordinates: [[-111.90, 40.75], [-111.88, 40.75]] }
+        };
+        const { session: next, changed } = setLeadersEnabledForFeatures(session, [conduit], {
+            enabled: true
+        });
+        expect(changed).toBeGreaterThan(0);
+        expect(next.leaders.some((leader) => leader.targetKind === 'span' && leader.enabled)).toBe(true);
+        expect(labelForLeader(next, next.leaders.find((leader) => leader.targetKind === 'span'))).toContain('4D');
+        expect(leadersMatchingFeature(next, conduit).length).toBeGreaterThan(0);
+    });
+});
+
+describe('callout map menus', () => {
+    const snapshotLayer = {
+        id: 'snap-conduit',
+        name: 'Sheets UDOT Conduit',
+        source: { format: SHEET_FIBER_SNAPSHOT_FORMAT, fiberKey: 'conduit' },
+        geojson: {
+            type: 'FeatureCollection',
+            features: [{
+                type: 'Feature',
+                properties: { _featureIndex: 0, OBJECTID: 1, _udotFiberKey: 'conduit' },
+                geometry: { type: 'LineString', coordinates: [[-111.90, 40.75], [-111.88, 40.75]] }
+            }]
+        }
+    };
+
+    it('labels nearby overlapping targets instead of taking the first hit only', () => {
+        const session = {
+            selectedSheetId: 's1',
+            sheets: [{ sheetId: 's1', sheetNumber: 1, frameGeometry: frame.geometry }],
+            notes: [
+                { noteId: 'note-1', number: 1, text: '1D' },
+                { noteId: 'note-2', number: 2, text: 'JB-A' }
+            ],
+            leaders: [
+                {
+                    leaderKey: 's1::span:box:10|box:20',
+                    leaderId: 's1::span:box:10|box:20',
+                    sheetId: 's1',
+                    targetKey: 'span:box:10|box:20',
+                    targetKind: 'span',
+                    memberIds: ['1'],
+                    noteIds: ['note-1'],
+                    suppressed: true,
+                    enabled: false
+                },
+                {
+                    leaderKey: 's1::boxes:10',
+                    leaderId: 's1::boxes:10',
+                    sheetId: 's1',
+                    targetKey: pointTargetKey('boxes', '10'),
+                    targetKind: 'boxes',
+                    memberIds: ['10'],
+                    noteIds: ['note-2'],
+                    suppressed: true,
+                    enabled: false
+                }
+            ]
+        };
+        const boxFeature = {
+            type: 'Feature',
+            properties: { OBJECTID: 10, _udotFiberKey: 'boxes', BOXLABELS: 'JB-A' },
+            geometry: { type: 'Point', coordinates: [-111.90, 40.75] }
+        };
+        const conduitFeature = {
+            type: 'Feature',
+            properties: { OBJECTID: 1, _udotFiberKey: 'conduit', CustNameRight: '1D' },
+            geometry: { type: 'LineString', coordinates: [[-111.90, 40.75], [-111.88, 40.75]] }
+        };
+        setPlanSetCalloutMenuContext({
+            isActive: () => true,
+            isOpen: () => true,
+            getSession: () => session,
+            mapService: {
+                findFeaturesNearClick: () => ([
+                    { feature: conduitFeature, layerId: 'snap-conduit', featureIndex: 0 },
+                    { feature: boxFeature, layerId: 'snap-boxes', featureIndex: 0 }
+                ])
+            },
+            getLayers: () => ([
+                snapshotLayer,
+                {
+                    id: 'snap-boxes',
+                    source: { format: SHEET_FIBER_SNAPSHOT_FORMAT, fiberKey: 'boxes' }
+                }
+            ]),
+            onAddLeader: () => {},
+            onRemoveLeader: () => {}
+        });
+        const items = getPlanSetCalloutMenuItems({
+            latlng: { lng: -111.90, lat: 40.75 },
+            layerId: 'snap-conduit',
+            featureIndex: 0,
+            feature: conduitFeature
+        });
+        const onMenu = items.find((item) => item.label === 'Turn on callout');
+        expect(onMenu?.children?.length).toBe(2);
+        expect(onMenu.children.some((child) => /1D/.test(child.label))).toBe(true);
+        expect(onMenu.children.some((child) => /JB-A/.test(child.label))).toBe(true);
+        setPlanSetCalloutMenuContext(null);
+    });
+
+    it('offers box-select turn on and off while the callout session is live', () => {
+        expect(getCalloutSelectionItems({
+            layer: snapshotLayer,
+            count: 1
+        })).toEqual([]);
+        setPlanSetCalloutMenuContext({
+            isActive: () => true,
+            getSession: () => ({ leaders: [] }),
+            mapService: { getSelectedIndices: () => [0] },
+            getLayers: () => [snapshotLayer],
+            onSetLeadersEnabled: () => 1
+        });
+        const items = getCalloutSelectionItems({
+            layer: snapshotLayer,
+            count: 2,
+            bbox: [-111.91, 40.74, -111.87, 40.76]
+        });
+        expect(items.map((item) => item.label)).toEqual([
+            'Turn callout on',
+            'Turn callout off'
+        ]);
+        setPlanSetCalloutMenuContext(null);
+    });
+
+    it('concatenates callout actions with protect-in-place extras', async () => {
+        const { buildSelectionActionItems } = await import('../js/tools/selection-actions.js');
+        setPlanSetCalloutMenuContext({
+            isActive: () => true,
+            getSession: () => ({ leaders: [] }),
+            mapService: { getSelectedIndices: () => [0] },
+            getLayers: () => [snapshotLayer]
+        });
+        const extras = [
+            { label: 'Existing protect in place', icon: '┅', action: () => {} },
+            { label: 'Restore original style', icon: '↺', action: () => {} },
+            ...getCalloutSelectionItems({ layer: snapshotLayer, count: 1 })
+        ];
+        const { items } = buildSelectionActionItems({
+            layer: {
+                id: 'snap-conduit',
+                name: 'Sheets UDOT Conduit',
+                schema: { geometryType: 'LineString' },
+                geojson: snapshotLayer.geojson
+            },
+            count: 1,
+            extraItems: extras
+        });
+        expect(items.map((item) => item.label).slice(0, 4)).toEqual([
+            'Existing protect in place',
+            'Restore original style',
+            'Turn callout on',
+            'Turn callout off'
+        ]);
+        setPlanSetCalloutMenuContext(null);
     });
 });

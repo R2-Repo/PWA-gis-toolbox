@@ -19,6 +19,7 @@ import {
     restoreSheetSessionFromStore,
     selectCalloutSheet,
     setLeaderEnabled,
+    setLeadersEnabledForFeatures,
     updateFiberCalloutProject
 } from './fiber-callout-engine.js';
 import { setPlanSetCalloutMenuContext } from './context-menu-bridge.js';
@@ -78,14 +79,31 @@ function wireMenu() {
         },
         onAddLeader: (input) => {
             try {
-                applySession(enableOrAddLeader(runtime.session, {
-                    ...input,
-                    sheetId: input.sheetId || runtime.session.selectedSheetId
-                }));
+                applySession(enableOrAddLeader(runtime.session, input));
                 runtime.ctx.showToast?.('Callout turned on', 'success');
             } catch (err) {
                 runtime.ctx.showToast?.(err?.message || 'Could not add callout', 'warning');
             }
+        },
+        onSetLeadersEnabled: (features, enabled, options = {}) => {
+            const { session, changed } = setLeadersEnabledForFeatures(
+                runtime.session,
+                features,
+                { ...options, enabled }
+            );
+            applySession(session);
+            if (!changed) {
+                runtime.ctx.showToast?.(
+                    enabled ? 'No matching callouts to turn on' : 'No matching callouts to turn off',
+                    'info'
+                );
+                return 0;
+            }
+            runtime.ctx.showToast?.(
+                enabled ? `Turned on ${changed} callout(s)` : `Turned off ${changed} callout(s)`,
+                'success'
+            );
+            return changed;
         }
     });
 }
@@ -208,6 +226,15 @@ export const calloutRuntimeApi = {
     selectSheet: (sheetId) => applySession(selectCalloutSheet(runtime.session, sheetId)),
     generate: (input) => applySession(generateFiberCallouts(runtime.session, input)),
     setLeaderEnabled: (key, enabled) => applySession(setLeaderEnabled(runtime.session, key, enabled)),
+    setLeadersEnabledForFeatures: (features, enabled, options) => {
+        const { session, changed } = setLeadersEnabledForFeatures(
+            runtime.session,
+            features,
+            { ...options, enabled }
+        );
+        applySession(session);
+        return changed;
+    },
     addNote: (leaderKey, text) => applySession(addNoteToLeader(runtime.session, leaderKey, text)),
     addLeader: (input) => applySession(enableOrAddLeader(runtime.session, input)),
     moveBubble: (leaderKey, bubble) => applySession(moveLeaderBubble(runtime.session, leaderKey, bubble)),

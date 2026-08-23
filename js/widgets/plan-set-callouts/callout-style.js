@@ -15,9 +15,9 @@ export const CALLOUT_FILL_RGB = [255, 255, 255];
 export const CALLOUT_TABLE_STROKE_RGB = [204, 0, 0];
 
 /** PDF points. Sized to match on-screen MapLibre circles at 96dpi. */
-export const CALLOUT_PDF_CIRCLE_R = 6.5;
+export const CALLOUT_PDF_CIRCLE_R = 7.5;
 export const CALLOUT_PDF_LINE_WIDTH = 1.2;
-export const CALLOUT_PDF_FONT_SIZE = 8;
+export const CALLOUT_PDF_FONT_SIZE = 7;
 export const CALLOUT_PDF_CIRCLE_GAP = CALLOUT_PDF_CIRCLE_R * 2 + 0.8;
 export const CALLOUT_PDF_TEXT_DY = 2.7;
 export const CALLOUT_PDF_TABLE_TITLE_SIZE = 10;
@@ -26,6 +26,13 @@ export const CALLOUT_PDF_TABLE_ROW_H = 15;
 export const CALLOUT_PDF_TABLE_TITLE_H = 17;
 export const CALLOUT_PDF_TABLE_PAD = 8;
 export const CALLOUT_PDF_TABLE_LINE_WIDTH = 1.15;
+export const CALLOUT_PDF_TABLE_COL_GUTTER = 10;
+export const CALLOUT_PDF_TABLE_CUTOUT_GAP = 10;
+export const CALLOUT_PDF_TABLE_PAGE_INSET = 8;
+export const CALLOUT_PDF_TABLE_MIN_COL_W = 96;
+export const CALLOUT_PDF_TABLE_MAX_COL_W = 260;
+export const CALLOUT_PDF_TABLE_MAX_COLS = 6;
+export const CALLOUT_PDF_TABLE_MIN_W = 128;
 
 export const CALLOUT_MAP_CIRCLE_RADIUS_PX = CALLOUT_PDF_CIRCLE_R * CALLOUT_PX_PER_PT;
 export const CALLOUT_MAP_STROKE_PX = CALLOUT_PDF_LINE_WIDTH * CALLOUT_PX_PER_PT;

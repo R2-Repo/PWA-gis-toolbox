@@ -3,15 +3,17 @@
  * Overlay only — does not change sheet-cutting polygons.
  */
 
-import { PDF_DETAIL_FOOTER_BAND_IN, PDF_DETAIL_FOOTER_GAP_IN } from '../sheet-cutting/sheet-pdf-orientation.js';
+import { PDF_DETAIL_FOOTER_BAND_IN } from '../sheet-cutting/sheet-pdf-orientation.js';
 import { pointInPdfRing } from '../sheet-cutting/sheet-pdf-placement.js';
 import { leadersForSheet, notesUsedOnSheet } from './leader-placement.js';
+import { formatCalloutLabel } from './fiber-notes.js';
 import {
     CALLOUT_FILL_RGB,
     CALLOUT_PDF_CIRCLE_GAP,
     CALLOUT_PDF_CIRCLE_R,
     CALLOUT_PDF_FONT_SIZE,
     CALLOUT_PDF_LINE_WIDTH,
+    CALLOUT_PDF_TABLE_COL_GUTTER,
     CALLOUT_PDF_TABLE_LINE_WIDTH,
     CALLOUT_PDF_TABLE_PAD,
     CALLOUT_PDF_TABLE_ROW_H,
@@ -23,6 +25,21 @@ import {
     CALLOUT_TABLE_STROKE_RGB,
     CALLOUT_TEXT_RGB
 } from './callout-style.js';
+import {
+    layoutKeyNotesTable,
+    layoutKeyNotesTableInRect,
+    measureInsetNotesReservePt,
+    measureKeyNotesTableSize,
+    pickKeyNotesTableRect,
+    rectsOverlap
+} from './key-notes-layout.js';
+
+export {
+    layoutKeyNotesTable,
+    layoutKeyNotesTableInRect,
+    measureInsetNotesReservePt,
+    pickKeyNotesTableRect
+};
 
 export {
     CALLOUT_PDF_CIRCLE_GAP,
@@ -63,17 +80,6 @@ function applySolidStroke(doc, rgb, width) {
     doc.setLineDashPattern?.([], 0);
     doc.setLineCap?.('round');
     doc.setLineJoin?.('round');
-}
-
-function ringBounds(ring) {
-    const xs = ring.map((point) => point.x);
-    const ys = ring.map((point) => point.y);
-    return {
-        minX: Math.min(...xs),
-        minY: Math.min(...ys),
-        maxX: Math.max(...xs),
-        maxY: Math.max(...ys)
-    };
 }
 
 function circleFitsInRing(cx, cy, radius, ring, pad = 0.75) {
@@ -161,84 +167,6 @@ export function constrainCalloutCluster(origin, count, goldPdfRing = [], clipRec
     };
 }
 
-function rectCornersInside(rect, ring) {
-    if (!ring?.length) return true;
-    const points = [
-        { x: rect.x, y: rect.y },
-        { x: rect.x + rect.width, y: rect.y },
-        { x: rect.x, y: rect.y + rect.height },
-        { x: rect.x + rect.width, y: rect.y + rect.height }
-    ];
-    return points.every((point) => pointInPdfRing(point.x, point.y, ring));
-}
-
-/**
- * @param {object} params
- * @returns {{ x: number, y: number, width: number, height: number }|null}
- */
-export function pickKeyNotesTableRect({
-    pageW,
-    pageH,
-    marginsPt = {},
-    footerReservePt,
-    goldPdfRing = [],
-    tableW,
-    tableH,
-    clipRect = null
-} = {}) {
-    const frame = clipRect || {
-        x: 0,
-        y: 0,
-        width: pageW,
-        height: pageH
-    };
-    const footerY = pageH - (footerReservePt ?? ((PDF_DETAIL_FOOTER_BAND_IN + PDF_DETAIL_FOOTER_GAP_IN) * 72));
-    const inset = 10;
-
-    let left;
-    let top;
-    let right;
-    let bottom;
-    if (goldPdfRing.length && !clipRect) {
-        const bounds = ringBounds(goldPdfRing);
-        left = bounds.minX + inset;
-        top = bounds.minY + inset;
-        right = bounds.maxX - tableW - inset;
-        bottom = Math.min(bounds.maxY - tableH - inset, footerY - tableH - 8);
-    } else {
-        left = (clipRect ? frame.x : (marginsPt.left || 0)) + 8;
-        top = (clipRect ? frame.y : (marginsPt.top || 0)) + 8;
-        right = (clipRect ? frame.x + frame.width : pageW - (marginsPt.right || 0)) - tableW - 8;
-        bottom = clipRect
-            ? frame.y + frame.height - tableH - 8
-            : Math.min(footerY - tableH - 8, pageH - tableH - 8);
-    }
-
-    if (bottom < top) {
-        return { x: left, y: top, width: tableW, height: tableH };
-    }
-
-    const candidates = [
-        { x: left, y: top, width: tableW, height: tableH },
-        { x: left, y: bottom, width: tableW, height: tableH },
-        { x: right, y: bottom, width: tableW, height: tableH },
-        { x: right, y: top, width: tableW, height: tableH }
-    ];
-
-    const viable = candidates.filter((rect) => {
-        if (!clipRect && rectOverlapsFooter(rect, footerY)) return false;
-        if (goldPdfRing.length && !rectCornersInside(rect, goldPdfRing)) return false;
-        return true;
-    });
-    if (viable.length) return viable[0];
-
-    return candidates[0];
-}
-
-function rectOverlapsFooter(rect, footerY) {
-    return rect.y + rect.height > footerY - 1;
-}
-
 /**
  * @param {object} session
  * @param {string|{ sheetId?: string, sheetNumber?: number }} sheetOrId
@@ -247,26 +175,21 @@ function rectOverlapsFooter(rect, footerY) {
  */
 export function measureKeyNotesTable(session, sheetOrId, options = {}) {
     const notes = notesUsedOnSheet(session, sheetOrId, options);
-    const rows = Math.max(notes.length, 1);
-    const longest = notes.reduce((max, note) => Math.max(max, String(note.text || '').length), 12);
-    return {
-        width: Math.min(300, 90 + longest * 5.2),
-        height: CALLOUT_PDF_TABLE_PAD * 2 + CALLOUT_PDF_TABLE_TITLE_H + rows * CALLOUT_PDF_TABLE_ROW_H
-    };
+    return measureKeyNotesTableSize(notes, options.columnCount || 1);
 }
 
 function isFinitePoint(point) {
     return Number.isFinite(point?.x) && Number.isFinite(point?.y);
 }
 
-function drawNumberedCircle(doc, cx, cy, number) {
+function drawNumberedCircle(doc, cx, cy, label) {
     applySolidStroke(doc, CALLOUT_STROKE_RGB, CALLOUT_PDF_LINE_WIDTH);
     doc.setFillColor(CALLOUT_FILL_RGB[0], CALLOUT_FILL_RGB[1], CALLOUT_FILL_RGB[2]);
     doc.circle(cx, cy, CALLOUT_PDF_CIRCLE_R, 'FD');
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(CALLOUT_PDF_FONT_SIZE);
     doc.setTextColor(CALLOUT_TEXT_RGB[0], CALLOUT_TEXT_RGB[1], CALLOUT_TEXT_RGB[2]);
-    doc.text(String(number), cx, cy + CALLOUT_PDF_TEXT_DY, { align: 'center' });
+    doc.text(String(label), cx, cy + CALLOUT_PDF_TEXT_DY, { align: 'center' });
 }
 
 function drawLeaders(doc, session, leaders, map, transform, captureScale, goldPdfRing = [], clipRect = null) {
@@ -289,22 +212,31 @@ function drawLeaders(doc, session, leaders, map, transform, captureScale, goldPd
             to = clampPointToRect(to, clipRect, CALLOUT_PDF_CIRCLE_R);
         }
         from = pullPdfPointInside(from, goldPdfRing, 0.5);
-        const numbers = (leader.noteIds || [])
-            .map((id) => notesById.get(id)?.number)
-            .filter((value) => Number.isFinite(value));
-        const cluster = constrainCalloutCluster(to, Math.max(numbers.length, 1), goldPdfRing, clipRect);
+        const labels = (leader.noteIds || [])
+            .map((id) => notesById.get(id))
+            .filter((note) => Number.isFinite(Number(note?.number)) && Number(note.number) > 0)
+            .map((note) => formatCalloutLabel(note))
+            .filter(Boolean);
+        const cluster = constrainCalloutCluster(to, Math.max(labels.length, 1), goldPdfRing, clipRect);
         applySolidStroke(doc, CALLOUT_STROKE_RGB, CALLOUT_PDF_LINE_WIDTH);
         doc.line(from.x, from.y, cluster.origin.x, cluster.origin.y);
-        const centers = calloutBubbleCenters(cluster.origin, numbers.length, CALLOUT_PDF_CIRCLE_GAP, cluster.direction);
-        numbers.forEach((number, index) => {
+        const centers = calloutBubbleCenters(cluster.origin, labels.length, CALLOUT_PDF_CIRCLE_GAP, cluster.direction);
+        labels.forEach((label, index) => {
             const center = centers[index];
-            drawNumberedCircle(doc, center.x, center.y, number);
+            drawNumberedCircle(doc, center.x, center.y, label);
         });
     }
 }
 
-function drawKeyNotesTable(doc, notes, rect) {
+function drawKeyNotesTable(doc, layout) {
+    const notes = layout?.notes || [];
+    const rect = layout?.rect;
     if (!rect || !notes.length) return;
+    const columns = layout.columns?.length ? layout.columns : [notes];
+    const colCount = Math.max(1, columns.length);
+    const innerW = rect.width - CALLOUT_PDF_TABLE_PAD * 2 - (colCount - 1) * CALLOUT_PDF_TABLE_COL_GUTTER;
+    const colW = innerW / colCount;
+
     doc.setFillColor(CALLOUT_FILL_RGB[0], CALLOUT_FILL_RGB[1], CALLOUT_FILL_RGB[2]);
     applySolidStroke(doc, CALLOUT_TABLE_STROKE_RGB, CALLOUT_PDF_TABLE_LINE_WIDTH);
     doc.rect(rect.x, rect.y, rect.width, rect.height, 'FD');
@@ -313,16 +245,68 @@ function drawKeyNotesTable(doc, notes, rect) {
     doc.setTextColor(CALLOUT_TEXT_RGB[0], CALLOUT_TEXT_RGB[1], CALLOUT_TEXT_RGB[2]);
     doc.text('PROJECT KEY NOTES', rect.x + CALLOUT_PDF_TABLE_PAD, rect.y + CALLOUT_PDF_TABLE_PAD + 10);
 
-    notes.forEach((note, index) => {
-        const rowY = rect.y + CALLOUT_PDF_TABLE_PAD + CALLOUT_PDF_TABLE_TITLE_H + index * CALLOUT_PDF_TABLE_ROW_H + 6;
-        const cx = rect.x + CALLOUT_PDF_TABLE_PAD + CALLOUT_PDF_CIRCLE_R;
-        drawNumberedCircle(doc, cx, rowY, note.number);
-        doc.setFont('helvetica', 'normal');
-        doc.setFontSize(CALLOUT_PDF_TABLE_TEXT_SIZE);
-        doc.setTextColor(CALLOUT_TEXT_RGB[0], CALLOUT_TEXT_RGB[1], CALLOUT_TEXT_RGB[2]);
-        const textX = cx + CALLOUT_PDF_CIRCLE_R + 5;
-        const maxW = rect.width - (textX - rect.x) - CALLOUT_PDF_TABLE_PAD;
-        doc.text(String(note.text || ''), textX, rowY + 2.4, { maxWidth: maxW });
+    columns.forEach((column, colIndex) => {
+        const colX = rect.x + CALLOUT_PDF_TABLE_PAD + colIndex * (colW + CALLOUT_PDF_TABLE_COL_GUTTER);
+        column.forEach((note, index) => {
+            const rowY = rect.y + CALLOUT_PDF_TABLE_PAD + CALLOUT_PDF_TABLE_TITLE_H + index * CALLOUT_PDF_TABLE_ROW_H + 6;
+            const cx = colX + CALLOUT_PDF_CIRCLE_R;
+            drawNumberedCircle(doc, cx, rowY, formatCalloutLabel(note));
+            doc.setFont('helvetica', 'normal');
+            doc.setFontSize(CALLOUT_PDF_TABLE_TEXT_SIZE);
+            doc.setTextColor(CALLOUT_TEXT_RGB[0], CALLOUT_TEXT_RGB[1], CALLOUT_TEXT_RGB[2]);
+            const textX = cx + CALLOUT_PDF_CIRCLE_R + 5;
+            const maxW = Math.max(8, colW - (textX - colX));
+            doc.text(String(note.text || ''), textX, rowY + 2.4, { maxWidth: maxW });
+        });
+    });
+}
+
+/**
+ * Corridor: pack into page white space.
+ * DETAILS: pin to `notesRect` under the map. Never fall back onto the map cell.
+ *
+ * @param {object[]} notes
+ * @param {object} [options]
+ * @returns {object|null}
+ */
+export function resolveKeyNotesLayout(notes, options = {}) {
+    if (!notes.length) return null;
+    if (options.notesRect) {
+        return layoutKeyNotesTableInRect(notes, options.notesRect);
+    }
+    const shared = {
+        notes,
+        pageW: options.pageW,
+        pageH: options.pageH,
+        marginsPt: options.layoutMargins || options.marginsPt || {},
+        footerReservePt: options.footerReservePt,
+        goldPdfRing: options.goldPdfRing || [],
+        avoidRects: options.avoidRects || [],
+        reserveNorthArrow: options.reserveNorthArrow
+    };
+    if (!options.clipRect) {
+        return layoutKeyNotesTable(shared);
+    }
+    return layoutKeyNotesTable({
+        ...shared,
+        goldPdfRing: [],
+        avoidRects: [...shared.avoidRects, options.clipRect],
+        reserveNorthArrow: false
+    });
+}
+
+/**
+ * Notes whose leaders sit inside this detail box.
+ * @param {object} session
+ * @param {object} insetView
+ * @returns {object[]}
+ */
+export function insetKeyNotesForView(session, insetView) {
+    if (!session || !insetView) return [];
+    return notesUsedOnSheet(session, insetView.parentSheetId || '', {
+        insetViews: [insetView],
+        insetView,
+        page: 'inset'
     });
 }
 
@@ -362,16 +346,15 @@ export function drawSheetCalloutsOnPdf(doc, options = {}) {
         console.warn('[plan-set-callouts] skipped leader overlay', error);
     }
 
-    const size = measureKeyNotesTable(session, lookup, filter);
-    const rect = pickKeyNotesTableRect({
+    const layout = resolveKeyNotesLayout(notes, {
         pageW,
         pageH,
-        marginsPt: layoutMargins,
+        layoutMargins,
         goldPdfRing,
-        tableW: size.width,
-        tableH: size.height
+        avoidRects: options.avoidRects || [],
+        footerReservePt: options.footerReservePt
     });
-    drawKeyNotesTable(doc, notes, rect);
+    drawKeyNotesTable(doc, layout);
 }
 
 /**
@@ -410,19 +393,23 @@ export function drawInsetCalloutsOnPdf(doc, options = {}) {
         console.warn('[plan-set-callouts] skipped inset leader overlay', error);
     }
 
-    const size = measureKeyNotesTable(session, sheetId, filter);
     const pageW = options.pageW || doc.internal.pageSize.getWidth();
     const pageH = options.pageH || doc.internal.pageSize.getHeight();
-    const rect = pickKeyNotesTableRect({
+    const layout = resolveKeyNotesLayout(notes, {
         pageW,
         pageH,
-        marginsPt: options.layoutMargins || {},
+        layoutMargins: options.layoutMargins || {},
         goldPdfRing: options.goldPdfRing || [],
-        tableW: Math.min(size.width, (clipRect?.width || pageW) - 16),
-        tableH: size.height,
-        clipRect
+        clipRect,
+        notesRect: options.notesRect || null,
+        avoidRects: options.avoidRects || [],
+        footerReservePt: options.footerReservePt,
+        reserveNorthArrow: false
     });
-    drawKeyNotesTable(doc, notes, rect);
+    if (layout?.rect && clipRect && rectsOverlap(layout.rect, clipRect)) {
+        return;
+    }
+    drawKeyNotesTable(doc, layout);
 }
 
 export { PDF_DETAIL_FOOTER_BAND_IN };

@@ -9,6 +9,8 @@ export const INSETS_PER_PAGE = 4;
 export const INSET_PREVIEW_COLOR = '#2563eb';
 export const INSET_CELL_GUTTER_PT = 8;
 export const INSET_CELL_HEADER_PT = 14;
+/** Gap between the DETAIL map and the reserved key-notes strip. */
+export const INSET_NOTES_GAP_PT = 4;
 /** Gap from the box edge to the label anchor (ground feet). */
 export const INSET_LABEL_STANDOFF_FT = 18;
 /** Reject / penalize candidates closer than this to other sheet features. */
@@ -16,6 +18,10 @@ export const INSET_LABEL_CLEARANCE_FT = 22;
 const INSET_LABEL_WIDTH_FT = 110;
 const INSET_LABEL_HEIGHT_FT = 36;
 const INSET_LABEL_BEARINGS = Object.freeze([0, 30, 45, 60, 90, 120, 135, 150, 180, 210, 225, 240, 270, 300, 315, 330]);
+/** Ignore nicks smaller than this share of the detail-box area. */
+export const INSET_PARENT_MIN_OVERLAP_RATIO = 0.02;
+/** Absolute floor so tiny boxes still get a parent (square meters). */
+export const INSET_PARENT_MIN_OVERLAP_M2 = 4;
 const SKIP_INSET_OBSTACLE_TYPES = new Set([
     'sheet_outline',
     'matchline_see_label',
@@ -71,6 +77,85 @@ export function formatDetailsPageLabel(pageNumber, totalPages = 0) {
     const total = Number(totalPages);
     if (!Number.isFinite(total) || total <= 0) return `DETAILS ${page}`;
     return `DETAILS ${page} of ${String(total).padStart(2, '0')}`;
+}
+
+/**
+ * @param {number[]} [numbers]
+ * @returns {number[]}
+ */
+export function uniquePositiveSheetNumbers(numbers = []) {
+    const seen = new Set();
+    const out = [];
+    for (const value of numbers || []) {
+        const num = Number(value);
+        if (!Number.isFinite(num) || num <= 0 || seen.has(num)) continue;
+        seen.add(num);
+        out.push(num);
+    }
+    out.sort((a, b) => a - b);
+    return out;
+}
+
+/**
+ * @param {string[]} [ids]
+ * @returns {string[]}
+ */
+function uniqueSheetIds(ids = []) {
+    const seen = new Set();
+    const out = [];
+    for (const value of ids || []) {
+        const id = String(value || '').trim();
+        if (!id || seen.has(id)) continue;
+        seen.add(id);
+        out.push(id);
+    }
+    return out;
+}
+
+/**
+ * @param {object} [view]
+ * @returns {string[]}
+ */
+export function parentSheetIdsOf(view) {
+    const listed = uniqueSheetIds(view?.parentSheetIds);
+    if (listed.length) return listed;
+    const single = String(view?.parentSheetId || '').trim();
+    return single ? [single] : [];
+}
+
+/**
+ * @param {object} [view]
+ * @returns {number[]}
+ */
+export function parentSheetNumbersOf(view) {
+    const listed = uniquePositiveSheetNumbers(view?.parentSheetNumbers);
+    if (listed.length) return listed;
+    const single = Number(view?.parentSheetNumber);
+    return Number.isFinite(single) && single > 0 ? [single] : [];
+}
+
+/**
+ * @param {object} [view]
+ * @returns {string}
+ */
+export function formatInsetParentSheetsLabel(view) {
+    const numbers = parentSheetNumbersOf(view);
+    if (!numbers.length) return '';
+    const padded = numbers.map((num) => String(num).padStart(2, '0'));
+    return padded.length === 1 ? `Sheet ${padded[0]}` : `Sheets ${padded.join(', ')}`;
+}
+
+/**
+ * @param {number|number[]} [raw]
+ * @returns {string}
+ */
+export function formatSeeSheetsLabel(raw) {
+    const numbers = uniquePositiveSheetNumbers(Array.isArray(raw) ? raw : [raw]);
+    if (!numbers.length) return '';
+    const padded = numbers.map((num) => String(num).padStart(2, '0'));
+    return padded.length === 1
+        ? `SEE SHEET ${padded[0]}`
+        : `SEE SHEETS ${padded.join(', ')}`;
 }
 
 /**
@@ -133,38 +218,87 @@ export function polygonOverlapArea(a, b) {
 }
 
 /**
+ * @param {object} [polygon]
+ * @returns {number}
+ */
+function polygonAreaM2(polygon) {
+    if (!polygon?.geometry || typeof turf === 'undefined') return 0;
+    try {
+        const area = turf.area(polygon);
+        return Number.isFinite(area) ? area : 0;
+    } catch {
+        return 0;
+    }
+}
+
+/**
+ * Corridor sheets whose overlap with the box is large enough to count (not a sliver).
+ * Sorted by overlap area descending.
+ *
+ * @param {object} bboxPolygon
+ * @param {object[]} [frameFeatures]
+ * @param {{ minOverlapRatio?: number, minOverlapM2?: number }} [options]
+ * @returns {{ parentSheetId: string, parentSheetNumber: number, overlapArea: number }[]}
+ */
+export function assignOverlappingSheets(bboxPolygon, frameFeatures = [], options = {}) {
+    const polygon = polygonFromGeoJson(bboxPolygon);
+    if (!polygon) return [];
+
+    const boxArea = polygonAreaM2(polygon);
+    const minRatio = Number.isFinite(Number(options.minOverlapRatio))
+        ? Number(options.minOverlapRatio)
+        : INSET_PARENT_MIN_OVERLAP_RATIO;
+    const minAbs = Number.isFinite(Number(options.minOverlapM2))
+        ? Number(options.minOverlapM2)
+        : INSET_PARENT_MIN_OVERLAP_M2;
+    const minArea = Math.max(minAbs, boxArea * minRatio);
+
+    const hits = [];
+    for (const frame of frameFeatures || []) {
+        if (!frame?.geometry) continue;
+        const sheetId = String(frame.properties?.sheet_id || '').trim();
+        if (!sheetId) continue;
+        const area = polygonOverlapArea(polygon, frame);
+        if (!(area >= minArea)) continue;
+        hits.push({
+            parentSheetId: sheetId,
+            parentSheetNumber: Number(frame.properties?.sheet_number) || 0,
+            overlapArea: area
+        });
+    }
+    hits.sort((a, b) => (
+        b.overlapArea - a.overlapArea
+        || a.parentSheetNumber - b.parentSheetNumber
+        || a.parentSheetId.localeCompare(b.parentSheetId)
+    ));
+    return hits;
+}
+
+/**
  * Parent corridor sheet = largest overlapping sheet frame.
  * @param {object} bboxPolygon
  * @param {object[]} [frameFeatures]
+ * @param {{ minOverlapRatio?: number, minOverlapM2?: number }} [options]
  * @returns {{ parentSheetId: string, parentSheetNumber: number, overlapArea: number }|null}
  */
-export function assignParentSheet(bboxPolygon, frameFeatures = []) {
-    const polygon = polygonFromGeoJson(bboxPolygon);
-    if (!polygon) return null;
+export function assignParentSheet(bboxPolygon, frameFeatures = [], options = {}) {
+    return assignOverlappingSheets(bboxPolygon, frameFeatures, options)[0] || null;
+}
 
-    let best = null;
-    for (const frame of frameFeatures || []) {
-        if (!frame?.geometry) continue;
-        const area = polygonOverlapArea(polygon, frame);
-        let hits = area > 0;
-        if (!hits) {
-            try {
-                hits = turf.booleanIntersects(polygon, frame);
-            } catch {
-                hits = false;
-            }
-        }
-        if (!hits) continue;
-        if (!best || area > best.overlapArea) {
-            best = {
-                parentSheetId: frame.properties?.sheet_id || '',
-                parentSheetNumber: Number(frame.properties?.sheet_number) || 0,
-                overlapArea: area
-            };
-        }
+/**
+ * @param {object} [polygon]
+ * @param {object} [frame]
+ * @returns {object|null}
+ */
+export function clipPolygonToFrame(polygon, frame) {
+    if (!polygon?.geometry || !frame?.geometry || typeof turf === 'undefined') return null;
+    try {
+        if (!turf.booleanIntersects(polygon, frame)) return null;
+        const inter = turf.intersect(turf.featureCollection([polygon, frame]));
+        return inter?.geometry ? inter : null;
+    } catch {
+        return null;
     }
-    if (!best?.parentSheetId) return null;
-    return best;
 }
 
 /**
@@ -189,13 +323,24 @@ export function normalizeInsetView(input = {}) {
         : bboxFromPolygon(polygon);
     if (!polygon?.geometry || !bbox) return null;
 
+    const parentSheetIds = parentSheetIdsOf(input);
+    const parentSheetNumbers = parentSheetNumbersOf(input);
+    const parentSheetId = String(input.parentSheetId || parentSheetIds[0] || '').trim();
+    const parentSheetNumber = Number(input.parentSheetNumber) || parentSheetNumbers[0] || 0;
+
     return {
         insetId: input.insetId || createStableId('inset'),
         label: String(input.label || 'A').trim() || 'A',
         bbox,
         geometry: polygon.geometry,
-        parentSheetId: input.parentSheetId || '',
-        parentSheetNumber: Number(input.parentSheetNumber) || 0
+        parentSheetId,
+        parentSheetNumber,
+        parentSheetIds: parentSheetId && !parentSheetIds.includes(parentSheetId)
+            ? [parentSheetId, ...parentSheetIds]
+            : parentSheetIds,
+        parentSheetNumbers: parentSheetNumber > 0 && !parentSheetNumbers.includes(parentSheetNumber)
+            ? uniquePositiveSheetNumbers([parentSheetNumber, ...parentSheetNumbers])
+            : parentSheetNumbers
     };
 }
 
@@ -211,15 +356,22 @@ export function addInsetView(session, bboxPolygon, frameFeatures = []) {
         throw new Error('Draw a detail box on the map.');
     }
 
-    const parent = assignParentSheet(polygon, frameFeatures);
-    if (!parent) {
+    const parents = assignOverlappingSheets(polygon, frameFeatures);
+    if (!parents.length) {
         throw new Error('Draw the detail box so it overlaps a sheet polygon.');
     }
 
+    const primary = parents[0];
+    const byNumber = [...parents].sort((a, b) => (
+        a.parentSheetNumber - b.parentSheetNumber
+        || a.parentSheetId.localeCompare(b.parentSheetId)
+    ));
     const nextView = normalizeInsetView({
         geometry: polygon.geometry,
-        parentSheetId: parent.parentSheetId,
-        parentSheetNumber: parent.parentSheetNumber
+        parentSheetId: primary.parentSheetId,
+        parentSheetNumber: primary.parentSheetNumber,
+        parentSheetIds: byNumber.map((entry) => entry.parentSheetId),
+        parentSheetNumbers: byNumber.map((entry) => entry.parentSheetNumber)
     });
     if (!nextView) {
         throw new Error('Detail box geometry is invalid.');
@@ -458,17 +610,23 @@ export function minInsetLabelObstacleDistanceFt(point, obstacles = []) {
     return min;
 }
 
-function frameForInsetView(view, frameFeatures = []) {
-    const id = view?.parentSheetId;
-    if (id) {
-        const match = (frameFeatures || []).find((frame) => frame?.properties?.sheet_id === id);
-        if (match?.geometry) return match;
+function framesForInsetView(view, frameFeatures = []) {
+    const frames = frameFeatures || [];
+    const matched = [];
+    const seen = new Set();
+    for (const id of parentSheetIdsOf(view)) {
+        const match = frames.find((frame) => frame?.properties?.sheet_id === id);
+        if (!match?.geometry || seen.has(id)) continue;
+        seen.add(id);
+        matched.push(match);
     }
+    if (matched.length) return matched;
+
     const polygon = polygonFromInsetView(view);
-    if (!polygon) return null;
-    const parent = assignParentSheet(polygon, frameFeatures);
-    if (!parent?.parentSheetId) return null;
-    return (frameFeatures || []).find((frame) => frame?.properties?.sheet_id === parent.parentSheetId) || null;
+    if (!polygon) return [];
+    return assignOverlappingSheets(polygon, frames)
+        .map((parent) => frames.find((frame) => frame?.properties?.sheet_id === parent.parentSheetId))
+        .filter((frame) => frame?.geometry);
 }
 
 function shouldSkipObstacle(feature, boxPolygon) {
@@ -609,9 +767,24 @@ function collectInsetLabelObstacles(view, boxPolygon, insetViews, frameFeature, 
     return obstacles;
 }
 
+function fallbackInsetLabelPoint(boxPolygon) {
+    if (!boxPolygon?.geometry || typeof turf === 'undefined') return null;
+    try {
+        const [west, south, east, north] = turf.bbox(boxPolygon);
+        return turf.destination(
+            turf.point([(west + east) / 2, north]),
+            INSET_LABEL_STANDOFF_FT,
+            0,
+            { units: 'feet' }
+        );
+    } catch {
+        return null;
+    }
+}
+
 /**
  * Corridor-page overlay: rectangle + DETAIL letter / SEE DETAILS nn.
- * Labels sit outside the box, inside the parent sheet, clear of other features.
+ * A box that spans a match line emits one clipped outline + label per overlapping sheet.
  *
  * @param {object[]} [insetViews]
  * @param {Record<string, number>} [detailsPageByInsetId]
@@ -631,82 +804,102 @@ export function buildInsetCalloutFeatures(insetViews = [], detailsPageByInsetId 
         if (!polygon?.geometry) continue;
         const page = detailsPageByInsetId[view.insetId] || 0;
         const letter = view.label || '';
+        const allParentIds = parentSheetIdsOf(view);
+        const sheets = framesForInsetView(view, frameFeatures);
+        const targets = sheets.length
+            ? sheets.map((sheet) => ({
+                sheet,
+                sheetId: sheet.properties?.sheet_id || '',
+                sheetNumber: Number(sheet.properties?.sheet_number) || 0,
+                outline: clipPolygonToFrame(polygon, sheet)
+            }))
+            : [{
+                sheet: null,
+                sheetId: view.parentSheetId || '',
+                sheetNumber: view.parentSheetNumber || 0,
+                outline: polygon
+            }];
 
-        features.push({
-            type: 'Feature',
-            geometry: polygon.geometry,
-            properties: {
-                feature_type: 'inset_outline',
-                inset_id: view.insetId,
-                inset_label: letter,
-                parent_sheet_id: view.parentSheetId || '',
-                parent_sheet_number: view.parentSheetNumber || 0,
-                details_page: page
-            }
-        });
+        for (const target of targets) {
+            if (!target.outline?.geometry) continue;
+            features.push({
+                type: 'Feature',
+                geometry: target.outline.geometry,
+                properties: {
+                    feature_type: 'inset_outline',
+                    inset_id: view.insetId,
+                    inset_label: letter,
+                    parent_sheet_id: target.sheetId,
+                    parent_sheet_number: target.sheetNumber,
+                    parent_sheet_ids: allParentIds,
+                    details_page: page
+                }
+            });
 
-        const sheet = frameForInsetView(view, frameFeatures);
-        const obstacles = collectInsetLabelObstacles(
-            view,
-            polygon,
-            insetViews,
-            sheet,
-            designFeatures,
-            placedLabels
-        );
-        const placed = placeInsetLabelOutsideBox(polygon, sheet, obstacles);
-        let labelPoint = placed?.point || null;
-        if (!labelPoint?.geometry) {
-            try {
-                const [west, south, east, north] = turf.bbox(polygon);
-                labelPoint = turf.destination(
-                    turf.point([(west + east) / 2, north]),
-                    INSET_LABEL_STANDOFF_FT,
-                    0,
-                    { units: 'feet' }
-                );
-            } catch {
-                labelPoint = null;
-            }
+            const obstacles = collectInsetLabelObstacles(
+                view,
+                polygon,
+                insetViews,
+                target.sheet,
+                designFeatures,
+                placedLabels
+            );
+            const placed = placeInsetLabelOutsideBox(polygon, target.sheet, obstacles);
+            const labelPoint = placed?.point || fallbackInsetLabelPoint(target.outline);
+            if (!labelPoint?.geometry) continue;
+
+            const insetLabel = formatInsetDetailLabel(letter);
+            const seeDetails = formatSeeDetailsLabel(page);
+            const labelFeature = {
+                type: 'Feature',
+                geometry: labelPoint.geometry,
+                properties: {
+                    feature_type: 'inset_label',
+                    inset_id: view.insetId,
+                    inset_label: insetLabel,
+                    see_details: seeDetails,
+                    label_text: [insetLabel, seeDetails].filter(Boolean).join('\n'),
+                    label_anchor: placed?.anchor || 'bottom',
+                    parent_sheet_id: target.sheetId,
+                    parent_sheet_number: target.sheetNumber,
+                    parent_sheet_ids: allParentIds,
+                    details_page: page
+                }
+            };
+            features.push(labelFeature);
+            placedLabels.push(labelFeature);
         }
-        if (!labelPoint?.geometry) continue;
-
-        const insetLabel = formatInsetDetailLabel(letter);
-        const seeDetails = formatSeeDetailsLabel(page);
-        const labelFeature = {
-            type: 'Feature',
-            geometry: labelPoint.geometry,
-            properties: {
-                feature_type: 'inset_label',
-                inset_id: view.insetId,
-                inset_label: insetLabel,
-                see_details: seeDetails,
-                label_text: [insetLabel, seeDetails].filter(Boolean).join('\n'),
-                label_anchor: placed?.anchor || 'bottom',
-                parent_sheet_id: view.parentSheetId || '',
-                parent_sheet_number: view.parentSheetNumber || 0,
-                details_page: page
-            }
-        };
-        features.push(labelFeature);
-        placedLabels.push(labelFeature);
     }
 
     return features;
 }
 
 /**
+ * @param {number|number[]} [raw]
+ * @param {number} index
+ * @returns {number}
+ */
+function resolveNotesReservePt(raw, index) {
+    if (Array.isArray(raw)) {
+        return Math.max(0, Number(raw[index]) || 0);
+    }
+    return Math.max(0, Number(raw) || 0);
+}
+
+/**
  * 2×2 cell layout inside the printable map frame (above the title-block footer).
+ * Stack per cell: header → map → optional key-notes strip.
  *
  * @param {number} pageW
  * @param {number} pageH
  * @param {object} marginsPt
- * @param {{ gutterPt?: number, headerPt?: number, perPage?: number }} [options]
+ * @param {{ gutterPt?: number, headerPt?: number, perPage?: number, notesReservePt?: number|number[] }} [options]
  * @returns {Array<{
  *   index: number,
  *   chromeRect: { x: number, y: number, width: number, height: number },
  *   headerRect: { x: number, y: number, width: number, height: number },
- *   mapRect: { x: number, y: number, width: number, height: number }
+ *   mapRect: { x: number, y: number, width: number, height: number },
+ *   notesRect: { x: number, y: number, width: number, height: number }|null
  * }>}
  */
 export function computeInsetQuadrantRects(pageW, pageH, marginsPt, options = {}) {
@@ -731,17 +924,32 @@ export function computeInsetQuadrantRects(pageW, pageH, marginsPt, options = {})
         { x: left + cellW + gutter, y: top + cellH + gutter }
     ];
 
-    return origins.map((origin, index) => ({
-        index,
-        chromeRect: { x: origin.x, y: origin.y, width: cellW, height: cellH },
-        headerRect: { x: origin.x, y: origin.y, width: cellW, height: header },
-        mapRect: {
+    return origins.map((origin, index) => {
+        const notesH = resolveNotesReservePt(options.notesReservePt, index);
+        const gap = notesH > 0 ? INSET_NOTES_GAP_PT : 0;
+        const mapHeight = Math.max(1, cellH - header - notesH - gap);
+        const mapRect = {
             x: origin.x,
             y: origin.y + header,
             width: cellW,
-            height: Math.max(1, cellH - header)
-        }
-    }));
+            height: mapHeight
+        };
+        const notesRect = notesH > 0
+            ? {
+                x: origin.x,
+                y: origin.y + header + mapHeight + gap,
+                width: cellW,
+                height: notesH
+            }
+            : null;
+        return {
+            index,
+            chromeRect: { x: origin.x, y: origin.y, width: cellW, height: cellH },
+            headerRect: { x: origin.x, y: origin.y, width: cellW, height: header },
+            mapRect,
+            notesRect
+        };
+    });
 }
 
 /**
@@ -781,7 +989,8 @@ export function validateInsetViews(session, frameFeatures = []) {
 
     for (const view of session?.sheets?.insetViews || []) {
         const letter = view.label || view.insetId;
-        if (view.parentSheetId && !frameIds.has(view.parentSheetId)) {
+        const storedIds = parentSheetIdsOf(view);
+        if (storedIds.length && storedIds.every((id) => !frameIds.has(id))) {
             warnings.push(`Detail ${letter} points at a sheet that is no longer in this set.`);
             continue;
         }
@@ -790,7 +999,7 @@ export function validateInsetViews(session, frameFeatures = []) {
             warnings.push(`Detail ${letter} is missing a bounding box.`);
             continue;
         }
-        if (frames.length && !assignParentSheet(polygon, frames)) {
+        if (frames.length && !assignOverlappingSheets(polygon, frames).length) {
             warnings.push(`Detail ${letter} no longer overlaps a sheet polygon.`);
         }
     }

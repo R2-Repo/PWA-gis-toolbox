@@ -63,7 +63,7 @@ import {
     placeLabelOutsidePdfCutout,
     pointInPdfRing
 } from './sheet-pdf-placement.js';
-import { renderFeatureCollectionToPdf } from './sheet-pdf-vector.js';
+import { DETAILS_FIBER_GLYPH_ZOOM, renderFeatureCollectionToPdf } from './sheet-pdf-vector.js';
 import {
     collectUdotFiberSheetFeatures,
     listVisibleUdotFiberLayerIds,
@@ -75,14 +75,21 @@ import {
     buildInsetCalloutFeatures,
     computeInsetQuadrantRects,
     formatInsetScaleLabel,
+    formatSeeSheetsLabel,
     packInsetPages,
+    parentSheetNumbersOf,
     polygonFromInsetView
 } from './inset-views.js';
 import { getLayers } from '../../core/state.js';
 import { getWidgetEntry } from '../widget-state-store.js';
 import { restoreCalloutSession } from '../plan-set-callouts/engine.js';
 import { isFiberCalloutSession } from '../plan-set-callouts/fiber-callout-engine.js';
-import { drawInsetCalloutsOnPdf, drawSheetCalloutsOnPdf } from '../plan-set-callouts/pdf-callouts.js';
+import {
+    drawInsetCalloutsOnPdf,
+    drawSheetCalloutsOnPdf,
+    insetKeyNotesForView,
+    measureInsetNotesReservePt
+} from '../plan-set-callouts/pdf-callouts.js';
 import { suspendCalloutPreview } from '../plan-set-callouts/preview.js';
 import { refreshCalloutRuntimePreview } from '../plan-set-callouts/runtime.js';
 
@@ -372,6 +379,23 @@ export function restoreMapCamera(map, camera) {
         bearing: camera.bearing,
         pitch: camera.pitch
     });
+}
+
+/**
+ * DETAILS vector overlay must project with the camera used for that box's capture.
+ * @param {object} [capture]
+ * @returns {{ center: number[], zoom: number, bearing?: number, pitch?: number }}
+ */
+export function requireInsetCaptureCamera(capture) {
+    const camera = capture?.camera;
+    const center = camera?.center;
+    const hasCenter = Array.isArray(center)
+        ? Number.isFinite(center[0]) && Number.isFinite(center[1])
+        : Number.isFinite(center?.lng) && Number.isFinite(center?.lat);
+    if (!camera || !hasCenter || !Number.isFinite(Number(camera.zoom))) {
+        throw new Error('Detail capture is missing its map camera');
+    }
+    return camera;
 }
 
 /**
@@ -837,7 +861,7 @@ export function drawSheetTitleBlockFooter(doc, sheet, totalSheets, marginsPt, op
  * @param {import('jspdf').jsPDF} doc
  * @param {object} cell
  * @param {object} inset
- * @param {number} [parentSheetNumber]
+ * @param {number|number[]} [parentSheetNumber]
  * @param {string} [scaleLabel]
  */
 export function drawInsetCellChrome(doc, cell, inset, parentSheetNumber = 0, scaleLabel = '') {
@@ -856,9 +880,11 @@ export function drawInsetCellChrome(doc, cell, inset, parentSheetNumber = 0, sca
     const title = `DETAIL ${inset?.label || ''}`.trim();
     doc.text(title, headerRect.x + 4, headerRect.y + Math.min(11, headerRect.height - 2), { align: 'left' });
 
-    const see = Number(parentSheetNumber) > 0
-        ? `SEE SHEET ${String(parentSheetNumber).padStart(2, '0')}`
-        : '';
+    const fromInset = parentSheetNumbersOf(inset);
+    const fallback = Array.isArray(parentSheetNumber)
+        ? parentSheetNumber
+        : (Number(parentSheetNumber) > 0 ? [Number(parentSheetNumber)] : []);
+    const see = formatSeeSheetsLabel(fromInset.length ? fromInset : fallback);
     const right = [see, scaleLabel].filter(Boolean).join('  ·  ');
     if (right) {
         doc.setFont('helvetica', 'normal');
@@ -1431,6 +1457,8 @@ export async function buildHybridPagePdfBlob({
             const goldPdfRing = frameRing.map((coord) => (
                 transform.projectLngLat(map, coord[0], coord[1], captureScale)
             )).filter((point) => Number.isFinite(point?.x) && Number.isFinite(point?.y));
+            const northX = pageW - layoutMargins.right - NORTH_ARROW_SIZE_PT * 0.6;
+            const northY = layoutMargins.top + NORTH_ARROW_SIZE_PT * 0.9;
             drawSheetCalloutsOnPdf(doc, {
                 session: pageOptions.calloutSession,
                 sheet: pageOptions.sheet,
@@ -1443,7 +1471,13 @@ export async function buildHybridPagePdfBlob({
                 pageW,
                 pageH,
                 goldPdfRing,
-                insetViews: pageOptions.insetViews || []
+                insetViews: pageOptions.insetViews || [],
+                avoidRects: [{
+                    x: northX - NORTH_ARROW_SIZE_PT * 0.75,
+                    y: northY - NORTH_ARROW_SIZE_PT * 1.55,
+                    width: NORTH_ARROW_SIZE_PT * 1.5,
+                    height: NORTH_ARROW_SIZE_PT * 2.35
+                }]
             });
         }
     } else if (pageOptions.pageType === 'overview') {
@@ -1525,7 +1559,8 @@ async function captureInsetQuadrant({
     fiberLayerIds = [],
     refreshLiveFiberIds = [],
     pdfFiberOmitIds = [],
-    designFeatures = []
+    designFeatures = [],
+    collapseConduitBanks = false
 }) {
     const polygon = polygonFromInsetView(inset);
     const ring = extractPrimaryRing(polygon);
@@ -1544,7 +1579,13 @@ async function captureInsetQuadrant({
         await refreshUdotFiberPaintLayers(mapService, refreshLiveFiberIds);
     }
 
-    const fiberFeatures = collectUdotFiberSheetFeatures(mapService, fiberLayerIds, polygon);
+    const fiberFeatures = collectUdotFiberSheetFeatures(
+        mapService,
+        fiberLayerIds,
+        polygon,
+        getLayers(),
+        { collapseConduitBanks }
+    );
     const underlay = await captureBasemapUnderlay(mapService, template, ring, {
         skipViewportFit: true
     });
@@ -1562,12 +1603,16 @@ async function captureInsetQuadrant({
             inset_label: inset.label
         }
     };
+    const map = mapService?.getMap?.();
+    const camera = map ? saveMapCamera(map) : null;
 
     return {
         inset,
         parentSheetNumber: inset.parentSheetNumber || 0,
+        parentSheetNumbers: parentSheetNumbersOf(inset),
         polygon,
         underlay,
+        camera,
         vectorFeatures: {
             type: 'FeatureCollection',
             features: [outline, ...(clippedDesign?.features || []), ...fiberFeatures]
@@ -1606,12 +1651,33 @@ export async function buildInsetPagePdfBlob({
     });
     const pageW = doc.internal.pageSize.getWidth();
     const pageH = doc.internal.pageSize.getHeight();
-    const cells = computeInsetQuadrantRects(pageW, pageH, layoutMargins);
+    const baseCells = computeInsetQuadrantRects(pageW, pageH, layoutMargins);
+    const cellW = baseCells[0]?.chromeRect?.width || 0;
+    const cellH = baseCells[0]?.chromeRect?.height || 0;
+    const notesReserves = captures.map((capture) => {
+        if (!capture?.inset || !calloutSession) return 0;
+        return measureInsetNotesReservePt(
+            insetKeyNotesForView(calloutSession, capture.inset),
+            cellW,
+            cellH
+        );
+    });
+    const cells = computeInsetQuadrantRects(pageW, pageH, layoutMargins, {
+        notesReservePt: notesReserves
+    });
 
     for (let i = 0; i < cells.length; i += 1) {
         const capture = captures[i];
         const cell = cells[i];
         if (!capture?.underlay?.canvas || !cell) continue;
+
+        const needsProjection = Boolean(
+            map && (capture.vectorFeatures?.features?.length || (calloutSession && capture.inset))
+        );
+        if (needsProjection) {
+            restoreMapCamera(map, requireInsetCaptureCamera(capture));
+            await ensureMapCameraSettled(map, CAMERA_SETTLE_OPTIONS);
+        }
 
         const placementOptions = {
             preferLandscapeFlow: false,
@@ -1634,7 +1700,8 @@ export async function buildInsetPagePdfBlob({
                 capture.underlay.captureScale,
                 {
                     layerStyleFor: (layerId) => (layerId ? mapService?.getLayerStyle?.(layerId) : null),
-                    matchMapScreenSpace: true
+                    matchMapScreenSpace: true,
+                    zoom: DETAILS_FIBER_GLYPH_ZOOM
                 }
             );
         }
@@ -1649,6 +1716,18 @@ export async function buildInsetPagePdfBlob({
             0
         );
         if (calloutSession && capture.inset && map && transform) {
+            const goldPdfRing = (capture.underlay.pixelRing || []).map(([px, py]) => (
+                transform.toPdf(px, py)
+            )).filter((point) => Number.isFinite(point?.x) && Number.isFinite(point?.y));
+            const occupiedRects = cells
+                .filter((entry, index) => index !== i && captures[index]?.underlay?.canvas)
+                .map((entry) => entry.mapRect);
+            occupiedRects.push({
+                x: cell.mapRect.x + cell.mapRect.width - 28,
+                y: cell.mapRect.y,
+                width: 32,
+                height: 40
+            });
             drawInsetCalloutsOnPdf(doc, {
                 session: calloutSession,
                 insetView: capture.inset,
@@ -1658,7 +1737,10 @@ export async function buildInsetPagePdfBlob({
                 layoutMargins,
                 pageW,
                 pageH,
-                clipRect: cell.mapRect
+                goldPdfRing,
+                clipRect: cell.mapRect,
+                notesRect: cell.notesRect,
+                avoidRects: occupiedRects
             });
         }
     }
@@ -1932,7 +2014,9 @@ export async function exportSheetPlanPdf({
                 const fiberFeatures = collectUdotFiberSheetFeatures(
                     mapService,
                     fiberLayerIds,
-                    frameFeature
+                    frameFeature,
+                    getLayers(),
+                    { collapseConduitBanks: session?.sheets?.collapseConduitBanks === true }
                 );
                 const underlay = await captureBasemapUnderlay(mapService, template, ring, {
                     skipViewportFit: true
@@ -2040,7 +2124,8 @@ export async function exportSheetPlanPdf({
                             fiberLayerIds,
                             refreshLiveFiberIds,
                             pdfFiberOmitIds,
-                            designFeatures
+                            designFeatures,
+                            collapseConduitBanks: session?.sheets?.collapseConduitBanks === true
                         });
                         captures.push(capture);
                     } catch (err) {

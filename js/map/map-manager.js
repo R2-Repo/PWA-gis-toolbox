@@ -54,7 +54,29 @@ import { udotFiberDrawRank } from '../symbology/udot-fiber/draw-order.js';
 import { isUdotFiberLiveDataset } from '../symbology/udot-fiber/hover-fields.js';
 import { addUdotFiberVectorLayers } from '../symbology/udot-fiber/paint.js';
 import { prepareUdotFiberMapFeatures } from '../symbology/udot-fiber/map-prepare.js';
+import { spanMemberKey } from '../widgets/plan-set-callouts/span-grouping.js';
 import { renderProcurementIcon } from '../plan-project/symbol-icons.js';
+
+function prepareSnapshotMapFeatures(dataset, taggedFeatures, fiberKey, map) {
+    let features = taggedFeatures;
+    const visible = dataset?._udotCollapseVisibleKeys;
+    if (visible instanceof Set && (fiberKey === 'fiber' || fiberKey === 'conduit')) {
+        features = taggedFeatures.filter((feature) => {
+            const stamped = {
+                ...feature,
+                properties: {
+                    ...(feature.properties || {}),
+                    _udotFiberKey: feature.properties?._udotFiberKey || fiberKey
+                }
+            };
+            const key = spanMemberKey(stamped);
+            return !key || visible.has(key);
+        });
+    }
+    return prepareUdotFiberMapFeatures(fiberKey, features, map, {
+        skipDisplayOffsets: dataset?._udotCollapseConduitBanks === true
+    });
+}
 
 const POINT_CLUSTER_THRESHOLD = 10000;
 
@@ -1094,7 +1116,7 @@ class MapManager {
 
         const taggedFeatures = _tagFeaturesForMap(dataset);
         const mapFeatures = fiberKey
-            ? prepareUdotFiberMapFeatures(fiberKey, taggedFeatures, this.map)
+            ? prepareSnapshotMapFeatures(dataset, taggedFeatures, fiberKey, this.map)
             : taggedFeatures;
         const geojson = { type: 'FeatureCollection', features: mapFeatures };
         const sourceId = `src-${dataset.id}`;
@@ -2174,7 +2196,7 @@ class MapManager {
                 || null)
             : null;
         const mapFeatures = fiberKey
-            ? prepareUdotFiberMapFeatures(fiberKey, taggedFeatures, this.map)
+            ? prepareSnapshotMapFeatures(dataset, taggedFeatures, fiberKey, this.map)
             : taggedFeatures;
         const geojson = { type: 'FeatureCollection', features: mapFeatures };
         source.setData(geojson);

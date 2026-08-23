@@ -2,7 +2,7 @@
  * Anchor / bubble placement and map/PDF preview GeoJSON for sheet callouts.
  */
 
-import { fiberFeatureId } from './fiber-notes.js';
+import { compareCalloutNotes, fiberFeatureId, formatCalloutLabel } from './fiber-notes.js';
 import { polygonFromInsetView } from '../sheet-cutting/inset-views.js';
 import { SHEET_BUBBLE_INSET_FT } from './callout-style.js';
 
@@ -519,7 +519,7 @@ export function notesUsedOnSheet(session, sheetOrId, options = {}) {
             if (note) used.set(note.noteId, note);
         }
     }
-    return [...used.values()].sort((a, b) => a.number - b.number);
+    return [...used.values()].sort(compareCalloutNotes);
 }
 
 /**
@@ -544,10 +544,12 @@ export function buildCalloutPreviewGeoJson(session, options = {}) {
     for (const leader of session?.leaders || []) {
         if (!isLeaderEnabled(leader) || !leader.anchor || !leader.bubble) continue;
         if (findCoveringInset(leader, insetViews)) continue;
-        const numbers = (leader.noteIds || [])
-            .map((id) => notesById.get(id)?.number)
-            .filter((value) => Number.isFinite(value));
-        if (!numbers.length) continue;
+        const labels = (leader.noteIds || [])
+            .map((id) => notesById.get(id))
+            .filter((note) => Number.isFinite(Number(note?.number)) && Number(note.number) > 0)
+            .map((note) => formatCalloutLabel(note))
+            .filter(Boolean);
+        if (!labels.length) continue;
 
         features.push({
             type: 'Feature',
@@ -564,7 +566,7 @@ export function buildCalloutPreviewGeoJson(session, options = {}) {
             }
         });
 
-        numbers.forEach((number, index) => {
+        labels.forEach((label, index) => {
             features.push({
                 type: 'Feature',
                 properties: {
@@ -573,7 +575,7 @@ export function buildCalloutPreviewGeoJson(session, options = {}) {
                     leader_key: leader.leaderKey,
                     sheet_id: leader.sheetId,
                     target_key: leader.targetKey,
-                    callout_number: String(number),
+                    callout_number: label,
                     stack_index: index,
                     source_feature_id: fiberFeatureId({ properties: { feature_id: leader.targetKey } })
                 },

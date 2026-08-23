@@ -34,7 +34,8 @@ import {
     resolveRightHandSeeLabelVisualCenter,
     resolveSeeLabelVisualCenterOutside,
     resolveSheetEdgeSeeLabelPlacements,
-    warnIfBasemapDpiConstrained
+    warnIfBasemapDpiConstrained,
+    requireInsetCaptureCamera
 } from '../js/widgets/sheet-cutting/sheet-pdf-export.js';
 import { prepareExportLayerVisibility, suppressMapDataLayersForCapture } from '../js/widgets/sheet-cutting/sheet-preview.js';
 import {
@@ -1658,5 +1659,17 @@ describe('sheet PDF export progress', () => {
         expect(computeSheetExportProgress({ completedPages: 0, totalPages: 10, phase: 'pages' })).toBe(2);
         expect(computeSheetExportProgress({ completedPages: 5, totalPages: 10, phase: 'pages' })).toBe(49);
         expect(computeSheetExportProgress({ completedPages: 10, totalPages: 10, phase: 'pages' })).toBe(95);
+    });
+});
+
+describe('DETAILS capture camera', () => {
+    it('requires a snapshot before vector project', () => {
+        expect(() => requireInsetCaptureCamera({})).toThrow(/missing its map camera/);
+        expect(() => requireInsetCaptureCamera({ camera: { zoom: 18 } })).toThrow(/missing its map camera/);
+        const camera = requireInsetCaptureCamera({
+            camera: { center: [-111.89, 40.75], zoom: 18.4, bearing: 0, pitch: 0 }
+        });
+        expect(camera.zoom).toBeCloseTo(18.4, 5);
+        expect(camera.center[0]).toBeCloseTo(-111.89, 5);
     });
 });

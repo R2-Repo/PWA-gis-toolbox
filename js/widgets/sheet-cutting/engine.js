@@ -566,6 +566,7 @@ export function createSheetSetState(input = {}) {
         matchLines: Array.isArray(input.matchLines) ? [...input.matchLines] : [],
         featureAssignments: input.featureAssignments || {},
         designLayerIds: Array.isArray(input.designLayerIds) ? [...input.designLayerIds] : [],
+        collapseConduitBanks: input.collapseConduitBanks === true,
         insetViews: Array.isArray(input.insetViews)
             ? input.insetViews.map((view) => normalizeInsetView(view)).filter(Boolean)
             : []
@@ -697,6 +698,22 @@ export function selectDesignLayersForSheets(session, layerIds = []) {
         sheets: {
             ...session.sheets,
             designLayerIds: [...layerIds]
+        }
+    };
+}
+
+/**
+ * View-only: hide sibling Fiber / IMD lines on remade layers and PDFs.
+ * @param {object} session
+ * @param {boolean} collapse
+ * @returns {object}
+ */
+export function setCollapseConduitBanks(session, collapse) {
+    return {
+        ...session,
+        sheets: {
+            ...session.sheets,
+            collapseConduitBanks: collapse === true
         }
     };
 }

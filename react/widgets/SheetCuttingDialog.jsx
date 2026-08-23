@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { WidgetPanelShell } from './shared/WidgetPanelShell.jsx';
 import { LayerSelect } from './shared/LayerSelect.jsx';
-import { INSETS_PER_PAGE } from '../../js/widgets/sheet-cutting/inset-views.js';
+import { formatInsetParentSheetsLabel, INSETS_PER_PAGE } from '../../js/widgets/sheet-cutting/inset-views.js';
 
 const SHEET_PAPER_SIZE = 'TABLOID';
 const SHEET_ORIENTATION = 'landscape';
@@ -107,6 +107,7 @@ export function SheetCuttingDialog({
     onExportPdf,
     onAddResultLayers,
     onAddFiberOperationalLayers,
+    onSetCollapseConduitBanks,
     onDrawInsetBox,
     onRemoveInsetView,
     onOpenRouteCenterline,
@@ -487,7 +488,7 @@ export function SheetCuttingDialog({
                     <div className="form-group" style={{ marginBottom: 12 }}>
                         <span className="gis-widget__section-title">Detail boxes</span>
                         <p className="text-xs" style={{ marginTop: 0, marginBottom: 8, color: 'var(--text-muted)' }}>
-                            Draw a box on a sheet for a zoomed DETAILS page. Four boxes share one page; leftovers keep empty quadrants.
+                            Draw a box on a sheet for a zoomed DETAILS page. A box that crosses a match line keeps the same DETAIL letter on each sheet. Four boxes share one page; leftovers keep empty quadrants.
                         </p>
                         <button
                             type="button"
@@ -499,41 +500,60 @@ export function SheetCuttingDialog({
                         </button>
                         {insetViews.length ? (
                             <ul className="text-xs" style={{ margin: '8px 0 0', paddingLeft: 0, listStyle: 'none' }}>
-                                {insetViews.map((view) => (
-                                    <li
-                                        key={view.insetId}
-                                        style={{
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            justifyContent: 'space-between',
-                                            gap: 8,
-                                            marginBottom: 4
-                                        }}
-                                    >
-                                        <span>
-                                            DETAIL {view.label}
-                                            {view.parentSheetNumber
-                                                ? ` · Sheet ${String(view.parentSheetNumber).padStart(2, '0')}`
-                                                : ''}
-                                        </span>
-                                        <button
-                                            type="button"
-                                            className="btn btn-secondary btn-sm"
-                                            disabled={busy}
-                                            onClick={() => run(async () => onRemoveInsetView?.(view.insetId), '')}
+                                {insetViews.map((view) => {
+                                    const sheetsLabel = formatInsetParentSheetsLabel(view);
+                                    return (
+                                        <li
+                                            key={view.insetId}
+                                            style={{
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'space-between',
+                                                gap: 8,
+                                                marginBottom: 4
+                                            }}
                                         >
-                                            Remove
-                                        </button>
-                                    </li>
-                                ))}
+                                            <span>
+                                                DETAIL {view.label}
+                                                {sheetsLabel ? ` · ${sheetsLabel}` : ''}
+                                            </span>
+                                            <button
+                                                type="button"
+                                                className="btn btn-secondary btn-sm"
+                                                disabled={busy}
+                                                onClick={() => run(async () => onRemoveInsetView?.(view.insetId), '')}
+                                            >
+                                                Remove
+                                            </button>
+                                        </li>
+                                    );
+                                })}
                             </ul>
                         ) : null}
                     </div>
 
                     <div className="form-group" style={{ marginBottom: 12 }}>
+                        <span className="gis-widget__section-title">Fiber banks</span>
+                        <label className="text-xs" style={{ display: 'block', marginBottom: 8 }}>
+                            <input
+                                type="checkbox"
+                                checked={session?.sheets?.collapseConduitBanks === true}
+                                disabled={busy}
+                                onChange={(event) => run(async () => (
+                                    onSetCollapseConduitBanks?.(event.target.checked)
+                                ), '')}
+                            />
+                            {' '}Collapse conduit banks
+                        </label>
+                        <p className="text-xs" style={{ marginTop: 0, marginBottom: 8, color: 'var(--text-muted)' }}>
+                            Hides parallel Fiber / IMD lines on remade layers and PDFs. Box-to-box stays one line; splits still show laterals.
+                        </p>
+                    </div>
+
+                    <div className="form-group" style={{ marginBottom: 12 }}>
                         <span className="gis-widget__section-title">Fiber callouts</span>
                         <p className="text-xs" style={{ marginTop: 0, marginBottom: 8, color: 'var(--text-muted)' }}>
-                            Optional. Numbered leaders and a PROJECT KEY NOTES table on the PDFs. Returns here when you are done.
+                            Optional. Numbered leaders and a PROJECT KEY NOTES table in the PDF sheet’s white space (not on the map cutout). Returns here when you are done.
                         </p>
                         <button
                             type="button"

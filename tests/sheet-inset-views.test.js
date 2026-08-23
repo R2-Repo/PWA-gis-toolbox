@@ -7,12 +7,15 @@ import {
 } from '../js/widgets/sheet-cutting/engine.js';
 import {
     addInsetView,
+    assignOverlappingSheets,
     assignParentSheet,
     buildInsetCalloutFeatures,
     computeInsetQuadrantRects,
     formatDetailsPageLabel,
+    formatInsetParentSheetsLabel,
     formatInsetScaleLabel,
     formatSeeDetailsLabel,
+    formatSeeSheetsLabel,
     insetLetterFromIndex,
     packInsetPages,
     placeInsetLabelOutsideBox,
@@ -55,6 +58,55 @@ describe('sheet cutter inset views', () => {
         const parent = assignParentSheet(box, [west, east]);
         expect(parent.parentSheetId).toBe('s1');
         expect(parent.parentSheetNumber).toBe(1);
+        expect(assignOverlappingSheets(box, [west, east]).map((entry) => entry.parentSheetId)).toEqual(['s1']);
+    });
+
+    it('stores every overlapping parent and keeps the largest as parentSheetId', () => {
+        const box = turf.bboxPolygon([-111.98, 40.005, -111.93, 40.015]);
+        const session = addInsetView({ sheets: { insetViews: [] } }, box, [west, east]);
+        const view = session.sheets.insetViews[0];
+        expect(view.parentSheetId).toBe('s1');
+        expect(view.parentSheetNumber).toBe(1);
+        expect(view.parentSheetIds).toEqual(['s1', 's2']);
+        expect(view.parentSheetNumbers).toEqual([1, 2]);
+        expect(formatInsetParentSheetsLabel(view)).toBe('Sheets 01, 02');
+        expect(formatSeeSheetsLabel(view.parentSheetNumbers)).toBe('SEE SHEETS 01, 02');
+    });
+
+    it('ignores a sliver nick on the adjacent sheet', () => {
+        const box = turf.bboxPolygon([-111.99, 40.005, -111.94995, 40.015]);
+        const parents = assignOverlappingSheets(box, [west, east]);
+        expect(parents.map((entry) => entry.parentSheetId)).toEqual(['s1']);
+        const session = addInsetView({ sheets: { insetViews: [] } }, box, [west, east]);
+        expect(session.sheets.insetViews[0].parentSheetIds).toEqual(['s1']);
+        expect(session.sheets.insetViews[0].parentSheetNumbers).toEqual([1]);
+        expect(formatSeeSheetsLabel(1)).toBe('SEE SHEET 01');
+    });
+
+    it('emits a clipped outline and DETAIL A label on each overlapping sheet', () => {
+        const box = turf.bboxPolygon([-111.98, 40.005, -111.93, 40.015]);
+        const session = addInsetView({ sheets: { insetViews: [] } }, box, [west, east]);
+        const view = session.sheets.insetViews[0];
+        const features = buildInsetCalloutFeatures([view], { [view.insetId]: 1 }, {
+            frameFeatures: [west, east]
+        });
+        const outlines = features.filter((feature) => feature.properties.feature_type === 'inset_outline');
+        const labels = features.filter((feature) => feature.properties.feature_type === 'inset_label');
+        expect(outlines).toHaveLength(2);
+        expect(labels).toHaveLength(2);
+        expect(outlines.map((feature) => feature.properties.parent_sheet_id).sort()).toEqual(['s1', 's2']);
+        expect(labels.every((feature) => feature.properties.inset_label === 'DETAIL A')).toBe(true);
+        expect(labels.every((feature) => feature.properties.see_details === 'SEE DETAILS 01')).toBe(true);
+        expect(turf.booleanIntersects(outlines[0], outlines[1])).toBe(true);
+        for (const outline of outlines) {
+            const frame = outline.properties.parent_sheet_id === 's1' ? west : east;
+            expect(turf.booleanContains(frame, turf.center(outline))).toBe(true);
+        }
+        for (const label of labels) {
+            const frame = label.properties.parent_sheet_id === 's1' ? west : east;
+            expect(turf.booleanPointInPolygon(label, box, { ignoreBoundary: true })).toBe(false);
+            expect(turf.booleanPointInPolygon(label, frame)).toBe(true);
+        }
     });
 
     it('rejects a box that misses every sheet polygon', () => {
@@ -112,6 +164,26 @@ describe('sheet cutter inset views', () => {
         expect(label.properties.label_anchor).toBeTruthy();
         expect(formatSeeDetailsLabel(3)).toBe('SEE DETAILS 03');
         expect(formatDetailsPageLabel(1, 2)).toBe('DETAILS 01 of 02');
+    });
+
+    it('reserves a notes strip under the map without overlapping it', () => {
+        const cells = computeInsetQuadrantRects(1224, 792, {
+            left: 36,
+            right: 36,
+            top: 36,
+            bottom: 50
+        }, { notesReservePt: [72, 0, 48, 0] });
+        expect(cells[0].notesRect).toBeTruthy();
+        expect(cells[1].notesRect).toBeNull();
+        expect(cells[0].notesRect.y).toBeGreaterThanOrEqual(
+            cells[0].mapRect.y + cells[0].mapRect.height
+        );
+        expect(cells[0].mapRect.y + cells[0].mapRect.height)
+            .toBeLessThanOrEqual(cells[0].notesRect.y + 0.01);
+        expect(cells[0].mapRect.height).toBeLessThan(cells[1].mapRect.height);
+        expect(
+            cells[0].notesRect.y + cells[0].notesRect.height
+        ).toBeLessThanOrEqual(cells[0].chromeRect.y + cells[0].chromeRect.height + 0.01);
     });
 
     it('lays out four non-overlapping quadrant cells', () => {

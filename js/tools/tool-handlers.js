@@ -121,7 +121,10 @@ import { createWidgetContext } from '../widgets/widget-context.js';
 import { getPlatformBundle } from '../platform/create-platform.js';
 import { openImportStationTable } from '../widgets/project-stationing/controller.js';
 import { isProjectStationingCenterline } from '../widgets/project-stationing/route-profile.js';
-import { getPlanSetCalloutMenuItems } from '../widgets/plan-set-callouts/context-menu-bridge.js';
+import {
+    getCalloutSelectionItems,
+    getPlanSetCalloutMenuItems
+} from '../widgets/plan-set-callouts/context-menu-bridge.js';
 import {
     getProtectInPlaceContextMenuItems,
     getProtectInPlaceSelectionItems,
@@ -2985,11 +2988,18 @@ export function buildSelectionActionMenuItems(payload = {}) {
             applyImportFenceFromBbox(bbox, { after: () => openImportFlow() });
         },
         onClear: () => handlers.clear(),
-        extraItems: getProtectInPlaceSelectionItems({
-            layer,
-            count,
-            sheetCuttingOpen: isSheetCuttingMode()
-        })
+        extraItems: [
+            ...getProtectInPlaceSelectionItems({
+                layer,
+                count,
+                sheetCuttingOpen: isSheetCuttingMode()
+            }),
+            ...getCalloutSelectionItems({
+                layer,
+                count,
+                bbox: payload.bbox || mapService.getLastSelectionBbox?.()
+            })
+        ]
     });
 }
 

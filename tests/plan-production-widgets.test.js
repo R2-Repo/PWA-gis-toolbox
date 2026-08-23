@@ -21,7 +21,8 @@ import {
     validateSheetSession,
     serializeSheetSession,
     restoreSheetSession,
-    assignFeaturesToSheets
+    assignFeaturesToSheets,
+    setCollapseConduitBanks
 } from '../js/widgets/sheet-cutting/engine.js';
 
 globalThis.turf = turf;
@@ -152,6 +153,9 @@ describe('sheet cutting widget engine', () => {
         const restored = restoreSheetSession(bundle);
         expect(restored.project.projectName).toBe('Persist Sheets');
         expect(restored.sheets.template.scale).toBe(400);
+        expect(restored.sheets.collapseConduitBanks).toBe(false);
+        const collapsed = restoreSheetSession(serializeSheetSession(setCollapseConduitBanks(session, true)));
+        expect(collapsed.sheets.collapseConduitBanks).toBe(true);
     });
 
     it('validates sheet session', () => {

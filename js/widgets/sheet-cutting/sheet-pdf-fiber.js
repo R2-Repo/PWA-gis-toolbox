@@ -13,6 +13,8 @@ import {
     protectInPlaceOutlineKind
 } from '../../symbology/udot-fiber/protect-in-place.js';
 import { clipFeaturesToSheetFrame } from './export-builder.js';
+import { applyCollapsedBankFilter } from './conduit-bank-collapse.js';
+import { isSheetFiberSnapshotLayer } from './fiber-operational.js';
 
 const FIBER_LINE_KEYS = new Set(['fiber', 'conduit']);
 /** Live box glyph uses `rh = rw / 2.05`. */
@@ -293,10 +295,22 @@ export function udotFiberPdfDrawRank(fiberKey) {
  * @param {string[]} fiberLayerIds
  * @param {object|null} frameFeature
  * @param {object[]} [layers]
+ * @param {{ collapseConduitBanks?: boolean }} [options]
  * @returns {object[]}
  */
-export function collectUdotFiberSheetFeatures(mapService, fiberLayerIds = [], frameFeature = null, layers = getLayers()) {
+export function collectUdotFiberSheetFeatures(
+    mapService,
+    fiberLayerIds = [],
+    frameFeature = null,
+    layers = getLayers(),
+    options = {}
+) {
     const byId = new Map((layers || []).map((layer) => [layer.id, layer]));
+    const snapshotIds = new Set(
+        (layers || []).filter(isSheetFiberSnapshotLayer).map((layer) => layer.id)
+    );
+    const collapse = options.collapseConduitBanks === true
+        && (fiberLayerIds || []).some((id) => snapshotIds.has(id));
     const features = [];
     for (const layerId of fiberLayerIds || []) {
         const layer = byId.get(layerId);
@@ -305,7 +319,10 @@ export function collectUdotFiberSheetFeatures(mapService, fiberLayerIds = [], fr
         if (!key) continue;
         const fromRecord = mapService?.getLayerRecord?.(layerId)?.geojson?.features;
         const fromLayer = layer?.geojson?.features;
-        const list = fromRecord?.length ? fromRecord : (fromLayer || []);
+        const preferOriginals = collapse && snapshotIds.has(layerId) && fromLayer?.length;
+        const list = preferOriginals
+            ? fromLayer
+            : (fromRecord?.length ? fromRecord : (fromLayer || []));
         for (const feature of list) {
             if (!feature?.geometry) continue;
             features.push({
@@ -318,7 +335,11 @@ export function collectUdotFiberSheetFeatures(mapService, fiberLayerIds = [], fr
             });
         }
     }
-    return frameFeature ? clipFeaturesToSheetFrame(frameFeature, features) : features;
+    const clipped = frameFeature ? clipFeaturesToSheetFrame(frameFeature, features) : features;
+    return applyCollapsedBankFilter(clipped, {
+        collapsed: collapse,
+        snapshotLayerIds: snapshotIds
+    });
 }
 
 /**

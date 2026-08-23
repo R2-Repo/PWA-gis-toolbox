@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import { WidgetPanelShell } from './shared/WidgetPanelShell.jsx';
 import { WidgetStepWizard } from './shared/WidgetStepWizard.jsx';
 import { findCoveringInset, notesUsedOnSheet } from '../../js/widgets/plan-set-callouts/leader-placement.js';
+import { noteTextsForLeader } from '../../js/widgets/plan-set-callouts/callout-targets.js';
+import { formatCalloutLabel } from '../../js/widgets/plan-set-callouts/fiber-notes.js';
 import {
     canAdvanceCalloutStep,
     isCalloutPrimaryActionDisabled
@@ -91,6 +93,7 @@ export function PlanSetCalloutsDialog({
             </div>
             <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
                 Numbered circle leaders and a per-sheet key notes table for UDOT Fiber on Sheet Cutter PDFs.
+                The table sits in each page’s white space — not on the map cutout or footer — and adds columns when height is tight.
                 Numbers stay stable across the plan set.
             </p>
             <p className="text-xs" style={{ color: hasSheetSession ? 'var(--text-muted)' : 'var(--danger)' }}>
@@ -106,9 +109,10 @@ export function PlanSetCalloutsDialog({
     const renderGenerateStep = () => (
         <>
             <p className="text-xs" style={{ color: 'var(--text-muted)', marginBottom: 12 }}>
-                Discovers a leader for every box and splice, and one per conduit/fiber span.
+                Discovers a leader for every box and splice, and one per carrier span
+                (duct bank or stub; fiber and IMD share that anchor).
                 Cabinets and buildings are skipped. All callouts start off — turn on only the ones you need
-                in Review or by right-clicking a feature.
+                in Review, by right-clicking a feature, or from the Shift+drag selection box.
             </p>
             <button
                 type="button"
@@ -159,13 +163,18 @@ export function PlanSetCalloutsDialog({
             <div className="text-xs" style={{ marginTop: 8, maxHeight: 140, overflow: 'auto' }}>
                 <strong>PROJECT KEY NOTES (this sheet)</strong>
                 {tableNotes.length ? tableNotes.map((note) => (
-                    <div key={note.noteId}>{note.number} — {note.text}</div>
+                    <div key={note.noteId}>{formatCalloutLabel(note)} — {note.text}</div>
                 )) : <div>No callouts turned on for this sheet.</div>}
             </div>
             <div className="text-xs" style={{ marginTop: 10, maxHeight: 180, overflow: 'auto' }}>
                 <strong>Callouts ({onLeaders.length} on / {sheetLeaders.length})</strong>
                 {sheetLeaders.map((leader) => {
-                    const numbers = (leader.noteIds || []).map((id) => notesById.get(id)?.number).filter(Boolean).join(', ') || '—';
+                    const numbers = (leader.noteIds || [])
+                        .map((id) => formatCalloutLabel(notesById.get(id)))
+                        .filter(Boolean)
+                        .join(', ') || '—';
+                    const texts = noteTextsForLeader(session, leader).join(', ');
+                    const kind = leader.targetKind || 'span';
                     const covering = findCoveringInset(leader, insetViews);
                     return (
                         <div key={leader.leaderKey} style={{ marginTop: 6, display: 'flex', gap: 8, alignItems: 'center' }}>
@@ -179,7 +188,7 @@ export function PlanSetCalloutsDialog({
                                         e.target.checked ? 'Callout on.' : 'Callout off.'
                                     )}
                                 />
-                                <span>{numbers}</span>
+                                <span>{kind} {numbers}{texts ? ` — ${texts}` : ''}</span>
                             </label>
                             {covering ? (
                                 <span style={{ color: 'var(--text-muted)' }}>DETAILS {covering.label || ''} only</span>

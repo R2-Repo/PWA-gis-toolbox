@@ -8,7 +8,10 @@ import {
     probeOutwardUnitNormal
 } from './sheet-pdf-placement.js';
 import { buildUdotFiberPdfStyle, layoutUdotFiberPdfBox, udotFiberPdfDrawRank } from './sheet-pdf-fiber.js';
-import { interpolateUdotFiberIconPx } from '../../symbology/udot-fiber/zoom-scale.js';
+import { interpolateUdotFiberIconPx, UDOT_FIBER_GROUND_LOCK_ZOOM } from '../../symbology/udot-fiber/zoom-scale.js';
+
+/** DETAILS Fiber point/box glyphs use the approved map size, not capture zoom 22. */
+export const DETAILS_FIBER_GLYPH_ZOOM = UDOT_FIBER_GROUND_LOCK_ZOOM;
 
 /** Matchline SEE SHEET label size (PDF points). Inner glyph edge sits on the cutout border. */
 export const MATCHLINE_SEE_LABEL_FONT_PT = 7.5;
@@ -30,7 +33,7 @@ export function mapCssPxToPdfPt(cssPx, pxPerPt, captureScale = 1) {
 
 /**
  * Fiber point / box glyph size. Corridor pages keep CAD sizes; DETAILS pages
- * grow to the on-screen map size at the capture zoom.
+ * grow to the approved map size at ground-lock zoom (not capture zoom 22).
  *
  * @param {object} style
  * @param {number} pxPerPt
@@ -676,11 +679,10 @@ function drawPoint(doc, point, style, pxPerPt, screen = null) {
     const radius = resolvePointMarkerPdfRadius(style, pxPerPt, screen || {});
     if (style.radius === 0 || radius <= 0) return;
 
-    const captureScale = Math.max(1, Number(screen?.captureScale) || 1);
     withPdfOpacity(doc, style.fillOpacity ?? 1, () => {
         applyFillColor(doc, style.fillColor || '#2563eb');
         applyStrokeColor(doc, style.strokeColor || '#ffffff');
-        doc.setLineWidth(Math.max(0.2, (style.strokeWidth || 1) * pxPerPt * (screen?.matchMapScreenSpace ? captureScale : 0.5)));
+        doc.setLineWidth(Math.max(0.2, (style.strokeWidth || 1) * pxPerPt * 0.5));
         doc.circle(point.x, point.y, radius, 'FD');
     });
 }
@@ -1149,7 +1151,7 @@ function renderFeature(doc, feature, map, transform, captureScale, style, pdfRin
             return;
         }
 
-        drawPoint(doc, point, style, pxPerPt, screenOpts);
+        drawPoint(doc, point, style, pxPerPt, { ...screenOpts, matchMapScreenSpace: false });
         if (style.labelField && style.kind !== 'label') {
             drawLabel(doc, point, feature.properties?.[style.labelField], {
                 fontSize: style.labelSize || 8,
@@ -1166,10 +1168,10 @@ function renderFeature(doc, feature, map, transform, captureScale, style, pdfRin
             const point = transform.projectLngLat(map, coord[0], coord[1], captureScale);
             if (style.kind === 'label') {
                 drawLabel(doc, point, feature.properties?.[style.field], style);
-            } else if (style.kind === 'fiber_point') {
+            } else             if (style.kind === 'fiber_point') {
                 drawFiberPoint(doc, point, style, pxPerPt, map.getBearing?.() || 0, screenOpts);
             } else {
-                drawPoint(doc, point, style, pxPerPt, screenOpts);
+                drawPoint(doc, point, style, pxPerPt, { ...screenOpts, matchMapScreenSpace: false });
             }
         }
     }
@@ -1195,10 +1197,14 @@ export function renderFeatureCollectionToPdf(doc, collection, map, transform, ca
     const pdfRing = outlineRing?.length && map && transform?.projectLngLat
         ? projectRing(map, outlineRing, transform, captureScale)
         : null;
+    const requestedZoom = Number(resolveStyle?.zoom);
+    const matchMapScreenSpace = Boolean(resolveStyle?.matchMapScreenSpace);
     const screen = {
         captureScale,
-        zoom: Number(map?.getZoom?.()) || 0,
-        matchMapScreenSpace: Boolean(resolveStyle?.matchMapScreenSpace),
+        zoom: Number.isFinite(requestedZoom)
+            ? requestedZoom
+            : (matchMapScreenSpace ? DETAILS_FIBER_GLYPH_ZOOM : (Number(map?.getZoom?.()) || 0)),
+        matchMapScreenSpace,
         maxPt: Math.max(12, (transform?.placedRect?.width || 0) * 0.4)
     };
 

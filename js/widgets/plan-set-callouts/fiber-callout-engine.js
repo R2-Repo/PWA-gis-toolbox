@@ -13,12 +13,15 @@ import {
     FIBER_CALLOUT_PROFILE,
     assignStableNoteNumbers,
     fiberFeatureId,
-    findNoteByText,
+    findNoteByKeyAndText,
+    findReusableCalloutNote,
+    normalizeCalloutFiberKey,
     normalizeNoteText,
     noteTextForFeature,
     pointTargetKey
 } from './fiber-notes.js';
-import { groupSpanMembers } from './span-grouping.js';
+import { groupSpanMembers, isCarrierLineFeature } from './span-grouping.js';
+import { leadersForFeatures, sheetIdForCoordinate } from './callout-targets.js';
 import {
     clampCoordinateToSheet,
     collectFeatureObstacleCoordinates,
@@ -149,11 +152,14 @@ function textsForTarget(kind, members) {
     const seen = new Set();
     const texts = [];
     for (const feature of members) {
-        const fiberKey = feature.properties?._udotFiberKey || kind;
-        const text = noteTextForFeature(fiberKey, feature);
-        if (!text || seen.has(text)) continue;
-        seen.add(text);
-        texts.push(text);
+        const rawKey = feature.properties?._udotFiberKey || kind;
+        const fiberKey = normalizeCalloutFiberKey(rawKey);
+        const text = noteTextForFeature(fiberKey || rawKey, feature);
+        if (!text) continue;
+        const identity = `${fiberKey}::${text}`;
+        if (seen.has(identity)) continue;
+        seen.add(identity);
+        texts.push({ text, fiberKey });
     }
     return texts;
 }
@@ -178,6 +184,8 @@ function sortByRouteDistance(features, routeLine) {
 function pickAnchorFeature(members) {
     const points = members.filter((feature) => feature.geometry?.type === 'Point');
     if (points.length) return points[0];
+    const carrier = members.find(isCarrierLineFeature);
+    if (carrier) return carrier;
     return members[0] || null;
 }
 
@@ -283,7 +291,12 @@ export function generateFiberCallouts(session, input = {}) {
     const textsInOrder = [];
     for (const item of discovered) textsInOrder.push(...item.texts);
     for (const extra of session.overrides?.extraNotes || []) {
-        if (extra.text) textsInOrder.push(extra.text);
+        if (extra.text) {
+            textsInOrder.push({
+                text: extra.text,
+                fiberKey: extra.fiberKey || ''
+            });
+        }
     }
 
     const notes = assignStableNoteNumbers(existingNotes, textsInOrder);
@@ -296,7 +309,7 @@ export function generateFiberCallouts(session, input = {}) {
     for (const item of discovered) {
         const key = leaderKey(item.sheetId, item.targetKey);
         const noteIds = item.texts
-            .map((text) => findNoteByText(notes, text)?.noteId)
+            .map((entry) => findNoteByKeyAndText(notes, entry.text, entry.fiberKey)?.noteId)
             .filter(Boolean);
         if (!noteIds.length) continue;
         const anchorFeature = pickAnchorFeature(item.members);
@@ -427,15 +440,19 @@ export function addManualLeader(session, input = {}) {
     if (!sheetId) throw new Error('Select a sheet before adding a callout.');
     const text = normalizeNoteText(input.text);
     if (!text) throw new Error('Enter callout text.');
+    const priorNotes = [...(session.notes || []), ...(session.overrides?.extraNotes || [])];
+    const reusable = findReusableCalloutNote(priorNotes, text);
     const notes = assignStableNoteNumbers(
-        [...(session.notes || []), ...(session.overrides?.extraNotes || [])],
-        [text]
+        priorNotes,
+        reusable ? [{ text, fiberKey: reusable.fiberKey || '' }] : [text]
     );
-    const note = findNoteByText(notes, text);
-    const extraNotes = notes.filter((entry) => (
-        (session.overrides?.extraNotes || []).some((item) => item.text === entry.text)
-        || entry.text === text
-    ));
+    const note = findReusableCalloutNote(notes, text);
+    const extraNotes = notes.filter((entry) => {
+        if (entry.fiberKey) return false;
+        return (session.overrides?.extraNotes || []).some((item) => (
+            item.text === entry.text && !item.fiberKey
+        )) || entry.text === text;
+    });
     const targetKey = input.targetKey || `manual:${createStableId('manual')}`;
     const key = leaderKey(sheetId, targetKey);
     const sheetNumber = input.sheetNumber
@@ -500,18 +517,46 @@ export function addManualLeader(session, input = {}) {
  * @returns {object}
  */
 export function enableOrAddLeader(session, input = {}) {
+    const sheetId = input.sheetId
+        || sheetIdForCoordinate(session, input.anchor)
+        || session.selectedSheetId;
     const targetKey = input.targetKey;
     if (targetKey) {
         const matches = (session.leaders || []).filter((leader) => leader.targetKey === targetKey);
-        if (matches.length) {
+        const scoped = sheetId
+            ? matches.filter((leader) => leader.sheetId === sheetId)
+            : matches;
+        const toEnable = scoped.length ? scoped : matches;
+        if (toEnable.length) {
             let next = session;
-            for (const leader of matches) {
+            for (const leader of toEnable) {
                 next = setLeaderEnabled(next, leader.leaderKey || leader.leaderId, true);
             }
             return next;
         }
     }
-    return addManualLeader(session, input);
+    return addManualLeader(session, { ...input, sheetId });
+}
+
+/**
+ * @param {object} session
+ * @param {object[]} features
+ * @param {{ enabled?: boolean, sheetId?: string, coord?: number[], bbox?: number[] }} [options]
+ * @returns {{ session: object, changed: number }}
+ */
+export function setLeadersEnabledForFeatures(session, features = [], options = {}) {
+    const enabled = options.enabled !== false;
+    const leaders = leadersForFeatures(session, features, options);
+    let next = session;
+    let changed = 0;
+    for (const leader of leaders) {
+        const key = leader.leaderKey || leader.leaderId;
+        const wasOn = leader.suppressed !== true && leader.enabled !== false;
+        if (wasOn === enabled) continue;
+        next = setLeaderEnabled(next, key, enabled);
+        changed += 1;
+    }
+    return { session: next, changed };
 }
 
 /**
@@ -523,13 +568,17 @@ export function enableOrAddLeader(session, input = {}) {
 export function addNoteToLeader(session, leaderKeyValue, text) {
     const cleaned = normalizeNoteText(text);
     if (!cleaned) throw new Error('Enter callout text.');
+    const priorNotes = [...(session.notes || []), ...(session.overrides?.extraNotes || [])];
+    const reusable = findReusableCalloutNote(priorNotes, cleaned);
     const notes = assignStableNoteNumbers(
-        [...(session.notes || []), ...(session.overrides?.extraNotes || [])],
-        [cleaned]
+        priorNotes,
+        reusable ? [{ text: cleaned, fiberKey: reusable.fiberKey || '' }] : [cleaned]
     );
-    const note = findNoteByText(notes, cleaned);
+    const note = findReusableCalloutNote(notes, cleaned);
     const extraNotes = [...(session.overrides?.extraNotes || [])];
-    if (!extraNotes.some((entry) => entry.text === cleaned)) extraNotes.push(note);
+    if (!extraNotes.some((entry) => entry.text === cleaned && (entry.fiberKey || '') === (note?.fiberKey || ''))) {
+        extraNotes.push(note);
+    }
 
     const patchLeader = (leader) => {
         if ((leader.leaderKey || leader.leaderId) !== leaderKeyValue) return leader;

@@ -1,6 +1,9 @@
 // @vitest-environment jsdom
+import * as turf from '@turf/turf';
 import { describe, expect, it } from 'vitest';
-import { UDOT_FIBER_SERVICE_URL } from '../js/symbology/udot-fiber/constants.js';
+import { SHEET_FIBER_SNAPSHOT_FORMAT, UDOT_FIBER_SERVICE_URL } from '../js/symbology/udot-fiber/constants.js';
+
+globalThis.turf = turf;
 import {
     buildUdotFiberPdfStyle,
     collectUdotFiberSheetFeatures,
@@ -197,6 +200,117 @@ describe('sheet PDF Fiber capture helpers', () => {
         expect(style.kind).toBe('fiber_line');
         expect(style.strokes[0].strokeWidth).toBe(0.62);
         expect(style.labelField).toBeNull();
+    });
+
+    it('collapses remade Fiber / Conduit lines on PDF collect', () => {
+        const conduitA = {
+            type: 'Feature',
+            id: 1,
+            properties: { OBJECTID: 1, CustNameRight: '1D' },
+            geometry: { type: 'LineString', coordinates: [[-111.90, 40.75], [-111.88, 40.75]] }
+        };
+        const conduitB = {
+            type: 'Feature',
+            id: 2,
+            properties: { OBJECTID: 2, CustNameRight: '1D' },
+            geometry: { type: 'LineString', coordinates: [[-111.90, 40.75], [-111.88, 40.75]] }
+        };
+        const fiber = {
+            type: 'Feature',
+            id: 3,
+            properties: { OBJECTID: 3, Fiber_Label: 'UDOT 048 SMF' },
+            geometry: { type: 'LineString', coordinates: [[-111.90, 40.75], [-111.88, 40.75]] }
+        };
+        const boxA = {
+            type: 'Feature',
+            id: 10,
+            properties: { OBJECTID: 10, BOXLABELS: 'A' },
+            geometry: { type: 'Point', coordinates: [-111.90, 40.75] }
+        };
+        const boxB = {
+            type: 'Feature',
+            id: 20,
+            properties: { OBJECTID: 20, BOXLABELS: 'B' },
+            geometry: { type: 'Point', coordinates: [-111.88, 40.75] }
+        };
+        const layers = [
+            {
+                id: 'snap-conduit',
+                _udotFiberLayerKey: 'conduit',
+                source: { format: SHEET_FIBER_SNAPSHOT_FORMAT, fiberKey: 'conduit' },
+                geojson: { features: [conduitA, conduitB] }
+            },
+            {
+                id: 'snap-fiber',
+                _udotFiberLayerKey: 'fiber',
+                source: { format: SHEET_FIBER_SNAPSHOT_FORMAT, fiberKey: 'fiber' },
+                geojson: { features: [fiber] }
+            },
+            {
+                id: 'snap-boxes',
+                _udotFiberLayerKey: 'boxes',
+                source: { format: SHEET_FIBER_SNAPSHOT_FORMAT, fiberKey: 'boxes' },
+                geojson: { features: [boxA, boxB] }
+            }
+        ];
+        const mapService = {
+            getLayerStyle: (id) => ({
+                _udotFiber: { layerKey: layers.find((layer) => layer.id === id)._udotFiberLayerKey }
+            }),
+            getLayerRecord: () => ({ geojson: { features: [] } })
+        };
+        const exploded = collectUdotFiberSheetFeatures(
+            mapService,
+            ['snap-conduit', 'snap-fiber', 'snap-boxes'],
+            null,
+            layers
+        );
+        expect(exploded.filter((feature) => feature.geometry.type !== 'Point')).toHaveLength(3);
+
+        const collapsed = collectUdotFiberSheetFeatures(
+            mapService,
+            ['snap-conduit', 'snap-fiber', 'snap-boxes'],
+            null,
+            layers,
+            { collapseConduitBanks: true }
+        );
+        const lines = collapsed.filter((feature) => feature.geometry.type !== 'Point');
+        expect(lines).toHaveLength(1);
+        expect(lines[0].properties._udotFiberKey).toBe('conduit');
+        expect(collapsed.filter((feature) => feature.properties._udotFiberKey === 'boxes')).toHaveLength(2);
+    });
+
+    it('does not collapse live Fiber when the remade-layer flag is on', () => {
+        const mapService = {
+            getLayerStyle: () => ({ _udotFiber: { layerKey: 'fiber' } }),
+            getLayerRecord: () => ({
+                geojson: {
+                    features: [
+                        {
+                            type: 'Feature',
+                            id: 1,
+                            properties: { OBJECTID: 1, Fiber_Label: 'A' },
+                            geometry: { type: 'LineString', coordinates: [[-112, 40], [-111, 40]] }
+                        },
+                        {
+                            type: 'Feature',
+                            id: 2,
+                            properties: { OBJECTID: 2, Fiber_Label: 'B' },
+                            geometry: { type: 'LineString', coordinates: [[-112, 40], [-111, 40]] }
+                        }
+                    ]
+                }
+            })
+        };
+        const layers = [{ id: 'fiber', service: { url: `${UDOT_FIBER_SERVICE_URL}/6` } }];
+        const features = collectUdotFiberSheetFeatures(
+            mapService,
+            ['fiber'],
+            null,
+            layers,
+            { collapseConduitBanks: true }
+        );
+        expect(features).toHaveLength(2);
     });
 
     it('omits rasterized Fiber features but keeps sheet annotations', () => {
