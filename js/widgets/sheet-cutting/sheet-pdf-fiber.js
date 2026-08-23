@@ -6,6 +6,12 @@ import { matchUdotFiberLayerUrl, UDOT_BOX_IN_LABEL_PROP, UDOT_BOX_LABEL_FIELD, U
 import { isUdotFiberLabelLayerId } from '../../symbology/udot-fiber/draw-order.js';
 import { resolveStyle as resolveUdotFiberFeatureStyle } from '../../symbology/udot-fiber/resolve-style.js';
 import { resolveLookalike } from '../../symbology/udot-fiber/lookalikes.js';
+import {
+    UDOT_PIP_COLOR,
+    UDOT_PIP_PDF_DASH,
+    isProtectInPlaceFeature,
+    protectInPlaceOutlineKind
+} from '../../symbology/udot-fiber/protect-in-place.js';
 import { clipFeaturesToSheetFrame } from './export-builder.js';
 
 const FIBER_LINE_KEYS = new Set(['fiber', 'conduit']);
@@ -140,8 +146,23 @@ export function buildUdotFiberPdfStyle(feature, layerStyle = null) {
 
     const resolved = resolveUdotFiberFeatureStyle(key, props);
     const color = resolved?.color || '#94a3b8';
+    const pip = isProtectInPlaceFeature(feature);
 
     if (FIBER_LINE_KEYS.has(key)) {
+        if (pip) {
+            return {
+                kind: 'fiber_line',
+                fiberKey: key,
+                protectInPlace: true,
+                strokes: [{
+                    strokeColor: UDOT_PIP_COLOR,
+                    strokeWidth: key === 'conduit' ? 0.72 : 0.62,
+                    strokeOpacity: 1,
+                    dash: [...UDOT_PIP_PDF_DASH]
+                }],
+                labelField: null
+            };
+        }
         const coreWidth = key === 'conduit' ? 0.72 : 0.62;
         return {
             kind: 'fiber_line',
@@ -162,6 +183,22 @@ export function buildUdotFiberPdfStyle(feature, layerStyle = null) {
         : '';
     const markColor = lookalike?.color || color;
     const coloredMark = key === 'cabinets' || key === 'building';
+
+    if (pip) {
+        return {
+            kind: 'fiber_point',
+            fiberKey: key,
+            protectInPlace: true,
+            glyph: protectInPlaceOutlineKind(key),
+            fillColor: null,
+            strokeColor: UDOT_PIP_COLOR,
+            radius: key === 'cabinets' ? 5.4 : (key === 'boxes' ? 4.8 : 4.1),
+            rotation: Number(props[UDOT_FIBER_ROTATION_FIELD]) || 0,
+            boxLabel: null,
+            dash: [...UDOT_PIP_PDF_DASH],
+            labelField: null
+        };
+    }
 
     return {
         kind: 'fiber_point',

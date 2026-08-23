@@ -507,4 +507,41 @@ describe('UDOT Fiber symbology', () => {
         const line = specs.find((spec) => spec.id === 'svc-lyr-stripped-line');
         expect(line.paint['line-dasharray']).toEqual([3, 2]);
     });
+
+    it('paints existing protect in place as dashed black and hides class color', () => {
+        const lineSpecs = buildUdotFiberLayerSpecs({
+            datasetId: 'pip-fiber',
+            sourceId: 'src',
+            layerStyle: buildUdotFiberLayerStyle('fiber'),
+            opacity: 1,
+            fiberKey: 'fiber',
+            minzoom: 14
+        });
+        const line = lineSpecs.find((spec) => spec.id === 'svc-lyr-pip-fiber-line');
+        const pip = lineSpecs.find((spec) => spec.id === 'svc-lyr-pip-fiber-pip');
+        expect(JSON.stringify(line.filter)).toContain('_udotProtectInPlace');
+        expect(pip.type).toBe('line');
+        expect(pip.paint['line-color']).toBe('#000000');
+        expect(pip.paint['line-dasharray']).toEqual([3, 2]);
+        expect(pip.layout['line-cap']).toBe('butt');
+        expect(JSON.stringify(pip.filter)).toContain('_udotProtectInPlace');
+
+        const pointSpecs = buildUdotFiberLayerSpecs({
+            datasetId: 'pip-boxes',
+            sourceId: 'src',
+            layerStyle: buildUdotFiberLayerStyle('boxes'),
+            opacity: 1,
+            fiberKey: 'boxes',
+            minzoom: 14
+        });
+        const glyph = pointSpecs.find((spec) => spec.id.endsWith('-glyph'));
+        const labels = pointSpecs.find((spec) => spec.id === 'svc-pip-boxes-labels');
+        const pipMark = pointSpecs.find((spec) => spec.id.endsWith('-pip-mark'));
+        const hit = pointSpecs.find((spec) => spec.id.endsWith('-hit'));
+        expect(JSON.stringify(glyph.filter)).toContain('_udotProtectInPlace');
+        expect(JSON.stringify(labels.filter)).toContain('_udotProtectInPlace');
+        expect(JSON.stringify(hit.filter)).not.toContain('_udotProtectInPlace');
+        expect(pipMark.type).toBe('symbol');
+        expect(pipMark.layout['icon-image'][0]).toBe('coalesce');
+    });
 });

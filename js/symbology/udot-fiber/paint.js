@@ -14,11 +14,22 @@ import {
     UDOT_FIBER_GROUND_LOCK_ZOOM,
     UDOT_FIBER_ICON_PX,
     UDOT_FIBER_ICON_ZOOM_PX,
+    udotFiberIconSpritePx,
     buildUdotFiberCircleRadiusExpression,
     buildUdotFiberHitRadiusExpression,
     buildUdotFiberIconSizeExpression,
     buildUdotFiberLineWidthExpression
 } from './zoom-scale.js';
+import {
+    UDOT_PIP_COLOR,
+    UDOT_PIP_GLYPH_PROP,
+    UDOT_PIP_LINE_DASH,
+    excludeProtectInPlaceFilter,
+    includeProtectInPlaceFilter,
+    preloadProtectInPlaceImages,
+    protectInPlaceImageId,
+    protectInPlaceOutlineKind
+} from './protect-in-place.js';
 
 /** Regular is on the demotiles glyph server; Bold often fails silent and hides labels. */
 export const UDOT_FIBER_LABEL_FONT = [
@@ -484,6 +495,84 @@ export function buildUdotFiberLayerSpecs({
         minz
     }));
 
+    const painted = specs.map((spec) => {
+        if (String(spec.id || '').endsWith('-hit')) return spec;
+        return { ...spec, filter: excludeProtectInPlaceFilter(spec.filter) };
+    });
+    painted.push(...buildProtectInPlaceSpecs({
+        datasetId,
+        sourceId,
+        layerStyle,
+        fiberKey,
+        zoomOpt,
+        opacity
+    }));
+    return painted;
+}
+
+/**
+ * Dashed black replacement paint for existing protect in place features.
+ * @param {object} p
+ * @returns {object[]}
+ */
+function buildProtectInPlaceSpecs({
+    datasetId,
+    sourceId,
+    layerStyle,
+    fiberKey,
+    zoomOpt,
+    opacity = 1
+} = {}) {
+    const geometry = resolveUdotFiberPaintGeometry(layerStyle, fiberKey);
+    const specs = [];
+    const isLine = geometry === 'line' || fiberKey === 'fiber' || fiberKey === 'conduit';
+    const isPoint = geometry === 'point';
+
+    if (isLine) {
+        const baseWidth = LINE_CORE_WIDTH[fiberKey]
+            ?? 1.2;
+        specs.push({
+            id: `svc-lyr-${datasetId}-pip`,
+            type: 'line',
+            source: sourceId,
+            ...zoomOpt,
+            filter: includeProtectInPlaceFilter(
+                ['match', ['geometry-type'], ['LineString', 'MultiLineString', 'Polygon', 'MultiPolygon'], true, false]
+            ),
+            layout: { 'line-cap': 'butt', 'line-join': 'round' },
+            paint: {
+                'line-color': UDOT_PIP_COLOR,
+                'line-width': buildUdotFiberLineWidthExpression(baseWidth, fiberKey),
+                'line-opacity': opacity,
+                'line-dasharray': [...UDOT_PIP_LINE_DASH]
+            }
+        });
+    }
+
+    if (isPoint) {
+        const kind = protectInPlaceOutlineKind(fiberKey);
+        const fallbackId = protectInPlaceImageId(kind, udotFiberIconSpritePx(fiberKey));
+        specs.push({
+            id: `svc-lyr-${datasetId}-pip-mark`,
+            type: 'symbol',
+            source: sourceId,
+            ...zoomOpt,
+            filter: includeProtectInPlaceFilter(
+                ['match', ['geometry-type'], ['Point', 'MultiPoint'], true, false]
+            ),
+            layout: {
+                'icon-image': ['coalesce', ['get', UDOT_PIP_GLYPH_PROP], fallbackId],
+                'icon-size': buildUdotFiberIconSizeExpression(fiberKey),
+                'icon-allow-overlap': true,
+                'icon-ignore-placement': true,
+                'icon-padding': 0,
+                'icon-pitch-alignment': 'viewport',
+                'icon-rotation-alignment': 'map',
+                'icon-rotate': buildUdotFiberIconRotateExpression()
+            }
+        });
+    }
+
     return specs;
 }
 
@@ -521,6 +610,7 @@ function addSpecsSafely(map, specs) {
  */
 export function addUdotFiberVectorLayers(map, datasetId, sourceId, layerStyle, opacity, opts = {}) {
     preloadUdotFiberGlyphs(map);
+    preloadProtectInPlaceImages(map);
     let specs = [];
     try {
         specs = buildUdotFiberLayerSpecs({

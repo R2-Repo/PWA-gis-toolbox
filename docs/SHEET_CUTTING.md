@@ -171,6 +171,8 @@ Live **UDOT Fiber** checked under **Include on PDF sheets** is drawn on PDFs fro
 
 The copy uses the same CAD paint as live Fiber (class colors, sheath offsets, glyphs, box labels). Nothing is written back to ArcGIS. If you skip convert, PDFs still use live Fiber only.
 
+**Existing protect in place** restyles operational Fiber features as a **dashed black** line (or a dashed black outline around points/boxes) with **no fill and no class color**. Right-click a feature on any Fiber operational layer to mark or restore it. While Sheet Cutter is open, Shift+drag box-select also offers **Existing protect in place** and **Restore original style** for the selected features. The flag stays on the operational copy (`_udotProtectInPlace`) for map paint and sheet PDFs. Callout right-click actions stay available independently.
+
 ### Detail boxes / DETAILS sheets
 
 After sheets are generated, **Draw detail box** lets you drag a north-up rectangle that overlaps a gold sheet polygon. Boxes are labeled **DETAIL A, B, C…**, stored on the sheet session (`insetViews`), and shown on the map in blue. Regenerating corridor sheets clears the boxes.
@@ -276,4 +278,6 @@ If a future change makes right-side or skewed labels drift again, check the jsPD
 | `js/widgets/sheet-cutting/sheet-matchline-labels.js` | Geographic SEE SHEET point features (cap midpoint + outward probe) |
 | `js/widgets/sheet-cutting/sheet-pdf-placement.js` | Shared map-pixel → PDF-point placement |
 | `js/widgets/sheet-cutting/sheet-pdf-orientation.js` | PDF export bearing + continuation labels |
+| `js/widgets/sheet-cutting/protect-in-place.js` | Existing protect in place (operational Fiber) |
+| `js/symbology/udot-fiber/protect-in-place.js` | Dashed-black PIP paint helpers |
 | `js/export/folder-export.js` | File System Access API folder writer |

@@ -4,6 +4,12 @@
 import { resolveLookalike } from './lookalikes.js';
 import { UDOT_BOX_IN_LABEL_PROP, UDOT_BOX_LABEL_FIELD } from './constants.js';
 import { UDOT_FIBER_POINT_LAYER_KEYS, udotFiberIconSpritePx } from './zoom-scale.js';
+import {
+    UDOT_PIP_GLYPH_PROP,
+    ensureProtectInPlaceImage,
+    isProtectInPlaceFeature,
+    protectInPlaceOutlineKind
+} from './protect-in-place.js';
 
 /** @typedef {'circle'|'ring'|'rect'|'square-x'|'bowtie'|'dashed-box'|'diamond'|'vee-circle'|'rounded-square'|'hex'|'building'} UdotGlyphKind */
 
@@ -317,14 +323,21 @@ export function decorateUdotFiberPointFeatures(layerKey, features, map, size) {
         : Math.max(UDOT_FIBER_GLYPH_PX, udotFiberIconSpritePx(layerKey));
     return features.map((feature) => {
         const hit = resolvePointGlyph(layerKey, feature.properties || {});
-        if (!hit) return feature;
-        const imageId = ensureUdotGlyphImage(map, hit.glyph, hit.color || '#ffffff', px);
-        const properties = {
-            ...feature.properties,
-            _udotGlyph: imageId,
-            _udotEsriWidth: px
-        };
-        if (layerKey === 'boxes' && hit.glyph === 'rect') {
+        const pip = isProtectInPlaceFeature(feature);
+        if (!hit && !pip) return feature;
+        const properties = { ...(feature.properties || {}) };
+        if (hit) {
+            properties._udotGlyph = ensureUdotGlyphImage(map, hit.glyph, hit.color || '#ffffff', px);
+            properties._udotEsriWidth = px;
+        }
+        if (pip) {
+            properties[UDOT_PIP_GLYPH_PROP] = ensureProtectInPlaceImage(
+                map,
+                protectInPlaceOutlineKind(layerKey),
+                px
+            );
+        }
+        if (!pip && layerKey === 'boxes' && hit?.glyph === 'rect') {
             const raw = properties[UDOT_BOX_LABEL_FIELD];
             if (raw != null && String(raw).trim() !== '') {
                 properties[UDOT_BOX_IN_LABEL_PROP] = 1;

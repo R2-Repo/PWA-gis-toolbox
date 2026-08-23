@@ -122,6 +122,11 @@ import { getPlatformBundle } from '../platform/create-platform.js';
 import { openImportStationTable } from '../widgets/project-stationing/controller.js';
 import { isProjectStationingCenterline } from '../widgets/project-stationing/route-profile.js';
 import { getPlanSetCalloutMenuItems } from '../widgets/plan-set-callouts/context-menu-bridge.js';
+import {
+    getProtectInPlaceContextMenuItems,
+    getProtectInPlaceSelectionItems,
+    isSheetCuttingMode
+} from '../widgets/sheet-cutting/protect-in-place.js';
 import { createWorkflowController } from '../workflow/workflow-controller.js';
 import {
     getLayerGroups,
@@ -573,10 +578,10 @@ export function buildMapContextMenuItems(payload) {
     const items = [];
 
     const calloutItems = getPlanSetCalloutMenuItems(payload);
-    if (calloutItems.length) {
-        items.push(...calloutItems);
-        items.push({ sep: true });
-    }
+    const pipItems = getProtectInPlaceContextMenuItems({ layer, feature, featureIndex });
+    if (calloutItems.length) items.push(...calloutItems);
+    if (pipItems.length) items.push(...pipItems);
+    if (calloutItems.length || pipItems.length) items.push({ sep: true });
 
     if (feature && layer) {
         items.push({
@@ -2979,7 +2984,12 @@ export function buildSelectionActionMenuItems(payload = {}) {
         onPlaceImportFence: (bbox) => {
             applyImportFenceFromBbox(bbox, { after: () => openImportFlow() });
         },
-        onClear: () => handlers.clear()
+        onClear: () => handlers.clear(),
+        extraItems: getProtectInPlaceSelectionItems({
+            layer,
+            count,
+            sheetCuttingOpen: isSheetCuttingMode()
+        })
     });
 }
 
