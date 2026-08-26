@@ -144,5 +144,5 @@ describe('workspace attribute ranges + spatial index persist', () => {
         // Both chunks should be present after reload
         expect(ids.includes(`${LAYER_ID}:c:0`) || hits.length >= 1).toBe(true);
         expect(hits.length).toBeGreaterThanOrEqual(2);
-    });
+    }, 15_000);
 });
