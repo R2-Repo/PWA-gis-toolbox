@@ -5,7 +5,9 @@ import {
     getBasemapCategory,
     getBasemapConfig,
     getCategoryDefaultKey,
-    isSatelliteBasemap
+    isCartoVectorBasemap,
+    isSatelliteBasemap,
+    usesCartoVector
 } from '../js/map/basemap-catalog.js';
 
 describe('basemap-catalog', () => {
@@ -35,10 +37,17 @@ describe('basemap-catalog', () => {
         expect(keys).toHaveLength(5);
     });
 
-    it('returns tile configs for known keys', () => {
-        expect(getBasemapConfig('voyager')?.tiles?.length).toBeGreaterThan(0);
-        expect(getBasemapConfig('satellite-labels')?.overlayTiles?.length).toBeGreaterThan(0);
+    it('returns vector configs for map keys and raster tiles for satellite', () => {
+        expect(getBasemapConfig('voyager')?.kind).toBe('carto-vector');
+        expect(getBasemapConfig('voyager')?.styleUrl).toContain('voyager-gl-style');
+        expect(getBasemapConfig('satellite')?.tiles?.length).toBeGreaterThan(0);
+        expect(getBasemapConfig('satellite-labels')?.kind).toBe('hybrid');
+        expect(getBasemapConfig('satellite-labels')?.overlayStyleUrl).toContain('voyager-gl-style');
+        expect(getBasemapConfig('satellite-labels')?.overlayTiles).toBeUndefined();
         expect(getBasemapConfig('missing')).toBeNull();
+        expect(isCartoVectorBasemap('voyager')).toBe(true);
+        expect(usesCartoVector('satellite-labels')).toBe(true);
+        expect(isCartoVectorBasemap('satellite')).toBe(false);
     });
 
     it('detects satellite-category basemaps', () => {

@@ -95,7 +95,7 @@ Full agent instructions: [AGENTS.md](../AGENTS.md)
 
 PWA hosting is **Cloudflare Pages**, not GitHub Pages. Repo helpers: [`wrangler.jsonc`](../wrangler.jsonc) (`pages_build_output_dir: ./dist`), [`public/_headers`](../public/_headers).
 
-**Cloudflare project settings (one-time):** production branch = `main`, build = `npm run build`, output = `dist`, env `NODE_VERSION=20`, plus `VITE_UGRC_API_KEY` for Production and Preview — see [`docs/UGRC.md`](UGRC.md).
+**Cloudflare project settings (one-time):** production branch = `main`, build = `npm run build`, output = `dist`, env `NODE_VERSION=20`, plus `VITE_UGRC_API_KEY` and `VITE_CARTO_API_KEY` for Production and Preview — see [`docs/UGRC.md`](UGRC.md) and [`docs/CARTO.md`](CARTO.md).
 
 ## Local setup
 
@@ -123,6 +123,7 @@ Platform contracts live in `js/platform/web/`. Widget controllers receive `ctx.p
 | [`docs/UDOT_FIBER_SYMBOLOGY.md`](UDOT_FIBER_SYMBOLOGY.md) | UDOT Fiber Bentley / glyph style pack. |
 | [`docs/LIVE_MAP_PRESETS.md`](LIVE_MAP_PRESETS.md) | Catalog authoring for Import → Live Layers. |
 | [`docs/LIVE_MAP_FEATURE_PLAN.md`](LIVE_MAP_FEATURE_PLAN.md) | App URL config, live/service layers, Live Map widget (Import entry). |
+| [`docs/CARTO.md`](CARTO.md) | CARTO vector basemaps and `VITE_CARTO_API_KEY`. |
 
 ## Optional: Cursor User Rules note
 

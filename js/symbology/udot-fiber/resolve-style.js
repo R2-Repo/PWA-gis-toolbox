@@ -179,7 +179,7 @@ export function buildUdotFiberLayerStyle(layerKey) {
             color: isBoxes ? '#111111' : buildLabelColorExpression(layerMeta),
             haloColor: '#ffffff',
             haloWidth: isBoxes ? 0 : (isConduit ? 4.6 : (isLine ? 4.2 : 0.95)),
-            font: ['Open Sans Regular', 'Arial Unicode MS Regular'],
+            font: ['Open Sans Regular', 'Noto Sans Regular'],
             allowOverlap: isConduit || isBoxes,
             ignorePlacement: isConduit || isBoxes
         };

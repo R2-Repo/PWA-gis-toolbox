@@ -133,7 +133,7 @@ export function buildAnnotationAnchorFeatures(features) {
 
 const ANNOTATION_SYMBOL_LAYOUT = {
     'text-field': ['get', 'text'],
-    'text-font': ['Open Sans Regular', 'Arial Unicode MS Regular'],
+    'text-font': ['Open Sans Regular', 'Noto Sans Regular'],
     'text-size': ['coalesce', ['get', 'fontSize'], DEFAULT_ANNOTATION_STYLE.fontSize],
     'text-anchor': ['coalesce', ['get', 'anchor'], DEFAULT_ANNOTATION_STYLE.anchor],
     'text-rotate': ['coalesce', ['get', 'rotation'], 0],

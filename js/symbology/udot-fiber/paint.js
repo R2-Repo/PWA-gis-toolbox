@@ -31,10 +31,10 @@ import {
     protectInPlaceOutlineKind
 } from './protect-in-place.js';
 
-/** Regular is on the demotiles glyph server; Bold often fails silent and hides labels. */
+/** Regular is on CARTO and demotiles glyph servers; Bold often fails silent and hides labels. */
 export const UDOT_FIBER_LABEL_FONT = [
     'Open Sans Regular',
-    'Arial Unicode MS Regular'
+    'Noto Sans Regular'
 ];
 
 const CASING_COLOR = '#0a0a0a';

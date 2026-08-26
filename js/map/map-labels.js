@@ -24,6 +24,9 @@ export const DEFAULT_LAYER_LABELS = {
     ignorePlacement: false
 };
 
+/** Fonts available on CARTO glyphs (and demotiles Open Sans). */
+export const APP_MAP_TEXT_FONTS = ['Open Sans Regular', 'Noto Sans Regular'];
+
 const DEFAULT_LABELS = {
     field: 'station',
     placement: 'point',
@@ -239,7 +242,7 @@ export function buildMapLabelLayerSpec(datasetId, sourceId, mapLabels, useCluste
 
     const layout = {
         'text-field': ['to-string', ['get', cfg.field]],
-        'text-font': ['Open Sans Regular', 'Arial Unicode MS Regular'],
+        'text-font': APP_MAP_TEXT_FONTS,
         'text-size': cfg.size,
         'text-offset': cfg.offset,
         'text-anchor': cfg.verticalStack ? (cfg.anchor || 'bottom') : (cfg.anchor || 'top'),
@@ -289,7 +292,7 @@ export function buildMapLineLabelLayerSpec(datasetId, sourceId, cfg) {
     const layout = {
         'symbol-placement': 'line',
         'text-field': ['to-string', ['get', cfg.field]],
-        'text-font': ['Open Sans Regular', 'Arial Unicode MS Regular'],
+        'text-font': APP_MAP_TEXT_FONTS,
         'text-size': cfg.size,
         'text-rotation-alignment': 'map',
         'text-pitch-alignment': 'viewport',

@@ -2,7 +2,10 @@ import { describe, expect, it } from 'vitest';
 import {
     DEFAULT_RASTER_TONE,
     getRasterPaintForTint,
-    normalizeBasemapTone
+    getVectorToneWashPaint,
+    normalizeBasemapTone,
+    scalePaintOpacity,
+    snapshotVectorOpacityPaint
 } from '../js/map/basemap-tone.js';
 
 describe('basemap-tone', () => {
@@ -30,5 +33,25 @@ describe('basemap-tone', () => {
 
     it('leaves overlay-safe default raster unchanged', () => {
         expect(getRasterPaintForTint('default')).toEqual(DEFAULT_RASTER_TONE);
+    });
+
+    it('builds a vector wash for lighter and darker tints', () => {
+        expect(getVectorToneWashPaint('default')['background-opacity']).toBe(0);
+        expect(getVectorToneWashPaint('light')).toEqual({
+            'background-color': '#ffffff',
+            'background-opacity': 0.22
+        });
+        expect(getVectorToneWashPaint('dark')['background-color']).toBe('#000000');
+        expect(normalizeBasemapTone({ tint: 'light' }).wash['background-opacity']).toBe(0.22);
+    });
+
+    it('scales numeric and expression opacities', () => {
+        expect(scalePaintOpacity(1, 0.5)).toBe(0.5);
+        expect(scalePaintOpacity(0.4, 0.5)).toBe(0.2);
+        expect(scalePaintOpacity(['get', 'opacity'], 0.5)).toEqual(['*', ['get', 'opacity'], 0.5]);
+        expect(snapshotVectorOpacityPaint({
+            type: 'fill',
+            paint: { 'fill-opacity': 0.8 }
+        })).toEqual({ 'fill-opacity': 0.8 });
     });
 });

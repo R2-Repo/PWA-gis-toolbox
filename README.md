@@ -38,4 +38,4 @@ PWA hosting is **Cloudflare Pages** (Git-connected), not GitHub Pages.
 - Push to **`staging`** → Cloudflare Pages preview
 - Push to **`main`** → Cloudflare Pages production
 
-Build config: [`wrangler.jsonc`](wrangler.jsonc) (`pages_build_output_dir: ./dist`). Cloudflare project settings: build command `npm run build`, output directory `dist`, `NODE_VERSION=20`, plus env vars such as `VITE_UGRC_API_KEY` — see [docs/UGRC.md](docs/UGRC.md).
+Build config: [`wrangler.jsonc`](wrangler.jsonc) (`pages_build_output_dir: ./dist`). Cloudflare project settings: build command `npm run build`, output directory `dist`, `NODE_VERSION=20`, plus env vars such as `VITE_UGRC_API_KEY` and `VITE_CARTO_API_KEY` — see [docs/UGRC.md](docs/UGRC.md) and [docs/CARTO.md](docs/CARTO.md).

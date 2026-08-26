@@ -1,13 +1,20 @@
 /** @typedef {'map' | 'satellite'} BasemapCategory */
 
+/** @typedef {'carto-vector' | 'raster' | 'hybrid'} BasemapKind */
+
 /**
  * @typedef {object} BasemapOption
  * @property {string} key
  * @property {string} name
- * @property {string[]} tiles
+ * @property {BasemapKind} kind
+ * @property {string} [styleUrl]
+ * @property {string} [overlayStyleUrl]
+ * @property {boolean} [overlayLabelsOnly]
+ * @property {string[]} [tiles]
  * @property {string} [attribution]
  * @property {number} [maxZoom] Native tile pyramid cap (source.maxzoom). The map overzooms past this.
- * @property {string[]} [overlayTiles]
+ * @property {string} [previewColor] First-frame backdrop before the vector style loads.
+ * @property {string} [sprite]
  */
 
 /**
@@ -18,12 +25,24 @@
  * @property {BasemapOption[]} options
  */
 
-const CARTO_SUBDOMAINS = ['a', 'b', 'c'];
+export const CARTO_VECTOR_STYLES = {
+    voyager: 'https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json',
+    darkMatter: 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json',
+    positron: 'https://basemaps.cartocdn.com/gl/positron-gl-style/style.json'
+};
 
-/** @param {string} path */
-function cartoRasterTiles(path) {
-    return CARTO_SUBDOMAINS.map((sub) => `https://${sub}.basemaps.cartocdn.com/rastertiles/${path}/{z}/{x}/{y}@2x.png`);
-}
+export const CARTO_SPRITE_URLS = {
+    voyager: 'https://tiles.basemaps.cartocdn.com/gl/voyager-gl-style/sprite',
+    darkMatter: 'https://tiles.basemaps.cartocdn.com/gl/dark-matter-gl-style/sprite',
+    positron: 'https://tiles.basemaps.cartocdn.com/gl/positron-gl-style/sprite'
+};
+
+const ESRI_IMAGERY_TILES = [
+    'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'
+];
+
+const CARTO_ATTRIBUTION = '&copy; <a href="https://openstreetmap.org/copyright">OSM</a> &copy; <a href="https://carto.com/">CARTO</a>';
+const ESRI_ATTRIBUTION = '&copy; Esri, Maxar, Earthstar Geographics';
 
 /** @type {Record<BasemapCategory, BasemapCategoryConfig>} */
 export const BASEMAP_CATEGORIES = {
@@ -35,23 +54,29 @@ export const BASEMAP_CATEGORIES = {
             {
                 key: 'voyager',
                 name: 'Voyager',
-                tiles: cartoRasterTiles('voyager'),
-                attribution: '&copy; <a href="https://openstreetmap.org/copyright">OSM</a> &copy; <a href="https://carto.com/">CARTO</a>',
-                maxZoom: 20
+                kind: 'carto-vector',
+                styleUrl: CARTO_VECTOR_STYLES.voyager,
+                sprite: CARTO_SPRITE_URLS.voyager,
+                attribution: CARTO_ATTRIBUTION,
+                previewColor: '#fbf8f3'
             },
             {
                 key: 'dark-matter',
                 name: 'Dark Matter',
-                tiles: cartoRasterTiles('dark_all'),
-                attribution: '&copy; <a href="https://openstreetmap.org/copyright">OSM</a> &copy; <a href="https://carto.com/">CARTO</a>',
-                maxZoom: 20
+                kind: 'carto-vector',
+                styleUrl: CARTO_VECTOR_STYLES.darkMatter,
+                sprite: CARTO_SPRITE_URLS.darkMatter,
+                attribution: CARTO_ATTRIBUTION,
+                previewColor: '#0e0e0e'
             },
             {
                 key: 'positron',
                 name: 'Positron',
-                tiles: cartoRasterTiles('light_all'),
-                attribution: '&copy; <a href="https://openstreetmap.org/copyright">OSM</a> &copy; <a href="https://carto.com/">CARTO</a>',
-                maxZoom: 20
+                kind: 'carto-vector',
+                styleUrl: CARTO_VECTOR_STYLES.positron,
+                sprite: CARTO_SPRITE_URLS.positron,
+                attribution: CARTO_ATTRIBUTION,
+                previewColor: '#fafafa'
             }
         ]
     },
@@ -63,16 +88,20 @@ export const BASEMAP_CATEGORIES = {
             {
                 key: 'satellite',
                 name: 'Satellite',
-                tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'],
-                attribution: '&copy; Esri, Maxar, Earthstar Geographics',
+                kind: 'raster',
+                tiles: ESRI_IMAGERY_TILES,
+                attribution: ESRI_ATTRIBUTION,
                 maxZoom: 19
             },
             {
                 key: 'satellite-labels',
                 name: 'Satellite + Labels',
-                tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'],
-                overlayTiles: cartoRasterTiles('voyager_only_labels'),
-                attribution: '&copy; Esri, Maxar, Earthstar Geographics &copy; <a href="https://openstreetmap.org/copyright">OSM</a> &copy; <a href="https://carto.com/">CARTO</a>',
+                kind: 'hybrid',
+                tiles: ESRI_IMAGERY_TILES,
+                overlayStyleUrl: CARTO_VECTOR_STYLES.voyager,
+                overlayLabelsOnly: true,
+                sprite: CARTO_SPRITE_URLS.voyager,
+                attribution: `${ESRI_ATTRIBUTION} ${CARTO_ATTRIBUTION}`,
                 maxZoom: 19
             }
         ]
@@ -125,6 +154,24 @@ export function getAllBasemapKeys() {
  */
 export function isSatelliteBasemap(key) {
     return getBasemapCategory(key) === 'satellite';
+}
+
+/**
+ * @param {string | BasemapOption | null | undefined} keyOrOption
+ * @returns {boolean}
+ */
+export function isCartoVectorBasemap(keyOrOption) {
+    const option = typeof keyOrOption === 'string' ? getBasemapConfig(keyOrOption) : keyOrOption;
+    return option?.kind === 'carto-vector';
+}
+
+/**
+ * @param {string | BasemapOption | null | undefined} keyOrOption
+ * @returns {boolean}
+ */
+export function usesCartoVector(keyOrOption) {
+    const option = typeof keyOrOption === 'string' ? getBasemapConfig(keyOrOption) : keyOrOption;
+    return option?.kind === 'carto-vector' || option?.kind === 'hybrid';
 }
 
 /**

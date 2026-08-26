@@ -1,6 +1,6 @@
 /**
  * Map manager — MapLibre GL JS integration
- * Keyless basemaps, layer rendering, popups, 3D terrain & buildings
+ * CARTO vector / Esri raster basemaps, layer rendering, popups, 3D terrain & buildings
  */
 import logger from '../core/logger.js';
 import bus from '../core/event-bus.js';
@@ -154,8 +154,24 @@ import {
     resolveFeaturesForZoom,
     startQueryResultPulse
 } from './query-result-overlay.js';
-import { getBasemapConfig, getBasemapRegistry, isSatelliteBasemap } from './basemap-catalog.js';
-import { DEFAULT_BASEMAP_TONE, DEFAULT_RASTER_TONE, normalizeBasemapTone } from './basemap-tone.js';
+import { getBasemapConfig, getBasemapRegistry, isCartoVectorBasemap, isSatelliteBasemap, usesCartoVector } from './basemap-catalog.js';
+import {
+    BASEMAP_TONE_WASH_LAYER_ID,
+    DEFAULT_BASEMAP_TONE,
+    DEFAULT_RASTER_TONE,
+    getVectorToneWashPaint,
+    normalizeBasemapTone,
+    scalePaintOpacity,
+    snapshotVectorOpacityPaint
+} from './basemap-tone.js';
+import { withCartoKey } from './carto-key.js';
+import {
+    CARTO_2D_BUILDING_LAYER_IDS,
+    CARTO_GLYPHS_URL,
+    isBasemapOwnedLayerId,
+    isCartoBasemapLayerId,
+    loadCartoVectorStyle
+} from './carto-style.js';
 
 const LAYER_COLORS = ['#2563eb', '#dc2626', '#16a34a', '#d97706', '#7c3aed', '#0891b2', '#be185d', '#65a30d'];
 
@@ -191,7 +207,7 @@ const HILLSHADE_PAINT = {
     'hillshade-highlight-color': '#FFFFFF',
     'hillshade-accent-color': '#6e6e6e'
 };
-const BASEMAP_LAYER_IDS = new Set(['basemap-backdrop', 'basemap-layer', 'basemap-overlay-layer']);
+const BASEMAP_LAYER_IDS = new Set(['basemap-backdrop', 'basemap-layer', 'basemap-overlay-layer', BASEMAP_TONE_WASH_LAYER_ID]);
 
 /**
  * Style layer maxzoom is exclusive (hidden at zoom >= maxzoom). Keep this above
@@ -250,6 +266,11 @@ class MapManager {
         this.clusterGroups = new Map();
         this.currentBasemap = 'voyager';
         this._basemapTone = { ...DEFAULT_BASEMAP_TONE };
+        this._basemapSwapGen = 0;
+        /** @type {Map<string, Record<string, number | object>>} */
+        this._cartoLayerPaintBase = new Map();
+        this._cartoGlyphsUrl = null;
+        this._cartoSpriteUrl = null;
         this.drawLayer = null;
         this.highlightLayer = null;
         this._highlightedInfo = null;
@@ -426,7 +447,10 @@ class MapManager {
             cancelPendingTileRequestsWhileZooming: false
         });
 
-        this.map.once('load', () => this._unlockBasemapLayerZoom());
+        this.map.once('load', () => {
+            this._unlockBasemapLayerZoom();
+            void this._ensureCartoBasemap(this.currentBasemap);
+        });
 
         // Disable right-click rotate and touch rotation (keeps zoom gestures)
         if (!mapInit?.enable3D) {
@@ -601,37 +625,47 @@ class MapManager {
         const sources = {};
         const layers = [];
         const tone = normalizeBasemapTone(this._basemapTone);
+        const backdropColor = isCartoVectorBasemap(bm) && bm.previewColor
+            ? bm.previewColor
+            : tone.backdrop;
+
+        layers.push({
+            id: 'basemap-backdrop',
+            type: 'background',
+            paint: { 'background-color': backdropColor }
+        });
 
         if (bm.tiles) {
-            layers.push({
-                id: 'basemap-backdrop',
-                type: 'background',
-                paint: { 'background-color': tone.backdrop }
-            });
-
-            sources['basemap'] = this._buildBasemapSourceSpec(bm);
+            sources.basemap = this._buildBasemapSourceSpec(bm);
             layers.push(this._buildBasemapRasterLayerSpec('basemap-layer', 'basemap'));
-
-            if (bm.overlayTiles) {
-                sources['basemap-overlay'] = this._buildBasemapOverlaySourceSpec(bm);
-                layers.push(this._buildBasemapRasterLayerSpec('basemap-overlay-layer', 'basemap-overlay', {
-                    applyTint: false
-                }));
-            }
         }
 
-        return {
+        const style = {
             version: 8,
             sources,
             layers,
-            glyphs: 'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf'
+            glyphs: withCartoKey(CARTO_GLYPHS_URL)
         };
+        if (bm.sprite) {
+            style.sprite = withCartoKey(bm.sprite);
+        }
+        return style;
+    }
+
+    _firstNonBasemapLayerId() {
+        const layers = this.map?.getStyle?.()?.layers || [];
+        for (const layer of layers) {
+            if (!isBasemapOwnedLayerId(layer.id) && !BASEMAP_LAYER_IDS.has(layer.id)) {
+                return layer.id;
+            }
+        }
+        return undefined;
     }
 
     _firstLayerIdNotIn(skipIds) {
         const layers = this.map?.getStyle?.()?.layers || [];
         for (const layer of layers) {
-            if (!skipIds.has(layer.id)) return layer.id;
+            if (!skipIds.has(layer.id) && !isBasemapOwnedLayerId(layer.id)) return layer.id;
         }
         return undefined;
     }
@@ -649,15 +683,6 @@ class MapManager {
             // Native tile cutoff only — MapLibre overzooms these past maxzoom.
             maxzoom: bm.maxZoom || 19,
             attribution: bm.attribution
-        };
-    }
-
-    _buildBasemapOverlaySourceSpec(bm) {
-        return {
-            type: 'raster',
-            tiles: bm.overlayTiles,
-            tileSize: 256,
-            maxzoom: 20
         };
     }
 
@@ -680,30 +705,147 @@ class MapManager {
         }
     }
 
-    _replaceBasemapSources(bm) {
-        const beforeId = this._firstLayerIdNotIn(BASEMAP_LAYER_IDS);
-
-        this._removeLayerAndSource('basemap-overlay-layer', 'basemap-overlay');
-        this._removeLayerAndSource('basemap-layer', 'basemap');
-
-        const insertBefore = beforeId && this.map.getLayer(beforeId) ? beforeId : undefined;
-        this.map.addSource('basemap', this._buildBasemapSourceSpec(bm));
-        this.map.addLayer(this._buildBasemapRasterLayerSpec('basemap-layer', 'basemap'), insertBefore);
-
-        if (bm.overlayTiles) {
-            this.map.addSource('basemap-overlay', this._buildBasemapOverlaySourceSpec(bm));
-            this.map.addLayer(
-                this._buildBasemapRasterLayerSpec('basemap-overlay-layer', 'basemap-overlay', {
-                    applyTint: false
-                }),
-                insertBefore
-            );
+    _hasBasemapVisuals(key) {
+        const bm = getBasemapConfig(key);
+        if (!bm || !this.map) return false;
+        if (isCartoVectorBasemap(bm) || usesCartoVector(bm)) {
+            const layers = this.map.getStyle?.()?.layers || [];
+            return layers.some((layer) => isCartoBasemapLayerId(layer.id));
         }
-
-        this._unlockBasemapLayerZoom();
+        return Boolean(this.map.getLayer?.('basemap-layer'));
     }
 
-    _withTerrainPaused(fn) {
+    _removeBasemapPayload() {
+        const style = this.map.getStyle?.() || {};
+        const layers = [...(style.layers || [])];
+        for (let i = layers.length - 1; i >= 0; i--) {
+            const id = layers[i].id;
+            if (id === 'basemap-backdrop') continue;
+            if (isBasemapOwnedLayerId(id) || BASEMAP_LAYER_IDS.has(id)) {
+                if (this.map.getLayer(id)) this.map.removeLayer(id);
+            }
+        }
+        for (const sourceId of Object.keys(style.sources || {})) {
+            if (sourceId === 'basemap' || sourceId === 'basemap-overlay' || isCartoBasemapLayerId(sourceId)) {
+                if (this.map.getSource(sourceId)) this.map.removeSource(sourceId);
+            }
+        }
+        this._cartoLayerPaintBase.clear();
+    }
+
+    _basemapInsertBeforeId() {
+        const beforeId = this._firstNonBasemapLayerId();
+        return beforeId && this.map.getLayer(beforeId) ? beforeId : undefined;
+    }
+
+    _applyCartoGlyphsAndSprite(prepared, bm) {
+        const glyphs = prepared?.glyphs || withCartoKey(CARTO_GLYPHS_URL);
+        const sprite = prepared?.sprite || (bm.sprite ? withCartoKey(bm.sprite) : null);
+        if (glyphs && glyphs !== this._cartoGlyphsUrl && typeof this.map.setGlyphs === 'function') {
+            this.map.setGlyphs(glyphs);
+            this._cartoGlyphsUrl = glyphs;
+        }
+        if (sprite && sprite !== this._cartoSpriteUrl && typeof this.map.setSprite === 'function') {
+            this.map.setSprite(sprite);
+            this._cartoSpriteUrl = sprite;
+        }
+    }
+
+    _injectCartoStyle(prepared, bm) {
+        const insertBefore = this._basemapInsertBeforeId();
+        let attributed = false;
+        for (const [sourceId, spec] of Object.entries(prepared.sources || {})) {
+            if (this.map.getSource(sourceId)) continue;
+            const next = { ...spec };
+            if (!attributed && bm.attribution && !next.attribution) {
+                next.attribution = bm.attribution;
+                attributed = true;
+            }
+            this.map.addSource(sourceId, next);
+        }
+        for (const layer of prepared.layers || []) {
+            if (this.map.getLayer(layer.id)) continue;
+            this._cartoLayerPaintBase.set(layer.id, snapshotVectorOpacityPaint(layer));
+            this.map.addLayer(layer, insertBefore);
+        }
+        this._applyCartoGlyphsAndSprite(prepared, bm);
+        if (prepared.backgroundColor && isCartoVectorBasemap(bm) && this.map.getLayer('basemap-backdrop')) {
+            const tone = this.getBasemapTone();
+            if (tone.tint === 'default') {
+                this.map.setPaintProperty('basemap-backdrop', 'background-color', prepared.backgroundColor);
+            }
+        }
+    }
+
+    _ensureToneWashLayer(bm) {
+        if (!isCartoVectorBasemap(bm)) {
+            if (this.map.getLayer(BASEMAP_TONE_WASH_LAYER_ID)) {
+                this.map.removeLayer(BASEMAP_TONE_WASH_LAYER_ID);
+            }
+            return;
+        }
+        const insertBefore = this._basemapInsertBeforeId();
+        if (!this.map.getLayer(BASEMAP_TONE_WASH_LAYER_ID)) {
+            this.map.addLayer({
+                id: BASEMAP_TONE_WASH_LAYER_ID,
+                type: 'background',
+                paint: getVectorToneWashPaint(this.getBasemapTone().tint)
+            }, insertBefore);
+        }
+    }
+
+    _syncCartoBuildingsFor3D() {
+        const hide = this._3dEnabled === true;
+        for (const layerId of CARTO_2D_BUILDING_LAYER_IDS) {
+            if (!this.map.getLayer(layerId)) continue;
+            this.map.setLayoutProperty?.(layerId, 'visibility', hide ? 'none' : 'visible');
+        }
+    }
+
+    async _replaceBasemap(bm) {
+        const gen = ++this._basemapSwapGen;
+        this._removeBasemapPayload();
+
+        const insertBefore = this._basemapInsertBeforeId();
+        if (bm.tiles) {
+            this.map.addSource('basemap', this._buildBasemapSourceSpec(bm));
+            this.map.addLayer(this._buildBasemapRasterLayerSpec('basemap-layer', 'basemap'), insertBefore);
+        }
+
+        if (usesCartoVector(bm)) {
+            const styleUrl = bm.styleUrl || bm.overlayStyleUrl;
+            const prepared = await loadCartoVectorStyle(styleUrl, {
+                labelsOnly: bm.overlayLabelsOnly === true
+            });
+            if (gen !== this._basemapSwapGen) return;
+            this._injectCartoStyle(prepared, bm);
+        }
+
+        if (gen !== this._basemapSwapGen) return;
+        this._ensureToneWashLayer(bm);
+        this._unlockBasemapLayerZoom();
+        this._syncCartoBuildingsFor3D();
+    }
+
+    async _ensureCartoBasemap(key) {
+        const bm = getBasemapConfig(key);
+        if (!bm || !usesCartoVector(bm) || !this.map) return;
+        if (this._hasBasemapVisuals(key)) {
+            this._ensureToneWashLayer(bm);
+            this._applyBasemapToneToMap();
+            this._syncCartoBuildingsFor3D();
+            return;
+        }
+        try {
+            await this._replaceBasemap(bm);
+            this._applyBasemapToneToMap();
+            this._syncBasemapToneDom();
+        } catch (err) {
+            logger.warn('Map', 'CARTO vector basemap failed to load', { key, message: err?.message });
+        }
+    }
+
+    async _withTerrainPaused(fn) {
         const wasOn = this._isMapTerrainActive();
         if (wasOn) {
             this._applyCamera({}, { animate: false });
@@ -711,7 +853,7 @@ class MapManager {
             this._terrainEnabled = false;
         }
         try {
-            fn();
+            return await fn();
         } finally {
             if (wasOn && this._3dEnabled) {
                 this._ensureTerrainSource();
@@ -720,26 +862,26 @@ class MapManager {
         }
     }
 
-    setBasemap(key) {
+    async setBasemap(key) {
         const bm = getBasemapConfig(key);
         if (!bm) {
             logger.warn('Map', 'Unknown basemap key', { key });
             return;
         }
         if (!this.map?.getStyle?.()) return;
-        if (key === this.currentBasemap && this.map.getLayer?.('basemap-layer')) {
+        if (key === this.currentBasemap && this._hasBasemapVisuals(key)) {
             return;
         }
 
-        const swap = () => this._replaceBasemapSources(bm);
+        const swap = () => this._replaceBasemap(bm);
         try {
-            swap();
+            await swap();
         } catch (err) {
             logger.warn('Map', 'In-place basemap swap failed, retrying with terrain paused', {
                 message: err?.message
             });
             try {
-                this._withTerrainPaused(swap);
+                await this._withTerrainPaused(swap);
             } catch (retryErr) {
                 logger.warn('Map', 'Basemap swap failed', { message: retryErr?.message });
                 return;
@@ -785,12 +927,30 @@ class MapManager {
         }
     }
 
+    _applyVectorBasemapTone(tone) {
+        for (const [layerId, basePaint] of this._cartoLayerPaintBase) {
+            if (!this.map.getLayer(layerId)) continue;
+            for (const [prop, value] of Object.entries(basePaint)) {
+                this.map.setPaintProperty(layerId, prop, scalePaintOpacity(value, tone.opacity));
+            }
+        }
+        if (this.map.getLayer(BASEMAP_TONE_WASH_LAYER_ID)) {
+            const wash = tone.wash || getVectorToneWashPaint(tone.tint);
+            this.map.setPaintProperty(BASEMAP_TONE_WASH_LAYER_ID, 'background-color', wash['background-color']);
+            this.map.setPaintProperty(BASEMAP_TONE_WASH_LAYER_ID, 'background-opacity', wash['background-opacity']);
+        }
+    }
+
     _applyBasemapToneToMap(tone = this.getBasemapTone()) {
         const map = this.map;
         if (!map?.getStyle?.()) return;
         try {
             if (map.getLayer('basemap-backdrop')) {
-                map.setPaintProperty('basemap-backdrop', 'background-color', tone.backdrop);
+                const bm = getBasemapConfig(this.currentBasemap);
+                const backdrop = isCartoVectorBasemap(bm) && tone.tint === 'default' && bm.previewColor
+                    ? bm.previewColor
+                    : tone.backdrop;
+                map.setPaintProperty('basemap-backdrop', 'background-color', backdrop);
             }
             this._setBasemapRasterPaint('basemap-layer', {
                 opacity: tone.opacity,
@@ -800,6 +960,7 @@ class MapManager {
                 opacity: tone.opacity,
                 raster: DEFAULT_RASTER_TONE
             });
+            this._applyVectorBasemapTone(tone);
         } catch (err) {
             logger.warn('Map', 'Failed to apply basemap tone', { message: err?.message });
         }
@@ -3104,6 +3265,7 @@ class MapManager {
         this._removeBuildingsLayer();
         if (this.map.getSource(HILLSHADE_SOURCE_ID)) this.map.removeSource(HILLSHADE_SOURCE_ID);
         if (this.map.getSource(TERRAIN_SOURCE_ID)) this.map.removeSource(TERRAIN_SOURCE_ID);
+        this._syncCartoBuildingsFor3D();
     }
 
     _ensureTerrainSource() {
@@ -3137,7 +3299,7 @@ class MapManager {
     _firstHillshadeInsertBeforeId() {
         const layers = this.map.getStyle()?.layers || [];
         for (const layer of layers) {
-            if (!layer.id.startsWith('basemap') && layer.id !== 'hillshade' && layer.id !== 'sky' && layer.id !== '3d-buildings') {
+            if (!isBasemapOwnedLayerId(layer.id) && !layer.id.startsWith('basemap') && layer.id !== 'hillshade' && layer.id !== 'sky' && layer.id !== '3d-buildings') {
                 return layer.id;
             }
         }
@@ -3260,6 +3422,7 @@ class MapManager {
         this._syncHillshadeForBasemap(this.currentBasemap);
         this._ensureSkyLayer();
         this._addBuildingsLayer();
+        this._syncCartoBuildingsFor3D();
     }
 
     enable3D(options = {}) {

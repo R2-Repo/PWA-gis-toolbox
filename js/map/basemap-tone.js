@@ -64,6 +64,61 @@ export function normalizeBasemapTone(input = {}) {
         tint,
         opacity,
         backdrop: getBackdropForTint(tint),
-        raster: getRasterPaintForTint(tint)
+        raster: getRasterPaintForTint(tint),
+        wash: getVectorToneWashPaint(tint)
     };
+}
+
+export const BASEMAP_TONE_WASH_LAYER_ID = 'basemap-tone-wash';
+
+export const VECTOR_OPACITY_PAINT_KEYS = {
+    background: ['background-opacity'],
+    fill: ['fill-opacity'],
+    line: ['line-opacity'],
+    symbol: ['text-opacity', 'icon-opacity'],
+    circle: ['circle-opacity', 'circle-stroke-opacity'],
+    heatmap: ['heatmap-opacity'],
+    'fill-extrusion': ['fill-extrusion-opacity'],
+    raster: ['raster-opacity']
+};
+
+/**
+ * Whole-tile wash for vector styles (closest match to raster brightness).
+ * @param {string} tint
+ * @returns {{ 'background-color': string, 'background-opacity': number }}
+ */
+export function getVectorToneWashPaint(tint) {
+    if (tint === 'light') {
+        return { 'background-color': '#ffffff', 'background-opacity': 0.22 };
+    }
+    if (tint === 'dark') {
+        return { 'background-color': '#000000', 'background-opacity': 0.32 };
+    }
+    return { 'background-color': '#ffffff', 'background-opacity': 0 };
+}
+
+/**
+ * @param {number | object | undefined | null} baseValue
+ * @param {number} opacity
+ * @returns {number | object}
+ */
+export function scalePaintOpacity(baseValue, opacity) {
+    const factor = Number.isFinite(opacity) ? opacity : 1;
+    if (baseValue == null) return factor;
+    if (typeof baseValue === 'number') return baseValue * factor;
+    return ['*', baseValue, factor];
+}
+
+/**
+ * @param {object} layer
+ * @returns {Record<string, number | object>}
+ */
+export function snapshotVectorOpacityPaint(layer) {
+    const keys = VECTOR_OPACITY_PAINT_KEYS[layer?.type] || [];
+    /** @type {Record<string, number | object>} */
+    const snapshot = {};
+    for (const key of keys) {
+        snapshot[key] = layer.paint?.[key] ?? 1;
+    }
+    return snapshot;
 }

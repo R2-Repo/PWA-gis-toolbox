@@ -102,7 +102,7 @@ function installInsetPreview(mapService, collection) {
         filter: ['==', ['get', 'feature_type'], 'inset_label'],
         layout: {
             'text-field': ['to-string', ['coalesce', ['get', 'label_text'], ['get', 'inset_label']]],
-            'text-font': ['Open Sans Regular', 'Arial Unicode MS Regular'],
+            'text-font': ['Open Sans Regular', 'Noto Sans Regular'],
             'text-size': 12,
             'text-anchor': ['coalesce', ['get', 'label_anchor'], 'bottom'],
             'text-justify': 'center',
