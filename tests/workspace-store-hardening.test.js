@@ -4,8 +4,11 @@ import {
     createWorkspaceLayer,
     appendWorkspaceBatch,
     removeWorkspaceLayer,
+    deleteWorkspaceFeatures,
     detachFieldsForExport,
     getWorkspaceLayer,
+    getWorkspaceFeatureByIndex,
+    getWorkspaceFeatureRecord,
     flushSpatialIndexSave,
     markSpatialIndexDirty,
     _getSpatialIndexPersistState,
@@ -108,6 +111,22 @@ describe('workspace attribute ranges + spatial index persist', () => {
             expect(props.drop).toBeUndefined();
             expect(props.keep).toBe(`k${i}`);
         }
+    });
+
+    it('deletes selected features from chunks and attributes', async () => {
+        await createWorkspaceLayer({ id: LAYER_ID, name: 'T' });
+        await appendWorkspaceBatch(LAYER_ID, [pointFeature(0), pointFeature(1), pointFeature(2)], 0);
+        await flushSpatialIndexSave();
+
+        const { deletedCount } = await deleteWorkspaceFeatures(LAYER_ID, [1]);
+        expect(deletedCount).toBe(1);
+        expect(await getWorkspaceFeatureRecord(LAYER_ID, 1)).toBeFalsy();
+        expect(await getWorkspaceFeatureByIndex(LAYER_ID, 0)).toBeTruthy();
+        expect(await getWorkspaceFeatureByIndex(LAYER_ID, 1)).toBeFalsy();
+        expect(await getWorkspaceFeatureByIndex(LAYER_ID, 2)).toBeTruthy();
+
+        const layer = await getWorkspaceLayer(LAYER_ID);
+        expect(layer.chunkIds).toHaveLength(1);
     });
 
     it('refuses to recreate a deleted layer from a late batch', async () => {

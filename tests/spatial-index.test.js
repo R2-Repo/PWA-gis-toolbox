@@ -12,6 +12,17 @@ describe('GridSpatialIndex', () => {
         expect(idx.query([10, 10, 11, 11], 'a')).toHaveLength(0);
     });
 
+    it('remove drops one chunk and keeps siblings queryable', () => {
+        const idx = new GridSpatialIndex();
+        idx.insert('a:c:0', 'a', [-112, 40, -111, 41], 10);
+        idx.insert('a:c:1', 'a', [-110, 40, -109, 41], 8);
+
+        idx.remove('a:c:0');
+
+        expect(idx.query([-112, 40, -111, 41], 'a')).toHaveLength(0);
+        expect(idx.query([-110, 40, -109, 41], 'a')).toEqual(['a:c:1']);
+    });
+
     it('removeLayer keeps other layers queryable (regression)', () => {
         const idx = new GridSpatialIndex();
         idx.insert('a:c:0', 'a', [-112, 40, -111, 41], 10);

@@ -10,7 +10,7 @@ import {
     setActiveLayer, toggleLayerVisibility, toggleLayerLock, getMapLayerOrderIds,
     reorderLayer, reorderLayerToIndex, setUIState, toggleAGOLCompat
 } from '../core/state.js';
-import { mergeDatasets, getSelectedFields, tableToSpatial, createSpatialDataset, createTableDataset, analyzeSchema, analyzeTableSchema, isSpatialLayer, isServiceLayer, isWorkspaceLayer, isAnalyzableLayer, isLiveVectorLayer } from '../core/data-model.js';
+import { mergeDatasets, getSelectedFields, tableToSpatial, createSpatialDataset, createTableDataset, analyzeSchema, analyzeTableSchema, isSpatialLayer, isServiceLayer, isWorkspaceLayer, isAnalyzableLayer, isLiveVectorLayer, getLayerFeatureCount } from '../core/data-model.js';
 import { isLayerDisplayReady, layerCrsWarning, getLayerCrs, resolveReprojectFromCrs } from '../crs/layer-crs.js';
 import { importFile, importFiles } from '../import/importer.js';
 import { cancelWorkerParse } from '../import/import-parse-service.js';
@@ -20,7 +20,7 @@ import {
     getWorkingFeaturesFromLayer,
     getWorkingDatasetFromLayer
 } from './gis-layer-context.js';
-import { removeWorkspaceLayer, detachFieldsForExport } from '../workspace/workspace-store.js';
+import { removeWorkspaceLayer, detachFieldsForExport, deleteWorkspaceFeatures } from '../workspace/workspace-store.js';
 import { removeSourceFileIfUnreferenced } from '../workspace/source-file-store.js';
 import { commitWorkspaceFeatureEdit } from '../workspace/edit-session.js';
 import {
@@ -85,7 +85,7 @@ import { findFirstLineStringFeature, listLineStringFeatures } from './line-geojs
 
 import drawManager from '../map/draw-manager.js';
 import { initSelectionShortcuts } from '../map/selection-shortcuts.js';
-import { buildSelectionActionItems, createSelectionActionHandlers, attributeFieldsFromSelection } from './selection-actions.js';
+import { buildSelectionActionItems, createSelectionActionHandlers, attributeFieldsFromSelection, remainingFeaturesAfterSelection } from './selection-actions.js';
 import sessionStore from '../core/session-store.js';
 import { buildDatasetFromSavedLayer, buildDatasetFromWorkspaceRef, prepareLayersFromKitSection } from '../core/layer-restore.js';
 import {
@@ -2976,7 +2976,7 @@ export function buildSelectionActionMenuItems(payload = {}) {
             ? attributeFieldsFromSelection(layer, mapService.getSelectedIndices(layer.id) || [])
             : [],
         onInvert: () => handlers.invert(),
-        onDelete: () => { void handlers.delete(); },
+        onDelete: isLayerFeatureDeletable(layer) ? () => { void handlers.delete(); } : null,
         onNewLayer: () => handlers.newLayerFromSelected(),
         onClip: () => { void handlers.clipSelectedToBox(); },
         onBulkEdit: () => handlers.bulkEdit(),
@@ -3009,23 +3009,66 @@ export function invertSelection() {
     mapService.invertSelection(layer.id, layer.geojson);
 }
 
+function _decrementLayerFeatureCount(layer, deletedCount) {
+    if (!layer || !deletedCount) return;
+    const nextCount = Math.max(0, getLayerFeatureCount(layer) - deletedCount);
+    if (layer.schema) layer.schema = { ...layer.schema, featureCount: nextCount };
+    const full = Number(layer.source?.fullFeatureCount);
+    if (Number.isFinite(full) && full > 0) {
+        layer.source = { ...layer.source, fullFeatureCount: Math.max(0, full - deletedCount) };
+    }
+}
+
+async function _finishWorkspaceFeatureDelete(layer, deletedCount) {
+    _decrementLayerFeatureCount(layer, deletedCount);
+    mapService.clearSelection(layer.id);
+    mapService.clearSelectionBoxOutline?.();
+    if (typeof mapService.refreshWorkspaceLayerViewport === 'function') {
+        await mapService.refreshWorkspaceLayerViewport(layer.id);
+    }
+    mapService.refreshLayerData(layer);
+    bus.emit('layer:updated', layer);
+    bus.emit('layers:changed', getLayers());
+    refreshUI();
+}
+
 export async function deleteSelectedFeatures() {
     const layer = getActiveLayer();
-    if (!layer || layer.type !== 'spatial') return;
-    const indices = mapService.getSelectedIndices(layer.id);
+    if (!layer || !isLayerFeatureDeletable(layer)) {
+        return showToast('This layer does not support deleting features', 'warning');
+    }
+    const indices = mapService.getSelectedIndices(layer.id) || [];
     if (indices.length === 0) return showToast('No features selected', 'warning');
-    const ok = await confirm('Delete Features', `Delete ${indices.length} selected feature(s)? This can be undone.`);
+
+    const workspace = isWorkspaceLayer(layer);
+    const ok = await confirm(
+        'Delete Features',
+        workspace
+            ? `Delete ${indices.length} selected feature(s)?`
+            : `Delete ${indices.length} selected feature(s)? This can be undone.`
+    );
     if (!ok) return;
 
-    const selectedSet = new Set(indices);
-    const remaining = layer.geojson.features.filter((_, i) => !selectedSet.has(i));
-    saveSnapshot(layer.id, `Delete ${indices.length} feature(s)`, layer.geojson);
-    layer.geojson = { type: 'FeatureCollection', features: remaining };
+    if (workspace) {
+        const wsId = layer.workspaceLayerId || layer.id;
+        const { deletedCount } = await deleteWorkspaceFeatures(wsId, indices);
+        if (!deletedCount) return showToast('No features deleted', 'warning');
+        await _finishWorkspaceFeatureDelete(layer, deletedCount);
+        showToast(`Deleted ${deletedCount} feature(s)`, 'success');
+        return;
+    }
 
+    if (!layer.geojson?.features) return showToast('No features to delete', 'warning');
+    saveSnapshot(layer.id, `Delete ${indices.length} feature(s)`, layer.geojson);
+    layer.geojson = {
+        type: 'FeatureCollection',
+        features: remainingFeaturesAfterSelection(layer, indices)
+    };
     layer.schema = analyzeSchema(layer.geojson);
     bus.emit('layer:updated', layer);
     bus.emit('layers:changed', getLayers());
     mapService.clearSelection(layer.id);
+    mapService.clearSelectionBoxOutline?.();
     mapService.addLayer(layer, getLayers().indexOf(layer));
     refreshUI();
     showToast(`Deleted ${indices.length} feature(s)`, 'success');
@@ -3034,16 +3077,39 @@ export async function deleteSelectedFeatures() {
 export async function deleteFeatureAt(layerId, featureIndex) {
     const layer = getLayers().find((l) => l.id === layerId);
     if (!layer || !isLayerFeatureDeletable(layer)) return;
-    if (featureIndex == null || featureIndex < 0 || featureIndex >= (layer.geojson?.features?.length ?? 0)) {
+    const idx = Number(featureIndex);
+    if (!Number.isInteger(idx) || idx < 0) {
         return showToast('Feature not found', 'warning');
     }
 
-    const ok = await confirm('Delete Feature', 'Delete this feature? This can be undone.');
+    const workspace = isWorkspaceLayer(layer);
+    const ok = await confirm(
+        'Delete Feature',
+        workspace ? 'Delete this feature?' : 'Delete this feature? This can be undone.'
+    );
     if (!ok) return;
 
+    if (workspace) {
+        const wsId = layer.workspaceLayerId || layer.id;
+        const { deletedCount } = await deleteWorkspaceFeatures(wsId, [idx]);
+        if (!deletedCount) return showToast('Feature not found', 'warning');
+        await _finishWorkspaceFeatureDelete(layer, deletedCount);
+        showToast('Feature deleted', 'success');
+        return;
+    }
+
+    const features = layer.geojson?.features || [];
+    const exists = features.some((f, i) => {
+        const raw = Number(f.properties?._featureIndex);
+        return (Number.isFinite(raw) ? raw : i) === idx;
+    });
+    if (!exists) return showToast('Feature not found', 'warning');
+
     saveSnapshot(layer.id, 'Delete feature', layer.geojson);
-    const remaining = layer.geojson.features.filter((_, i) => i !== featureIndex);
-    layer.geojson = { type: 'FeatureCollection', features: remaining };
+    layer.geojson = {
+        type: 'FeatureCollection',
+        features: remainingFeaturesAfterSelection(layer, [idx])
+    };
     layer.schema = analyzeSchema(layer.geojson);
     bus.emit('layer:updated', layer);
     bus.emit('layers:changed', getLayers());

@@ -1617,7 +1617,7 @@ textarea { resize: vertical; min-height: 60px; }
     position: fixed;
     inset: 0;
     background: var(--bg-modal);
-    z-index: 1000;
+    z-index: 11000;
     display: flex;
     align-items: center;
     justify-content: center;

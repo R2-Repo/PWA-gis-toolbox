@@ -622,6 +622,129 @@ export async function removeWorkspaceLayer(layerId) {
 }
 
 /**
+ * Index stamped on a chunk feature (`_featureIndex`, else `id`, else start+offset).
+ * @param {object} feature
+ * @param {object} chunk
+ * @param {number} i
+ */
+function _chunkFeatureIndex(feature, chunk, i) {
+    const fromProp = Number(feature?.properties?._featureIndex);
+    if (Number.isInteger(fromProp) && fromProp >= 0) return fromProp;
+    const fromId = Number(feature?.id);
+    if (Number.isInteger(fromId) && fromId >= 0) return fromId;
+    return (chunk.startIndex ?? 0) + i;
+}
+
+/**
+ * Remove selected features from a workspace layer (chunks + attributes + cold).
+ * Feature indices are stable IDs; remaining indices are not compacted.
+ * @param {string} layerId
+ * @param {number[]} indices
+ * @returns {Promise<{ deletedCount: number }>}
+ */
+export async function deleteWorkspaceFeatures(layerId, indices = []) {
+    const wanted = new Set(
+        (indices || []).map(Number).filter((n) => Number.isInteger(n) && n >= 0)
+    );
+    if (!wanted.size) return { deletedCount: 0 };
+
+    const layer = await getWorkspaceLayer(layerId);
+    if (!layer) throw new Error('Workspace layer not found.');
+
+    const existingIndices = [];
+    const deletedLgids = [];
+    for (const featureIndex of wanted) {
+        const rec = await getWorkspaceFeatureRecord(layerId, featureIndex);
+        if (!rec) continue;
+        existingIndices.push(featureIndex);
+        if (rec.lgid) deletedLgids.push(rec.lgid);
+    }
+
+    const chunkIds = [...(layer.chunkIds || [])];
+    const remainingChunkIds = [];
+    const chunksToPut = [];
+    const chunksToDelete = [];
+
+    for (const chunkId of chunkIds) {
+        const chunk = await _idbGet(STORE_CHUNKS, chunkId);
+        if (!chunk?.geojson) {
+            remainingChunkIds.push(chunkId);
+            continue;
+        }
+        let fc;
+        try {
+            fc = typeof chunk.geojson === 'string' ? JSON.parse(chunk.geojson) : chunk.geojson;
+        } catch {
+            remainingChunkIds.push(chunkId);
+            continue;
+        }
+        const features = fc?.features || [];
+        const kept = [];
+        for (let i = 0; i < features.length; i++) {
+            const featureIndex = _chunkFeatureIndex(features[i], chunk, i);
+            if (!wanted.has(featureIndex)) kept.push(features[i]);
+        }
+        if (kept.length === features.length) {
+            remainingChunkIds.push(chunkId);
+            continue;
+        }
+        if (kept.length === 0) {
+            chunksToDelete.push(chunkId);
+            continue;
+        }
+        const bbox = bboxFromFeatures(kept);
+        chunksToPut.push({
+            ...chunk,
+            geojson: JSON.stringify({ type: 'FeatureCollection', features: kept }),
+            featureCount: kept.length,
+            bbox
+        });
+        remainingChunkIds.push(chunkId);
+    }
+
+    const idb = await openDB();
+    const storeNames = [STORE_LAYERS, STORE_CHUNKS, STORE_ATTRIBUTES];
+    if (idb.objectStoreNames.contains(STORE_COLD)) storeNames.push(STORE_COLD);
+    const tx = idb.transaction(storeNames, 'readwrite');
+    const chunkStore = tx.objectStore(STORE_CHUNKS);
+    for (const chunkId of chunksToDelete) chunkStore.delete(chunkId);
+    for (const chunk of chunksToPut) chunkStore.put(chunk);
+
+    const attrStore = tx.objectStore(STORE_ATTRIBUTES);
+    for (const featureIndex of existingIndices) {
+        attrStore.delete(_featureId(layerId, featureIndex));
+    }
+
+    if (idb.objectStoreNames.contains(STORE_COLD)) {
+        const coldStore = tx.objectStore(STORE_COLD);
+        for (const lgid of deletedLgids) {
+            coldStore.delete(_coldId(layerId, lgid));
+        }
+    }
+
+    const layerStore = tx.objectStore(STORE_LAYERS);
+    layer.chunkIds = remainingChunkIds;
+    if (!remainingChunkIds.length) layer.featureCount = 0;
+    layerStore.put(layer);
+
+    await new Promise((resolve, reject) => {
+        tx.oncomplete = resolve;
+        tx.onerror = () => reject(tx.error);
+    });
+
+    const idx = await _getSpatialIndex();
+    for (const chunkId of chunksToDelete) idx.remove(chunkId);
+    for (const chunk of chunksToPut) {
+        idx.remove(chunk.id);
+        idx.insert(chunk.id, layerId, chunk.bbox, chunk.featureCount);
+    }
+    markSpatialIndexDirty();
+    await flushSpatialIndexSave();
+
+    return { deletedCount: existingIndices.length };
+}
+
+/**
  * Replace hot properties for one feature (keeps lgid). Does not touch cold.
  * @param {string} layerId
  * @param {number} featureIndex
@@ -1495,6 +1618,7 @@ export default {
     iterateWorkspaceFeatures,
     loadAllWorkspaceFeatures,
     removeWorkspaceLayer,
+    deleteWorkspaceFeatures,
     updateWorkspaceFeatureAttributes,
     updateWorkspaceFeatureAttributesBatch,
     detachFieldsForExport,

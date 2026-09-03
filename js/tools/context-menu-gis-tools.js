@@ -62,8 +62,7 @@ export function isLayerEligibleForContextMenuTools(layer) {
  */
 export function isLayerFeatureDeletable(layer) {
     return !!layer
-        && layer.type === 'spatial'
-        && !isWorkspaceLayer(layer)
+        && (layer.type === 'spatial' || isWorkspaceLayer(layer))
         && !isCoverageRasterLayer(layer);
 }
 

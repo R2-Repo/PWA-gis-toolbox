@@ -73,6 +73,14 @@ export class GridSpatialIndex {
         return out;
     }
 
+    remove(chunkId) {
+        if (!this.chunks.has(chunkId)) return;
+        this.chunks.delete(chunkId);
+        for (const [key, ids] of this.cells) {
+            this.cells.set(key, ids.filter((id) => id !== chunkId));
+        }
+    }
+
     removeLayer(layerId) {
         for (const [id, rec] of this.chunks) {
             if (rec.layerId === layerId) this.chunks.delete(id);

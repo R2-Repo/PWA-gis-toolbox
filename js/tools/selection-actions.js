@@ -188,23 +188,23 @@ export function buildSelectionActionItems(deps) {
         if (Array.isArray(extraItems) && extraItems.length) {
             items.push(...extraItems);
         }
-        items.push(
-            {
-                label: 'Invert selection',
-                icon: '🔄',
-                action: () => onInvert?.()
-            },
-            {
+        items.push({
+            label: 'Invert selection',
+            icon: '🔄',
+            action: () => onInvert?.()
+        });
+        if (typeof onDelete === 'function') {
+            items.push({
                 label: 'Delete selected',
                 icon: '🗑',
-                action: () => onDelete?.()
-            },
-            {
-                label: 'New layer from selected',
-                icon: '📄',
-                action: () => onNewLayer?.()
-            }
-        );
+                action: () => onDelete()
+            });
+        }
+        items.push({
+            label: 'New layer from selected',
+            icon: '📄',
+            action: () => onNewLayer?.()
+        });
 
         if (layerHasLineGeometry(layer) && Array.isArray(bbox) && bbox.length >= 4) {
             items.push({

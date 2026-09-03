@@ -60,6 +60,20 @@ describe('selection-actions helpers', () => {
         expect(remaining.map((f) => f.properties.name)).toEqual(['b', '']);
     });
 
+    it('remainingFeaturesAfterSelection matches _featureIndex, not array position', () => {
+        const sparse = {
+            geojson: {
+                features: [
+                    { properties: { _featureIndex: 10, name: 'a' } },
+                    { properties: { _featureIndex: 20, name: 'b' } },
+                    { properties: { _featureIndex: 30, name: 'c' } }
+                ]
+            }
+        };
+        const remaining = remainingFeaturesAfterSelection(sparse, [20]);
+        expect(remaining.map((f) => f.properties.name)).toEqual(['a', 'c']);
+    });
+
     it('layerHasLineGeometry detects lines', () => {
         expect(layerHasLineGeometry(layer)).toBe(true);
         expect(layerHasLineGeometry({ schema: { geometryType: 'Point' }, geojson: { features: [] } })).toBe(false);
@@ -143,6 +157,16 @@ describe('selection-actions helpers', () => {
         expect(copyAttr.children.map((c) => c.label)).toEqual(['name', 'code']);
         const clear = items.find((i) => i.label === 'Clear selection');
         expect(clear.hint).toMatch(/Esc/i);
+    });
+
+    it('omits Delete selected when onDelete is not provided', () => {
+        const { items } = buildSelectionActionItems({
+            layer,
+            count: 1,
+            formats: [],
+            targetLayers: []
+        });
+        expect(items.some((i) => i.label === 'Delete selected')).toBe(false);
     });
 
     it('offers place import fence when the box has no selected features', () => {
