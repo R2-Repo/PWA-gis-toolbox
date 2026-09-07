@@ -9,6 +9,7 @@ import {
     isCoverageRasterLayer,
     stripCoverageRasterDataUrls
 } from './coverage-raster-layer.js';
+import { stripGeoreferenceSourceForPersist } from '../widgets/georeference-raster/georef-layer.js';
 
 export const PROJECT_KIT_FORMAT = 'gis-toolbox-kit';
 /** v2: streamed workspace packing + OPFS source sidecars (v1 kits still import). */
@@ -232,6 +233,11 @@ async function gatherLayerSection(
                     coverageRasterSidecar: true,
                     coverageRasters: stripCoverageRasterDataUrls(coverageRasters)
                 }
+            };
+        } else if (saved.source) {
+            saved = {
+                ...saved,
+                source: stripGeoreferenceSourceForPersist(saved.source)
             };
         }
         index.push(saved);

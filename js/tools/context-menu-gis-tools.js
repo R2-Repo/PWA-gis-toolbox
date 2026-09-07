@@ -4,6 +4,7 @@
 import { getEnabledMapGisTools } from './tool-catalog.js';
 import { isAnalyzableLayer, isWorkspaceLayer } from '../core/data-model.js';
 import { isCoverageRasterLayer } from '../core/coverage-raster-layer.js';
+import { isGeoreferencedImageLayer } from '../widgets/georeference-raster/georef-layer.js';
 
 /** @type {Record<string, string[]|null>} null = any geometry type */
 const TOOL_GEOM_TYPES = {
@@ -53,7 +54,8 @@ export function featureMatchesGeomTypes(feature, geomTypes) {
 export function isLayerEligibleForContextMenuTools(layer) {
     return !!layer
         && isAnalyzableLayer(layer)
-        && !isCoverageRasterLayer(layer);
+        && !isCoverageRasterLayer(layer)
+        && !isGeoreferencedImageLayer(layer);
 }
 
 /**
@@ -63,7 +65,8 @@ export function isLayerEligibleForContextMenuTools(layer) {
 export function isLayerFeatureDeletable(layer) {
     return !!layer
         && (layer.type === 'spatial' || isWorkspaceLayer(layer))
-        && !isCoverageRasterLayer(layer);
+        && !isCoverageRasterLayer(layer)
+        && !isGeoreferencedImageLayer(layer);
 }
 
 /**

@@ -57,6 +57,11 @@ describe('sheet PDF layer eligibility', () => {
             type: 'spatial',
             source: { format: 'cog', adapter: 'cog' }
         }).reasonKey).toBe('raster');
+        expect(classifySheetPdfLayer({
+            type: 'spatial',
+            source: { format: 'georeferenced-image', georeferenceType: 'image' },
+            geojson: { features: [{ geometry: { type: 'Polygon' } }] }
+        }).reasonKey).toBe('raster');
     });
 
     it('rejects stored or tiled layers with no loaded features', () => {

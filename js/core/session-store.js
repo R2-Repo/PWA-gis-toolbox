@@ -2,6 +2,7 @@
  * Session Store — Auto-save & restore via IndexedDB
  * Persists layers across browser crashes, tab closes, and refreshes
  */
+import { stripGeoreferenceSourceForPersist } from '../widgets/georeference-raster/georef-layer.js';
 
 const DB_NAME = 'gis-toolbox-sessions';
 const DB_VERSION = 1;
@@ -121,7 +122,7 @@ function _serializeLayer(layer) {
         id: layer.id,
         name: layer.name,
         type: layer.type,
-        source: layer.source,
+        source: stripGeoreferenceSourceForPersist(layer.source || {}),
         visible: layer.visible,
         created: layer.created
     };

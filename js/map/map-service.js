@@ -347,6 +347,18 @@ export function createMapService({ mapAdapter = mapManager } = {}) {
         addCoverageHeatmapLayer(dataset, colorIndex, options) {
             return mapAdapter.addCoverageHeatmapLayer?.(dataset, colorIndex, options);
         },
+        showGeoreferencePreview(options) {
+            return mapAdapter.showGeoreferencePreview?.(options);
+        },
+        updateGeoreferencePreview(options) {
+            return mapAdapter.updateGeoreferencePreview?.(options);
+        },
+        clearGeoreferencePreview() {
+            return mapAdapter.clearGeoreferencePreview?.();
+        },
+        addGeoreferencedImageLayer(dataset, colorIndex, options) {
+            return mapAdapter.addGeoreferencedImageLayer?.(dataset, colorIndex, options);
+        },
         showProjectStationingPreview(geojson, duration) {
             return mapAdapter.showProjectStationingPreview?.(geojson, duration);
         },

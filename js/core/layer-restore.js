@@ -8,7 +8,8 @@ import {
     importWorkspaceLayerFromParts
 } from '../workspace/workspace-store.js';
 import { isCoverageRasterLayer, rehydrateCoverageRasters } from './coverage-raster-layer.js';
-import { saveSourceFile } from '../workspace/source-file-store.js';
+import { getSourceFile, saveSourceFile } from '../workspace/source-file-store.js';
+import { isGeoreferencedImageLayer } from '../widgets/georeference-raster/georef-layer.js';
 
 /**
  * Build a live dataset object from a persisted layer record.
@@ -84,6 +85,23 @@ export async function buildDatasetFromSavedLayer(saved, payload = {}) {
             } else if (source.coverageRasters?.some((r) => r.dataUrl)) {
                 source = { ...source };
             }
+        }
+
+        if (isGeoreferencedImageLayer({ source })) {
+            const raster = { ...(source.georeferenceRaster || {}) };
+            if (!raster.url && source.opfsKey) {
+                const file = await getSourceFile(source.opfsKey);
+                if (file) {
+                    raster.url = URL.createObjectURL(file);
+                    raster.mime = file.type || raster.mime || 'image/png';
+                }
+            }
+            source = {
+                ...source,
+                format: 'georeferenced-image',
+                georeferenceType: 'image',
+                georeferenceRaster: raster
+            };
         }
 
         return {

@@ -2261,6 +2261,144 @@ textarea { resize: vertical; min-height: 60px; }
 @keyframes gis-widget-spin {
     to { transform: rotate(360deg); }
 }
+.georef-widget {
+    min-height: 0;
+}
+.georef-widget__instruction {
+    margin: 0 0 8px;
+    font-size: 12px;
+    color: var(--text);
+}
+.georef-widget__preview {
+    position: relative;
+    flex: 1 1 auto;
+    min-height: 220px;
+    height: 280px;
+    overflow: hidden;
+    background: #111318;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    touch-action: none;
+    user-select: none;
+}
+.georef-widget__preview--placing {
+    cursor: crosshair;
+}
+.georef-widget__preview-inner {
+    position: absolute;
+    top: 0;
+    left: 0;
+    transform-origin: 0 0;
+}
+.georef-widget__preview-inner img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+}
+.georef-widget__preview-empty {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    color: var(--text-muted);
+    font-size: 12px;
+}
+.georef-widget__marker {
+    position: absolute;
+    width: 20px;
+    height: 20px;
+    margin: -10px 0 0 -10px;
+    border-radius: 50%;
+    background: #2563eb;
+    color: #fff;
+    font-size: 10px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 0 0 2px #fff;
+    pointer-events: none;
+}
+.georef-widget__marker.is-pending {
+    background: #64748b;
+}
+.georef-widget__marker.is-review {
+    background: #d97706;
+}
+.georef-widget__marker.is-disabled {
+    opacity: 0.45;
+}
+.georef-widget__thumbs {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
+    gap: 8px;
+    max-height: 220px;
+    overflow: auto;
+}
+.georef-widget__thumb {
+    border: 1px solid var(--border);
+    background: var(--bg-surface);
+    border-radius: 6px;
+    padding: 4px;
+    cursor: pointer;
+    color: var(--text-muted);
+    font-size: 11px;
+}
+.georef-widget__thumb.is-active {
+    border-color: var(--primary);
+    color: var(--text);
+}
+.georef-widget__thumb img {
+    display: block;
+    width: 100%;
+    height: 72px;
+    object-fit: contain;
+    background: #fff;
+}
+.georef-widget__points {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-top: 8px;
+    max-height: 140px;
+    overflow: auto;
+}
+.georef-widget__point-row {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    font-size: 11px;
+}
+.georef-widget__point-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+.georef-widget__review {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 8px;
+}
+.georef-widget__status-line {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    font-size: 12px;
+}
+.georef-widget__opacity {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font-size: 12px;
+}
+.georef-widget__check {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+}
 .route-mp-widget__input {
     width: 100%;
     margin-top: 4px;

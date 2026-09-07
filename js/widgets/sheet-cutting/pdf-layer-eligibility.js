@@ -13,6 +13,7 @@ import {
 } from '../../core/data-model.js';
 import { isUdotFiberLiveDataset } from '../../symbology/udot-fiber/hover-fields.js';
 import { isSheetFiberSnapshotLayer } from './fiber-operational.js';
+import { isGeoreferencedImageLayer } from '../georeference-raster/georef-layer.js';
 
 export const SHEET_PDF_SKIP_REASON = {
     raster: 'Image layer — not redrawn as PDF linework',
@@ -31,6 +32,7 @@ const RASTER_SERVICE_KINDS = new Set(['wms', 'arcgis-mapserver']);
  */
 export function isSheetPdfRasterLayer(layer) {
     if (isCogLayer(layer)) return true;
+    if (isGeoreferencedImageLayer(layer)) return true;
     if (!isServiceLayer(layer)) return false;
     return RASTER_SERVICE_KINDS.has(layer.service?.kind);
 }

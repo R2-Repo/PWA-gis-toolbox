@@ -16,6 +16,10 @@ import { TILED_RENDER_THRESHOLD, TILE_SOURCE_MAX_ZOOM, TILE_SOURCE_LAYER } from 
 import { profileSuggestsTiledDisplay } from '../import/dataset-profile.js';
 import { beginActivity, endActivity } from '../ui/app-activity.js';
 import { getCoverageRasters, isCoverageRasterLayer } from '../core/coverage-raster-layer.js';
+import {
+    getGeoreferenceRaster,
+    isGeoreferencedImageLayer
+} from '../widgets/georeference-raster/georef-layer.js';
 import { MAP_CHUNK_BATCH_SIZE, RENDER_LIMITS } from './render-limits.js';
 import { buildViewportGeoJSON } from '../workspace/viewport-loader.js';
 import { getWorkspaceFeatureAttributes, getWorkspaceLayerBounds, getWorkspaceFeaturesByIndices } from '../workspace/workspace-store.js';
@@ -1034,6 +1038,9 @@ class MapManager {
         if (isWorkspaceLayer(dataset)) {
             return this.addWorkspaceLayer(dataset, colorIndex, { fit });
         }
+        if (isGeoreferencedImageLayer(dataset)) {
+            return this.addGeoreferencedImageLayer(dataset, colorIndex, { fit });
+        }
         if (isCoverageRasterLayer(dataset)) {
             const rasters = getCoverageRasters(dataset);
             if (rasters.length) {
@@ -1416,6 +1423,226 @@ class MapManager {
             name: dataset.name,
             rasters: coverageRasters.length
         });
+        this._applyDatasetVisibility(dataset);
+        this._applyDatasetLock(dataset);
+        bus.emit('map:layerAdded', { id: dataset.id, name: dataset.name });
+    }
+
+    _georefImageUrl(raster) {
+        return raster?.url || raster?.dataUrl || '';
+    }
+
+    _installGeorefImageSource(sourceId, layerId, url, coordinates, opacity = 0.85) {
+        if (!this.map || !url || !coordinates?.length) return false;
+        if (this.map.getLayer(layerId)) this.map.removeLayer(layerId);
+        if (this.map.getSource(sourceId)) this.map.removeSource(sourceId);
+        this.map.addSource(sourceId, {
+            type: 'image',
+            url,
+            coordinates
+        });
+        this.map.addLayer({
+            id: layerId,
+            type: 'raster',
+            source: sourceId,
+            paint: { 'raster-opacity': opacity, 'raster-fade-duration': 0 }
+        });
+        return true;
+    }
+
+    _syncGeorefGcpMarkers(gcps = []) {
+        const srcId = 'georef-gcp-src';
+        const circleId = 'georef-gcp-circle';
+        const labelId = 'georef-gcp-label';
+        const features = (gcps || [])
+            .filter((gcp) => gcp?.mapLngLat && Number.isFinite(gcp.mapLngLat.lng) && Number.isFinite(gcp.mapLngLat.lat))
+            .map((gcp, index) => ({
+                type: 'Feature',
+                properties: {
+                    label: String(gcp.number || index + 1),
+                    review: gcp.review === true
+                },
+                geometry: {
+                    type: 'Point',
+                    coordinates: [gcp.mapLngLat.lng, gcp.mapLngLat.lat]
+                }
+            }));
+        const geojson = { type: 'FeatureCollection', features };
+        if (this.map.getSource(srcId)) {
+            this.map.getSource(srcId).setData(geojson);
+            return { sourceIds: [srcId], layerIds: [circleId, labelId] };
+        }
+        this.map.addSource(srcId, { type: 'geojson', data: geojson });
+        this.map.addLayer({
+            id: circleId,
+            type: 'circle',
+            source: srcId,
+            paint: {
+                'circle-radius': 7,
+                'circle-color': [
+                    'case',
+                    ['==', ['get', 'review'], true],
+                    '#f59e0b',
+                    '#2563eb'
+                ],
+                'circle-stroke-color': '#ffffff',
+                'circle-stroke-width': 2
+            }
+        });
+        this.map.addLayer({
+            id: labelId,
+            type: 'symbol',
+            source: srcId,
+            layout: {
+                'text-field': ['get', 'label'],
+                'text-size': 11,
+                'text-allow-overlap': true,
+                'text-ignore-placement': true
+            },
+            paint: {
+                'text-color': '#ffffff',
+                'text-halo-color': '#1d4ed8',
+                'text-halo-width': 1
+            }
+        });
+        return { sourceIds: [srcId], layerIds: [circleId, labelId] };
+    }
+
+    showGeoreferencePreview({
+        url,
+        coordinates,
+        opacity = 0.7,
+        visible = true,
+        gcps = []
+    } = {}) {
+        if (!this.map) return null;
+        const srcId = 'georef-preview-src';
+        const layerId = 'georef-preview-layer';
+        const existing = this.map.getSource(srcId);
+        if (existing && this._georefPreview?.url === url && coordinates?.length && typeof existing.setCoordinates === 'function') {
+            existing.setCoordinates(coordinates);
+        } else if (url && coordinates?.length) {
+            this._installGeorefImageSource(srcId, layerId, url, coordinates, opacity);
+        }
+        if (this.map.getLayer(layerId)) {
+            this.map.setPaintProperty(layerId, 'raster-opacity', visible ? opacity : 0);
+            this.map.setLayoutProperty(layerId, 'visibility', visible && opacity > 0 ? 'visible' : 'none');
+        }
+        const markers = this._syncGeorefGcpMarkers(gcps);
+        this._georefPreview = {
+            url,
+            coordinates,
+            opacity,
+            visible,
+            gcps,
+            sourceIds: [srcId, ...markers.sourceIds],
+            layerIds: [layerId, ...markers.layerIds]
+        };
+        return this._georefPreview;
+    }
+
+    updateGeoreferencePreview(patch = {}) {
+        const current = this._georefPreview || {};
+        return this.showGeoreferencePreview({
+            url: patch.url ?? current.url,
+            coordinates: patch.coordinates ?? current.coordinates,
+            opacity: patch.opacity ?? current.opacity ?? 0.7,
+            visible: patch.visible ?? current.visible ?? true,
+            gcps: patch.gcps ?? current.gcps ?? []
+        });
+    }
+
+    clearGeoreferencePreview() {
+        if (!this.map) {
+            this._georefPreview = null;
+            return;
+        }
+        const ids = this._georefPreview;
+        const sourceIds = ids?.sourceIds || ['georef-preview-src', 'georef-gcp-src'];
+        const layerIds = ids?.layerIds || [
+            'georef-preview-layer',
+            'georef-gcp-circle',
+            'georef-gcp-label'
+        ];
+        for (const lid of layerIds) {
+            if (this.map.getLayer(lid)) this.map.removeLayer(lid);
+        }
+        for (const sid of sourceIds) {
+            if (this.map.getSource(sid)) this.map.removeSource(sid);
+        }
+        this._georefPreview = null;
+    }
+
+    addGeoreferencedImageLayer(dataset, colorIndex = 0, { fit = false } = {}) {
+        if (!this.map || !dataset) return;
+        this.removeLayer(dataset.id);
+
+        const raster = getGeoreferenceRaster(dataset);
+        const url = this._georefImageUrl(raster);
+        const coordinates = raster?.coordinates || dataset.source?.georeference?.result?.transformedCorners;
+        if (!url || !coordinates?.length) {
+            logger.warn('Map', 'Georeferenced image missing raster or corners', {
+                name: dataset.name,
+                id: dataset.id
+            });
+        }
+
+        const taggedFeatures = (dataset.geojson?.features || []).filter(
+            (f) => f.geometry?.type === 'Polygon' || f.geometry?.type === 'MultiPolygon'
+        );
+        const geojson = { type: 'FeatureCollection', features: taggedFeatures };
+        const boundsSourceId = taggedFeatures.length ? `src-${dataset.id}` : null;
+        if (boundsSourceId) {
+            this.map.addSource(boundsSourceId, { type: 'geojson', data: geojson });
+        }
+
+        const imageSourceId = `${dataset.id}-georef-src`;
+        const imageLayerId = `${dataset.id}-georef`;
+        const opacity = Number.isFinite(dataset.source?.georeferenceRaster?.opacity)
+            ? dataset.source.georeferenceRaster.opacity
+            : 0.85;
+        if (url && coordinates?.length) {
+            this._installGeorefImageSource(imageSourceId, imageLayerId, url, coordinates, opacity);
+        }
+
+        const chunkSources = [
+            ...(boundsSourceId ? [{ sourceId: boundsSourceId, layerIds: [] }] : []),
+            ...(this.map.getSource(imageSourceId)
+                ? [{ sourceId: imageSourceId, layerIds: [imageLayerId] }]
+                : [])
+        ];
+
+        this.dataLayers.set(dataset.id, {
+            sourceId: imageSourceId || boundsSourceId,
+            layerIds: this.map.getLayer(imageLayerId) ? [imageLayerId] : [],
+            chunkSources,
+            colorIndex,
+            geojson,
+            scaleRange: normalizeScaleRange(dataset)
+        });
+        this._storeLayerScaleRange(dataset);
+        this._layerNames.set(dataset.id, dataset.name);
+
+        if (fit) {
+            try {
+                const bbox = raster?.bbox || (coordinates ? [
+                    Math.min(...coordinates.map((c) => c[0])),
+                    Math.min(...coordinates.map((c) => c[1])),
+                    Math.max(...coordinates.map((c) => c[0])),
+                    Math.max(...coordinates.map((c) => c[1]))
+                ] : null);
+                if (bbox && Number.isFinite(bbox[0])) {
+                    this.scheduleMapFit({
+                        bounds: [[bbox[0], bbox[1]], [bbox[2], bbox[3]]],
+                        options: { allowZoomOut: false }
+                    });
+                }
+            } catch (e) {
+                logger.warn('Map', 'Could not fit georeferenced image bounds', { error: e.message });
+            }
+        }
+
+        logger.info('Map', 'Georeferenced image layer added', { name: dataset.name, id: dataset.id });
         this._applyDatasetVisibility(dataset);
         this._applyDatasetLock(dataset);
         bus.emit('map:layerAdded', { id: dataset.id, name: dataset.name });

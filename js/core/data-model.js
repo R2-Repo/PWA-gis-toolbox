@@ -178,6 +178,9 @@ export function isLiveVectorLayer(layer) {
 
 /** Layers that support spatial analysis (in-memory / viewport features). */
 export function isAnalyzableLayer(layer) {
+    if (layer?.source?.georeferenceType === 'image' || layer?.source?.format === 'georeferenced-image') {
+        return false;
+    }
     return isSpatialLayer(layer) || isLiveVectorLayer(layer);
 }
 

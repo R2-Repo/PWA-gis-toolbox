@@ -47,6 +47,9 @@ function createManualChunks(id) {
     ) {
       return 'react-vendor';
     }
+    if (inPath(id, 'pdfjs-dist')) {
+      return 'pdfjs';
+    }
     return 'vendor';
   }
 

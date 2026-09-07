@@ -8,6 +8,7 @@ import { openLayerMatchAssistant } from './layer-match-assistant/controller.js';
 import { openFiberProcurementDesign } from './fiber-procurement-design/controller.js';
 import { openPlanSetCallouts } from './plan-set-callouts/controller.js';
 import { openSheetCutting } from './sheet-cutting/controller.js';
+import { openGeoreferenceRaster } from './georeference-raster/controller.js';
 import { openPlanProductionExport } from './plan-production-export/controller.js';
 import { openFiberSlackOtdrHelper } from './fiber-slack-otdr-helper/controller.js';
 import { openCrsManager } from './crs-manager/controller.js';
@@ -101,6 +102,14 @@ export const GIS_WIDGETS = [
         tip: 'Cut a route into plan sheets and export PDFs with vector linework.',
         badge: 'Beta',
         open: openSheetCutting
+    },
+    {
+        type: 'georeference-raster',
+        action: 'openGeoreferenceRaster',
+        label: 'Georeference Image / PDF',
+        icon: '🗺️',
+        tip: 'Align an image or PDF page to the map using matched control points.',
+        open: openGeoreferenceRaster
     }
 ];
 
