@@ -6,8 +6,11 @@ import {
     UDOT_BOX_IN_LABEL_PROP,
     UDOT_BOX_LABEL_FIELD,
     UDOT_FIBER_CATALOG_ID,
+    UDOT_FIBER_SERVICE_URL,
+    canonicalUdotFiberLayerUrl,
     matchUdotFiberLayerUrl
 } from '../js/symbology/udot-fiber/constants.js';
+import { buildDatasetFromSavedLayer } from '../js/core/layer-restore.js';
 import {
     buildUdotFiberLayerStyle,
     resolveStyle,
@@ -53,11 +56,37 @@ import { isSmartStyleActive } from '../js/map/style-engine.js';
 
 describe('UDOT Fiber symbology', () => {
     it('matches MapServer layer URLs', () => {
-        const hit = matchUdotFiberLayerUrl(
-            'https://central.udot.utah.gov/server/rest/services/Fiber/UDOT_Fiber_Network/MapServer/6'
-        );
-        expect(hit).toEqual({ key: 'fiber', id: 6 });
+        const hit = matchUdotFiberLayerUrl(`${UDOT_FIBER_SERVICE_URL}/4`);
+        expect(hit).toEqual({ key: 'fiber', id: 4 });
+        expect(matchUdotFiberLayerUrl(`${UDOT_FIBER_SERVICE_URL}/6`)).toEqual({ key: 'fiber', id: 4 });
+        expect(matchUdotFiberLayerUrl(`${UDOT_FIBER_SERVICE_URL}/1`)).toEqual({ key: 'boxes', id: 1 });
+        expect(matchUdotFiberLayerUrl(`${UDOT_FIBER_SERVICE_URL}/2`)).toEqual({ key: 'building', id: 2 });
+        expect(matchUdotFiberLayerUrl(`${UDOT_FIBER_SERVICE_URL}/3`)).toEqual({ key: 'splices', id: 3 });
         expect(matchUdotFiberLayerUrl('https://example.com/MapServer/0')).toBeNull();
+    });
+
+    it('rewrites republished Fiber layer ids', async () => {
+        expect(canonicalUdotFiberLayerUrl(`${UDOT_FIBER_SERVICE_URL}/6`)).toBe(`${UDOT_FIBER_SERVICE_URL}/4`);
+        expect(canonicalUdotFiberLayerUrl(`${UDOT_FIBER_SERVICE_URL}/7`)).toBe(`${UDOT_FIBER_SERVICE_URL}/5`);
+        expect(canonicalUdotFiberLayerUrl(`${UDOT_FIBER_SERVICE_URL}/8`)).toBe(`${UDOT_FIBER_SERVICE_URL}/2`);
+        expect(canonicalUdotFiberLayerUrl(`${UDOT_FIBER_SERVICE_URL}/2`, 'udot-fiber-splices'))
+            .toBe(`${UDOT_FIBER_SERVICE_URL}/3`);
+        expect(canonicalUdotFiberLayerUrl(`${UDOT_FIBER_SERVICE_URL}/4`, 'UDOT Boxes'))
+            .toBe(`${UDOT_FIBER_SERVICE_URL}/1`);
+        expect(canonicalUdotFiberLayerUrl(`${UDOT_FIBER_SERVICE_URL}/2`)).toBe(`${UDOT_FIBER_SERVICE_URL}/2`);
+
+        const dataset = await buildDatasetFromSavedLayer({
+            id: 'saved-splices',
+            name: 'UDOT Splices',
+            type: 'service',
+            service: {
+                presetId: 'udot-fiber-splices',
+                kind: 'arcgis-mapserver-vector',
+                url: `${UDOT_FIBER_SERVICE_URL}/2`
+            }
+        });
+        expect(dataset.service.url).toBe(`${UDOT_FIBER_SERVICE_URL}/3`);
+        expect(dataset.source.url).toBe(`${UDOT_FIBER_SERVICE_URL}/3`);
     });
 
     it('builds fiber smart style with FIBER_SYMBOLS + Fiber_Label', () => {
@@ -204,6 +233,8 @@ describe('UDOT Fiber symbology', () => {
         const svg = makeUdotGlyphSvg('square-x', '#00ff00', '#00ff00', 24);
         expect(svg).toContain('<svg');
         expect(svg).toContain('rect');
+        expect(svg).toContain('fill="none"');
+        expect(svg).not.toContain('<ellipse');
         expect(svg).not.toContain('rgba(0,0,0,0.28)');
         const boxSvg = makeUdotGlyphSvg('rect', '#111111', '#111111', 24);
         expect(boxSvg).toContain('<rect');
@@ -237,16 +268,16 @@ describe('UDOT Fiber symbology', () => {
 
     it('keeps Fiber class/label fields on a partial ArcGIS field pick', () => {
         expect(requiredStyleFieldsForUdotFiberLayer('fiber')).toEqual(['FIBER_SYMBOLS', 'Fiber_Label']);
-        const url = 'https://central.udot.utah.gov/server/rest/services/Fiber/UDOT_Fiber_Network/MapServer/6';
+        const url = `${UDOT_FIBER_SERVICE_URL}/4`;
         expect(mergeUdotFiberStyleFields(null, url)).toBeNull();
         expect(mergeUdotFiberStyleFields(['OBJECTID', 'Route'], url, ['OBJECTID', 'Route', 'FIBER_SYMBOLS', 'Fiber_Label']))
             .toEqual(['OBJECTID', 'Route', 'FIBER_SYMBOLS', 'Fiber_Label']);
     });
 
     it('tags custom-URL ArcGIS imports and ignores unmatched URLs', () => {
-        const url = 'https://central.udot.utah.gov/server/rest/services/Fiber/UDOT_Fiber_Network/MapServer/6';
+        const url = `${UDOT_FIBER_SERVICE_URL}/6`;
         const ds = { id: 'a', source: { format: 'arcgis-rest' } };
-        expect(markDatasetForUdotFiberStyle(ds, url)).toEqual({ key: 'fiber', id: 6 });
+        expect(markDatasetForUdotFiberStyle(ds, url)).toEqual({ key: 'fiber', id: 4 });
         expect(ds._udotFiberLayerKey).toBe('fiber');
         expect(ds._applyUdotFiberStyle).toBe(true);
         expect(ds.source.url).toBe(url);
@@ -261,7 +292,7 @@ describe('UDOT Fiber symbology', () => {
             restyleLayer: (id, _ds, style) => { styles.set(id, style); },
             getLayerRecord: () => null
         };
-        const fiberUrl = 'https://central.udot.utah.gov/server/rest/services/Fiber/UDOT_Fiber_Network/MapServer/6';
+        const fiberUrl = `${UDOT_FIBER_SERVICE_URL}/4`;
         const untagged = {
             id: 'untagged',
             type: 'spatial',

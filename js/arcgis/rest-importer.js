@@ -24,6 +24,7 @@ import {
 import { createSpatialChunkWriter } from '../workspace/spatial-chunk-writer.js';
 import { applyArcgisScaleRangeToLayer } from '../map/scale-range.js';
 import { requiredStyleFieldsFromDrawingInfo, styleFromArcgisMetadata } from './drawing-info.js';
+import { canonicalUdotFiberLayerUrl } from '../symbology/udot-fiber/constants.js';
 
 /** Maximum features to download without explicit user override. */
 export const ARCGIS_MAX_FEATURES = 250_000;
@@ -470,12 +471,10 @@ export class ArcGISRestImporter {
     }
 
     normalizeUrl(url) {
-        let u = url.trim();
-        // Remove trailing slashes
+        let u = String(url || '').trim();
         u = u.replace(/\/+$/, '');
-        // Remove query string
         u = u.split('?')[0];
-        return u;
+        return canonicalUdotFiberLayerUrl(u);
     }
 
     mapGeometryType(esriType) {

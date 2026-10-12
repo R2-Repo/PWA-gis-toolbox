@@ -7,6 +7,7 @@ import { ArcGISRestImporter } from '../../arcgis/rest-importer.js';
 import { RENDER_LIMITS } from '../../map/render-limits.js';
 import { padEnvelope } from '../../live-layers/live-layer-cache.js';
 import { buildUdotFiberExcludeWhere } from '../../symbology/udot-fiber/display-filters.js';
+import { canonicalUdotFiberLayerUrl } from '../../symbology/udot-fiber/constants.js';
 
 /**
  * @param {string} url
@@ -20,7 +21,7 @@ export async function queryFiberFeaturesByEnvelope(url, envelope, fiberKey) {
     }
 
     const importer = new ArcGISRestImporter();
-    const cleanUrl = importer.normalizeUrl(url);
+    const cleanUrl = importer.normalizeUrl(canonicalUdotFiberLayerUrl(url, fiberKey));
     const padded = padEnvelope(envelope, 0.02);
     const geometry = {
         xmin: padded.west,

@@ -641,15 +641,21 @@ function drawFiberPoint(doc, point, style, pxPerPt, mapBearing = 0, screen = nul
         const b = at(size * 0.7, -size * 0.7);
         const c = at(size * 0.7, size * 0.7);
         const d = at(-size * 0.7, size * 0.7);
-        applyFillColor(doc, mixHexToward(color, '#ffffff', 0.72));
-        fillQuad(doc, a, b, c, d);
         applyStrokeColor(doc, color || ink);
         doc.line(a.x, a.y, b.x, b.y);
         doc.line(b.x, b.y, c.x, c.y);
         doc.line(c.x, c.y, d.x, d.y);
         doc.line(d.x, d.y, a.x, a.y);
-        doc.line(a.x, a.y, c.x, c.y);
-        doc.line(b.x, b.y, d.x, d.y);
+        const pull = (p) => ({
+            x: point.x + (p.x - point.x) * 0.87,
+            y: point.y + (p.y - point.y) * 0.87
+        });
+        const ia = pull(a);
+        const ib = pull(b);
+        const ic = pull(c);
+        const id = pull(d);
+        doc.line(ia.x, ia.y, ic.x, ic.y);
+        doc.line(ib.x, ib.y, id.x, id.y);
         return;
     }
 

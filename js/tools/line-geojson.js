@@ -202,6 +202,100 @@ export function nearestPointOnRouteLine(pointFeature, lineFeature, units = 'kilo
 }
 
 /**
+ * Point at a cumulative distance along a LineString or MultiLineString.
+ * Distance walks parts in order and does not jump across spatial gaps.
+ * @param {GeoJSON.Feature} lineFeature
+ * @param {number} distance
+ * @param {string} [units]
+ */
+export function pointAlongRoute(lineFeature, distance, units = 'kilometers') {
+    if (typeof turf === 'undefined') throw new Error('Turf.js not loaded');
+    const segments = listRouteLineSegments(lineFeature, units);
+    if (!segments.length) throw new Error('Route line is empty.');
+
+    const total = segments.reduce((sum, seg) => sum + seg.length, 0);
+    let remaining = Math.max(0, Math.min(Number(distance) || 0, total));
+    let chosen = segments[segments.length - 1];
+    let local = chosen.length;
+
+    for (const seg of segments) {
+        if (remaining <= seg.length) {
+            chosen = seg;
+            local = remaining;
+            break;
+        }
+        remaining -= seg.length;
+    }
+
+    return turf.along(chosen.feature, Math.max(0, Math.min(local, chosen.length)), { units });
+}
+
+function coordinatesTouch(a, b) {
+    return Array.isArray(a) && Array.isArray(b) && a[0] === b[0] && a[1] === b[1];
+}
+
+/**
+ * Slice a route between cumulative distances.
+ * Touching parts are joined. A spatial gap stays a separate part so the slice
+ * does not draw a straight chord across missing centerline.
+ * @param {GeoJSON.Feature} lineFeature
+ * @param {number} startDist
+ * @param {number} stopDist
+ * @param {string} [units]
+ */
+export function lineSliceAlongRouteParts(lineFeature, startDist, stopDist, units = 'kilometers') {
+    if (typeof turf === 'undefined') throw new Error('Turf.js not loaded');
+
+    const start = Math.min(startDist, stopDist);
+    const stop = Math.max(startDist, stopDist);
+    const g = lineFeature?.geometry;
+    if (!g) throw new Error('Line feature has no geometry');
+
+    if (g.type === 'LineString') {
+        return turf.lineSliceAlong(lineFeature, start, stop, { units });
+    }
+
+    if (g.type !== 'MultiLineString') {
+        throw new Error('Need LineString or MultiLineString');
+    }
+
+    const segments = listRouteLineSegments(lineFeature, units);
+    const parts = [];
+
+    for (const { feature, startOffset, length } of segments) {
+        const segEnd = startOffset + length;
+        if (stop <= startOffset || start >= segEnd) continue;
+
+        const localStart = Math.max(0, start - startOffset);
+        const localStop = Math.min(length, stop - startOffset);
+        if (localStop - localStart <= 1e-6) continue;
+
+        const part = turf.lineSliceAlong(feature, localStart, localStop, { units });
+        const partCoords = part.geometry?.coordinates || [];
+        if (partCoords.length < 2) continue;
+
+        const prev = parts[parts.length - 1];
+        if (prev && coordinatesTouch(prev[prev.length - 1], partCoords[0])) {
+            prev.push(...partCoords.slice(1));
+        } else {
+            parts.push(partCoords);
+        }
+    }
+
+    if (!parts.length) {
+        throw new Error('Clip range does not intersect route geometry.');
+    }
+
+    return {
+        type: 'Feature',
+        properties: { ...(lineFeature.properties || {}) },
+        geometry: parts.length === 1
+            ? { type: 'LineString', coordinates: parts[0] }
+            : { type: 'MultiLineString', coordinates: parts }
+    };
+}
+
+/**
  * Slice a route line between cumulative start/stop distances (supports MultiLineString gaps).
  * @param {GeoJSON.Feature} lineFeature
  * @param {number} startDist

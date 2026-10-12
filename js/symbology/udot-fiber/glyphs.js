@@ -149,15 +149,18 @@ export function makeUdotGlyphSvg(glyph, stroke, fill, size = UDOT_FIBER_GLYPH_PX
     const mid = s / 2;
 
     if (glyph === 'square-x') {
-        const x1 = pad;
-        const y1 = pad;
-        const x2 = s - pad;
-        const y2 = s - pad * 1.15;
+        const x = pad;
+        const y = pad;
+        const side = s - pad * 2;
+        const inset = sw * 1.15;
+        const x1 = x + inset;
+        const y1 = y + inset;
+        const x2 = x + side - inset;
+        const y2 = y + side - inset;
         return svgFrame(s, s, `
-  <rect x="${pad}" y="${pad * 0.85}" width="${s - pad * 2}" height="${s - pad * 2.1}" rx="${sw}" fill="${body}" fill-opacity="0.22" stroke="${ink}" stroke-width="${sw}"/>
-  <line x1="${x1 + sw}" y1="${y1}" x2="${x2 - sw}" y2="${y2}" stroke="${ink}" stroke-width="${sw}" stroke-linecap="round"/>
-  <line x1="${x2 - sw}" y1="${y1}" x2="${x1 + sw}" y2="${y2}" stroke="${ink}" stroke-width="${sw}" stroke-linecap="round"/>
-  <ellipse cx="${mid}" cy="${pad * 1.15}" rx="${s * 0.16}" ry="${s * 0.05}" fill="${hi}" fill-opacity="0.45"/>`);
+  <rect x="${x}" y="${y}" width="${side}" height="${side}" fill="none" stroke="${ink}" stroke-width="${sw}" stroke-linejoin="miter"/>
+  <line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${ink}" stroke-width="${sw}" stroke-linecap="butt"/>
+  <line x1="${x2}" y1="${y1}" x2="${x1}" y2="${y2}" stroke="${ink}" stroke-width="${sw}" stroke-linecap="butt"/>`);
     }
 
     if (glyph === 'bowtie') {

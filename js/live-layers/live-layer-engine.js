@@ -19,7 +19,11 @@ import {
     tagServiceFeatures
 } from './live-layer-viewport.js';
 import { decorateUdotFiberPointFeatures } from '../symbology/udot-fiber/glyphs.js';
-import { matchUdotFiberLayerUrl, UDOT_FIBER_MIN_ZOOM } from '../symbology/udot-fiber/constants.js';
+import {
+    canonicalUdotFiberLayerUrl,
+    matchUdotFiberLayerUrl,
+    UDOT_FIBER_MIN_ZOOM
+} from '../symbology/udot-fiber/constants.js';
 import { registerUdotFiberHoverLayers, unregisterUdotFiberHoverLayers } from '../symbology/udot-fiber/hover-tooltip.js';
 import { addUdotFiberVectorLayers } from '../symbology/udot-fiber/paint.js';
 import {
@@ -95,7 +99,8 @@ function getRuntimeMap(mapManager) {
  * @param {string} url
  */
 export function normalizeServiceUrl(url) {
-    return String(url || '').trim().replace(/\/+$/, '').split('?')[0];
+    const clean = String(url || '').trim().replace(/\/+$/, '').split('?')[0];
+    return canonicalUdotFiberLayerUrl(clean);
 }
 
 /**
@@ -140,7 +145,17 @@ export async function addServiceLayer(mapManager, dataset, colorIndex = 0, optio
     removeServiceLayer(mapManager, dataset.id);
 
     const service = dataset.service || {};
-    const kind = service.kind || inferServiceKind(service.url);
+    const resolvedUrl = canonicalUdotFiberLayerUrl(
+        service.url,
+        service.presetId || dataset._udotFiberLayerKey || dataset.name
+    );
+    if (resolvedUrl !== service.url) {
+        if (dataset.service) dataset.service.url = resolvedUrl;
+        if (dataset.source && (!dataset.source.url || dataset.source.url === service.url)) {
+            dataset.source.url = resolvedUrl;
+        }
+    }
+    const kind = service.kind || inferServiceKind(resolvedUrl);
 
     if (kind === FIREWATCH_KIND || isFirewatchDataset(dataset)) {
         const runtime = await addFirewatchPart(mapManager, dataset, colorIndex, {
@@ -159,7 +174,7 @@ export async function addServiceLayer(mapManager, dataset, colorIndex = 0, optio
         sourceId,
         mapLayerIds: [],
         kind,
-        url: normalizeServiceUrl(service.url),
+        url: normalizeServiceUrl(resolvedUrl),
         refreshMs: resolveLiveRefreshMs(service.refreshMs, DEFAULT_REFRESH_MS),
         minZoom: Number.isFinite(Number(service.minZoom)) ? Number(service.minZoom) : null,
         colorIndex,

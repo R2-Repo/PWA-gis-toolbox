@@ -2,7 +2,9 @@ import * as turf from '@turf/turf';
 import { describe, expect, it } from 'vitest';
 import {
     buildRouteCenterlineOutputProperties,
+    computeSegmentResult,
     formatRouteMileage,
+    locateMilepostOnRoute,
     readRouteMileageDisplay
 } from '../js/widgets/route-milepost-segment/engine.js';
 import { UDOT_ROUTE_SEGMENT_CONFIG } from '../js/widgets/route-milepost-segment/config.js';
@@ -82,5 +84,84 @@ describe('buildRouteCenterlineOutputProperties', () => {
             'Future1',
             'Future2'
         ]);
+    });
+});
+
+describe('multipart route centerlines', () => {
+    const mileageConfig = {
+        begMileageField: 'BEG_MILEAGE',
+        endMileageField: 'END_MILEAGE',
+        milepostValueField: 'Measure',
+        routeAliasField: 'ROUTE_ALIAS_COMMON',
+        routeIdField: 'ROUTE_ID'
+    };
+
+    function dividedRoute() {
+        return {
+            type: 'Feature',
+            properties: {
+                ROUTE_ID: '0080PM',
+                ROUTE_ALIAS_COMMON: 'I-80',
+                BEG_MILEAGE: 0,
+                END_MILEAGE: 100
+            },
+            geometry: {
+                type: 'MultiLineString',
+                coordinates: [
+                    [[-114.0, 40.7], [-112.0, 40.7]],
+                    [[-111.5, 40.9], [-111.0, 41.2]]
+                ]
+            }
+        };
+    }
+
+    it('locates mileposts on a multipart centerline', () => {
+        const line = dividedRoute();
+        const located = locateMilepostOnRoute(line, 10, line.properties, mileageConfig);
+        expect(located.ok).toBe(true);
+        expect(located.point.geometry.type).toBe('Point');
+    });
+
+    it('builds a segment that stays on one part', () => {
+        const line = dividedRoute();
+        const result = computeSegmentResult({
+            positiveLine: line,
+            startMp: 10,
+            endMp: 20,
+            alignment: 'positive_direction_centerline',
+            config: mileageConfig,
+            milepostLayerKey: 'whole',
+            routeMeta: { routeAlias: 'I-80', routeId: '0080PM', routeRecord: line.properties }
+        });
+
+        expect(result.ok).toBe(true);
+        expect(result.summary.startMp).toBe(10);
+        expect(result.summary.endMp).toBe(20);
+        expect(result.centerlineSegment.geometry.type).toBe('LineString');
+        expect(result.outputFeature.geometry.type).toBe('LineString');
+    });
+
+    it('keeps a spatial gap when the milepost range crosses parts', () => {
+        const line = dividedRoute();
+        const result = computeSegmentResult({
+            positiveLine: line,
+            startMp: 5,
+            endMp: 95,
+            alignment: 'positive_direction_centerline',
+            config: mileageConfig,
+            milepostLayerKey: 'whole',
+            routeMeta: { routeAlias: 'I-80', routeId: '0080PM', routeRecord: line.properties }
+        });
+
+        expect(result.ok).toBe(true);
+        expect(result.centerlineSegment.geometry.type).toBe('MultiLineString');
+        expect(result.centerlineSegment.geometry.coordinates).toHaveLength(2);
+        const [first, second] = result.centerlineSegment.geometry.coordinates;
+        const gapFeet = turf.distance(
+            turf.point(first[first.length - 1]),
+            turf.point(second[0]),
+            { units: 'feet' }
+        );
+        expect(gapFeet).toBeGreaterThan(1000);
     });
 });

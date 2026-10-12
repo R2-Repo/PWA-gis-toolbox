@@ -9,11 +9,11 @@ from pathlib import Path
 BASE = "https://central.udot.utah.gov/server/rest/services/Fiber/UDOT_Fiber_Network/MapServer"
 LAYERS = [
     (0, "cabinets", "Cabinets"),
-    (2, "splices", "Splices"),
-    (4, "boxes", "Boxes"),
-    (6, "fiber", "Fiber"),
-    (7, "conduit", "Conduit"),
-    (8, "building", "Building"),
+    (1, "boxes", "Boxes"),
+    (2, "building", "Building"),
+    (3, "splices", "Splices"),
+    (4, "fiber", "Fiber"),
+    (5, "conduit", "Conduit"),
 ]
 OUT = Path(__file__).resolve().parents[1] / "js" / "symbology" / "udot-fiber" / "arcgis-drawing-info.json"
 

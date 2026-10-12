@@ -9,7 +9,12 @@ import {
     UDOT_SPLICES_STYLE,
     UDOT_BUILDING_STYLE
 } from '../symbology/udot-fiber/styles.js';
-import { layerUrl, UDOT_FIBER_CATALOG_ID, UDOT_FIBER_MIN_ZOOM } from '../symbology/udot-fiber/constants.js';
+import {
+    layerUrl,
+    UDOT_FIBER_CATALOG_ID,
+    UDOT_FIBER_LAYER_BY_KEY,
+    UDOT_FIBER_MIN_ZOOM
+} from '../symbology/udot-fiber/constants.js';
 import {
     FIREWATCH_CATALOG_ID,
     FIREWATCH_KIND,
@@ -93,42 +98,42 @@ export const LIVE_LAYERS = [
                 id: 'udot-fiber-cabinets',
                 name: 'UDOT Cabinets',
                 kind: 'arcgis-mapserver-vector',
-                url: layerUrl(0),
+                url: layerUrl(UDOT_FIBER_LAYER_BY_KEY.cabinets.id),
                 style: UDOT_CABINETS_STYLE
             },
             {
                 id: 'udot-fiber-splices',
                 name: 'UDOT Splices',
                 kind: 'arcgis-mapserver-vector',
-                url: layerUrl(2),
+                url: layerUrl(UDOT_FIBER_LAYER_BY_KEY.splices.id),
                 style: UDOT_SPLICES_STYLE
             },
             {
                 id: 'udot-fiber-boxes',
                 name: 'UDOT Boxes',
                 kind: 'arcgis-mapserver-vector',
-                url: layerUrl(4),
+                url: layerUrl(UDOT_FIBER_LAYER_BY_KEY.boxes.id),
                 style: UDOT_BOXES_STYLE
             },
             {
                 id: 'udot-fiber-lines',
                 name: 'UDOT Fiber',
                 kind: 'arcgis-mapserver-vector',
-                url: layerUrl(6),
+                url: layerUrl(UDOT_FIBER_LAYER_BY_KEY.fiber.id),
                 style: UDOT_FIBER_STYLE
             },
             {
                 id: 'udot-fiber-conduit',
                 name: 'UDOT Conduit',
                 kind: 'arcgis-mapserver-vector',
-                url: layerUrl(7),
+                url: layerUrl(UDOT_FIBER_LAYER_BY_KEY.conduit.id),
                 style: UDOT_CONDUIT_STYLE
             },
             {
                 id: 'udot-fiber-building',
                 name: 'UDOT Building',
                 kind: 'arcgis-mapserver-vector',
-                url: layerUrl(8),
+                url: layerUrl(UDOT_FIBER_LAYER_BY_KEY.building.id),
                 style: UDOT_BUILDING_STYLE
             }
         ]

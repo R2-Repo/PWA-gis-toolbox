@@ -34,6 +34,15 @@ describe('live-layer catalog', () => {
         expect(fiber?.icon).toBe('/icons/udot-fiber-network.png');
         expect(fiber?.locked).toBe(true);
         expect(fiber?.subLayerCount).toBe(6);
+        const fiberServices = expandCatalogEntry(resolveLiveLayer('udot-fiber-network'));
+        expect(fiberServices.map((service) => service.url)).toEqual([
+            'https://central.udot.utah.gov/server/rest/services/Fiber/UDOT_Fiber_Network/MapServer/0',
+            'https://central.udot.utah.gov/server/rest/services/Fiber/UDOT_Fiber_Network/MapServer/3',
+            'https://central.udot.utah.gov/server/rest/services/Fiber/UDOT_Fiber_Network/MapServer/1',
+            'https://central.udot.utah.gov/server/rest/services/Fiber/UDOT_Fiber_Network/MapServer/4',
+            'https://central.udot.utah.gov/server/rest/services/Fiber/UDOT_Fiber_Network/MapServer/5',
+            'https://central.udot.utah.gov/server/rest/services/Fiber/UDOT_Fiber_Network/MapServer/2'
+        ]);
     });
 
     it('resolves firewatch as Utah composite with five firewatch parts', () => {

@@ -49,11 +49,13 @@ If desktop is a fork with different live-layer code, implement the **behavior co
 | Catalog id | Name | Layer | Geometry | Class field | Label field |
 |------------|------|------:|----------|-------------|-------------|
 | `udot-fiber-cabinets` | UDOT Cabinets | 0 | point | `MODEL` | — |
-| `udot-fiber-splices` | UDOT Splices | 2 | point | `MODEL` (not `MODEL_1`) | — |
-| `udot-fiber-boxes` | UDOT Boxes | 4 | point | `DT_RSCENCLOSURE_NAME` | `BOXLABELS` (in-icon) |
-| `udot-fiber-lines` | UDOT Fiber | 6 | line | `FIBER_SYMBOLS` | `Fiber_Label` |
-| `udot-fiber-conduit` | UDOT Conduit | 7 | line | `CONDUIT_SYM` | `CustNameRight` |
-| `udot-fiber-building` | UDOT Building | 8 | point | `MODEL` | — |
+| `udot-fiber-boxes` | UDOT Boxes | 1 | point | `DT_RSCENCLOSURE_NAME` | `BOXLABELS` (in-icon) |
+| `udot-fiber-building` | UDOT Building | 2 | point | `MODEL` | — |
+| `udot-fiber-splices` | UDOT Splices | 3 | point | `MODEL` (not `MODEL_1`) | — |
+| `udot-fiber-lines` | UDOT Fiber | 4 | line | `FIBER_SYMBOLS` | `Fiber_Label` |
+| `udot-fiber-conduit` | UDOT Conduit | 5 | line | `CONDUIT_SYM` | `CustNameRight` |
+
+UDOT republished this MapServer in 2026 and reused several layer numbers. Old bookmarks (`/2` splices, `/4` boxes, `/6` fiber, `/7` conduit, `/8` building) do not match the table above. The PWA rewrites saved catalog layers onto the current ids.
 
 Also query these on every Fiber feature: `Rotation`, plus hover fields below. PWA uses `outFields=*`.
 

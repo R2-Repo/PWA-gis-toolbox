@@ -599,10 +599,10 @@
       "maxScale": 0
     },
     "splices": {
-      "id": 2,
+      "id": 3,
       "name": "Splices",
       "geometryType": "esriGeometryPoint",
-      "url": "https://central.udot.utah.gov/server/rest/services/Fiber/UDOT_Fiber_Network/MapServer/2",
+      "url": "https://central.udot.utah.gov/server/rest/services/Fiber/UDOT_Fiber_Network/MapServer/3",
       "classField": "MODEL_1",
       "classes": [
         {
@@ -628,10 +628,10 @@
       "maxScale": 0
     },
     "boxes": {
-      "id": 4,
+      "id": 1,
       "name": "Boxes",
       "geometryType": "esriGeometryPoint",
-      "url": "https://central.udot.utah.gov/server/rest/services/Fiber/UDOT_Fiber_Network/MapServer/4",
+      "url": "https://central.udot.utah.gov/server/rest/services/Fiber/UDOT_Fiber_Network/MapServer/1",
       "classField": "DT_RSCENCLOSURE_NAME",
       "classes": [
         {
@@ -1537,10 +1537,10 @@
       "maxScale": 0
     },
     "fiber": {
-      "id": 6,
+      "id": 4,
       "name": "Fiber",
       "geometryType": "esriGeometryPolyline",
-      "url": "https://central.udot.utah.gov/server/rest/services/Fiber/UDOT_Fiber_Network/MapServer/6",
+      "url": "https://central.udot.utah.gov/server/rest/services/Fiber/UDOT_Fiber_Network/MapServer/4",
       "classField": "FIBER_SYMBOLS",
       "classes": [
         {
@@ -1702,10 +1702,10 @@
       "maxScale": 0
     },
     "conduit": {
-      "id": 7,
+      "id": 5,
       "name": "Conduit",
       "geometryType": "esriGeometryPolyline",
-      "url": "https://central.udot.utah.gov/server/rest/services/Fiber/UDOT_Fiber_Network/MapServer/7",
+      "url": "https://central.udot.utah.gov/server/rest/services/Fiber/UDOT_Fiber_Network/MapServer/5",
       "classField": "CONDUIT_SYM",
       "classes": [
         {
@@ -1803,10 +1803,10 @@
       "maxScale": 0
     },
     "building": {
-      "id": 8,
+      "id": 2,
       "name": "Building",
       "geometryType": "esriGeometryPoint",
-      "url": "https://central.udot.utah.gov/server/rest/services/Fiber/UDOT_Fiber_Network/MapServer/8",
+      "url": "https://central.udot.utah.gov/server/rest/services/Fiber/UDOT_Fiber_Network/MapServer/2",
       "classField": "MODEL",
       "classes": [
         {

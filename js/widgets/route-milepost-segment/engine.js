@@ -1,5 +1,11 @@
-import { nearestPointOnLineAny, pointToLineDistanceAny } from '../../tools/line-geojson.js';
-import { lineSlice, lineSliceAlong, nearestPointOnLine } from '../../tools/gis-tools.js';
+import {
+    lineLengthAny,
+    lineSliceAlongRouteParts,
+    nearestPointOnLineAny,
+    pointAlongRoute,
+    pointToLineDistanceAny
+} from '../../tools/line-geojson.js';
+import { lineSlice, nearestPointOnLine } from '../../tools/gis-tools.js';
 import { OUTPUT_ALIGNMENT, METHOD_VALUES } from './config.js';
 
 const FEET_PER_MILE = 5280;
@@ -477,14 +483,14 @@ export function locateMilepostOnRoute(positiveLine, targetMp, routeRecord, confi
         };
     }
 
-    const lineLengthFeet = turf.length(positiveLine, { units: 'feet' });
+    const lineLengthFeet = lineLengthAny(positiveLine, 'feet');
     if (!Number.isFinite(lineLengthFeet) || lineLengthFeet <= 0) {
         return { ok: false, error: 'Route centerline length is invalid.' };
     }
 
     const distanceFeet = milepostToDistanceFeet(mp, bounds.beg, bounds.end, lineLengthFeet);
     const clampedFeet = Math.max(0, Math.min(distanceFeet, lineLengthFeet));
-    const point = turf.along(positiveLine, clampedFeet, { units: 'feet' });
+    const point = pointAlongRoute(positiveLine, clampedFeet, 'feet');
     point.properties = {
         ...(point.properties || {}),
         [config.milepostValueField]: mp,
@@ -812,7 +818,7 @@ export function computeSegmentResult(input) {
     const endSnap = endPoint;
     const lowDist = Math.min(startLocated.distanceFeet, endLocated.distanceFeet);
     const highDist = Math.max(startLocated.distanceFeet, endLocated.distanceFeet);
-    const centerlineSegment = lineSliceAlong(positiveLine, lowDist, highDist, 'feet');
+    const centerlineSegment = lineSliceAlongRouteParts(positiveLine, lowDist, highDist, 'feet');
 
     let outputGeometry = centerlineSegment;
     let medianSeparationFeet = null;

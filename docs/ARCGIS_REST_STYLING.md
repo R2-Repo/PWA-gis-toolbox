@@ -28,7 +28,7 @@ can render with the published class colors and label field when all of the follo
 4. Feature queries return the renderer / label **field names** as GeoJSON properties.
 5. Those fields are present on **map features** (see [Workspace display fields](#workspace-display-fields)).
 
-Worked example: [UDOT Fiber Network layer 6](https://central.udot.utah.gov/server/rest/services/Fiber/UDOT_Fiber_Network/MapServer/6) publishes a unique-value renderer on `FIBER_SYMBOLS` and labels on `Fiber_Label`.
+Worked example: [UDOT Fiber Network layer 4](https://central.udot.utah.gov/server/rest/services/Fiber/UDOT_Fiber_Network/MapServer/4) publishes a unique-value renderer on `FIBER_SYMBOLS` and labels on `Fiber_Label`.
 
 ---
 

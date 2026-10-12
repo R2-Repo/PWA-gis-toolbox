@@ -10,6 +10,7 @@ import {
 import { isCoverageRasterLayer, rehydrateCoverageRasters } from './coverage-raster-layer.js';
 import { getSourceFile, saveSourceFile } from '../workspace/source-file-store.js';
 import { isGeoreferencedImageLayer } from '../widgets/georeference-raster/georef-layer.js';
+import { canonicalUdotFiberLayerUrl } from '../symbology/udot-fiber/constants.js';
 
 /**
  * Build a live dataset object from a persisted layer record.
@@ -144,12 +145,18 @@ export async function buildDatasetFromSavedLayer(saved, payload = {}) {
     }
 
     if (saved.type === 'service' && saved.service) {
+        const fiberHint = saved.service.presetId || saved._udotFiberLayerKey || saved.name;
+        const serviceUrl = canonicalUdotFiberLayerUrl(saved.service.url, fiberHint);
+        const source = saved.source || { format: 'live-service', url: saved.service.url };
         return {
             id: layerId,
             name: saved.name,
             type: 'service',
-            service: { ...saved.service },
-            source: saved.source || { format: 'live-service', url: saved.service.url },
+            service: { ...saved.service, url: serviceUrl },
+            source: {
+                ...source,
+                url: canonicalUdotFiberLayerUrl(source.url || saved.service.url, fiberHint)
+            },
             visible: saved.visible !== false,
             active: false,
             created: saved.created || new Date().toISOString(),
