@@ -1,4 +1,4 @@
-import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { describe, expect, it, vi, beforeEach, beforeAll } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { WorkflowEngine } from '../js/workflow/workflow-engine.js';
 import { NodeBase, resetNodeIdCounter } from '../js/workflow/nodes/node-base.js';
@@ -261,6 +261,11 @@ describe('WorkflowEngine preset golden outputs (local sampleData)', () => {
         vi.stubGlobal('crypto', { randomUUID: () => 'test-uuid' });
     });
 
+    beforeAll(async () => {
+        const turf = await import('@turf/turf');
+        globalThis.turf = turf;
+    });
+
     async function runPreset(fileName) {
         const raw = readFileSync(new URL(`../pipelines/${fileName}`, import.meta.url), 'utf8');
         const config = JSON.parse(raw);
@@ -314,6 +319,22 @@ describe('WorkflowEngine preset golden outputs (local sampleData)', () => {
 
     it('Sort Deduplicate and Preview preset completes', async () => {
         const { result } = await runPreset('Sort Deduplicate and Preview.json');
+        expect(result.status).toBe('success');
+    });
+
+    const PRESET_GOLDEN = [
+        'Buffer and Add to Map.json',
+        'Clean Rename Filter and Buffer.json',
+        'Explode Trail Vertices.json',
+        'Merge and Sort Trails.json',
+        'Nearest Join Hospitals.json',
+        'Sample Fire Stations.json',
+        'Spatial Join Schools to Counties.json',
+        'Split Mixed Geometry.json'
+    ];
+
+    it.each(PRESET_GOLDEN)('preset golden: %s completes with embedded sampleData', async (fileName) => {
+        const { result } = await runPreset(fileName);
         expect(result.status).toBe('success');
     });
 });

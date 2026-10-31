@@ -15,6 +15,33 @@ export function throwIfAbortedPeriodic(signal, index, stride = 512) {
     }
 }
 
+/**
+ * Progress + abort helper for workflow node loops.
+ * @param {object} context execute context
+ * @param {number} total item count
+ * @param {{ minIntervalMs?: number, abortStride?: number }} [opts]
+ */
+export function createLoopProgress(context, total, opts = {}) {
+    const minIntervalMs = opts.minIntervalMs ?? 100;
+    const abortStride = opts.abortStride ?? 64;
+    let lastReportAt = 0;
+
+    return (index, message) => {
+        throwIfAbortedPeriodic(context?.signal, index, abortStride);
+        if (!context?.reportProgress || total <= 0) return;
+        const now = performance.now();
+        const isLast = index >= total - 1;
+        if (!isLast && now - lastReportAt < minIntervalMs && index % abortStride !== 0) return;
+        lastReportAt = now;
+        context.reportProgress({
+            progress: (index + 1) / total,
+            processed: index + 1,
+            total,
+            message
+        });
+    };
+}
+
 export function cloneSchema(schema) {
     if (schema == null) return schema;
     return structuredClone(schema);

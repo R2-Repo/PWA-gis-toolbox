@@ -2,21 +2,36 @@
  * Enrichment nodes — enrich features with external data (elevation, etc.)
  */
 import { NodeBase } from './node-base.js';
+import {
+    cloneDatasetOutput,
+    cloneSchema,
+    createLoopProgress,
+    throwIfAborted,
+    throwIfAbortedPeriodic
+} from '../workflow-run-helpers.js';
 
 const ELEVATION_API = 'https://api.open-elevation.com/api/v1/lookup';
 const BATCH_SIZE = 200;
 
-async function queryElevations(coords) {
+async function queryElevations(coords, { signal, reportProgress } = {}) {
     const results = new Array(coords.length).fill(null);
 
     for (let i = 0; i < coords.length; i += BATCH_SIZE) {
+        throwIfAbortedPeriodic(signal, i, BATCH_SIZE);
         const batch = coords.slice(i, i + BATCH_SIZE);
-        const body = JSON.stringify({ locations: batch });
+        reportProgress?.({
+            progress: coords.length ? i / coords.length : 0,
+            processed: i,
+            total: coords.length,
+            message: 'Querying elevation'
+        });
 
+        const body = JSON.stringify({ locations: batch });
         const resp = await fetch(ELEVATION_API, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-            body
+            body,
+            signal
         });
 
         if (!resp.ok) throw new Error(`Elevation API error: ${resp.status} ${resp.statusText}`);
@@ -30,6 +45,13 @@ async function queryElevations(coords) {
             results[i + j] = data.results[j].elevation;
         }
     }
+
+    reportProgress?.({
+        progress: 1,
+        processed: coords.length,
+        total: coords.length,
+        message: 'Elevation lookup complete'
+    });
 
     return results;
 }
@@ -80,33 +102,44 @@ export class AddElevationNode extends NodeBase {
         return { valid: true, message: '' };
     }
 
-    async execute(inputs) {
+    async execute(inputs, context) {
         const data = inputs[0];
         if (!data || data.type !== 'spatial') throw new Error('Spatial input required');
 
         const features = data.geojson.features;
-        if (features.length === 0) return data;
+        if (features.length === 0) return cloneDatasetOutput(data);
 
         const coords = features.map(f => getRepresentativeCoord(f.geometry));
         const validCoords = coords.map(c => c || { latitude: 0, longitude: 0 });
 
-        const elevations = await queryElevations(validCoords);
+        const lookupFn = context?.queryElevations
+            ?? ((c) => queryElevations(c, {
+                signal: context?.signal,
+                reportProgress: context?.reportProgress
+            }));
+
+        throwIfAborted(context?.signal);
+        const elevations = await lookupFn(validCoords);
 
         const METERS_TO_FEET = 3.28084;
         const toFeet = this.config.units === 'feet';
         const fieldName = this.config.fieldName;
+        const tick = createLoopProgress(context, features.length);
 
-        const enriched = features.map((f, i) => {
+        const enriched = [];
+        for (let i = 0; i < features.length; i++) {
+            tick(i, 'Applying elevation');
+            const f = features[i];
             const elev = coords[i] && elevations[i] != null
                 ? (toFeet ? Math.round(elevations[i] * METERS_TO_FEET * 100) / 100 : elevations[i])
                 : null;
-            return {
+            enriched.push({
                 ...f,
                 properties: { ...f.properties, [fieldName]: elev }
-            };
-        });
+            });
+        }
 
-        const schema = JSON.parse(JSON.stringify(data.schema));
+        const schema = cloneSchema(data.schema);
         if (!schema.fields.find(f => f.name === fieldName)) {
             schema.fields.push({
                 name: fieldName,

@@ -5,7 +5,7 @@ import { NodeBase } from './node-base.js';
 import { applyTemplate } from '../../dataprep/template-builder.js';
 import { typeConvert } from '../../dataprep/transforms.js';
 import { convertFeatureCoords } from '../../tools/coordinates.js';
-import { throwIfAbortedPeriodic } from '../workflow-run-helpers.js';
+import { createLoopProgress, cloneDatasetOutput, throwIfAborted, throwIfAbortedPeriodic } from '../workflow-run-helpers.js';
 
 /** Map legacy/camelCase filter operator names to canonical snake_case keys. */
 export const FILTER_OPERATOR_ALIASES = {
@@ -51,17 +51,22 @@ export class FilterRowsNode extends NodeBase {
         if (!data) throw new Error('No input data');
 
         const activeRules = this.config.rules.filter(r => r.field);
-        if (activeRules.length === 0) return data; // pass-through
+        if (activeRules.length === 0) return cloneDatasetOutput(data);
 
         const features = data.type === 'spatial' ? data.geojson.features : null;
         const rows = data.type === 'table' ? data.rows : null;
         const items = features || rows;
 
-        const filtered = items.filter(item => {
+        const filtered = [];
+        const tick = createLoopProgress(context, items.length);
+        for (let i = 0; i < items.length; i++) {
+            tick(i, 'Filtering rows');
+            const item = items[i];
             const props = features ? item.properties : item;
             const results = activeRules.map(rule => this._evalRule(props, rule));
-            return this.config.logic === 'AND' ? results.every(Boolean) : results.some(Boolean);
-        });
+            const keep = this.config.logic === 'AND' ? results.every(Boolean) : results.some(Boolean);
+            if (keep) filtered.push(item);
+        }
 
         if (data.type === 'spatial') {
             const geojson = { type: 'FeatureCollection', features: filtered };
@@ -124,7 +129,7 @@ export class RenameFieldsNode extends NodeBase {
         if (!data) throw new Error('No input data');
         const map = {};
         for (const m of this.config.mappings) { if (m.from && m.to) map[m.from] = m.to; }
-        if (Object.keys(map).length === 0) return data;
+        if (Object.keys(map).length === 0) return cloneDatasetOutput(data);
 
         const renameProps = (props) => {
             const out = {};
@@ -211,9 +216,12 @@ export class SortNode extends NodeBase {
         return { valid: true, message: '' };
     }
 
-    async execute(inputs) {
+    async execute(inputs, context) {
         const data = inputs[0];
         if (!data) throw new Error('No input data');
+
+        throwIfAborted(context?.signal);
+        context?.reportProgress?.({ progress: 0, message: 'Sorting rows' });
 
         const cmp = (a, b) => {
             const va = a[this.config.field];
@@ -226,9 +234,23 @@ export class SortNode extends NodeBase {
 
         if (data.type === 'spatial') {
             const features = [...data.geojson.features].sort((a, b) => cmp(a.properties || {}, b.properties || {}));
+            throwIfAborted(context?.signal);
+            context?.reportProgress?.({
+                progress: 1,
+                processed: features.length,
+                total: features.length,
+                message: 'Sort complete'
+            });
             return { ...data, geojson: { type: 'FeatureCollection', features } };
         }
         const rows = [...data.rows].sort(cmp);
+        throwIfAborted(context?.signal);
+        context?.reportProgress?.({
+            progress: 1,
+            processed: rows.length,
+            total: rows.length,
+            message: 'Sort complete'
+        });
         return { ...data, rows };
     }
 }
@@ -306,9 +328,10 @@ export class DeduplicateNode extends NodeBase {
         const items = data.type === 'spatial' ? data.geojson.features : data.rows;
         const seen = new Map();
         const result = [];
+        const tick = createLoopProgress(context, items.length);
 
         for (let i = 0; i < items.length; i++) {
-            throwIfAbortedPeriodic(context?.signal, i);
+            tick(i, 'Deduplicating');
             const item = items[i];
             const props = data.type === 'spatial' ? item.properties : item;
             const key = this.config.keyFields.map(f => String(props[f] ?? '')).join('|');
@@ -629,7 +652,7 @@ export class JoinLookupNode extends NodeBase {
         return { valid: true, message: '' };
     }
 
-    async execute(inputs) {
+    async execute(inputs, context) {
         const main = inputs[0];
         const lookup = inputs[1];
         if (!main) throw new Error('No main data');
@@ -637,13 +660,14 @@ export class JoinLookupNode extends NodeBase {
 
         const { leftKey, rightKey, fieldsToJoin } = this.config;
 
-        // Build lookup map from second input
         const lookupRows = lookup.type === 'spatial'
             ? lookup.geojson.features.map(f => f.properties || {})
             : lookup.rows || [];
 
         const lookupMap = new Map();
-        for (const row of lookupRows) {
+        for (let i = 0; i < lookupRows.length; i++) {
+            throwIfAbortedPeriodic(context?.signal, i);
+            const row = lookupRows[i];
             const key = String(row[rightKey] ?? '');
             if (!lookupMap.has(key)) lookupMap.set(key, row);
         }
@@ -659,11 +683,24 @@ export class JoinLookupNode extends NodeBase {
         };
 
         if (main.type === 'spatial') {
-            const features = main.geojson.features.map(f => ({ ...f, properties: joinProps(f.properties || {}) }));
+            const src = main.geojson.features;
+            const features = [];
+            const tick = createLoopProgress(context, src.length);
+            for (let i = 0; i < src.length; i++) {
+                tick(i, 'Joining attributes');
+                const f = src[i];
+                features.push({ ...f, properties: joinProps(f.properties || {}) });
+            }
             const schema = this._addFields(main.schema, fieldsToJoin);
             return { ...main, geojson: { type: 'FeatureCollection', features }, schema };
         }
-        const rows = main.rows.map(joinProps);
+        const srcRows = main.rows;
+        const rows = [];
+        const tick = createLoopProgress(context, srcRows.length);
+        for (let i = 0; i < srcRows.length; i++) {
+            tick(i, 'Joining attributes');
+            rows.push(joinProps(srcRows[i]));
+        }
         return { ...main, rows, schema: this._addFields(main.schema, fieldsToJoin) };
     }
 
