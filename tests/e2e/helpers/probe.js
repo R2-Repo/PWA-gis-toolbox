@@ -32,13 +32,39 @@ export async function readLayerListFeatureCount(page, layerNameSubstring) {
  */
 export async function readActiveLayerAdmission(page) {
     return page.evaluate(async () => {
-        const state = await import('/js/core/state.js');
-        const layer = state.getActiveLayer?.() || state.getLayers?.().at(-1);
-        if (!layer) return null;
+        async function openWorkspace() {
+            return new Promise((resolve, reject) => {
+                const req = indexedDB.open('gis-toolbox-workspace');
+                req.onerror = () => reject(req.error);
+                req.onsuccess = () => resolve(req.result);
+            });
+        }
+
+        async function getAll(storeName) {
+            const db = await openWorkspace();
+            try {
+                if (!db.objectStoreNames.contains(storeName)) return [];
+                return await new Promise((resolve, reject) => {
+                    const tx = db.transaction(storeName, 'readonly');
+                    const req = tx.objectStore(storeName).getAll();
+                    req.onsuccess = () => resolve(req.result || []);
+                    req.onerror = () => reject(req.error);
+                });
+            } finally {
+                db.close();
+            }
+        }
+
+        const layers = await getAll('layers');
+        const chunks = await getAll('chunks');
+        if (layers.length === 0 && chunks.length === 0) return 'memory';
+
+        const layer = layers[layers.length - 1];
+        if (!layer) return chunks.length > 0 ? 'chunked' : 'memory';
         if (layer.type === 'spatial-chunked' || layer.storage === 'workspace') return 'chunked';
         if (layer._streamImport || layer.source?.streamed) return 'streamed';
         if (layer.type === 'spatial') return 'memory';
-        return layer.type || null;
+        return chunks.length > 0 ? 'chunked' : layer.type || 'memory';
     });
 }
 

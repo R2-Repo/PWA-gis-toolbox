@@ -241,10 +241,12 @@ async function main() {
         const grepPattern = flags.full ? '@full|@tune' : '@tune';
         let pwRun;
         if (process.platform === 'win32') {
-            const cmd = `npx playwright test tests/e2e/import --grep "${grepPattern}"`;
+            const workers = flags.full ? ' --workers=1' : '';
+            const cmd = `npx playwright test tests/e2e/import --grep "${grepPattern}"${workers}`;
             pwRun = await run(cmd, [], { inherit: true, shell: true });
         } else {
             const pwArgs = ['playwright', 'test', 'tests/e2e/import', '--grep', grepPattern];
+            if (flags.full) pwArgs.push('--workers=1');
             pwRun = await run('npx', pwArgs, { inherit: true, shell: false });
         }
 

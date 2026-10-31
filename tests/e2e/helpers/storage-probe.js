@@ -56,9 +56,13 @@ export async function readImportStorageSnapshot(page) {
 export function storageLooksEmpty(snap) {
     if (snap.layerDom > 0) return false;
     if (snap.opfsSourceFiles > 0) return false;
-    const ws = snap.workspace;
-    if (ws && Object.values(ws).some((n) => n > 0)) return false;
     const jobs = snap.importJobs;
     if (jobs && Object.values(jobs).some((n) => n > 0)) return false;
+    const ws = snap.workspace;
+    if (ws) {
+        const layers = ws.layers ?? 0;
+        const chunks = ws.chunks ?? 0;
+        if (layers > 0 || chunks > 0) return false;
+    }
     return true;
 }

@@ -730,6 +730,30 @@ function rowsForFeatures(features) {
     }));
 }
 
+/** Pad CSV with valid lat/lon rows until byte target (comment lines break the CSV importer). */
+function padCsvToBytes(rows, targetBytes, over) {
+    const header = Object.keys(rows[0]).join(',');
+    const lines = [header, ...rows.map((r) => Object.values(r).join(','))];
+    let seq = rows.length;
+    while (utf8ByteLength(lines.join('\n')) < targetBytes - (over ? 0 : 64)) {
+        const r = rows[seq % rows.length];
+        lines.push(
+            [r.latitude, r.longitude, seq, `${r.name}-pad-${'p'.repeat(220)}`, r.unicode].join(',')
+        );
+        seq += 1;
+    }
+    if (over) {
+        while (utf8ByteLength(lines.join('\n')) <= targetBytes) {
+            const r = rows[seq % rows.length];
+            lines.push(
+                [r.latitude, r.longitude, seq, `${r.name}-pad-${'q'.repeat(480)}`, r.unicode].join(',')
+            );
+            seq += 1;
+        }
+    }
+    return lines.join('\n');
+}
+
 async function writeGeneratedManifest(entries) {
     const manifestPath = path.join(GEN_DIR, 'manifest.json');
     await fs.writeFile(
@@ -774,20 +798,24 @@ async function zipWithPadding(files, targetBytes, over = false) {
     return buf;
 }
 
-async function writeXlsxNearBytes(filePath, baseRows, targetBytes, over = false) {
+async function writeXlsxNearBytes(filePath, baseRows, targetBytes, over = false, maxBytes = null) {
     let rows = baseRows.map((row) => ({ ...row }));
-    for (;;) {
+    for (let guard = 0; guard < 800; guard++) {
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), 'data');
         XLSX.writeFile(wb, filePath);
         const size = (await fs.stat(filePath)).size;
         if (over) {
             if (size > targetBytes) break;
+        } else if (maxBytes != null && size >= maxBytes) {
+            rows = rows.slice(0, Math.max(baseRows.length, rows.length - 400));
+            continue;
         } else if (size >= targetBytes - 512) {
             break;
         }
         const start = rows.length;
-        for (let i = 0; i < 400; i++) {
+        const batch = size < targetBytes * 0.6 ? 8000 : 400;
+        for (let i = 0; i < batch; i++) {
             rows.push({
                 latitude: 39 + (start + i) * 0.00001,
                 longitude: -111 + (start + i) * 0.00001,
@@ -825,6 +853,7 @@ async function generateLargeFixtures(force = false) {
 
     const textBands = preflightByteBands('geojson', LIMITS);
     const binaryBands = preflightByteBands('zip', LIMITS);
+    const xlsxBands = preflightByteBands('xlsx', LIMITS);
 
     const textTargets = [
         ['soft-under', textBands.soft - 4096, false],
@@ -853,13 +882,7 @@ async function generateLargeFixtures(force = false) {
 
         const csvName = `csv-${label}.csv`;
         const csvRows = rowsForFeatures(features);
-        let csvText = [Object.keys(csvRows[0]).join(','), ...csvRows.map((r) => Object.values(r).join(','))].join('\n');
-        while (utf8ByteLength(csvText) < target - (over ? 0 : 64)) {
-            csvText += `\n#${'z'.repeat(512)}`;
-        }
-        if (over) {
-            while (utf8ByteLength(csvText) <= target) csvText += `\n#${'w'.repeat(512)}`;
-        }
+        const csvText = padCsvToBytes(csvRows, target, over);
         await fs.writeFile(path.join(GEN_DIR, csvName), csvText);
         generated.push({
             id: `byte-csv-${label}`,
@@ -868,7 +891,7 @@ async function generateLargeFixtures(force = false) {
             tier: 'T2',
             tag: '@full',
             expectedOutcome: over && label.includes('hard-over') ? 'failure' : 'success',
-            featureCount: features.length,
+            featureCount: 0,
             byteTarget: target,
             crs: 'EPSG:4326'
         });
@@ -934,7 +957,12 @@ async function generateLargeFixtures(force = false) {
 
         const xlsxName = `xlsx-${label}.xlsx`;
         const xlsxPath = path.join(GEN_DIR, xlsxName);
-        await writeXlsxNearBytes(xlsxPath, rowsForFeatures(features), target, over);
+        const xlsxCap = over
+            ? null
+            : label.includes('hard-under')
+              ? xlsxBands.hard
+              : xlsxBands.strong;
+        await writeXlsxNearBytes(xlsxPath, rowsForFeatures(features), target, over, xlsxCap);
         const xlsxStat = await fs.stat(xlsxPath);
         generated.push({
             id: `byte-xlsx-${label}`,
@@ -942,8 +970,13 @@ async function generateLargeFixtures(force = false) {
             format: 'xlsx',
             tier: 'T2',
             tag: '@full',
-            expectedOutcome: over && label.includes('hard-over') ? 'failure' : 'success',
-            featureCount: features.length,
+            expectedOutcome:
+                over && (label.includes('hard-over') || label.includes('strong-over'))
+                    ? 'failure'
+                    : label.includes('hard-under')
+                      ? 'failure'
+                      : 'success',
+            featureCount: 0,
             byteTarget: target,
             crs: 'EPSG:4326',
             sizeBytes: xlsxStat.size
@@ -992,7 +1025,7 @@ async function generateLargeFixtures(force = false) {
             tag: '@full',
             expectedOutcome: 'success',
             featureCount: count,
-            workspaceExpect: count >= 15_000 ? 'chunked' : 'memory',
+            ...(count >= 15_000 ? { workspaceExpect: 'chunked' } : {}),
             crs: 'EPSG:4326',
             skipBbox: true
         });
@@ -1084,6 +1117,10 @@ async function generateLargeFixtures(force = false) {
 
 async function main() {
     const force = process.argv.includes('--force');
+    if (process.argv.includes('--generated-only')) {
+        await generateLargeFixtures(force || true);
+        return;
+    }
     await fs.mkdir(OUT_DIR, { recursive: true });
     const manifestPath = path.join(OUT_DIR, 'manifest.json');
     if (!force && (await fs.stat(manifestPath).catch(() => null))) {

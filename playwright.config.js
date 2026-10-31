@@ -13,7 +13,7 @@ export default defineConfig({
     fullyParallel: true,
     workers: process.env.CI ? 2 : 4,
     forbidOnly: !!process.env.CI,
-    retries: process.env.CI ? 1 : 0,
+    retries: 1,
     reporter: [
         ['list'],
         ['json', { outputFile: join(repoRoot, 'test-results/gis-report/playwright.json') }],

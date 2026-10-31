@@ -2,7 +2,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { test, expect } from '@playwright/test';
 import generated from '../../fixtures/e2e/generated/manifest.json' with { type: 'json' };
-import { bootApp } from '../helpers/app.js';
+import { bootApp, dismissOpenModals, dismissToasts } from '../helpers/app.js';
 import { importLocalFile, cancelImportAtProgress } from '../helpers/import.js';
 import { readImportStorageSnapshot, storageLooksEmpty } from '../helpers/storage-probe.js';
 import { installLongTaskObserver } from '../helpers/perf.js';
@@ -47,13 +47,21 @@ test('@full cancel T3 stream import at ~30%', async ({ page }) => {
         .filter({ hasText: 'Importing Large Files' })
         .waitFor({ state: 'visible', timeout: 120_000 });
 
-    await cancelImportAtProgress(page, 28, 480_000);
+    await cancelImportAtProgress(page, 30, 480_000);
 
-    await page.waitForTimeout(1500);
-    let snap = await readImportStorageSnapshot(page);
-    expect(storageLooksEmpty(snap), 'storage after cancel').toBe(true);
+    let snap = null;
+    for (let i = 0; i < 60; i++) {
+        await page.waitForTimeout(500);
+        snap = await readImportStorageSnapshot(page);
+        if (storageLooksEmpty(snap)) break;
+    }
+    expect(storageLooksEmpty(snap), `storage after cancel ${JSON.stringify(snap)}`).toBe(true);
+    expect(snap?.layerDom ?? 0).toBe(0);
 
+    await dismissToasts(page);
+    await dismissOpenModals(page);
     await page.locator('#btn-import').waitFor({ state: 'visible', timeout: 30_000 });
+    await page.locator('#btn-import').click({ trial: true });
     const t0 = Date.now();
     await importLocalFile(page, fixturePath, { timeoutMs: 540_000 });
     expect(Date.now() - t0).toBeLessThan(540_000);

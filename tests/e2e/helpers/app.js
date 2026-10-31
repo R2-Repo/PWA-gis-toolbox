@@ -55,6 +55,19 @@ export async function bootApp(page, baseURL) {
     await page.locator('#btn-import').waitFor({ state: 'visible', timeout: 30_000 });
 }
 
+/** Dismiss visible toast notifications (stale cancel/error toasts break import polling). */
+export async function dismissToasts(page) {
+    const dismiss = page.locator(
+        '.toast-container .toast [title="Dismiss"], .toast-container .toast button, .toast-container .toast .close'
+    );
+    for (let i = 0; i < 8; i++) {
+        const btn = dismiss.first();
+        if (!(await btn.isVisible({ timeout: 300 }).catch(() => false))) break;
+        await btn.click();
+        await page.waitForTimeout(100);
+    }
+}
+
 /** Dismiss stacked modal dialogs (import summary, etc.). */
 export async function dismissOpenModals(page) {
     for (let i = 0; i < 5; i++) {

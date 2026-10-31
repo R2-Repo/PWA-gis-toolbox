@@ -1,3 +1,5 @@
+import { dismissOpenModals, dismissToasts } from './app.js';
+
 async function maybeConfirmProjectKit(page) {
     const header = page.locator('.modal-header span').filter({ hasText: /Import .*gis-toolbox/i });
     await header.waitFor({ state: 'visible', timeout: 60_000 });
@@ -13,6 +15,9 @@ async function maybeConfirmProjectKit(page) {
  */
 export async function importLocalFile(page, fixturePath, options = {}) {
     const timeoutMs = options.timeoutMs ?? 120_000;
+
+    await dismissToasts(page);
+    await dismissOpenModals(page);
 
     await page.locator('#btn-import').click();
     await page.getByRole('button', { name: 'Local Files' }).click();
@@ -33,7 +38,10 @@ export async function importLocalFile(page, fixturePath, options = {}) {
 
     await maybeConfirmCrs(page, options.crsPick);
 
-    await waitForImportSettled(page, timeoutMs);
+    const settled = await waitForImportSettled(page, timeoutMs, options.crsPick);
+    if (settled.outcome !== 'success') {
+        throw new Error(`Import did not succeed (${settled.outcome})`);
+    }
 
     return { startedAtMs: t0, finishedAtMs: Date.now() };
 }
@@ -60,7 +68,7 @@ async function maybeConfirmCrs(page, crsPick) {
  * @param {import('@playwright/test').Page} page
  * @param {number} timeoutMs
  */
-async function waitForImportSettled(page, timeoutMs) {
+async function waitForImportSettled(page, timeoutMs, crsPick) {
     const failTitle = page.locator('.modal-header span').filter({ hasText: 'Import Failed' });
     const progress = page.locator('.progress-step');
     const importBtn = page.getByRole('button', { name: 'Import selected' });
@@ -68,6 +76,7 @@ async function waitForImportSettled(page, timeoutMs) {
 
     const deadline = Date.now() + timeoutMs;
     while (Date.now() < deadline) {
+        await maybeConfirmCrs(page, crsPick);
         if (await failTitle.isVisible().catch(() => false)) {
             return { outcome: 'failure' };
         }
@@ -80,8 +89,11 @@ async function waitForImportSettled(page, timeoutMs) {
         if (layerCount > 0 && !busyProgress && !kitBusy) {
             return { outcome: 'success' };
         }
+        const importingNow =
+            (await streamProgress.isVisible().catch(() => false))
+            || (await progress.first().isVisible().catch(() => false));
         const toastError = page.locator('.toast-container .toast').filter({ hasText: /import/i });
-        if (await toastError.isVisible().catch(() => false)) {
+        if (!importingNow && (await toastError.isVisible().catch(() => false))) {
             const text = await toastError.innerText();
             if (/failed|error|invalid|cancelled|too large|exceeds/i.test(text)) {
                 return { outcome: 'failure' };
@@ -109,6 +121,12 @@ export async function cancelImportAtProgress(page, minPercent, timeoutMs = 300_0
                 const cancelBtn = page.locator('.modal-overlay:visible').getByRole('button', { name: 'Cancel' }).first();
                 await cancelBtn.click();
                 await page.waitForTimeout(500);
+                await dismissToasts(page);
+                await page
+                    .locator('.modal-header span')
+                    .filter({ hasText: 'Importing Large Files' })
+                    .waitFor({ state: 'hidden', timeout: 120_000 })
+                    .catch(() => dismissOpenModals(page));
                 return;
             }
         }
