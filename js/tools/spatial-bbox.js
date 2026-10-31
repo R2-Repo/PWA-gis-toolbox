@@ -121,25 +121,49 @@ function metersPerDegLon(latDeg) {
  * Minimum Euclidean separation of two axis-aligned degree boxes on a local tangent plane (approx meters).
  * Lower bound on true geodesic distance between features contained in the boxes.
  */
-export function minBBoxSeparationMeters(boxA, boxB) {
-    const [aw, as, ae, an] = boxA;
-    const [bw, bs, be, bn] = boxB;
-
-    const overlapX = !(ae < bw || be < aw);
-    const overlapY = !(an < bs || bn < as);
-    if (overlapX && overlapY) return 0;
-
-    let dxDeg = 0;
-    if (!overlapX) {
-        if (ae < bw) dxDeg = bw - ae;
-        else if (be < aw) dxDeg = aw - be;
+function minLonSeparationDeg(segsA, segsB) {
+    let minDx = Infinity;
+    for (const a of segsA) {
+        for (const b of segsB) {
+            if (!segmentsOverlapOnY(a, b)) continue;
+            if (segmentsOverlapOnX(a, b)) return 0;
+            const eastGap = b[0] - a[2];
+            if (eastGap > 0) minDx = Math.min(minDx, eastGap);
+            const westGap = a[0] - b[2];
+            if (westGap > 0) minDx = Math.min(minDx, westGap);
+            const wrapGap = 180 - a[2] + (180 + b[0]);
+            if (a[2] <= 180 && b[0] >= -180 && wrapGap > 0 && wrapGap < 360) {
+                minDx = Math.min(minDx, wrapGap);
+            }
+            const wrapGapRev = 180 - b[2] + (180 + a[0]);
+            if (b[2] <= 180 && a[0] >= -180 && wrapGapRev > 0 && wrapGapRev < 360) {
+                minDx = Math.min(minDx, wrapGapRev);
+            }
+        }
     }
+    return minDx;
+}
+
+export function minBBoxSeparationMeters(boxA, boxB) {
+    if (bboxOverlap(boxA, boxB)) return 0;
+
+    const segsA = bboxToLngSegments(boxA);
+    const segsB = bboxToLngSegments(boxB);
+    if (segsA.length === 0 || segsB.length === 0) return 0;
 
     let dyDeg = 0;
+    const [, as, , an] = boxA;
+    const [, bs, , bn] = boxB;
+    const overlapY = !(an < bs || bn < as);
     if (!overlapY) {
         if (an < bs) dyDeg = bs - an;
         else if (bn < as) dyDeg = as - bn;
     }
+
+    let dxDeg = 0;
+    const lonSep = minLonSeparationDeg(segsA, segsB);
+    if (lonSep === 0) return 0;
+    if (Number.isFinite(lonSep)) dxDeg = lonSep;
 
     const latRef = (as + an + bs + bn) / 4;
     const mx = dxDeg * metersPerDegLon(latRef);
