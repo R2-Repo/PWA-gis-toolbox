@@ -24,6 +24,7 @@ import {
     rowMatchesAttributeQuery,
     sortAttributeRows
 } from './attribute-table.js';
+import { LIMITS } from '../import/import-limits.js';
 
 const DB_NAME = 'gis-toolbox-workspace';
 /** Bumped for attributes `by-layer-feature` compound index (numeric ranges). */
@@ -36,9 +37,9 @@ const STORE_INDEX = 'spatial_index';
 export const ATTR_LAYER_FEATURE_INDEX = 'by-layer-feature';
 
 /** Feature count above which imports use workspace storage. */
-export const WORKSPACE_FEATURE_THRESHOLD = 15_000;
+export const WORKSPACE_FEATURE_THRESHOLD = LIMITS.workspaceFeatureThreshold;
 
-export const WORKSPACE_CHUNK_SIZE = 1000;
+export const WORKSPACE_CHUNK_SIZE = LIMITS.workspaceChunkSize;
 
 let db = null;
 /** @type {GridSpatialIndex|null} */

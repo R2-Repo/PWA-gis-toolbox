@@ -9,6 +9,7 @@
  *
  * @see docs/IMPORT_LARGE_FILES.md (“End-user import gates”)
  */
+import { LIMITS } from './import-limits.js';
 import {
     TEXT_SOFT_BYTES,
     TEXT_STRONG_BYTES,
@@ -36,13 +37,13 @@ export const MATERIALIZE_FEATURE_LIMIT = MAX_IMPORT_FEATURES;
  * Working-set coordinate (vertex) budget for heavy GIS tools.
  * Complements feature count — dense geometries can blow RAM under the feature cap.
  */
-export const MATERIALIZE_VERTEX_LIMIT = 5_000_000;
+export const MATERIALIZE_VERTEX_LIMIT = LIMITS.materializeVertexLimit;
 
 /**
  * Single-feature coordinate ceiling for whole-layer materialize.
  * Blocks pathological mega-polygons even when totals look OK.
  */
-export const MATERIALIZE_MAX_COORDS_PER_FEATURE = 500_000;
+export const MATERIALIZE_MAX_COORDS_PER_FEATURE = LIMITS.materializeMaxCoordsPerFeature;
 
 /**
  * Soft ceiling for features stored via stream → IndexedDB (Gate B unlock).

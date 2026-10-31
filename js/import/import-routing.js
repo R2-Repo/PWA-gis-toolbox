@@ -8,16 +8,19 @@ import {
     sniffCoordinateCountEstimate,
     sniffFeatureCountEstimate
 } from './import-memory-budget.js';
-import { WORKSPACE_FEATURE_THRESHOLD } from '../workspace/workspace-store.js';
+import { LIMITS } from './import-limits.js';
+import { decideAdmission } from './import-admission.js';
 
 /** Estimated peak memory above this → Import Optimizer (below 24 MB reject). */
-export const OPTIMIZER_PEAK_BYTES = 16 * 1024 * 1024;
+export const OPTIMIZER_PEAK_BYTES = LIMITS.optimizerPeakBytes;
 
 /** Coordinate sniff above this → Optimizer (below 2M reject). */
-export const OPTIMIZER_COORDINATE_THRESHOLD = 500_000;
+export const OPTIMIZER_COORDINATE_THRESHOLD = LIMITS.optimizerCoordinateThreshold;
 
 /** KMZ/KML file size above this may suggest heavy embedded assets. */
-export const KML_HEAVY_BYTES = 4 * 1024 * 1024;
+export const KML_HEAVY_BYTES = LIMITS.kmlHeavyBytes;
+
+export const WORKSPACE_FEATURE_THRESHOLD = LIMITS.workspaceFeatureThreshold;
 
 export const ROUTE_REASON = {
     FEATURE_COUNT: 'feature_count',
@@ -36,7 +39,7 @@ function _isKmlFamily(format) {
  * Assess one file using optional precomputed scan row.
  * @param {File} file
  * @param {object|null} scan
- * @returns {Promise<{ reasons: string[], featureEstimate: number|null, peakBytes: number, useWorkspace: boolean }>}
+ * @returns {Promise<{ reasons: string[], featureEstimate: number|null, peakBytes: number, useWorkspace: boolean, admission: ReturnType<typeof decideAdmission> }>}
  */
 export async function assessFileImportRisk(file, scan = null) {
     const format = scan?.format ?? detectFormat(file);
@@ -60,22 +63,28 @@ export async function assessFileImportRisk(file, scan = null) {
         reasons.push(ROUTE_REASON.KML_HEAVY);
     }
 
-    const useWorkspace = featureEstimate != null && featureEstimate >= WORKSPACE_FEATURE_THRESHOLD;
+    const preflight = preflightFile(file, { format });
+    const admission = decideAdmission({
+        entry: 'file',
+        format,
+        files: [{
+            name: file.name,
+            format,
+            bytes: file.size ?? 0,
+            featureEstimate
+        }],
+        overPreflightReject: preflight.level === 'reject',
+        streamEligible: null
+    });
 
-    return { reasons, featureEstimate, peakBytes, useWorkspace, format };
+    const useWorkspace = admission.useWorkspace;
+
+    return { reasons, featureEstimate, peakBytes, useWorkspace, format, admission };
 }
 
 /**
  * @param {File[]} files
  * @param {{ scans?: Array<object> }} [options]
- * @returns {Promise<{
- *   route: 'standard' | 'optimizer',
- *   reasons: string[],
- *   useWorkspace: boolean,
- *   notice: object|null,
- *   showProgressNotice: boolean,
- *   fileRisks: Array<object>
- * }>}
  */
 export async function assessImportRoute(files, options = {}) {
     const scans = options.scans || [];
@@ -95,38 +104,49 @@ export async function assessImportRoute(files, options = {}) {
     const route = reasons.length > 0 ? 'optimizer' : 'standard';
     const useWorkspace = fileRisks.some((r) => r.useWorkspace);
 
+    const admission = decideAdmission({
+        entry: 'file',
+        files: (files || []).map((file, i) => {
+            const risk = fileRisks[i];
+            return {
+                name: file.name,
+                format: risk?.format ?? detectFormat(file),
+                bytes: file.size ?? 0,
+                featureEstimate: risk?.featureEstimate ?? null
+            };
+        })
+    });
+
     return {
         route,
         reasons,
-        useWorkspace,
-        showProgressNotice: route === 'optimizer' && useWorkspace,
-        fileRisks
+        useWorkspace: admission.useWorkspace || useWorkspace,
+        showProgressNotice: route === 'optimizer' && (admission.useWorkspace || useWorkspace),
+        fileRisks,
+        admission
     };
 }
 
-/**
- * Whether post-parse workspace conversion should run.
- * @param {number} featureCount
- * @param {{ useWorkspace?: boolean }} [importOpts]
- */
 export function shouldConvertToWorkspace(featureCount, importOpts = {}) {
     if (importOpts.useWorkspace === true) return true;
-    return (featureCount ?? 0) >= WORKSPACE_FEATURE_THRESHOLD;
+    const admission = decideAdmission({
+        entry: 'file',
+        featureCount: featureCount ?? 0
+    });
+    return admission.useWorkspace;
 }
 
-/**
- * ArcGIS spatial download — workspace only when feature count warrants it.
- * @param {number|null|undefined} totalCount
- * @param {{ spatialFilter?: unknown }} [queryOpts]
- */
 export function arcgisShouldUseWorkspace(totalCount, queryOpts = {}) {
-    if (queryOpts.spatialFilter) return true;
-    const count = Number(totalCount);
-    if (!Number.isFinite(count) || count <= 0) return false;
-    return count >= WORKSPACE_FEATURE_THRESHOLD;
+    const admission = decideAdmission({
+        entry: 'arcgis-rest',
+        featureCount: totalCount,
+        spatialFilter: queryOpts.spatialFilter,
+        returnGeometry: true,
+        allowLargeDownload: queryOpts.allowLargeDownload
+    });
+    return admission.useWorkspace;
 }
 
-/** Quick check if scans already contain enough info to route without re-sniffing. */
 export function assessImportRouteFromScans(scans) {
     const reasons = new Set();
     let useWorkspace = false;
@@ -150,11 +170,23 @@ export function assessImportRouteFromScans(scans) {
 
     const reasonList = [...reasons];
     const route = reasonList.length > 0 ? 'optimizer' : 'standard';
+
+    const admission = decideAdmission({
+        entry: 'file',
+        files: (scans || []).map((scan) => ({
+            name: scan.fileName,
+            format: scan.format,
+            bytes: scan.sizeBytes,
+            featureEstimate: scan.featureEstimate
+        }))
+    });
+
     return {
         route,
         reasons: reasonList,
-        useWorkspace,
-        showProgressNotice: route === 'optimizer' && useWorkspace
+        useWorkspace: admission.useWorkspace || useWorkspace,
+        showProgressNotice: route === 'optimizer' && (admission.useWorkspace || useWorkspace),
+        admission
     };
 }
 
@@ -162,6 +194,7 @@ export default {
     OPTIMIZER_PEAK_BYTES,
     OPTIMIZER_COORDINATE_THRESHOLD,
     KML_HEAVY_BYTES,
+    WORKSPACE_FEATURE_THRESHOLD,
     ROUTE_REASON,
     assessFileImportRisk,
     assessImportRoute,

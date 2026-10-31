@@ -3,9 +3,10 @@
  */
 import { AppError, ErrorCategory } from '../core/error-handler.js';
 import { formatBytes } from './import-preflight.js';
+import { LIMITS } from './import-limits.js';
 
 /** Max total uncompressed bytes inside ZIP/KMZ before parse (HANDOFF). */
-export const MAX_ZIP_UNCOMPRESSED_BYTES = 80 * 1024 * 1024;
+export const MAX_ZIP_UNCOMPRESSED_BYTES = LIMITS.maxZipUncompressedBytes;
 
 export function normalizeZipPath(p) {
     return p.replace(/\\/g, '/');

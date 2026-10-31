@@ -37,6 +37,8 @@ import {
     esriRingsToGeoJSON,
     DEFAULT_ARCGIS_QUERY_TIMEOUT_MS
 } from './rest-client.js';
+import { LIMITS } from '../import/import-limits.js';
+import { decideAdmission } from '../import/import-admission.js';
 
 export {
     arcgisResponseExceededTransferLimit,
@@ -45,7 +47,7 @@ export {
 } from './rest-client.js';
 
 /** Maximum features to download without explicit user override. */
-export const ARCGIS_MAX_FEATURES = 250_000;
+export const ARCGIS_MAX_FEATURES = LIMITS.arcgisMaxFeatures;
 
 /**
  * Convert one ESRI feature JSON object to GeoJSON Feature.
@@ -272,7 +274,25 @@ export class ArcGISRestImporter {
         const maxRec = this.metadata.maxRecordCount || 1000;
         let page = 0;
         const totalExpected = this.metadata.totalCount;
-        const streamToWorkspace = returnGeometry && queryOptions.useWorkspace !== false;
+
+        const admission = decideAdmission({
+            entry: 'arcgis-rest',
+            featureCount: totalExpected,
+            allowLargeDownload,
+            spatialFilter,
+            returnGeometry,
+            forceWorkspace: queryOptions.useWorkspace === true
+        });
+
+        if (admission.route === 'refused') {
+            throw new AppError(
+                admission.refusedMessage || 'Import refused by admission policy.',
+                ErrorCategory.OUT_OF_MEMORY,
+                { totalCount: totalExpected, admission }
+            );
+        }
+
+        const streamToWorkspace = returnGeometry && admission.useWorkspace;
         const convertGeom = (g) => this.convertGeometry(g);
 
         /** @type {object[]} raw ESRI features — only when not streaming spatial to workspace */
@@ -282,19 +302,6 @@ export class ArcGISRestImporter {
         let featureOffset = 0;
         let importTruncated = false;
         let importCapped = false;
-
-        if (
-            totalExpected != null
-            && totalExpected > ARCGIS_MAX_FEATURES
-            && !allowLargeDownload
-            && !spatialFilter
-        ) {
-            throw new AppError(
-                `This layer has ${totalExpected.toLocaleString()} features — exceeds the ${ARCGIS_MAX_FEATURES.toLocaleString()} feature limit. Apply a filter or use a smaller layer.`,
-                ErrorCategory.OUT_OF_MEMORY,
-                { totalCount: totalExpected, max: ARCGIS_MAX_FEATURES }
-            );
-        }
 
         const enforceCap = !allowLargeDownload;
         const featureCap = enforceCap ? ARCGIS_MAX_FEATURES : null;

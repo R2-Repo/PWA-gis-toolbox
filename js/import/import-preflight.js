@@ -1,6 +1,11 @@
 /**
  * Pre-import checks — format-aware file size warnings before heavy parse work.
  */
+import {
+    LIMITS,
+    BINARY_PREFLIGHT_FORMATS,
+    preflightByteBands
+} from './import-limits.js';
 
 function _detectFormatFromName(fileName) {
     const name = (fileName || '').toLowerCase();
@@ -17,15 +22,13 @@ function _detectFormatFromName(fileName) {
     return null;
 }
 
-/** Text formats: geojson, json, csv, kml, gpx, xml */
-export const TEXT_SOFT_BYTES = 2 * 1024 * 1024;
-export const TEXT_STRONG_BYTES = 4 * 1024 * 1024;
-export const TEXT_HARD_BYTES = 6 * 1024 * 1024;
-
-/** Binary/archive: zip, kmz, xlsx, xls */
-export const BINARY_SOFT_BYTES = 3 * 1024 * 1024;
-export const BINARY_STRONG_BYTES = 5 * 1024 * 1024;
-export const BINARY_HARD_BYTES = 8 * 1024 * 1024;
+export const TEXT_SOFT_BYTES = LIMITS.textSoftBytes;
+export const TEXT_STRONG_BYTES = LIMITS.textStrongBytes;
+export const TEXT_HARD_BYTES = LIMITS.textHardBytes;
+export const BINARY_SOFT_BYTES = LIMITS.binarySoftBytes;
+export const BINARY_STRONG_BYTES = LIMITS.binaryStrongBytes;
+export const BINARY_HARD_BYTES = LIMITS.binaryHardBytes;
+export const MAX_IMPORT_FEATURES = LIMITS.maxImportFeatures;
 
 /** @deprecated use TEXT_SOFT_BYTES */
 export const PREFLIGHT_SOFT_BYTES = TEXT_SOFT_BYTES;
@@ -34,9 +37,7 @@ export const PREFLIGHT_HARD_BYTES = TEXT_HARD_BYTES;
 /** @deprecated use TEXT_STRONG_BYTES */
 export const PREFLIGHT_STRONG_BYTES = TEXT_STRONG_BYTES;
 
-export const MAX_IMPORT_FEATURES = 250_000;
-
-const BINARY_FORMATS = new Set(['zip', 'kmz', 'xlsx', 'xls']);
+const BINARY_FORMATS = BINARY_PREFLIGHT_FORMATS;
 
 export const PREFLIGHT_LEVEL = {
     OK: 'ok',
@@ -50,21 +51,7 @@ export const PREFLIGHT_LEVEL = {
  * @returns {{ soft: number, strong: number, hard: number, binary: boolean }}
  */
 export function getPreflightLimits(format) {
-    const binary = format != null && BINARY_FORMATS.has(format);
-    if (binary) {
-        return {
-            soft: BINARY_SOFT_BYTES,
-            strong: BINARY_STRONG_BYTES,
-            hard: BINARY_HARD_BYTES,
-            binary: true
-        };
-    }
-    return {
-        soft: TEXT_SOFT_BYTES,
-        strong: TEXT_STRONG_BYTES,
-        hard: TEXT_HARD_BYTES,
-        binary: false
-    };
+    return preflightByteBands(format, LIMITS);
 }
 
 /**
@@ -138,7 +125,6 @@ export function preflightFiles(files) {
 
 /**
  * Human-readable size with both KB and MB (binary, 1024-based).
- * Example: 204800 KB / 200.0 MB
  * @param {number} bytes
  * @returns {string}
  */

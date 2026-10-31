@@ -6,7 +6,9 @@
  * so every existing import path keeps its current behavior.
  */
 import { detectFormat } from '../importer.js';
-import { preflightFile, PREFLIGHT_LEVEL, formatBytes, TEXT_STRONG_BYTES } from '../import-preflight.js';
+import { preflightFile, PREFLIGHT_LEVEL, formatBytes } from '../import-preflight.js';
+import { LIMITS } from '../import-limits.js';
+import { decideAdmission } from '../import-admission.js';
 import {
     STREAM_MAX_BYTES,
     STREAM_MAX_FEATURES,
@@ -59,7 +61,7 @@ export async function sniffXmlIsKml(file) {
 }
 
 /** Uncompressed main-KML size above which an archive must stream. */
-const ARCHIVE_LARGE_ENTRY_BYTES = TEXT_STRONG_BYTES;
+const ARCHIVE_LARGE_ENTRY_BYTES = LIMITS.textStrongBytes;
 
 /**
  * Inspect an archive's central directory for a streamable main KML entry.
@@ -188,7 +190,24 @@ export async function assessStreamEligibility(file, format = null) {
         }
     }
 
-    return { stream: true, reject: false };
+    const admission = decideAdmission({
+        entry: 'file',
+        format: fmt,
+        files: [{ name: file.name, format: fmt, bytes: sizeBytes }],
+        overPreflightReject: true,
+        streamEligible: true
+    });
+
+    if (admission.route === 'refused') {
+        return {
+            stream: false,
+            reject: true,
+            message: admission.refusedMessage
+                || `"${file.name}" exceeds import limits. Split or export a smaller subset externally before importing.`
+        };
+    }
+
+    return { stream: admission.route === 'streamed', reject: false };
 }
 
 /**
