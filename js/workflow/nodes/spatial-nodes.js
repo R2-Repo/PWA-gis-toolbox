@@ -2,10 +2,10 @@
  * Spatial analysis nodes — GIS operations
  */
 import { NodeBase } from './node-base.js';
+import { computeSimplify } from '../../tools/compute/simplify.js';
 import {
     computeBuffer,
     computeLineOffset,
-    computeSimplify,
     computeDissolve,
     computeClip,
     computeUnion,
@@ -24,7 +24,8 @@ import {
     computeSplitByLine,
     computeSplitByPolygon,
     computeReproject
-} from '../compute/spatial-operations.js';
+} from '../../tools/compute/spatial-operations.js';
+import { adaptComputeContext } from '../compute-run-context.js';
 
 // ==============================
 // Buffer
@@ -50,7 +51,7 @@ export class BufferNode extends NodeBase {
     }
 
     async execute(inputs, context) {
-        return computeBuffer(inputs, this.config, context);
+        return computeBuffer(inputs, this.config, adaptComputeContext(context));
     }
 }
 
@@ -78,7 +79,7 @@ export class LineOffsetNode extends NodeBase {
     }
 
     async execute(inputs, context) {
-        return computeLineOffset(inputs, this.config, context);
+        return computeLineOffset(inputs, this.config, adaptComputeContext(context));
     }
 }
 
@@ -106,7 +107,7 @@ export class SimplifyNode extends NodeBase {
     }
 
     async execute(inputs, context) {
-        return computeSimplify(inputs, this.config, context);
+        return computeSimplify(inputs, this.config, adaptComputeContext(context));
     }
 }
 
@@ -131,7 +132,7 @@ export class DissolveNode extends NodeBase {
     validate() { return { valid: true, message: '' }; }
 
     async execute(inputs, context) {
-        return computeDissolve(inputs, this.config, context);
+        return computeDissolve(inputs, this.config, adaptComputeContext(context));
     }
 }
 
@@ -159,7 +160,7 @@ export class ClipNode extends NodeBase {
     validate() { return { valid: true, message: '' }; }
 
     async execute(inputs, context) {
-        return computeClip(inputs, this.config, context);
+        return computeClip(inputs, this.config, adaptComputeContext(context));
     }
 }
 
@@ -184,7 +185,7 @@ export class UnionNode extends NodeBase {
     validate() { return { valid: true, message: '' }; }
 
     async execute(inputs, context) {
-        return computeUnion(inputs, this.config, context);
+        return computeUnion(inputs, this.config, adaptComputeContext(context));
     }
 }
 
@@ -209,7 +210,7 @@ export class CombineNode extends NodeBase {
     validate() { return { valid: true, message: '' }; }
 
     async execute(inputs, context) {
-        return computeCombine(inputs, this.config, context);
+        return computeCombine(inputs, this.config, adaptComputeContext(context));
     }
 }
 
@@ -237,7 +238,7 @@ export class SpatialJoinNode extends NodeBase {
     validate() { return { valid: true, message: '' }; }
 
     async execute(inputs, context) {
-        return computeSpatialJoin(inputs, this.config, context);
+        return computeSpatialJoin(inputs, this.config, adaptComputeContext(context));
     }
 }
 
@@ -265,7 +266,7 @@ export class NearestJoinNode extends NodeBase {
     validate() { return { valid: true, message: '' }; }
 
     async execute(inputs, context) {
-        return computeNearestJoin(inputs, this.config, context);
+        return computeNearestJoin(inputs, this.config, adaptComputeContext(context));
     }
 }
 
@@ -293,7 +294,7 @@ export class IntersectNode extends NodeBase {
     validate() { return { valid: true, message: '' }; }
 
     async execute(inputs, context) {
-        return computeIntersect(inputs, this.config, context);
+        return computeIntersect(inputs, this.config, adaptComputeContext(context));
     }
 }
 
@@ -321,7 +322,7 @@ export class MergeLayersNode extends NodeBase {
     validate() { return { valid: true, message: '' }; }
 
     async execute(inputs, context) {
-        return computeMergeLayers(inputs, this.config, context);
+        return computeMergeLayers(inputs, this.config, adaptComputeContext(context));
     }
 }
 
@@ -349,7 +350,7 @@ export class DifferenceNode extends NodeBase {
     validate() { return { valid: true, message: '' }; }
 
     async execute(inputs, context) {
-        return computeDifference(inputs, this.config, context);
+        return computeDifference(inputs, this.config, adaptComputeContext(context));
     }
 }
 
@@ -377,7 +378,7 @@ export class SummarizeWithinNode extends NodeBase {
     validate() { return { valid: true, message: '' }; }
 
     async execute(inputs, context) {
-        return computeSummarizeWithin(inputs, this.config, context);
+        return computeSummarizeWithin(inputs, this.config, adaptComputeContext(context));
     }
 }
 
@@ -406,7 +407,7 @@ export class SplitByGeometryNode extends NodeBase {
     validate() { return { valid: true, message: '' }; }
 
     async execute(inputs, context) {
-        return computeSplitByGeometry(inputs, this.config, context);
+        return computeSplitByGeometry(inputs, this.config, adaptComputeContext(context));
     }
 }
 
@@ -437,7 +438,7 @@ export class SampleNode extends NodeBase {
     }
 
     async execute(inputs, context) {
-        return computeSample(inputs, this.config, context);
+        return computeSample(inputs, this.config, adaptComputeContext(context));
     }
 }
 
@@ -462,7 +463,7 @@ export class ExplodeNode extends NodeBase {
     validate() { return { valid: true, message: '' }; }
 
     async execute(inputs, context) {
-        return computeExplode(inputs, this.config, context);
+        return computeExplode(inputs, this.config, adaptComputeContext(context));
     }
 }
 
@@ -487,7 +488,7 @@ export class PolygonToLineNode extends NodeBase {
     validate() { return { valid: true, message: '' }; }
 
     async execute(inputs, context) {
-        return computePolygonToLine(inputs, this.config, context);
+        return computePolygonToLine(inputs, this.config, adaptComputeContext(context));
     }
 }
 
@@ -512,7 +513,7 @@ export class FillHolesNode extends NodeBase {
     validate() { return { valid: true, message: '' }; }
 
     async execute(inputs, context) {
-        return computeFillHoles(inputs, this.config, context);
+        return computeFillHoles(inputs, this.config, adaptComputeContext(context));
     }
 }
 
@@ -540,7 +541,7 @@ export class SplitByLineNode extends NodeBase {
     validate() { return { valid: true, message: '' }; }
 
     async execute(inputs, context) {
-        return computeSplitByLine(inputs, this.config, context);
+        return computeSplitByLine(inputs, this.config, adaptComputeContext(context));
     }
 }
 
@@ -568,7 +569,7 @@ export class SplitByPolygonNode extends NodeBase {
     validate() { return { valid: true, message: '' }; }
 
     async execute(inputs, context) {
-        return computeSplitByPolygon(inputs, this.config, context);
+        return computeSplitByPolygon(inputs, this.config, adaptComputeContext(context));
     }
 }
 
@@ -596,7 +597,7 @@ export class ReprojectNode extends NodeBase {
     }
 
     async execute(inputs, context) {
-        return computeReproject(inputs, this.config, context);
+        return computeReproject(inputs, this.config, adaptComputeContext(context));
     }
 }
 

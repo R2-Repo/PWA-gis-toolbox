@@ -1,6 +1,7 @@
-import { computeFilterRows } from '../compute/filter-rows.js';
-import { computeDeduplicate } from '../compute/deduplicate.js';
-import { computeSimplify } from '../compute/simplify.js';
+import { adaptComputeContext } from '../compute-run-context.js';
+import { computeFilterRows } from '../../tools/compute/filter-rows.js';
+import { computeDeduplicate } from '../../tools/compute/deduplicate.js';
+import { computeSimplify } from '../../tools/compute/simplify.js';
 import {
     computeRenameFields,
     computeDeleteFields,
@@ -16,7 +17,7 @@ import {
     computeConditionalValue,
     computeUnitConvert,
     computeAddField
-} from '../compute/transform-operations.js';
+} from '../../tools/compute/transform-operations.js';
 import {
     computeBuffer,
     computeLineOffset,
@@ -38,7 +39,7 @@ import {
     computeSplitByLine,
     computeSplitByPolygon,
     computeReproject
-} from '../compute/spatial-operations.js';
+} from '../../tools/compute/spatial-operations.js';
 
 /** @type {Map<string, (inputs: object[], config: object, context: object) => *>} */
 export const NODE_COMPUTE_BY_TYPE = new Map([
@@ -86,5 +87,5 @@ export const WORKER_CAPABLE_NODE_TYPES = new Set(NODE_COMPUTE_BY_TYPE.keys());
 export function runNodeCompute(nodeType, inputs, config, context) {
     const fn = NODE_COMPUTE_BY_TYPE.get(nodeType);
     if (!fn) throw new Error(`No worker compute for node type "${nodeType}"`);
-    return fn(inputs, config, context);
+    return fn(inputs, config, adaptComputeContext(context));
 }

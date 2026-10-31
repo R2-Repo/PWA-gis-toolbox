@@ -24,9 +24,7 @@ import {
     mergeFeatureCollections,
     sampleFeatureCollection
 } from '../js/tools/compute/spatial-operations.js';
-import * as wfSpatial from '../js/workflow/compute/spatial-operations.js';
 import { computeClip as toolsComputeClip } from '../js/tools/compute/spatial-operations.js';
-import { computeClip as wfComputeClip } from '../js/workflow/compute/spatial-operations.js';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const COMPUTE_DIR = join(__dir, '../js/tools/compute');
@@ -144,23 +142,14 @@ describe('tools/compute parity with gis-tools', () => {
     });
 });
 
-describe('tools/compute vs workflow/compute (report-only parity)', () => {
-    it('documents clip semantic differences vs workflow copy', () => {
+describe('tools/compute clip semantics (shared compute)', () => {
+    it('drops features when intersect fails (no centroid fallback)', () => {
         const clipLayer = datasetFrom([turf.bboxPolygon([-111.5, 40.5, -111.4, 40.6])], 'clip');
         const line = turf.lineString([[-111.55, 40.55], [-111.35, 40.55]]);
         const data = datasetFrom([line], 'data');
 
-        const wfInputs = [data, clipLayer];
-        const wfOut = wfComputeClip(wfInputs, {}, null);
-        const toolsOut = toolsComputeClip(wfInputs, {}, null);
-
-        const wfCount = wfOut.geojson.features.length;
-        const toolsCount = toolsOut.geojson.features.length;
-        expect(wfCount).not.toBe(toolsCount);
-        expect({ workflowClipFeatures: wfCount, toolsClipFeatures: toolsCount }).toEqual({
-            workflowClipFeatures: 1,
-            toolsClipFeatures: 0
-        });
+        const toolsOut = toolsComputeClip([data, clipLayer], {}, null);
+        expect(toolsOut.geojson.features.length).toBe(0);
     });
 });
 

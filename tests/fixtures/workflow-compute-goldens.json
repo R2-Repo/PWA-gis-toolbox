@@ -1,0 +1,2832 @@
+{
+  "filter-rows": {
+    "type": "table",
+    "name": "table",
+    "rows": [
+      {
+        "id": 0,
+        "val": 30,
+        "name": "n0",
+        "group": "a"
+      },
+      {
+        "id": 2,
+        "val": 20,
+        "name": "n2",
+        "group": "a"
+      }
+    ],
+    "schema": {
+      "fields": [
+        {
+          "name": "id",
+          "type": "integer"
+        },
+        {
+          "name": "val",
+          "type": "number"
+        },
+        {
+          "name": "name",
+          "type": "string"
+        },
+        {
+          "name": "group",
+          "type": "string"
+        }
+      ],
+      "featureCount": 2
+    }
+  },
+  "deduplicate": {
+    "type": "table",
+    "name": "table",
+    "rows": [],
+    "schema": {
+      "fields": [
+        {
+          "name": "id",
+          "type": "integer"
+        },
+        {
+          "name": "val",
+          "type": "number"
+        },
+        {
+          "name": "name",
+          "type": "string"
+        },
+        {
+          "name": "group",
+          "type": "string"
+        }
+      ],
+      "featureCount": 0
+    }
+  },
+  "simplify": {
+    "name": "layer_simplified",
+    "type": "spatial",
+    "geojson": {
+      "type": "FeatureCollection",
+      "features": [
+        {
+          "type": "Feature",
+          "properties": {
+            "id": 1,
+            "val": 10,
+            "name": "a",
+            "group": "x"
+          },
+          "geometry": {
+            "type": "Point",
+            "coordinates": [
+              -111.891,
+              40.7608
+            ]
+          }
+        },
+        {
+          "type": "Feature",
+          "properties": {
+            "id": 2,
+            "val": 20,
+            "name": "b",
+            "group": "y"
+          },
+          "geometry": {
+            "type": "Point",
+            "coordinates": [
+              -111.88,
+              40.72
+            ]
+          }
+        }
+      ]
+    },
+    "schema": {
+      "fields": [
+        {
+          "name": "id",
+          "type": "number",
+          "nullCount": 0,
+          "uniqueCount": 2,
+          "sampleValues": [
+            1,
+            2
+          ],
+          "min": 1,
+          "max": 2,
+          "selected": true,
+          "outputName": "id",
+          "order": 0
+        },
+        {
+          "name": "val",
+          "type": "number",
+          "nullCount": 0,
+          "uniqueCount": 2,
+          "sampleValues": [
+            10,
+            20
+          ],
+          "min": 10,
+          "max": 20,
+          "selected": true,
+          "outputName": "val",
+          "order": 1
+        },
+        {
+          "name": "name",
+          "type": "string",
+          "nullCount": 0,
+          "uniqueCount": 2,
+          "sampleValues": [
+            "a",
+            "b"
+          ],
+          "min": null,
+          "max": null,
+          "selected": true,
+          "outputName": "name",
+          "order": 2
+        },
+        {
+          "name": "group",
+          "type": "string",
+          "nullCount": 0,
+          "uniqueCount": 2,
+          "sampleValues": [
+            "x",
+            "y"
+          ],
+          "min": null,
+          "max": null,
+          "selected": true,
+          "outputName": "group",
+          "order": 3
+        }
+      ],
+      "geometryType": "Point",
+      "featureCount": 2,
+      "crs": "EPSG:4326"
+    },
+    "source": {
+      "file": "layer",
+      "format": "derived",
+      "schema": {
+        "featureCount": 2,
+        "fields": [
+          {
+            "name": "id",
+            "type": "integer"
+          },
+          {
+            "name": "val",
+            "type": "number"
+          },
+          {
+            "name": "name",
+            "type": "string"
+          },
+          {
+            "name": "group",
+            "type": "string"
+          }
+        ]
+      }
+    },
+    "visible": true,
+    "active": true,
+    "scaleRangeEnabled": false,
+    "minScale": null,
+    "maxScale": null
+  },
+  "computeRenameFields": {
+    "type": "table",
+    "name": "table",
+    "rows": [
+      {
+        "id": 0,
+        "val": 30,
+        "label": "n0",
+        "group": "a"
+      },
+      {
+        "id": 1,
+        "val": 10,
+        "label": "n1",
+        "group": "b"
+      },
+      {
+        "id": 2,
+        "val": 20,
+        "label": "n2",
+        "group": "a"
+      },
+      {
+        "id": 3,
+        "val": 20,
+        "label": "n3",
+        "group": "c"
+      }
+    ],
+    "schema": {
+      "fields": [
+        {
+          "name": "id",
+          "type": "integer"
+        },
+        {
+          "name": "val",
+          "type": "number"
+        },
+        {
+          "name": "label",
+          "type": "string"
+        },
+        {
+          "name": "group",
+          "type": "string"
+        }
+      ]
+    }
+  },
+  "computeDeleteFields": {
+    "type": "table",
+    "name": "table",
+    "rows": [
+      {
+        "id": 0,
+        "val": 30,
+        "name": "n0",
+        "group": "a"
+      },
+      {
+        "id": 1,
+        "val": 10,
+        "name": "n1",
+        "group": "b"
+      },
+      {
+        "id": 2,
+        "val": 20,
+        "name": "n2",
+        "group": "a"
+      },
+      {
+        "id": 3,
+        "val": 20,
+        "name": "n3",
+        "group": "c"
+      }
+    ],
+    "schema": {
+      "fields": [
+        {
+          "name": "id",
+          "type": "integer"
+        },
+        {
+          "name": "val",
+          "type": "number"
+        },
+        {
+          "name": "name",
+          "type": "string"
+        },
+        {
+          "name": "group",
+          "type": "string"
+        }
+      ]
+    }
+  },
+  "computeSort": {
+    "type": "table",
+    "name": "table",
+    "rows": [
+      {
+        "id": 1,
+        "val": 10,
+        "name": "n1",
+        "group": "b"
+      },
+      {
+        "id": 2,
+        "val": 20,
+        "name": "n2",
+        "group": "a"
+      },
+      {
+        "id": 3,
+        "val": 20,
+        "name": "n3",
+        "group": "c"
+      },
+      {
+        "id": 0,
+        "val": 30,
+        "name": "n0",
+        "group": "a"
+      }
+    ],
+    "schema": {
+      "fields": [
+        {
+          "name": "id",
+          "type": "integer"
+        },
+        {
+          "name": "val",
+          "type": "number"
+        },
+        {
+          "name": "name",
+          "type": "string"
+        },
+        {
+          "name": "group",
+          "type": "string"
+        }
+      ]
+    }
+  },
+  "computeFindReplace": {
+    "type": "table",
+    "name": "table",
+    "rows": [
+      {
+        "id": 0,
+        "val": 30,
+        "name": "x0",
+        "group": "a"
+      },
+      {
+        "id": 1,
+        "val": 10,
+        "name": "x1",
+        "group": "b"
+      },
+      {
+        "id": 2,
+        "val": 20,
+        "name": "x2",
+        "group": "a"
+      },
+      {
+        "id": 3,
+        "val": 20,
+        "name": "x3",
+        "group": "c"
+      }
+    ],
+    "schema": {
+      "fields": [
+        {
+          "name": "id",
+          "type": "integer"
+        },
+        {
+          "name": "val",
+          "type": "number"
+        },
+        {
+          "name": "name",
+          "type": "string"
+        },
+        {
+          "name": "group",
+          "type": "string"
+        }
+      ]
+    }
+  },
+  "computeAddUniqueId": {
+    "type": "table",
+    "name": "table",
+    "rows": [
+      {
+        "id": 0,
+        "val": 30,
+        "name": "n0",
+        "group": "a",
+        "uid": 1
+      },
+      {
+        "id": 1,
+        "val": 10,
+        "name": "n1",
+        "group": "b",
+        "uid": 2
+      },
+      {
+        "id": 2,
+        "val": 20,
+        "name": "n2",
+        "group": "a",
+        "uid": 3
+      },
+      {
+        "id": 3,
+        "val": 20,
+        "name": "n3",
+        "group": "c",
+        "uid": 4
+      }
+    ],
+    "schema": {
+      "fields": [
+        {
+          "name": "id",
+          "type": "integer"
+        },
+        {
+          "name": "val",
+          "type": "number"
+        },
+        {
+          "name": "name",
+          "type": "string"
+        },
+        {
+          "name": "group",
+          "type": "string"
+        },
+        {
+          "name": "uid",
+          "type": "string",
+          "nullCount": 0,
+          "uniqueCount": 4,
+          "sampleValues": [],
+          "selected": true,
+          "outputName": "uid",
+          "order": 4
+        }
+      ]
+    }
+  },
+  "computeCombineFields": {
+    "type": "table",
+    "name": "table",
+    "rows": [
+      {
+        "id": 0,
+        "val": 30,
+        "name": "n0",
+        "group": "a",
+        "combo": "0,n0"
+      },
+      {
+        "id": 1,
+        "val": 10,
+        "name": "n1",
+        "group": "b",
+        "combo": "1,n1"
+      },
+      {
+        "id": 2,
+        "val": 20,
+        "name": "n2",
+        "group": "a",
+        "combo": "2,n2"
+      },
+      {
+        "id": 3,
+        "val": 20,
+        "name": "n3",
+        "group": "c",
+        "combo": "3,n3"
+      }
+    ],
+    "schema": {
+      "fields": [
+        {
+          "name": "id",
+          "type": "integer"
+        },
+        {
+          "name": "val",
+          "type": "number"
+        },
+        {
+          "name": "name",
+          "type": "string"
+        },
+        {
+          "name": "group",
+          "type": "string"
+        },
+        {
+          "name": "combo",
+          "type": "string",
+          "nullCount": 0,
+          "uniqueCount": 0,
+          "sampleValues": [],
+          "selected": true,
+          "outputName": "combo",
+          "order": 4
+        }
+      ]
+    }
+  },
+  "computeSplitColumn": {
+    "type": "table",
+    "name": "table",
+    "rows": [
+      {
+        "combo": "1-x",
+        "a": "1",
+        "b": "x"
+      }
+    ],
+    "schema": {
+      "fields": [
+        {
+          "name": "id",
+          "type": "integer"
+        },
+        {
+          "name": "val",
+          "type": "number"
+        },
+        {
+          "name": "name",
+          "type": "string"
+        },
+        {
+          "name": "group",
+          "type": "string"
+        },
+        {
+          "name": "combo",
+          "type": "string",
+          "nullCount": 0,
+          "uniqueCount": 0,
+          "sampleValues": [],
+          "selected": true,
+          "outputName": "combo",
+          "order": 4
+        },
+        {
+          "name": "a",
+          "type": "string",
+          "nullCount": 0,
+          "uniqueCount": 0,
+          "sampleValues": [],
+          "selected": true,
+          "outputName": "a",
+          "order": 5
+        },
+        {
+          "name": "b",
+          "type": "string",
+          "nullCount": 0,
+          "uniqueCount": 0,
+          "sampleValues": [],
+          "selected": true,
+          "outputName": "b",
+          "order": 6
+        }
+      ]
+    }
+  },
+  "computeTemplateBuilder": {
+    "type": "table",
+    "name": "table",
+    "rows": [
+      {
+        "id": 0,
+        "val": 30,
+        "name": "n0",
+        "group": "a",
+        "label": "[id]:[name]"
+      },
+      {
+        "id": 1,
+        "val": 10,
+        "name": "n1",
+        "group": "b",
+        "label": "[id]:[name]"
+      },
+      {
+        "id": 2,
+        "val": 20,
+        "name": "n2",
+        "group": "a",
+        "label": "[id]:[name]"
+      },
+      {
+        "id": 3,
+        "val": 20,
+        "name": "n3",
+        "group": "c",
+        "label": "[id]:[name]"
+      }
+    ],
+    "schema": {
+      "fields": [
+        {
+          "name": "id",
+          "type": "integer"
+        },
+        {
+          "name": "val",
+          "type": "number"
+        },
+        {
+          "name": "name",
+          "type": "string"
+        },
+        {
+          "name": "group",
+          "type": "string"
+        },
+        {
+          "name": "label",
+          "type": "string",
+          "nullCount": 0,
+          "uniqueCount": 0,
+          "sampleValues": [],
+          "selected": true,
+          "outputName": "label",
+          "order": 4
+        }
+      ]
+    }
+  },
+  "computeTypeConvert": {
+    "type": "table",
+    "name": "table",
+    "rows": [
+      {
+        "id": 0,
+        "val": "30",
+        "name": "n0",
+        "group": "a"
+      },
+      {
+        "id": 1,
+        "val": "10",
+        "name": "n1",
+        "group": "b"
+      },
+      {
+        "id": 2,
+        "val": "20",
+        "name": "n2",
+        "group": "a"
+      },
+      {
+        "id": 3,
+        "val": "20",
+        "name": "n3",
+        "group": "c"
+      }
+    ],
+    "schema": {
+      "fields": [
+        {
+          "name": "id",
+          "type": "integer"
+        },
+        {
+          "name": "val",
+          "type": "string"
+        },
+        {
+          "name": "name",
+          "type": "string"
+        },
+        {
+          "name": "group",
+          "type": "string"
+        }
+      ]
+    }
+  },
+  "computeJoinLookup": {
+    "type": "table",
+    "name": "table",
+    "rows": [
+      {
+        "id": 0,
+        "val": 30,
+        "name": "lookup-a",
+        "group": "a"
+      },
+      {
+        "id": 1,
+        "val": 10,
+        "name": null,
+        "group": "b"
+      },
+      {
+        "id": 2,
+        "val": 20,
+        "name": "lookup-a",
+        "group": "a"
+      },
+      {
+        "id": 3,
+        "val": 20,
+        "name": null,
+        "group": "c"
+      }
+    ],
+    "schema": {
+      "fields": [
+        {
+          "name": "id",
+          "type": "integer"
+        },
+        {
+          "name": "val",
+          "type": "number"
+        },
+        {
+          "name": "name",
+          "type": "string"
+        },
+        {
+          "name": "group",
+          "type": "string"
+        }
+      ]
+    }
+  },
+  "computeCalculateField": {
+    "type": "table",
+    "name": "table",
+    "rows": [
+      {
+        "id": 0,
+        "val": 30,
+        "name": "n0",
+        "group": "a",
+        "doubled": 60
+      },
+      {
+        "id": 1,
+        "val": 10,
+        "name": "n1",
+        "group": "b",
+        "doubled": 20
+      },
+      {
+        "id": 2,
+        "val": 20,
+        "name": "n2",
+        "group": "a",
+        "doubled": 40
+      },
+      {
+        "id": 3,
+        "val": 20,
+        "name": "n3",
+        "group": "c",
+        "doubled": 40
+      }
+    ],
+    "schema": {
+      "fields": [
+        {
+          "name": "id",
+          "type": "integer"
+        },
+        {
+          "name": "val",
+          "type": "number"
+        },
+        {
+          "name": "name",
+          "type": "string"
+        },
+        {
+          "name": "group",
+          "type": "string"
+        },
+        {
+          "name": "doubled",
+          "type": "number",
+          "nullCount": 0,
+          "uniqueCount": 0,
+          "sampleValues": [],
+          "selected": true,
+          "outputName": "doubled",
+          "order": 4
+        }
+      ]
+    }
+  },
+  "computeConditionalValue": {
+    "type": "table",
+    "name": "table",
+    "rows": [
+      {
+        "id": 0,
+        "val": 30,
+        "name": "n0",
+        "group": "a",
+        "status": "high"
+      },
+      {
+        "id": 1,
+        "val": 10,
+        "name": "n1",
+        "group": "b",
+        "status": "low"
+      },
+      {
+        "id": 2,
+        "val": 20,
+        "name": "n2",
+        "group": "a",
+        "status": "high"
+      },
+      {
+        "id": 3,
+        "val": 20,
+        "name": "n3",
+        "group": "c",
+        "status": "high"
+      }
+    ],
+    "schema": {
+      "fields": [
+        {
+          "name": "id",
+          "type": "integer"
+        },
+        {
+          "name": "val",
+          "type": "number"
+        },
+        {
+          "name": "name",
+          "type": "string"
+        },
+        {
+          "name": "group",
+          "type": "string"
+        },
+        {
+          "name": "status",
+          "type": "string",
+          "nullCount": 0,
+          "uniqueCount": 0,
+          "sampleValues": [],
+          "selected": true,
+          "outputName": "status",
+          "order": 4
+        }
+      ]
+    }
+  },
+  "computeUnitConvert": {
+    "type": "table",
+    "name": "table",
+    "rows": [
+      {
+        "id": 0,
+        "val": 30,
+        "name": "n0",
+        "group": "a",
+        "val_ft": 98.43
+      },
+      {
+        "id": 1,
+        "val": 10,
+        "name": "n1",
+        "group": "b",
+        "val_ft": 32.81
+      },
+      {
+        "id": 2,
+        "val": 20,
+        "name": "n2",
+        "group": "a",
+        "val_ft": 65.62
+      },
+      {
+        "id": 3,
+        "val": 20,
+        "name": "n3",
+        "group": "c",
+        "val_ft": 65.62
+      }
+    ],
+    "schema": {
+      "fields": [
+        {
+          "name": "id",
+          "type": "integer"
+        },
+        {
+          "name": "val",
+          "type": "number"
+        },
+        {
+          "name": "name",
+          "type": "string"
+        },
+        {
+          "name": "group",
+          "type": "string"
+        },
+        {
+          "name": "val_ft",
+          "type": "number",
+          "nullCount": 0,
+          "uniqueCount": 3,
+          "sampleValues": [
+            98.43,
+            32.81,
+            65.62,
+            65.62
+          ],
+          "min": 32.81,
+          "max": 98.43,
+          "selected": true,
+          "outputName": "val_ft",
+          "order": 4
+        }
+      ]
+    }
+  },
+  "computeAddField": {
+    "type": "table",
+    "name": "table",
+    "rows": [
+      {
+        "id": 0,
+        "val": 30,
+        "name": "n0",
+        "group": "a",
+        "tag": "ok"
+      },
+      {
+        "id": 1,
+        "val": 10,
+        "name": "n1",
+        "group": "b",
+        "tag": "ok"
+      },
+      {
+        "id": 2,
+        "val": 20,
+        "name": "n2",
+        "group": "a",
+        "tag": "ok"
+      },
+      {
+        "id": 3,
+        "val": 20,
+        "name": "n3",
+        "group": "c",
+        "tag": "ok"
+      }
+    ],
+    "schema": {
+      "fields": [
+        {
+          "name": "id",
+          "type": "integer"
+        },
+        {
+          "name": "val",
+          "type": "number"
+        },
+        {
+          "name": "name",
+          "type": "string"
+        },
+        {
+          "name": "group",
+          "type": "string"
+        },
+        {
+          "name": "tag",
+          "type": "string",
+          "nullCount": 0,
+          "uniqueCount": 1,
+          "sampleValues": [
+            "ok"
+          ],
+          "min": null,
+          "max": null,
+          "selected": true,
+          "outputName": "tag",
+          "order": 1
+        }
+      ]
+    }
+  },
+  "computeRenameFields-spatial": {
+    "name": "layer",
+    "type": "spatial",
+    "geojson": {
+      "type": "FeatureCollection",
+      "features": [
+        {
+          "type": "Feature",
+          "properties": {
+            "id": 1,
+            "val": 10,
+            "label": "a",
+            "group": "x"
+          },
+          "geometry": {
+            "type": "Point",
+            "coordinates": [
+              -111.891,
+              40.7608
+            ]
+          }
+        },
+        {
+          "type": "Feature",
+          "properties": {
+            "id": 2,
+            "val": 20,
+            "label": "b",
+            "group": "y"
+          },
+          "geometry": {
+            "type": "Point",
+            "coordinates": [
+              -111.88,
+              40.72
+            ]
+          }
+        }
+      ]
+    },
+    "schema": {
+      "fields": [
+        {
+          "name": "id",
+          "type": "number",
+          "nullCount": 0,
+          "uniqueCount": 2,
+          "sampleValues": [
+            1,
+            2
+          ],
+          "min": 1,
+          "max": 2,
+          "selected": true,
+          "outputName": "id",
+          "order": 0
+        },
+        {
+          "name": "val",
+          "type": "number",
+          "nullCount": 0,
+          "uniqueCount": 2,
+          "sampleValues": [
+            10,
+            20
+          ],
+          "min": 10,
+          "max": 20,
+          "selected": true,
+          "outputName": "val",
+          "order": 1
+        },
+        {
+          "name": "label",
+          "type": "string",
+          "nullCount": 0,
+          "uniqueCount": 2,
+          "sampleValues": [
+            "a",
+            "b"
+          ],
+          "min": null,
+          "max": null,
+          "selected": true,
+          "outputName": "name",
+          "order": 2
+        },
+        {
+          "name": "group",
+          "type": "string",
+          "nullCount": 0,
+          "uniqueCount": 2,
+          "sampleValues": [
+            "x",
+            "y"
+          ],
+          "min": null,
+          "max": null,
+          "selected": true,
+          "outputName": "group",
+          "order": 3
+        }
+      ],
+      "geometryType": "Point",
+      "featureCount": 2,
+      "crs": "EPSG:4326"
+    },
+    "source": {
+      "file": "layer",
+      "format": "derived",
+      "schema": {
+        "featureCount": 2,
+        "fields": [
+          {
+            "name": "id",
+            "type": "integer"
+          },
+          {
+            "name": "val",
+            "type": "number"
+          },
+          {
+            "name": "name",
+            "type": "string"
+          },
+          {
+            "name": "group",
+            "type": "string"
+          }
+        ]
+      }
+    },
+    "visible": true,
+    "active": true,
+    "scaleRangeEnabled": false,
+    "minScale": null,
+    "maxScale": null
+  },
+  "computeBuffer": {
+    "name": "layer_buffer_50meters",
+    "type": "spatial",
+    "geojson": {
+      "type": "FeatureCollection",
+      "features": [
+        {
+          "type": "Feature",
+          "properties": {
+            "g": 1
+          },
+          "geometry": {
+            "type": "Polygon",
+            "coordinates": [
+              [
+                [
+                  -112.00058698960459,
+                  39.99999999860576
+                ],
+                [
+                  -112.00057570202904,
+                  39.99991224336246
+                ],
+                [
+                  -112.0005422748623,
+                  39.999827863010765
+                ],
+                [
+                  -112.00048799367873,
+                  39.99975010253327
+                ],
+                [
+                  -112.00041494600829,
+                  39.999681952324124
+                ],
+                [
+                  -112.00032594104962,
+                  39.99962603319206
+                ],
+                [
+                  -112.0002244016345,
+                  39.99958449557741
+                ],
+                [
+                  -112.00011423259924,
+                  39.999558936857824
+                ],
+                [
+                  -111.99999967062426,
+                  39.99955033992242
+                ],
+                [
+                  -111.90000032937576,
+                  39.99955033992242
+                ],
+                [
+                  -111.89988576740078,
+                  39.999558936857824
+                ],
+                [
+                  -111.89977559836551,
+                  39.99958449557741
+                ],
+                [
+                  -111.8996740589504,
+                  39.99962603319206
+                ],
+                [
+                  -111.89958505399171,
+                  39.999681952324124
+                ],
+                [
+                  -111.89951200632129,
+                  39.99975010253327
+                ],
+                [
+                  -111.89945772513772,
+                  39.999827863010765
+                ],
+                [
+                  -111.89942429797098,
+                  39.99991224336246
+                ],
+                [
+                  -111.89941301039543,
+                  39.99999999860576
+                ],
+                [
+                  -111.89941214858904,
+                  40.099999998427805
+                ],
+                [
+                  -111.89942343515335,
+                  40.10008769187347
+                ],
+                [
+                  -111.8994568630783,
+                  40.100172017820334
+                ],
+                [
+                  -111.89951114873443,
+                  40.10024973796024
+                ],
+                [
+                  -111.89958420748876,
+                  40.10031786765262
+                ],
+                [
+                  -111.89967323375171,
+                  40.10037379054479
+                ],
+                [
+                  -111.89977480871491,
+                  40.10041535905036
+                ],
+                [
+                  -111.89988503164305,
+                  40.1004409768258
+                ],
+                [
+                  -111.89999966967734,
+                  40.10044966007747
+                ],
+                [
+                  -112.00000033032266,
+                  40.10044966007747
+                ],
+                [
+                  -112.00011496835697,
+                  40.1004409768258
+                ],
+                [
+                  -112.0002251912851,
+                  40.10041535905036
+                ],
+                [
+                  -112.0003267662483,
+                  40.10037379054479
+                ],
+                [
+                  -112.00041579251126,
+                  40.10031786765262
+                ],
+                [
+                  -112.00048885126559,
+                  40.10024973796024
+                ],
+                [
+                  -112.0005431369217,
+                  40.100172017820334
+                ],
+                [
+                  -112.00057656484665,
+                  40.10008769187347
+                ],
+                [
+                  -112.00058785141097,
+                  40.099999998427805
+                ],
+                [
+                  -112.00058698960459,
+                  39.99999999860576
+                ]
+              ]
+            ]
+          }
+        },
+        {
+          "type": "Feature",
+          "properties": {
+            "g": 2
+          },
+          "geometry": {
+            "type": "Polygon",
+            "coordinates": [
+              [
+                [
+                  -111.95058716166831,
+                  40.019999998570185
+                ],
+                [
+                  -111.95057587076582,
+                  40.01991224332758
+                ],
+                [
+                  -111.95054243378311,
+                  40.01982786297794
+                ],
+                [
+                  -111.95048813667212,
+                  40.01975010250379
+                ],
+                [
+                  -111.95041506757536,
+                  40.019681952299116
+                ],
+                [
+                  -111.95032603651549,
+                  40.019626033172464
+                ],
+                [
+                  -111.95022446732803,
+                  40.01958449556397
+                ],
+                [
+                  -111.95011426599417,
+                  40.019558936851006
+                ],
+                [
+                  -111.94999967043643,
+                  40.019550339922446
+                ],
+                [
+                  -111.85000032956358,
+                  40.019550339922446
+                ],
+                [
+                  -111.84988573400584,
+                  40.019558936851006
+                ],
+                [
+                  -111.84977553267198,
+                  40.01958449556397
+                ],
+                [
+                  -111.84967396348452,
+                  40.019626033172464
+                ],
+                [
+                  -111.84958493242463,
+                  40.019681952299116
+                ],
+                [
+                  -111.84951186332789,
+                  40.01975010250379
+                ],
+                [
+                  -111.84945756621688,
+                  40.01982786297794
+                ],
+                [
+                  -111.8494241292342,
+                  40.01991224332758
+                ],
+                [
+                  -111.8494128383317,
+                  40.019999998570185
+                ],
+                [
+                  -111.84941232124821,
+                  40.07999999846341
+                ],
+                [
+                  -111.84942360451578,
+                  40.08008769190837
+                ],
+                [
+                  -111.84945702264001,
+                  40.08017201785318
+                ],
+                [
+                  -111.8495112923678,
+                  40.08024973798977
+                ],
+                [
+                  -111.84958432967781,
+                  40.08031786767766
+                ],
+                [
+                  -111.84967332980393,
+                  40.080373790564416
+                ],
+                [
+                  -111.84977487494153,
+                  40.080415359063856
+                ],
+                [
+                  -111.84988506550067,
+                  40.080440976832655
+                ],
+                [
+                  -111.84999966986571,
+                  40.080449660077505
+                ],
+                [
+                  -111.9500003301343,
+                  40.080449660077505
+                ],
+                [
+                  -111.95011493449933,
+                  40.080440976832655
+                ],
+                [
+                  -111.95022512505848,
+                  40.080415359063856
+                ],
+                [
+                  -111.95032667019608,
+                  40.080373790564416
+                ],
+                [
+                  -111.9504156703222,
+                  40.08031786767766
+                ],
+                [
+                  -111.95048870763222,
+                  40.08024973798977
+                ],
+                [
+                  -111.95054297736,
+                  40.08017201785318
+                ],
+                [
+                  -111.95057639548423,
+                  40.08008769190837
+                ],
+                [
+                  -111.95058767875179,
+                  40.07999999846341
+                ],
+                [
+                  -111.95058716166831,
+                  40.019999998570185
+                ]
+              ]
+            ]
+          }
+        }
+      ]
+    },
+    "schema": {
+      "fields": [
+        {
+          "name": "g",
+          "type": "number",
+          "nullCount": 0,
+          "uniqueCount": 2,
+          "sampleValues": [
+            1,
+            2
+          ],
+          "min": 1,
+          "max": 2,
+          "selected": true,
+          "outputName": "g",
+          "order": 0
+        }
+      ],
+      "geometryType": "Polygon",
+      "featureCount": 2,
+      "crs": "EPSG:4326"
+    },
+    "source": {
+      "file": "layer_buffer_50meters",
+      "format": "derived"
+    },
+    "visible": true,
+    "active": true,
+    "scaleRangeEnabled": false,
+    "minScale": null,
+    "maxScale": null
+  },
+  "computeDissolve": {
+    "name": "layer_dissolved",
+    "type": "spatial",
+    "geojson": {
+      "type": "FeatureCollection",
+      "features": [
+        {
+          "type": "Feature",
+          "properties": {
+            "g": "1"
+          },
+          "geometry": {
+            "type": "Polygon",
+            "coordinates": [
+              [
+                [
+                  -112,
+                  40
+                ],
+                [
+                  -111.9,
+                  40
+                ],
+                [
+                  -111.9,
+                  40.1
+                ],
+                [
+                  -112,
+                  40.1
+                ],
+                [
+                  -112,
+                  40
+                ]
+              ]
+            ]
+          }
+        },
+        {
+          "type": "Feature",
+          "properties": {
+            "g": "2"
+          },
+          "geometry": {
+            "type": "Polygon",
+            "coordinates": [
+              [
+                [
+                  -111.95,
+                  40.02
+                ],
+                [
+                  -111.85,
+                  40.02
+                ],
+                [
+                  -111.85,
+                  40.08
+                ],
+                [
+                  -111.95,
+                  40.08
+                ],
+                [
+                  -111.95,
+                  40.02
+                ]
+              ]
+            ]
+          }
+        }
+      ]
+    },
+    "schema": {
+      "fields": [
+        {
+          "name": "g",
+          "type": "number",
+          "nullCount": 0,
+          "uniqueCount": 2,
+          "sampleValues": [
+            "1",
+            "2"
+          ],
+          "min": 1,
+          "max": 2,
+          "selected": true,
+          "outputName": "g",
+          "order": 0
+        }
+      ],
+      "geometryType": "Polygon",
+      "featureCount": 2,
+      "crs": "EPSG:4326"
+    },
+    "source": {
+      "file": "layer_dissolved",
+      "format": "derived"
+    },
+    "visible": true,
+    "active": true,
+    "scaleRangeEnabled": false,
+    "minScale": null,
+    "maxScale": null
+  },
+  "computeUnion": {
+    "name": "layer_union",
+    "type": "spatial",
+    "geojson": {
+      "type": "FeatureCollection",
+      "features": [
+        {
+          "type": "Feature",
+          "properties": {},
+          "geometry": {
+            "type": "Polygon",
+            "coordinates": [
+              [
+                [
+                  -112,
+                  40
+                ],
+                [
+                  -111.9,
+                  40
+                ],
+                [
+                  -111.9,
+                  40.02
+                ],
+                [
+                  -111.85,
+                  40.02
+                ],
+                [
+                  -111.85,
+                  40.08
+                ],
+                [
+                  -111.9,
+                  40.08
+                ],
+                [
+                  -111.9,
+                  40.1
+                ],
+                [
+                  -112,
+                  40.1
+                ],
+                [
+                  -112,
+                  40
+                ]
+              ]
+            ]
+          }
+        }
+      ]
+    },
+    "schema": {
+      "fields": [],
+      "geometryType": "Polygon",
+      "featureCount": 1,
+      "crs": "EPSG:4326"
+    },
+    "source": {
+      "file": "layer_union",
+      "format": "derived"
+    },
+    "visible": true,
+    "active": true,
+    "scaleRangeEnabled": false,
+    "minScale": null,
+    "maxScale": null
+  },
+  "computeCombine": {
+    "name": "layer_combined",
+    "type": "spatial",
+    "geojson": {
+      "type": "FeatureCollection",
+      "features": [
+        {
+          "type": "Feature",
+          "properties": {
+            "collectedProperties": [
+              {
+                "g": 1
+              },
+              {
+                "g": 2
+              }
+            ]
+          },
+          "geometry": {
+            "type": "MultiPolygon",
+            "coordinates": [
+              [
+                [
+                  [
+                    -112,
+                    40
+                  ],
+                  [
+                    -111.9,
+                    40
+                  ],
+                  [
+                    -111.9,
+                    40.1
+                  ],
+                  [
+                    -112,
+                    40.1
+                  ],
+                  [
+                    -112,
+                    40
+                  ]
+                ]
+              ],
+              [
+                [
+                  [
+                    -111.95,
+                    40.02
+                  ],
+                  [
+                    -111.85,
+                    40.02
+                  ],
+                  [
+                    -111.85,
+                    40.08
+                  ],
+                  [
+                    -111.95,
+                    40.08
+                  ],
+                  [
+                    -111.95,
+                    40.02
+                  ]
+                ]
+              ]
+            ]
+          }
+        }
+      ]
+    },
+    "schema": {
+      "fields": [
+        {
+          "name": "collectedProperties",
+          "type": "string",
+          "nullCount": 0,
+          "uniqueCount": 1,
+          "sampleValues": [
+            [
+              {
+                "g": 1
+              },
+              {
+                "g": 2
+              }
+            ]
+          ],
+          "min": null,
+          "max": null,
+          "selected": true,
+          "outputName": "collectedProperties",
+          "order": 0
+        }
+      ],
+      "geometryType": "MultiPolygon",
+      "featureCount": 1,
+      "crs": "EPSG:4326"
+    },
+    "source": {
+      "file": "layer_combined",
+      "format": "derived"
+    },
+    "visible": true,
+    "active": true,
+    "scaleRangeEnabled": false,
+    "minScale": null,
+    "maxScale": null
+  },
+  "computeSpatialJoin": {
+    "name": "layer_spatialJoin",
+    "type": "spatial",
+    "geojson": {
+      "type": "FeatureCollection",
+      "features": [
+        {
+          "type": "Feature",
+          "properties": {
+            "pid": 1,
+            "g": 1
+          },
+          "geometry": {
+            "type": "Point",
+            "coordinates": [
+              -111.92,
+              40.05
+            ]
+          }
+        }
+      ]
+    },
+    "schema": {
+      "fields": [
+        {
+          "name": "pid",
+          "type": "number",
+          "nullCount": 0,
+          "uniqueCount": 1,
+          "sampleValues": [
+            1
+          ],
+          "min": 1,
+          "max": 1,
+          "selected": true,
+          "outputName": "pid",
+          "order": 0
+        },
+        {
+          "name": "g",
+          "type": "number",
+          "nullCount": 0,
+          "uniqueCount": 1,
+          "sampleValues": [
+            1
+          ],
+          "min": 1,
+          "max": 1,
+          "selected": true,
+          "outputName": "g",
+          "order": 1
+        }
+      ],
+      "geometryType": "Point",
+      "featureCount": 1,
+      "crs": "EPSG:4326"
+    },
+    "source": {
+      "file": "layer_spatialJoin",
+      "format": "derived",
+      "schema": {
+        "fields": [
+          {
+            "name": "pid",
+            "type": "number",
+            "nullCount": 0,
+            "uniqueCount": 1,
+            "sampleValues": [
+              1
+            ],
+            "min": 1,
+            "max": 1,
+            "selected": true,
+            "outputName": "pid",
+            "order": 0
+          },
+          {
+            "name": "g",
+            "type": "number",
+            "nullCount": 0,
+            "uniqueCount": 1,
+            "sampleValues": [
+              1
+            ],
+            "selected": true,
+            "outputName": "g",
+            "order": 1
+          }
+        ],
+        "geometryType": "Point",
+        "featureCount": 1,
+        "crs": "EPSG:4326"
+      }
+    },
+    "visible": true,
+    "active": true,
+    "scaleRangeEnabled": false,
+    "minScale": null,
+    "maxScale": null
+  },
+  "computeIntersect": {
+    "name": "layer_intersect_layer",
+    "type": "spatial",
+    "geojson": {
+      "type": "FeatureCollection",
+      "features": [
+        {
+          "type": "Feature",
+          "properties": {
+            "g": 1,
+            "B_g": 2
+          },
+          "geometry": {
+            "type": "Polygon",
+            "coordinates": [
+              [
+                [
+                  -111.95,
+                  40.02
+                ],
+                [
+                  -111.9,
+                  40.02
+                ],
+                [
+                  -111.9,
+                  40.08
+                ],
+                [
+                  -111.95,
+                  40.08
+                ],
+                [
+                  -111.95,
+                  40.02
+                ]
+              ]
+            ]
+          }
+        },
+        {
+          "type": "Feature",
+          "properties": {
+            "g": 2,
+            "B_g": 2
+          },
+          "geometry": {
+            "type": "Polygon",
+            "coordinates": [
+              [
+                [
+                  -111.95,
+                  40.02
+                ],
+                [
+                  -111.85,
+                  40.02
+                ],
+                [
+                  -111.85,
+                  40.08
+                ],
+                [
+                  -111.95,
+                  40.08
+                ],
+                [
+                  -111.95,
+                  40.02
+                ]
+              ]
+            ]
+          }
+        }
+      ]
+    },
+    "schema": {
+      "fields": [
+        {
+          "name": "g",
+          "type": "number",
+          "nullCount": 0,
+          "uniqueCount": 2,
+          "sampleValues": [
+            1,
+            2
+          ],
+          "min": 1,
+          "max": 2,
+          "selected": true,
+          "outputName": "g",
+          "order": 0
+        },
+        {
+          "name": "B_g",
+          "type": "number",
+          "nullCount": 0,
+          "uniqueCount": 1,
+          "sampleValues": [
+            2,
+            2
+          ],
+          "min": 2,
+          "max": 2,
+          "selected": true,
+          "outputName": "B_g",
+          "order": 1
+        }
+      ],
+      "geometryType": "Polygon",
+      "featureCount": 2,
+      "crs": "EPSG:4326"
+    },
+    "source": {
+      "file": "layer_intersect_layer",
+      "format": "derived"
+    },
+    "visible": true,
+    "active": true,
+    "scaleRangeEnabled": false,
+    "minScale": null,
+    "maxScale": null
+  },
+  "computeMergeLayers": {
+    "name": "layer_merged_b",
+    "type": "spatial",
+    "geojson": {
+      "type": "FeatureCollection",
+      "features": [
+        {
+          "type": "Feature",
+          "properties": {
+            "g": 1
+          },
+          "geometry": {
+            "type": "Polygon",
+            "coordinates": [
+              [
+                [
+                  -112,
+                  40
+                ],
+                [
+                  -111.9,
+                  40
+                ],
+                [
+                  -111.9,
+                  40.1
+                ],
+                [
+                  -112,
+                  40.1
+                ],
+                [
+                  -112,
+                  40
+                ]
+              ]
+            ]
+          }
+        },
+        {
+          "type": "Feature",
+          "properties": {
+            "g": 2
+          },
+          "geometry": {
+            "type": "Polygon",
+            "coordinates": [
+              [
+                [
+                  -111.95,
+                  40.02
+                ],
+                [
+                  -111.85,
+                  40.02
+                ],
+                [
+                  -111.85,
+                  40.08
+                ],
+                [
+                  -111.95,
+                  40.08
+                ],
+                [
+                  -111.95,
+                  40.02
+                ]
+              ]
+            ]
+          }
+        },
+        {
+          "type": "Feature",
+          "properties": {
+            "g": 2
+          },
+          "geometry": {
+            "type": "Polygon",
+            "coordinates": [
+              [
+                [
+                  -111.95,
+                  40.02
+                ],
+                [
+                  -111.85,
+                  40.02
+                ],
+                [
+                  -111.85,
+                  40.08
+                ],
+                [
+                  -111.95,
+                  40.08
+                ],
+                [
+                  -111.95,
+                  40.02
+                ]
+              ]
+            ]
+          }
+        }
+      ]
+    },
+    "schema": {
+      "fields": [
+        {
+          "name": "g",
+          "type": "number",
+          "nullCount": 0,
+          "uniqueCount": 2,
+          "sampleValues": [
+            1,
+            2,
+            2
+          ],
+          "min": 1,
+          "max": 2,
+          "selected": true,
+          "outputName": "g",
+          "order": 0
+        }
+      ],
+      "geometryType": "Polygon",
+      "featureCount": 3,
+      "crs": "EPSG:4326"
+    },
+    "source": {
+      "file": "layer_merged_b",
+      "format": "derived"
+    },
+    "visible": true,
+    "active": true,
+    "scaleRangeEnabled": false,
+    "minScale": null,
+    "maxScale": null
+  },
+  "computeSample": {
+    "featureCount": 1
+  },
+  "computeExplode": {
+    "name": "layer_exploded",
+    "type": "spatial",
+    "geojson": {
+      "type": "FeatureCollection",
+      "features": [
+        {
+          "type": "Feature",
+          "properties": {
+            "g": 1
+          },
+          "geometry": {
+            "type": "Point",
+            "coordinates": [
+              -112,
+              40
+            ]
+          }
+        },
+        {
+          "type": "Feature",
+          "properties": {
+            "g": 1
+          },
+          "geometry": {
+            "type": "Point",
+            "coordinates": [
+              -111.9,
+              40
+            ]
+          }
+        },
+        {
+          "type": "Feature",
+          "properties": {
+            "g": 1
+          },
+          "geometry": {
+            "type": "Point",
+            "coordinates": [
+              -111.9,
+              40.1
+            ]
+          }
+        },
+        {
+          "type": "Feature",
+          "properties": {
+            "g": 1
+          },
+          "geometry": {
+            "type": "Point",
+            "coordinates": [
+              -112,
+              40.1
+            ]
+          }
+        },
+        {
+          "type": "Feature",
+          "properties": {
+            "g": 1
+          },
+          "geometry": {
+            "type": "Point",
+            "coordinates": [
+              -112,
+              40
+            ]
+          }
+        },
+        {
+          "type": "Feature",
+          "properties": {
+            "g": 2
+          },
+          "geometry": {
+            "type": "Point",
+            "coordinates": [
+              -111.95,
+              40.02
+            ]
+          }
+        },
+        {
+          "type": "Feature",
+          "properties": {
+            "g": 2
+          },
+          "geometry": {
+            "type": "Point",
+            "coordinates": [
+              -111.85,
+              40.02
+            ]
+          }
+        },
+        {
+          "type": "Feature",
+          "properties": {
+            "g": 2
+          },
+          "geometry": {
+            "type": "Point",
+            "coordinates": [
+              -111.85,
+              40.08
+            ]
+          }
+        },
+        {
+          "type": "Feature",
+          "properties": {
+            "g": 2
+          },
+          "geometry": {
+            "type": "Point",
+            "coordinates": [
+              -111.95,
+              40.08
+            ]
+          }
+        },
+        {
+          "type": "Feature",
+          "properties": {
+            "g": 2
+          },
+          "geometry": {
+            "type": "Point",
+            "coordinates": [
+              -111.95,
+              40.02
+            ]
+          }
+        }
+      ]
+    },
+    "schema": {
+      "fields": [
+        {
+          "name": "g",
+          "type": "number",
+          "nullCount": 0,
+          "uniqueCount": 2,
+          "sampleValues": [
+            1,
+            1,
+            1,
+            1,
+            1
+          ],
+          "min": 1,
+          "max": 2,
+          "selected": true,
+          "outputName": "g",
+          "order": 0
+        }
+      ],
+      "geometryType": "Point",
+      "featureCount": 10,
+      "crs": "EPSG:4326"
+    },
+    "source": {
+      "file": "layer_exploded",
+      "format": "derived"
+    },
+    "visible": true,
+    "active": true,
+    "scaleRangeEnabled": false,
+    "minScale": null,
+    "maxScale": null
+  },
+  "computeSplitByGeometry": {
+    "_multiOutput": true,
+    "ports": {
+      "points": {
+        "type": "spatial",
+        "geojson": {
+          "type": "FeatureCollection",
+          "features": [
+            {
+              "type": "Feature",
+              "properties": {
+                "pid": 1
+              },
+              "geometry": {
+                "type": "Point",
+                "coordinates": [
+                  -111.92,
+                  40.05
+                ]
+              }
+            }
+          ]
+        },
+        "schema": {
+          "fields": [
+            {
+              "name": "g",
+              "type": "number",
+              "nullCount": 0,
+              "uniqueCount": 1,
+              "sampleValues": [
+                1
+              ],
+              "min": 1,
+              "max": 1,
+              "selected": true,
+              "outputName": "g",
+              "order": 0
+            },
+            {
+              "name": "pid",
+              "type": "number",
+              "nullCount": 0,
+              "uniqueCount": 1,
+              "sampleValues": [
+                1
+              ],
+              "min": 1,
+              "max": 1,
+              "selected": true,
+              "outputName": "pid",
+              "order": 1
+            },
+            {
+              "name": "id",
+              "type": "string",
+              "nullCount": 0,
+              "uniqueCount": 1,
+              "sampleValues": [
+                "L"
+              ],
+              "min": null,
+              "max": null,
+              "selected": true,
+              "outputName": "id",
+              "order": 2
+            }
+          ],
+          "geometryType": "Point",
+          "featureCount": 1,
+          "crs": "EPSG:4326"
+        },
+        "name": "layer_points"
+      },
+      "lines": {
+        "type": "spatial",
+        "geojson": {
+          "type": "FeatureCollection",
+          "features": [
+            {
+              "type": "Feature",
+              "properties": {
+                "id": "L"
+              },
+              "geometry": {
+                "type": "LineString",
+                "coordinates": [
+                  [
+                    -112.05,
+                    40.05
+                  ],
+                  [
+                    -111.8,
+                    40.05
+                  ]
+                ]
+              }
+            }
+          ]
+        },
+        "schema": {
+          "fields": [
+            {
+              "name": "g",
+              "type": "number",
+              "nullCount": 0,
+              "uniqueCount": 1,
+              "sampleValues": [
+                1
+              ],
+              "min": 1,
+              "max": 1,
+              "selected": true,
+              "outputName": "g",
+              "order": 0
+            },
+            {
+              "name": "pid",
+              "type": "number",
+              "nullCount": 0,
+              "uniqueCount": 1,
+              "sampleValues": [
+                1
+              ],
+              "min": 1,
+              "max": 1,
+              "selected": true,
+              "outputName": "pid",
+              "order": 1
+            },
+            {
+              "name": "id",
+              "type": "string",
+              "nullCount": 0,
+              "uniqueCount": 1,
+              "sampleValues": [
+                "L"
+              ],
+              "min": null,
+              "max": null,
+              "selected": true,
+              "outputName": "id",
+              "order": 2
+            }
+          ],
+          "geometryType": "LineString",
+          "featureCount": 1,
+          "crs": "EPSG:4326"
+        },
+        "name": "layer_lines"
+      },
+      "polygons": {
+        "type": "spatial",
+        "geojson": {
+          "type": "FeatureCollection",
+          "features": [
+            {
+              "type": "Feature",
+              "properties": {
+                "g": 1
+              },
+              "geometry": {
+                "type": "Polygon",
+                "coordinates": [
+                  [
+                    [
+                      -112,
+                      40
+                    ],
+                    [
+                      -111.9,
+                      40
+                    ],
+                    [
+                      -111.9,
+                      40.1
+                    ],
+                    [
+                      -112,
+                      40.1
+                    ],
+                    [
+                      -112,
+                      40
+                    ]
+                  ]
+                ]
+              }
+            }
+          ]
+        },
+        "schema": {
+          "fields": [
+            {
+              "name": "g",
+              "type": "number",
+              "nullCount": 0,
+              "uniqueCount": 1,
+              "sampleValues": [
+                1
+              ],
+              "min": 1,
+              "max": 1,
+              "selected": true,
+              "outputName": "g",
+              "order": 0
+            },
+            {
+              "name": "pid",
+              "type": "number",
+              "nullCount": 0,
+              "uniqueCount": 1,
+              "sampleValues": [
+                1
+              ],
+              "min": 1,
+              "max": 1,
+              "selected": true,
+              "outputName": "pid",
+              "order": 1
+            },
+            {
+              "name": "id",
+              "type": "string",
+              "nullCount": 0,
+              "uniqueCount": 1,
+              "sampleValues": [
+                "L"
+              ],
+              "min": null,
+              "max": null,
+              "selected": true,
+              "outputName": "id",
+              "order": 2
+            }
+          ],
+          "geometryType": "Polygon",
+          "featureCount": 1,
+          "crs": "EPSG:4326"
+        },
+        "name": "layer_polygons"
+      }
+    }
+  },
+  "computePolygonToLine": {
+    "name": "layer_outlines",
+    "type": "spatial",
+    "geojson": {
+      "type": "FeatureCollection",
+      "features": [
+        {
+          "type": "Feature",
+          "properties": {
+            "g": 1
+          },
+          "geometry": {
+            "type": "LineString",
+            "coordinates": [
+              [
+                -112,
+                40
+              ],
+              [
+                -111.9,
+                40
+              ],
+              [
+                -111.9,
+                40.1
+              ],
+              [
+                -112,
+                40.1
+              ],
+              [
+                -112,
+                40
+              ]
+            ]
+          }
+        },
+        {
+          "type": "Feature",
+          "properties": {
+            "g": 2
+          },
+          "geometry": {
+            "type": "LineString",
+            "coordinates": [
+              [
+                -111.95,
+                40.02
+              ],
+              [
+                -111.85,
+                40.02
+              ],
+              [
+                -111.85,
+                40.08
+              ],
+              [
+                -111.95,
+                40.08
+              ],
+              [
+                -111.95,
+                40.02
+              ]
+            ]
+          }
+        }
+      ]
+    },
+    "schema": {
+      "fields": [
+        {
+          "name": "g",
+          "type": "number",
+          "nullCount": 0,
+          "uniqueCount": 2,
+          "sampleValues": [
+            1,
+            2
+          ],
+          "min": 1,
+          "max": 2,
+          "selected": true,
+          "outputName": "g",
+          "order": 0
+        }
+      ],
+      "geometryType": "LineString",
+      "featureCount": 2,
+      "crs": "EPSG:4326"
+    },
+    "source": {
+      "file": "layer_outlines",
+      "format": "derived"
+    },
+    "visible": true,
+    "active": true,
+    "scaleRangeEnabled": false,
+    "minScale": null,
+    "maxScale": null
+  },
+  "computeReproject": {
+    "name": "layer_reproject",
+    "type": "spatial",
+    "geojson": {
+      "type": "FeatureCollection",
+      "features": [
+        {
+          "type": "Feature",
+          "properties": {
+            "g": 1
+          },
+          "geometry": {
+            "type": "Polygon",
+            "coordinates": [
+              [
+                [
+                  -12467782.96884664,
+                  4865942.279503176
+                ],
+                [
+                  -12456651.019767314,
+                  4865942.279503176
+                ],
+                [
+                  -12456651.019767314,
+                  4880484.665662283
+                ],
+                [
+                  -12467782.96884664,
+                  4880484.665662283
+                ],
+                [
+                  -12467782.96884664,
+                  4865942.279503176
+                ]
+              ]
+            ]
+          }
+        },
+        {
+          "type": "Feature",
+          "properties": {
+            "g": 2
+          },
+          "geometry": {
+            "type": "Polygon",
+            "coordinates": [
+              [
+                [
+                  -12462216.994306978,
+                  4868849.050775666
+                ],
+                [
+                  -12451085.045227649,
+                  4868849.050775666
+                ],
+                [
+                  -12451085.045227649,
+                  4877574.480760722
+                ],
+                [
+                  -12462216.994306978,
+                  4877574.480760722
+                ],
+                [
+                  -12462216.994306978,
+                  4868849.050775666
+                ]
+              ]
+            ]
+          }
+        }
+      ]
+    },
+    "schema": {
+      "fields": [
+        {
+          "name": "g",
+          "type": "number",
+          "nullCount": 0,
+          "uniqueCount": 2,
+          "sampleValues": [
+            1,
+            2
+          ],
+          "min": 1,
+          "max": 2,
+          "selected": true,
+          "outputName": "g",
+          "order": 0
+        }
+      ],
+      "geometryType": "Polygon",
+      "featureCount": 2,
+      "crs": "EPSG:3857"
+    },
+    "source": {
+      "file": "layer_reproject",
+      "format": "derived",
+      "originalCrs": "EPSG:4326",
+      "crsDetected": "reproject",
+      "sourceLayer": "layer",
+      "crsWarning": "Layer reprojected to EPSG:3857 — not suitable for web map display."
+    },
+    "visible": true,
+    "active": true,
+    "scaleRangeEnabled": false,
+    "minScale": null,
+    "maxScale": null
+  },
+  "computeClip": {
+    "name": "layer_clipped",
+    "type": "spatial",
+    "geojson": {
+      "type": "FeatureCollection",
+      "features": []
+    },
+    "schema": {
+      "fields": [],
+      "geometryType": null,
+      "featureCount": 0,
+      "crs": "EPSG:4326"
+    },
+    "source": {
+      "file": "layer_clipped",
+      "format": "derived"
+    },
+    "visible": true,
+    "active": true,
+    "scaleRangeEnabled": false,
+    "minScale": null,
+    "maxScale": null
+  }
+}

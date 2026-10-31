@@ -3,13 +3,13 @@
  */
 import { NodeBase } from './node-base.js';
 import { convertFeatureCoords } from '../../tools/coordinates.js';
-import { computeFilterRows } from '../compute/filter-rows.js';
-import { computeDeduplicate } from '../compute/deduplicate.js';
+import { computeFilterRows } from '../../tools/compute/filter-rows.js';
+import { computeDeduplicate } from '../../tools/compute/deduplicate.js';
 import {
     FILTER_OPERATOR_ALIASES,
     normalizeFilterOperator,
     evalFilterRule
-} from '../compute/filter-operators.js';
+} from '../../tools/compute/filter-operators.js';
 import {
     computeRenameFields,
     computeDeleteFields,
@@ -25,10 +25,11 @@ import {
     computeConditionalValue,
     computeUnitConvert,
     computeAddField
-} from '../compute/transform-operations.js';
+} from '../../tools/compute/transform-operations.js';
+import { adaptComputeContext } from '../compute-run-context.js';
 
 export { FILTER_OPERATOR_ALIASES, normalizeFilterOperator };
-export { UNIT_CATEGORIES } from '../compute/transform-operations.js';
+export { UNIT_CATEGORIES } from '../../tools/compute/transform-operations.js';
 
 // ==============================
 // Filter Rows
@@ -55,7 +56,7 @@ export class FilterRowsNode extends NodeBase {
     }
 
     async execute(inputs, context) {
-        return computeFilterRows(inputs, this.config, context);
+        return computeFilterRows(inputs, this.config, adaptComputeContext(context));
     }
 
     _evalRule(props, rule) {
@@ -88,7 +89,7 @@ export class RenameFieldsNode extends NodeBase {
     }
 
     async execute(inputs, context) {
-        return computeRenameFields(inputs, this.config, context);
+        return computeRenameFields(inputs, this.config, adaptComputeContext(context));
     }
 }
 
@@ -116,7 +117,7 @@ export class DeleteFieldsNode extends NodeBase {
     }
 
     async execute(inputs, context) {
-        return computeDeleteFields(inputs, this.config, context);
+        return computeDeleteFields(inputs, this.config, adaptComputeContext(context));
     }
 }
 
@@ -144,7 +145,7 @@ export class SortNode extends NodeBase {
     }
 
     async execute(inputs, context) {
-        return computeSort(inputs, this.config, context);
+        return computeSort(inputs, this.config, adaptComputeContext(context));
     }
 }
 
@@ -173,7 +174,7 @@ export class FindReplaceNode extends NodeBase {
     }
 
     async execute(inputs, context) {
-        return computeFindReplace(inputs, this.config, context);
+        return computeFindReplace(inputs, this.config, adaptComputeContext(context));
     }
 }
 
@@ -201,7 +202,7 @@ export class DeduplicateNode extends NodeBase {
     }
 
     async execute(inputs, context) {
-        return computeDeduplicate(inputs, this.config, context);
+        return computeDeduplicate(inputs, this.config, adaptComputeContext(context));
     }
 }
 
@@ -229,7 +230,7 @@ export class AddUniqueIdNode extends NodeBase {
     }
 
     async execute(inputs, context) {
-        return computeAddUniqueId(inputs, this.config, context);
+        return computeAddUniqueId(inputs, this.config, adaptComputeContext(context));
     }
 }
 
@@ -281,7 +282,7 @@ export class CombineFieldsNode extends NodeBase {
     }
 
     async execute(inputs, context) {
-        return computeCombineFields(inputs, this.config, context);
+        return computeCombineFields(inputs, this.config, adaptComputeContext(context));
     }
 }
 
@@ -310,7 +311,7 @@ export class SplitColumnNode extends NodeBase {
     }
 
     async execute(inputs, context) {
-        return computeSplitColumn(inputs, this.config, context);
+        return computeSplitColumn(inputs, this.config, adaptComputeContext(context));
     }
 }
 
@@ -339,7 +340,7 @@ export class TemplateBuilderNode extends NodeBase {
     }
 
     async execute(inputs, context) {
-        return computeTemplateBuilder(inputs, this.config, context);
+        return computeTemplateBuilder(inputs, this.config, adaptComputeContext(context));
     }
 }
 
@@ -367,7 +368,7 @@ export class TypeConvertNode extends NodeBase {
     }
 
     async execute(inputs, context) {
-        return computeTypeConvert(inputs, this.config, context);
+        return computeTypeConvert(inputs, this.config, adaptComputeContext(context));
     }
 }
 
@@ -400,7 +401,7 @@ export class JoinLookupNode extends NodeBase {
     }
 
     async execute(inputs, context) {
-        return computeJoinLookup(inputs, this.config, context);
+        return computeJoinLookup(inputs, this.config, adaptComputeContext(context));
     }
 }
 
@@ -434,7 +435,7 @@ export class CalculateFieldNode extends NodeBase {
     }
 
     async execute(inputs, context) {
-        return computeCalculateField(inputs, this.config, context);
+        return computeCalculateField(inputs, this.config, adaptComputeContext(context));
     }
 }
 
@@ -468,7 +469,7 @@ export class ConditionalValueNode extends NodeBase {
     }
 
     async execute(inputs, context) {
-        return computeConditionalValue(inputs, this.config, context);
+        return computeConditionalValue(inputs, this.config, adaptComputeContext(context));
     }
 }
 
@@ -582,7 +583,7 @@ export class UnitConvertNode extends NodeBase {
     }
 
     async execute(inputs, context) {
-        return computeUnitConvert(inputs, this.config, context);
+        return computeUnitConvert(inputs, this.config, adaptComputeContext(context));
     }
 }
 
@@ -614,6 +615,6 @@ export class AddFieldNode extends NodeBase {
     }
 
     async execute(inputs, context) {
-        return computeAddField(inputs, this.config, context);
+        return computeAddField(inputs, this.config, adaptComputeContext(context));
     }
 }
