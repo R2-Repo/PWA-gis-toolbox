@@ -17,11 +17,16 @@ export async function downloadUdotFiberLayer(layerId, opts = {}) {
     const url = layerUrl(meta.id);
     await importer.fetchMetadata(url);
 
+    if (opts.signal?.aborted) {
+        throw new DOMException('Aborted', 'AbortError');
+    }
+
     // In-memory GeoJSON for SQLite sync / style bake (not workspace streaming).
     const dataset = await importer.downloadFeatures({
         useWorkspace: false,
-        allowLargeDownload: true,
-        returnGeometry: true
+        allowLargeDownload: false,
+        returnGeometry: true,
+        signal: opts.signal
     });
 
     const geojson = dataset?.geojson || {
@@ -54,6 +59,9 @@ export async function downloadAllUdotFiberLayers(opts = {}) {
     const keys = opts.layerKeys || UDOT_FIBER_LAYERS.map((l) => l.key);
     const layers = [];
     for (const key of keys) {
+        if (opts.signal?.aborted) {
+            throw new DOMException('Aborted', 'AbortError');
+        }
         const meta = UDOT_FIBER_LAYERS.find((l) => l.key === key);
         if (!meta) continue;
         opts.onProgress?.({ stage: 'layer', layerKey: key, name: meta.name });

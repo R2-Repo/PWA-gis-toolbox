@@ -1,4 +1,10 @@
-import { ArcGISRestImporter, esriFeatureToGeoJSON } from '../../arcgis/rest-importer.js';
+import { ArcGISRestImporter, esriFeatureToGeoJSON, ARCGIS_MAX_FEATURES } from '../../arcgis/rest-importer.js';
+import {
+    arcgisQueryAllEsriFeatures,
+    arcgisQueryFeaturesPage,
+    arcgisResponseExceededTransferLimit,
+    convertEsriGeometry
+} from '../../arcgis/rest-client.js';
 import { AppError, ErrorCategory } from '../../core/error-handler.js';
 import { UDOT_ROUTE_SEGMENT_CONFIG } from './config.js';
 import { buildRouteIdWhere, buildSelectedRouteWhere } from './engine.js';
@@ -85,58 +91,38 @@ export async function queryFeatures(url, options = {}) {
         returnGeometry = true,
         resultRecordCount = maxRec,
         orderByFields = '',
-        resultOffset = 0
+        resultOffset = 0,
+        signal = null
     } = options;
 
-    const params = new URLSearchParams({
+    const data = await arcgisQueryFeaturesPage(metadata.url, {
         where,
-        outFields: Array.isArray(outFields) ? outFields.join(',') : outFields,
-        returnGeometry: String(returnGeometry),
-        f: 'json',
-        resultOffset: String(resultOffset),
-        resultRecordCount: String(Math.min(resultRecordCount, maxRec)),
-        outSR: '4326'
+        outFields,
+        returnGeometry,
+        orderByFields,
+        objectIdField: metadata.objectIdField
+    }, {
+        resultOffset,
+        resultRecordCount,
+        maxRecordCount: maxRec,
+        signal,
+        timeoutMs: 30_000
     });
 
-    if (orderByFields) {
-        params.set('orderByFields', orderByFields);
-    }
-
-    const response = await fetch(`${metadata.url}/query?${params.toString()}`, {
-        signal: AbortSignal.timeout(30000)
-    });
-
-    if (!response.ok) {
-        throw new AppError(
-            `ArcGIS query failed with HTTP ${response.status}`,
-            ErrorCategory.HTTP_4XX,
-            { url: metadata.url, where }
-        );
-    }
-
-    const data = await response.json();
-    if (data.error) {
-        throw new AppError(
-            data.error.message || 'ArcGIS query returned an error',
-            ErrorCategory.PARSE_FAILED,
-            { url: metadata.url, where, error: data.error }
-        );
-    }
-
-    const convert = (geom) => importer.convertGeometry(geom);
+    const convert = (geom) => convertEsriGeometry(geom) ?? importer.convertGeometry(geom);
     const features = (data.features || []).map((feature) =>
         esriFeatureToGeoJSON(feature, convert)
     );
 
     return {
         features,
-        exceededTransferLimit: Boolean(data.exceededTransferLimit),
+        exceededTransferLimit: arcgisResponseExceededTransferLimit(data),
         fields: data.fields || metadata.fields || []
     };
 }
 
 /**
- * Paginate until all matching features are retrieved.
+ * Paginate until all matching features are retrieved (soft cap for widget queries).
  * @param {string} url
  * @param {object} options
  */
@@ -146,22 +132,28 @@ export async function queryAllFeatures(url, options = {}) {
         await importer.fetchMetadata(url);
     }
     const metadata = importer.getMetadata();
-    const pageSize = metadata.maxRecordCount || 1000;
     const allFeatures = [];
-    let offset = 0;
-    let hasMore = true;
+    const convert = (geom) => convertEsriGeometry(geom) ?? importer.convertGeometry(geom);
 
-    while (hasMore) {
-        const page = await queryFeatures(url, {
-            ...options,
-            resultRecordCount: pageSize,
-            resultOffset: offset
-        });
-        allFeatures.push(...page.features);
-        hasMore = page.exceededTransferLimit && page.features.length > 0;
-        offset += page.features.length;
-        if (page.features.length === 0) break;
-    }
+    await arcgisQueryAllEsriFeatures({
+        layerUrl: metadata.url,
+        layerMeta: metadata,
+        query: {
+            where: options.where ?? '1=1',
+            outFields: options.outFields ?? '*',
+            returnGeometry: options.returnGeometry ?? true,
+            orderByFields: options.orderByFields,
+            objectIdField: metadata.objectIdField
+        },
+        signal: options.signal ?? null,
+        featureCap: options.featureCap ?? ARCGIS_MAX_FEATURES,
+        enforceCapWhenCountUnknown: Boolean(metadata.countFailed),
+        onPage: (page) => {
+            for (const feature of page) {
+                allFeatures.push(esriFeatureToGeoJSON(feature, convert));
+            }
+        }
+    });
 
     return allFeatures;
 }

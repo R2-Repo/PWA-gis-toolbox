@@ -4,6 +4,7 @@
  */
 
 import { ArcGISRestImporter } from '../../arcgis/rest-importer.js';
+import { arcgisQueryGeoJsonPages } from '../../arcgis/rest-client.js';
 import { RENDER_LIMITS } from '../../map/render-limits.js';
 import { padEnvelope } from '../../live-layers/live-layer-cache.js';
 import { buildUdotFiberExcludeWhere } from '../../symbology/udot-fiber/display-filters.js';
@@ -31,45 +32,21 @@ export async function queryFiberFeaturesByEnvelope(url, envelope, fiberKey) {
         spatialReference: { wkid: 4326 }
     };
 
-    const pageSize = 1000;
-    const maxFeatures = RENDER_LIMITS.maxFeaturesPerSource;
-    let offset = 0;
-    const features = [];
-    let truncated = false;
-
-    while (features.length < maxFeatures) {
-        const remaining = maxFeatures - features.length;
-        const params = new URLSearchParams({
-            f: 'geojson',
+    const { features, truncated } = await arcgisQueryGeoJsonPages({
+        layerUrl: cleanUrl,
+        maxFeatures: RENDER_LIMITS.maxFeaturesPerSource,
+        query: {
             where: buildUdotFiberExcludeWhere(fiberKey),
-            geometry: JSON.stringify(geometry),
+            geometry,
             geometryType: 'esriGeometryEnvelope',
             inSR: '4326',
             outSR: '4326',
             spatialRel: 'esriSpatialRelIntersects',
             outFields: '*',
-            returnGeometry: 'true',
-            resultOffset: String(offset),
-            resultRecordCount: String(Math.min(pageSize, remaining))
-        });
-
-        const resp = await fetch(`${cleanUrl}/query?${params}`);
-        if (!resp.ok) throw new Error(`Fiber query failed (${resp.status})`);
-        const data = await resp.json();
-        if (data.error) throw new Error(data.error.message || 'Fiber query error');
-
-        const page = data.type === 'FeatureCollection' ? (data.features || []) : [];
-        features.push(...page);
-
-        const exceeded = data.exceededTransferLimit === true || data.properties?.exceededTransferLimit === true;
-        if (!page.length || !exceeded) break;
-
-        offset += page.length;
-        if (features.length >= maxFeatures) {
-            truncated = true;
-            break;
+            returnGeometry: true,
+            pageSize: 1000
         }
-    }
+    });
 
     return { features, truncated };
 }

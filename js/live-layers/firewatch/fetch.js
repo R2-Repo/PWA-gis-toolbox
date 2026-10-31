@@ -2,6 +2,7 @@
  * Fetch Firewatch ArcGIS FeatureServer layers for the Utah AOI.
  */
 import { ArcGISRestImporter } from '../../arcgis/rest-importer.js';
+import { arcgisQueryGeoJsonPages } from '../../arcgis/rest-client.js';
 import logger from '../../core/logger.js';
 import {
     FIREWATCH_SOURCES,
@@ -19,40 +20,24 @@ import { buildFirewatchCollections } from './normalize.js';
 export async function queryFeatureServerEnvelope(url, outFields, maxRecordCount, envelope = UTAH_QUERY_ENVELOPE) {
     const importer = new ArcGISRestImporter();
     const cleanUrl = importer.normalizeUrl(url);
-    const pageSize = Math.min(1000, maxRecordCount || 1000);
-    let offset = 0;
-    const features = [];
 
-    while (features.length < maxRecordCount) {
-        const remaining = maxRecordCount - features.length;
-        const params = new URLSearchParams({
-            f: 'geojson',
+    const { features } = await arcgisQueryGeoJsonPages({
+        layerUrl: cleanUrl,
+        maxFeatures: maxRecordCount,
+        query: {
             where: '1=1',
-            geometry: JSON.stringify(envelope),
+            geometry: envelope,
             geometryType: 'esriGeometryEnvelope',
             inSR: '4326',
             outSR: '4326',
             spatialRel: 'esriSpatialRelIntersects',
             outFields: Array.isArray(outFields) ? outFields.join(',') : String(outFields || '*'),
-            returnGeometry: 'true',
-            resultOffset: String(offset),
-            resultRecordCount: String(Math.min(pageSize, remaining))
-        });
+            returnGeometry: true,
+            pageSize: 1000
+        }
+    });
 
-        const resp = await fetch(`${cleanUrl}/query?${params}`);
-        if (!resp.ok) throw new Error(`Firewatch query failed (${resp.status}) for ${cleanUrl}`);
-        const data = await resp.json();
-        if (data.error) throw new Error(data.error.message || 'Firewatch FeatureServer query error');
-
-        const page = data.type === 'FeatureCollection' ? (data.features || []) : [];
-        features.push(...page);
-
-        const exceeded = data.exceededTransferLimit === true || data.properties?.exceededTransferLimit === true;
-        if (!page.length || !exceeded) break;
-        offset += page.length;
-    }
-
-    return features.slice(0, maxRecordCount);
+    return features;
 }
 
 /**
