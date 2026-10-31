@@ -6,28 +6,22 @@ import { applyTemplate } from '../../dataprep/template-builder.js';
 import { typeConvert } from '../../dataprep/transforms.js';
 import { convertFeatureCoords } from '../../tools/coordinates.js';
 import { createLoopProgress, cloneDatasetOutput, throwIfAborted, throwIfAbortedPeriodic } from '../workflow-run-helpers.js';
+import { computeFilterRows } from '../compute/filter-rows.js';
+import { computeDeduplicate } from '../compute/deduplicate.js';
+import {
+    FILTER_OPERATOR_ALIASES,
+    normalizeFilterOperator,
+    evalFilterRule
+} from '../compute/filter-operators.js';
 
-/** Map legacy/camelCase filter operator names to canonical snake_case keys. */
-export const FILTER_OPERATOR_ALIASES = {
-    greaterThan: 'greater_than',
-    lessThan: 'less_than',
-    notEquals: 'not_equals',
-    notContains: 'not_contains',
-    startsWith: 'starts_with',
-    endsWith: 'ends_with',
-    isNull: 'is_null',
-    isNotNull: 'is_not_null'
-};
-
-export function normalizeFilterOperator(operator) {
-    if (!operator) return operator;
-    return FILTER_OPERATOR_ALIASES[operator] || operator;
-}
+export { FILTER_OPERATOR_ALIASES, normalizeFilterOperator };
 
 // ==============================
 // Filter Rows
 // ==============================
 export class FilterRowsNode extends NodeBase {
+    static runsInWorker = true;
+
     constructor() {
         super('filter-rows', {
             name: 'Filter Rows',
@@ -47,58 +41,11 @@ export class FilterRowsNode extends NodeBase {
     }
 
     async execute(inputs, context) {
-        const data = inputs[0];
-        if (!data) throw new Error('No input data');
-
-        const activeRules = this.config.rules.filter(r => r.field);
-        if (activeRules.length === 0) return cloneDatasetOutput(data);
-
-        const features = data.type === 'spatial' ? data.geojson.features : null;
-        const rows = data.type === 'table' ? data.rows : null;
-        const items = features || rows;
-
-        const filtered = [];
-        const tick = createLoopProgress(context, items.length);
-        for (let i = 0; i < items.length; i++) {
-            tick(i, 'Filtering rows');
-            const item = items[i];
-            const props = features ? item.properties : item;
-            const results = activeRules.map(rule => this._evalRule(props, rule));
-            const keep = this.config.logic === 'AND' ? results.every(Boolean) : results.some(Boolean);
-            if (keep) filtered.push(item);
-        }
-
-        if (data.type === 'spatial') {
-            const geojson = { type: 'FeatureCollection', features: filtered };
-            return { ...data, geojson, schema: { ...data.schema, featureCount: filtered.length } };
-        }
-        return { ...data, rows: filtered, schema: { ...data.schema, featureCount: filtered.length } };
+        return computeFilterRows(inputs, this.config, context);
     }
 
     _evalRule(props, rule) {
-        const raw = props[rule.field];
-        const val = raw == null ? '' : String(raw);
-        const cmp = String(rule.value ?? '');
-
-        switch (normalizeFilterOperator(rule.operator)) {
-            case 'equals': return val === cmp;
-            case 'not_equals': return val !== cmp;
-            case 'contains': return val.toLowerCase().includes(cmp.toLowerCase());
-            case 'not_contains': return !val.toLowerCase().includes(cmp.toLowerCase());
-            case 'starts_with': return val.toLowerCase().startsWith(cmp.toLowerCase());
-            case 'ends_with': return val.toLowerCase().endsWith(cmp.toLowerCase());
-            case 'greater_than': return parseFloat(raw) > parseFloat(cmp);
-            case 'less_than': return parseFloat(raw) < parseFloat(cmp);
-            case 'gte': return parseFloat(raw) >= parseFloat(cmp);
-            case 'lte': return parseFloat(raw) <= parseFloat(cmp);
-            case 'is_null': return raw == null || val === '';
-            case 'is_not_null': return raw != null && val !== '';
-            case 'in': {
-                const list = cmp.split(',').map(s => s.trim().toLowerCase());
-                return list.includes(val.toLowerCase());
-            }
-            default: return true;
-        }
+        return evalFilterRule(props, rule);
     }
 }
 
@@ -304,6 +251,8 @@ export class FindReplaceNode extends NodeBase {
 // Deduplicate
 // ==============================
 export class DeduplicateNode extends NodeBase {
+    static runsInWorker = true;
+
     constructor() {
         super('deduplicate', {
             name: 'Deduplicate',
@@ -322,31 +271,7 @@ export class DeduplicateNode extends NodeBase {
     }
 
     async execute(inputs, context) {
-        const data = inputs[0];
-        if (!data) throw new Error('No input data');
-
-        const items = data.type === 'spatial' ? data.geojson.features : data.rows;
-        const seen = new Map();
-        const result = [];
-        const tick = createLoopProgress(context, items.length);
-
-        for (let i = 0; i < items.length; i++) {
-            tick(i, 'Deduplicating');
-            const item = items[i];
-            const props = data.type === 'spatial' ? item.properties : item;
-            const key = this.config.keyFields.map(f => String(props[f] ?? '')).join('|');
-            if (this.config.keep === 'first') {
-                if (!seen.has(key)) { seen.set(key, true); result.push(item); }
-            } else {
-                seen.set(key, item);
-            }
-        }
-        const final = this.config.keep === 'last' ? [...seen.values()] : result;
-
-        if (data.type === 'spatial') {
-            return { ...data, geojson: { type: 'FeatureCollection', features: final }, schema: { ...data.schema, featureCount: final.length } };
-        }
-        return { ...data, rows: final, schema: { ...data.schema, featureCount: final.length } };
+        return computeDeduplicate(inputs, this.config, context);
     }
 }
 

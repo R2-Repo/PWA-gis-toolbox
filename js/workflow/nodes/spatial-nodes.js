@@ -5,7 +5,6 @@ import { NodeBase } from './node-base.js';
 import {
     bufferFeatures,
     lineOffsetFeatures,
-    simplifyFeatures,
     dissolveFeatures,
     clipFeatures,
     unionFeatures,
@@ -26,6 +25,7 @@ import {
 import { reprojectLayer } from '../../tools/reproject.js';
 import { runWithWorkflowContext } from '../workflow-task-bridge.js';
 import { cloneSchema, createLoopProgress } from '../workflow-run-helpers.js';
+import { computeSimplify } from '../compute/simplify.js';
 
 // ==============================
 // Buffer
@@ -91,6 +91,8 @@ export class LineOffsetNode extends NodeBase {
 // Simplify
 // ==============================
 export class SimplifyNode extends NodeBase {
+    static runsInWorker = true;
+
     constructor() {
         super('simplify', {
             name: 'Simplify',
@@ -109,12 +111,7 @@ export class SimplifyNode extends NodeBase {
     }
 
     async execute(inputs, context) {
-        const data = inputs[0];
-        if (!data || data.type !== 'spatial') throw new Error('Spatial input required');
-        const result = await runWithWorkflowContext(context, () =>
-            simplifyFeatures(data, this.config.tolerance)
-        );
-        return result.dataset;
+        return computeSimplify(inputs, this.config, context);
     }
 }
 

@@ -4,6 +4,7 @@
 import { bus } from '../core/event-bus.js';
 import logger from '../core/logger.js';
 import { throwIfAborted } from './workflow-run-helpers.js';
+import { executeWorkerCapableNode } from './workflow-worker-client.js';
 import { CURRENT_WORKFLOW_SCHEMA_VERSION } from './workflow-schema.js';
 
 /** @typedef {'queued'|'running'|'progress'|'done'|'error'|'skipped'|'cancelled'} WorkflowNodeRunStatus */
@@ -381,7 +382,7 @@ export class WorkflowEngine {
                         getUpstreamOutput: (id) => this.getUpstreamOutput(id, context)
                     };
 
-                    const result = await node.execute(inputs, engineContext);
+                    const result = await executeWorkerCapableNode(node, inputs, engineContext);
                     throwIfAborted(signal);
 
                     if (result && result._multiOutput && result.ports) {
