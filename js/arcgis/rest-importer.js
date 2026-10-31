@@ -25,9 +25,68 @@ import { createSpatialChunkWriter } from '../workspace/spatial-chunk-writer.js';
 import { applyArcgisScaleRangeToLayer } from '../map/scale-range.js';
 import { requiredStyleFieldsFromDrawingInfo, styleFromArcgisMetadata } from './drawing-info.js';
 import { canonicalUdotFiberLayerUrl } from '../symbology/udot-fiber/constants.js';
+import { assemblePolygon, ringIsClockwise } from '../import/stream/shp-stream-parser.js';
 
 /** Maximum features to download without explicit user override. */
 export const ARCGIS_MAX_FEATURES = 250_000;
+
+/** Server continue signal for paginated query responses (json or geojson). */
+export function arcgisResponseExceededTransferLimit(data) {
+    return data?.exceededTransferLimit === true || data?.properties?.exceededTransferLimit === true;
+}
+
+/** Close a ring when first and last vertices differ. */
+export function closeRing(ring) {
+    if (!ring?.length) return ring;
+    const [x0, y0] = ring[0];
+    const [x1, y1] = ring[ring.length - 1];
+    if (x0 === x1 && y0 === y1) return ring;
+    return [...ring, [x0, y0]];
+}
+
+/** RFC 7946 winding: exterior counter-clockwise, holes clockwise. */
+function ringToRfc7946(ring, isExterior) {
+    const closed = closeRing(ring);
+    if (closed.length < 4) return null;
+    const clockwise = ringIsClockwise(closed);
+    const wantClockwise = !isExterior;
+    if (clockwise === wantClockwise) return closed;
+    return closed.slice().reverse();
+}
+
+/**
+ * Convert Esri JSON polygon rings to GeoJSON Polygon/MultiPolygon.
+ * Esri: clockwise exteriors, counter-clockwise holes; holes nest under containing exterior.
+ */
+export function esriRingsToGeoJSON(rings) {
+    if (!rings?.length) return null;
+    const closedRings = rings.map(closeRing).filter((ring) => ring.length >= 4);
+    if (!closedRings.length) return null;
+
+    const assembled = assemblePolygon(closedRings);
+    if (!assembled) return null;
+
+    const normalizePolygon = (polyRings) => {
+        const out = [];
+        for (let i = 0; i < polyRings.length; i++) {
+            const normalized = ringToRfc7946(polyRings[i], i === 0);
+            if (normalized) out.push(normalized);
+        }
+        return out.length ? out : null;
+    };
+
+    if (assembled.type === 'Polygon') {
+        const coordinates = normalizePolygon(assembled.coordinates);
+        return coordinates ? { type: 'Polygon', coordinates } : null;
+    }
+
+    const multi = assembled.coordinates.map(normalizePolygon).filter(Boolean);
+    if (!multi.length) return null;
+    if (multi.length === 1) {
+        return { type: 'Polygon', coordinates: multi[0] };
+    }
+    return { type: 'MultiPolygon', coordinates: multi };
+}
 
 /**
  * Convert one ESRI feature JSON object to GeoJSON Feature.
@@ -305,6 +364,14 @@ export class ArcGISRestImporter {
                     params.set('inSR', '4326');
                 }
 
+                const orderBy = queryOptions.orderByFields;
+                params.set(
+                    'orderByFields',
+                    orderBy != null && String(orderBy).length > 0
+                        ? String(orderBy)
+                        : this.metadata.objectIdField
+                );
+
                 let data;
                 let retries = 0;
                 const maxRetries = 3;
@@ -392,7 +459,7 @@ export class ArcGISRestImporter {
                     );
                 }
 
-                if (features.length < maxRec || !data.exceededTransferLimit) {
+                if (!arcgisResponseExceededTransferLimit(data)) {
                     done = true;
                 }
 
@@ -509,12 +576,7 @@ export class ArcGISRestImporter {
             return { type: 'MultiLineString', coordinates: geom.paths };
         }
         if (geom.rings) {
-            // Determine outer/inner rings (simplified)
-            if (geom.rings.length === 1) {
-                return { type: 'Polygon', coordinates: geom.rings };
-            }
-            // For multiple rings, simple approach: treat as MultiPolygon with one poly
-            return { type: 'Polygon', coordinates: geom.rings };
+            return esriRingsToGeoJSON(geom.rings);
         }
         return null;
     }
