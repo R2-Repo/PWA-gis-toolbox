@@ -16,7 +16,8 @@ export const REGISTRY_PARAM_TO_CANVAS = {
         units: { configKey: 'units' }
     },
     simplify: {
-        tolerance: { configKey: 'tolerance', registryUnit: 'deg', canvasUnit: 'deg' }
+        tolerance: { configKey: 'tolerance', registryUnit: 'deg', canvasUnit: 'm' },
+        toleranceUnit: { configKey: 'toleranceUnit' }
     },
     dissolve: {
         field: { configKey: 'field' }

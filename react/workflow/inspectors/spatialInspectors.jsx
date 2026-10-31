@@ -64,18 +64,50 @@ function LineOffsetInspector({ config, onConfigChange }) {
     );
 }
 
+const SIMPLIFY_TOLERANCE_UNITS = [
+    { value: 'm', label: 'metres (m)' },
+    { value: 'ft', label: 'feet (ft)' },
+    { value: 'deg', label: 'degrees (legacy)' }
+];
+
+function simplifyUnitLabel(unit) {
+    if (unit === 'ft') return 'Tolerance (ft)';
+    if (unit === 'deg') return 'Tolerance (degrees)';
+    return 'Tolerance (m)';
+}
+
 function SimplifyInspector({ config, onConfigChange }) {
+    const unit = config.toleranceUnit ?? 'm';
+    const isDeg = unit === 'deg';
+    const defaultTol = isDeg ? 0.001 : 10;
     return (
         <>
-            <InspectorLabel>Tolerance</InspectorLabel>
+            <InspectorLabel>{simplifyUnitLabel(unit)}</InspectorLabel>
             <InspectorInput
                 type="number"
-                value={config.tolerance ?? 0.001}
-                min={0.0001}
-                step={0.0001}
-                onChange={(v) => onConfigChange({ ...config, tolerance: parseFloat(v) || 0.001 })}
+                value={config.tolerance ?? defaultTol}
+                min={isDeg ? 0.0000001 : 0.001}
+                step={isDeg ? 0.0001 : 0.1}
+                onChange={(v) =>
+                    onConfigChange({ ...config, tolerance: parseFloat(v) || defaultTol })
+                }
             />
-            <HintText>Smaller = more detail. Default 0.001</HintText>
+            <InspectorLabel style={{ marginTop: 8 }}>Tolerance unit</InspectorLabel>
+            <InspectorSelect
+                value={unit}
+                onChange={(toleranceUnit) => onConfigChange({ ...config, toleranceUnit })}
+            >
+                {SIMPLIFY_TOLERANCE_UNITS.map((u) => (
+                    <option key={u.value} value={u.value}>
+                        {u.label}
+                    </option>
+                ))}
+            </InspectorSelect>
+            <HintText>
+                {isDeg
+                    ? 'Degrees along lon/lat — matches saved workflows before unit support.'
+                    : 'Ground distance at the data latitude; smaller keeps more detail.'}
+            </HintText>
         </>
     );
 }

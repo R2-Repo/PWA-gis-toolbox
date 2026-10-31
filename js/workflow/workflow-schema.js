@@ -7,7 +7,7 @@ import { getTool } from '../tools/tool-registry.js';
 
 /** @typedef {{ schemaVersion: number, nodes: object[], wires: object[] }} WorkflowGraphJSON */
 
-export const CURRENT_WORKFLOW_SCHEMA_VERSION = 1;
+export const CURRENT_WORKFLOW_SCHEMA_VERSION = 2;
 
 /**
  * Extract the inner pipeline graph from export wrappers and legacy shapes.
@@ -58,6 +58,11 @@ export function migrateWorkflowGraph(input) {
             version = 1;
             continue;
         }
+        if (version === 1) {
+            nodes = nodes.map(migrateSchemaV1SimplifyUnits);
+            version = 2;
+            continue;
+        }
         throw new Error(`Unsupported workflow schema version ${version}`);
     }
 
@@ -87,6 +92,22 @@ function normalizeLegacyNode(nd) {
 function normalizeLegacyWire(w) {
     if (!w || typeof w !== 'object') return w;
     return { ...w };
+}
+
+/** Existing Simplify nodes kept degree tolerance semantics (pre–unit picker). */
+function migrateSchemaV1SimplifyUnits(nd) {
+    if (!nd || typeof nd !== 'object') return nd;
+    const node = { ...nd };
+    if (node.type !== 'simplify') return node;
+    if (node.config == null || typeof node.config !== 'object') {
+        node.config = {};
+    } else {
+        node.config = { ...node.config };
+    }
+    if (node.config.toleranceUnit == null) {
+        node.config.toleranceUnit = 'deg';
+    }
+    return node;
 }
 
 /**

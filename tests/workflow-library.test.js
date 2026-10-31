@@ -85,6 +85,24 @@ describe('workflow schema migration', () => {
         expect(migrated.nodes).toHaveLength(1);
     });
 
+    it('sets toleranceUnit deg on simplify nodes when upgrading from schema v1', () => {
+        const v1 = {
+            schemaVersion: 1,
+            nodes: [
+                {
+                    id: 'node-2',
+                    type: 'simplify',
+                    position: { x: 0, y: 0 },
+                    config: { tolerance: 0.001 }
+                }
+            ],
+            wires: []
+        };
+        const migrated = migrateWorkflowGraph(v1);
+        expect(migrated.schemaVersion).toBe(CURRENT_WORKFLOW_SCHEMA_VERSION);
+        expect(migrated.nodes[0].config.toleranceUnit).toBe('deg');
+    });
+
     it('unwraps export wrapper and inner pipeline', () => {
         const wrapped = {
             _format: 'gis-toolbox-workflow',

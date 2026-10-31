@@ -1,7 +1,7 @@
 import { adaptComputeContext } from '../compute-run-context.js';
 import { computeFilterRows } from '../../tools/compute/filter-rows.js';
 import { computeDeduplicate } from '../../tools/compute/deduplicate.js';
-import { computeSimplify } from '../../tools/compute/simplify.js';
+import { computeWorkflowSimplify } from '../compute/simplify-units.js';
 import {
     computeRenameFields,
     computeDeleteFields,
@@ -61,7 +61,7 @@ export const NODE_COMPUTE_BY_TYPE = new Map([
     ['add-field', computeAddField],
     ['buffer', computeBuffer],
     ['line-offset', computeLineOffset],
-    ['simplify', computeSimplify],
+    ['simplify', computeWorkflowSimplify],
     ['dissolve', computeDissolve],
     ['clip', computeClip],
     ['union', computeUnion],

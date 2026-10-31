@@ -2,7 +2,7 @@
  * Spatial analysis nodes — GIS operations
  */
 import { NodeBase } from './node-base.js';
-import { computeSimplify } from '../../tools/compute/simplify.js';
+import { computeWorkflowSimplify } from '../compute/simplify-units.js';
 import {
     computeBuffer,
     computeLineOffset,
@@ -98,7 +98,7 @@ export class SimplifyNode extends NodeBase {
         });
         this.inputPorts = [{ id: 'in', label: 'Features', dataType: 'dataset' }];
         this.outputPorts = [{ id: 'out', label: 'Simplified', dataType: 'dataset' }];
-        this.config = { tolerance: 0.001 };
+        this.config = { tolerance: 10, toleranceUnit: 'm' };
     }
 
     validate() {
@@ -107,7 +107,7 @@ export class SimplifyNode extends NodeBase {
     }
 
     async execute(inputs, context) {
-        return computeSimplify(inputs, this.config, adaptComputeContext(context));
+        return computeWorkflowSimplify(inputs, this.config, adaptComputeContext(context));
     }
 }
 

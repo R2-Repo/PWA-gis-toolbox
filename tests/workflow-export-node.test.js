@@ -4,7 +4,7 @@ import { WorkflowEngine } from '../js/workflow/workflow-engine.js';
 import { resetNodeIdCounter, NodeBase } from '../js/workflow/nodes/node-base.js';
 import { ExportNode } from '../js/workflow/nodes/output-nodes.js';
 import { loadGraphIntoEngine } from '../js/workflow/workflow-graph-loader.js';
-import { graphFromEngine } from '../js/workflow/workflow-schema.js';
+import { CURRENT_WORKFLOW_SCHEMA_VERSION, graphFromEngine } from '../js/workflow/workflow-schema.js';
 import { getAvailableFormats, exportDataset, downloadBlob } from '../js/export/exporter.js';
 import {
     buildExportOptions,
@@ -328,7 +328,7 @@ describe('ExportNode', () => {
         engine.addNode(exp);
 
         const json = graphFromEngine(engine);
-        expect(json.schemaVersion).toBe(1);
+        expect(json.schemaVersion).toBe(CURRENT_WORKFLOW_SCHEMA_VERSION);
         expect(json.nodes[0]).toMatchObject({
             type: 'export',
             config: { format: 'kml', filename: 'saved', targetCrs: 'EPSG:4326' }

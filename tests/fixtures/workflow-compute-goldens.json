@@ -1636,7 +1636,9 @@
       "features": [
         {
           "type": "Feature",
-          "properties": {},
+          "properties": {
+            "g": 1
+          },
           "geometry": {
             "type": "Polygon",
             "coordinates": [
@@ -1684,7 +1686,22 @@
       ]
     },
     "schema": {
-      "fields": [],
+      "fields": [
+        {
+          "name": "g",
+          "type": "number",
+          "nullCount": 0,
+          "uniqueCount": 1,
+          "sampleValues": [
+            1
+          ],
+          "min": 1,
+          "max": 1,
+          "selected": true,
+          "outputName": "g",
+          "order": 0
+        }
+      ],
       "geometryType": "Polygon",
       "featureCount": 1,
       "crs": "EPSG:4326"
