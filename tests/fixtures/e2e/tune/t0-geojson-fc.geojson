@@ -1,0 +1,215 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "id": 0,
+        "name": "site-T0-0",
+        "unicode": "测试 τῆμος"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -111.02061419701204,
+          39.7016662042588
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "id": 1,
+        "name": "site-T0-1",
+        "unicode": "val-1"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -111.0985597721301,
+          40.243585894815624
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "id": 2,
+        "name": "site-T0-2",
+        "unicode": "val-2"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -111.656146151945,
+          40.80124816019088
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "id": 3,
+        "name": "site-T0-3",
+        "unicode": "val-3"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -111.31541762454435,
+          39.60853607999161
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "id": 4,
+        "name": "site-T0-4",
+        "unicode": "val-4"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -111.76489964779466,
+          39.90883704461157
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "id": 5,
+        "name": "site-T0-5",
+        "unicode": "val-5"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -111.47110041044652,
+          39.94729965552688
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "id": 6,
+        "name": "site-T0-6",
+        "unicode": "val-6"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -110.98507415875793,
+          39.70926319248974
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "id": 7,
+        "name": "site-T0-7",
+        "unicode": "val-7"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -111.35080453986302,
+          39.47308586072177
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "id": 8,
+        "name": "site-T0-8",
+        "unicode": "val-8"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -111.77186810132116,
+          40.282319674734026
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "id": 9,
+        "name": "site-T0-9",
+        "unicode": "val-9"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -110.9623189996928,
+          40.33095751143992
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "id": 10,
+        "name": "site-T0-10",
+        "unicode": "val-10"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -110.25477763731033,
+          39.499162315856665
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "id": 11,
+        "name": "site-T0-11",
+        "unicode": "val-11"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -111.00305485539138,
+          39.29517344897613
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "id": 12,
+        "name": "site-T0-12",
+        "unicode": "val-12"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -110.81477403314784,
+          39.34533060947433
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "id": 13,
+        "name": "site-T0-13",
+        "unicode": "val-13"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -110.69078315235674,
+          39.20937875332311
+        ]
+      }
+    }
+  ]
+}

@@ -19,6 +19,10 @@ node_modules/
 dist/
 dist-web/
 dist-desktop/
+test-results/
+tests/fixtures/e2e/generated/
+tests/fixtures/e2e/holdout/*
+!tests/fixtures/e2e/holdout/README.md
 
 # Python (asset build helpers)
 __pycache__/

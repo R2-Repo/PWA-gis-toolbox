@@ -1,0 +1,148 @@
+{
+  "features": [
+    {
+      "geometry": {
+        "x": -110.63627747539431,
+        "y": 40.00330001255497
+      },
+      "attributes": {
+        "id": 0,
+        "name": "site-T0-0",
+        "unicode": "测试 τῆμος",
+        "OBJECTID": 1
+      }
+    },
+    {
+      "geometry": {
+        "x": -110.87622188124806,
+        "y": 39.377657789271325
+      },
+      "attributes": {
+        "id": 1,
+        "name": "site-T0-1",
+        "unicode": "val-1",
+        "OBJECTID": 2
+      }
+    },
+    {
+      "geometry": {
+        "x": -111.13934758352116,
+        "y": 40.92399112554267
+      },
+      "attributes": {
+        "id": 2,
+        "name": "site-T0-2",
+        "unicode": "val-2",
+        "OBJECTID": 3
+      }
+    },
+    {
+      "geometry": {
+        "x": -111.08811836875975,
+        "y": 39.92161626694724
+      },
+      "attributes": {
+        "id": 3,
+        "name": "site-T0-3",
+        "unicode": "val-3",
+        "OBJECTID": 4
+      }
+    },
+    {
+      "geometry": {
+        "x": -111.15731850918382,
+        "y": 40.3828995404765
+      },
+      "attributes": {
+        "id": 4,
+        "name": "site-T0-4",
+        "unicode": "val-4",
+        "OBJECTID": 5
+      }
+    },
+    {
+      "geometry": {
+        "x": -110.62391106737778,
+        "y": 39.29020284116268
+      },
+      "attributes": {
+        "id": 5,
+        "name": "site-T0-5",
+        "unicode": "val-5",
+        "OBJECTID": 6
+      }
+    },
+    {
+      "geometry": {
+        "x": -110.67345198895782,
+        "y": 40.42122559668496
+      },
+      "attributes": {
+        "id": 6,
+        "name": "site-T0-6",
+        "unicode": "val-6",
+        "OBJECTID": 7
+      }
+    },
+    {
+      "geometry": {
+        "x": -110.8005206072703,
+        "y": 40.97681670729071
+      },
+      "attributes": {
+        "id": 7,
+        "name": "site-T0-7",
+        "unicode": "val-7",
+        "OBJECTID": 8
+      }
+    },
+    {
+      "geometry": {
+        "x": -110.29289205931127,
+        "y": 39.01032331492752
+      },
+      "attributes": {
+        "id": 8,
+        "name": "site-T0-8",
+        "unicode": "val-8",
+        "OBJECTID": 9
+      }
+    },
+    {
+      "geometry": {
+        "x": -111.69955734023824,
+        "y": 40.85931294132024
+      },
+      "attributes": {
+        "id": 9,
+        "name": "site-T0-9",
+        "unicode": "val-9",
+        "OBJECTID": 10
+      }
+    },
+    {
+      "geometry": {
+        "x": -111.59607573738322,
+        "y": 39.77727640559897
+      },
+      "attributes": {
+        "id": 10,
+        "name": "site-T0-10",
+        "unicode": "val-10",
+        "OBJECTID": 11
+      }
+    },
+    {
+      "geometry": {
+        "x": -111.84561929991469,
+        "y": 39.72254327638075
+      },
+      "attributes": {
+        "id": 11,
+        "name": "site-T0-11",
+        "unicode": "val-11",
+        "OBJECTID": 12
+      }
+    }
+  ]
+}

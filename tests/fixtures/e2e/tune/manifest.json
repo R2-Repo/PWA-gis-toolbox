@@ -1,0 +1,903 @@
+{
+  "version": 1,
+  "generatedAt": "2026-10-31T01:32:23.428Z",
+  "fixtures": [
+    {
+      "id": "T0-geojson-fc",
+      "file": "t0-geojson-fc.geojson",
+      "format": "geojson",
+      "tier": "T0",
+      "tag": "@tune",
+      "expectedOutcome": "success",
+      "featureCount": 14,
+      "bbox": [
+        -111.77186810132116,
+        39.20937875332311,
+        -110.25477763731033,
+        40.80124816019088
+      ],
+      "geometryTypes": [
+        "Point"
+      ],
+      "fields": {
+        "id": "number",
+        "name": "string",
+        "unicode": "string"
+      },
+      "crs": "EPSG:4326"
+    },
+    {
+      "id": "T1-geojson-fc",
+      "file": "t1-geojson-fc.geojson",
+      "format": "geojson",
+      "tier": "T1",
+      "tag": "@tune",
+      "expectedOutcome": "success",
+      "featureCount": 1000,
+      "bbox": [
+        -111.99588479567319,
+        39.000377191230655,
+        -110.0017437194474,
+        40.99995697150007
+      ],
+      "geometryTypes": [
+        "Point"
+      ],
+      "fields": {
+        "id": "number",
+        "name": "string",
+        "unicode": "string"
+      },
+      "crs": "EPSG:4326",
+      "roundTrip": true
+    },
+    {
+      "id": "T0-json-array",
+      "file": "t0-json-array.json",
+      "format": "json",
+      "tier": "T0",
+      "tag": "@tune",
+      "expectedOutcome": "success",
+      "featureCount": 12,
+      "bbox": [
+        -111.84561929991469,
+        39.01032331492752,
+        -110.29289205931127,
+        40.97681670729071
+      ],
+      "geometryTypes": [
+        "Point"
+      ],
+      "fields": {
+        "id": "number",
+        "name": "string",
+        "unicode": "string"
+      },
+      "crs": "EPSG:4326"
+    },
+    {
+      "id": "T0-json-esri",
+      "file": "t0-json-esri.json",
+      "format": "json-esri",
+      "tier": "T0",
+      "tag": "@tune",
+      "expectedOutcome": "success",
+      "featureCount": 12,
+      "bbox": [
+        -111.84561929991469,
+        39.01032331492752,
+        -110.29289205931127,
+        40.97681670729071
+      ],
+      "geometryTypes": [
+        "Point"
+      ],
+      "fields": {
+        "id": "number",
+        "name": "string",
+        "unicode": "string"
+      },
+      "crs": "EPSG:4326"
+    },
+    {
+      "id": "T1-json-array",
+      "file": "t1-json-array.json",
+      "format": "json",
+      "tier": "T1",
+      "tag": "@tune",
+      "expectedOutcome": "success",
+      "featureCount": 1000,
+      "bbox": [
+        -111.99599079042673,
+        39.002080250065774,
+        -110.0045163477771,
+        40.99898081459105
+      ],
+      "geometryTypes": [
+        "Point"
+      ],
+      "fields": {
+        "id": "number",
+        "name": "string",
+        "unicode": "string"
+      },
+      "crs": "EPSG:4326"
+    },
+    {
+      "id": "T1-json-esri",
+      "file": "t1-json-esri.json",
+      "format": "json-esri",
+      "tier": "T1",
+      "tag": "@tune",
+      "expectedOutcome": "success",
+      "featureCount": 1000,
+      "bbox": [
+        -111.99599079042673,
+        39.002080250065774,
+        -110.0045163477771,
+        40.99898081459105
+      ],
+      "geometryTypes": [
+        "Point"
+      ],
+      "fields": {
+        "id": "number",
+        "name": "string",
+        "unicode": "string"
+      },
+      "crs": "EPSG:4326"
+    },
+    {
+      "id": "T0-csv-latlon",
+      "file": "t0-csv-latlon.csv",
+      "format": "csv",
+      "tier": "T0",
+      "tag": "@tune",
+      "expectedOutcome": "success",
+      "featureCount": 14,
+      "bbox": [
+        -111.83693170268089,
+        39.13593492843211,
+        -110.02733315853402,
+        40.986607080791146
+      ],
+      "geometryTypes": [
+        "Point"
+      ],
+      "fields": {
+        "id": "number",
+        "name": "string",
+        "unicode": "string"
+      },
+      "crs": "EPSG:4326"
+    },
+    {
+      "id": "T0-tsv-latlon",
+      "file": "t0-tsv-latlon.tsv",
+      "format": "tsv",
+      "tier": "T0",
+      "tag": "@tune",
+      "expectedOutcome": "success",
+      "featureCount": 14,
+      "bbox": [
+        -111.83693170268089,
+        39.13593492843211,
+        -110.02733315853402,
+        40.986607080791146
+      ],
+      "geometryTypes": [
+        "Point"
+      ],
+      "fields": {
+        "id": "number",
+        "name": "string",
+        "unicode": "string"
+      },
+      "crs": "EPSG:4326"
+    },
+    {
+      "id": "T0-txt-latlon",
+      "file": "t0-txt-latlon.txt",
+      "format": "txt",
+      "tier": "T0",
+      "tag": "@tune",
+      "expectedOutcome": "success",
+      "featureCount": 14,
+      "bbox": [
+        -111.83693170268089,
+        39.13593492843211,
+        -110.02733315853402,
+        40.986607080791146
+      ],
+      "geometryTypes": [
+        "Point"
+      ],
+      "fields": {
+        "id": "number",
+        "name": "string",
+        "unicode": "string"
+      },
+      "crs": "EPSG:4326"
+    },
+    {
+      "id": "T0-csv-utm-epsg26912",
+      "file": "t0-csv-utm-epsg26912.csv",
+      "format": "csv",
+      "tier": "T0",
+      "tag": "@tune",
+      "expectedOutcome": "success",
+      "featureCount": 14,
+      "bbox": [
+        -111.83693170268089,
+        39.13593492843211,
+        -110.02733315853402,
+        40.986607080791146
+      ],
+      "geometryTypes": [
+        "Point"
+      ],
+      "fields": {
+        "id": "number",
+        "name": "string"
+      },
+      "crs": "EPSG:26912",
+      "includeUnicode": false,
+      "crsPick": "EPSG:26912",
+      "skipBbox": true
+    },
+    {
+      "id": "T0-csv-bom-quoted",
+      "file": "t0-csv-bom-quoted.csv",
+      "format": "csv",
+      "tier": "T0",
+      "tag": "@tune",
+      "expectedOutcome": "success",
+      "featureCount": 2,
+      "bbox": [
+        -111.891,
+        40.7608,
+        -111.89,
+        40.761
+      ],
+      "geometryTypes": [
+        "Point"
+      ],
+      "fields": {
+        "name": "string",
+        "note": "string"
+      },
+      "crs": "EPSG:4326",
+      "allowMissingFields": true,
+      "skipBbox": true
+    },
+    {
+      "id": "T0-csv-wkt-column",
+      "file": "t0-csv-wkt-column.csv",
+      "format": "csv",
+      "tier": "T0",
+      "tag": "@tune",
+      "expectedOutcome": "success",
+      "featureCount": 0,
+      "geometryTypes": [],
+      "fields": {
+        "WKT": "string"
+      },
+      "crs": "EPSG:4326",
+      "notes": "WKT-only CSV imports as non-spatial table (0 map features)"
+    },
+    {
+      "id": "T1-csv-latlon",
+      "file": "t1-csv-latlon.csv",
+      "format": "csv",
+      "tier": "T1",
+      "tag": "@tune",
+      "expectedOutcome": "success",
+      "featureCount": 1000,
+      "bbox": [
+        -111.99810111662373,
+        39.00300149573013,
+        -110.0009982236661,
+        40.9993339641951
+      ],
+      "geometryTypes": [
+        "Point"
+      ],
+      "fields": {
+        "id": "number",
+        "name": "string",
+        "unicode": "string"
+      },
+      "crs": "EPSG:4326"
+    },
+    {
+      "id": "T1-tsv-latlon",
+      "file": "t1-tsv-latlon.tsv",
+      "format": "tsv",
+      "tier": "T1",
+      "tag": "@tune",
+      "expectedOutcome": "success",
+      "featureCount": 1000,
+      "bbox": [
+        -111.99810111662373,
+        39.00300149573013,
+        -110.0009982236661,
+        40.9993339641951
+      ],
+      "geometryTypes": [
+        "Point"
+      ],
+      "fields": {
+        "id": "number",
+        "name": "string",
+        "unicode": "string"
+      },
+      "crs": "EPSG:4326"
+    },
+    {
+      "id": "T1-txt-latlon",
+      "file": "t1-txt-latlon.txt",
+      "format": "txt",
+      "tier": "T1",
+      "tag": "@tune",
+      "expectedOutcome": "success",
+      "featureCount": 1000,
+      "bbox": [
+        -111.99810111662373,
+        39.00300149573013,
+        -110.0009982236661,
+        40.9993339641951
+      ],
+      "geometryTypes": [
+        "Point"
+      ],
+      "fields": {
+        "id": "number",
+        "name": "string",
+        "unicode": "string"
+      },
+      "crs": "EPSG:4326"
+    },
+    {
+      "id": "T1-csv-utm-epsg26912",
+      "file": "t1-csv-utm-epsg26912.csv",
+      "format": "csv",
+      "tier": "T1",
+      "tag": "@tune",
+      "expectedOutcome": "success",
+      "featureCount": 50,
+      "bbox": [
+        -111.95268650865182,
+        39.029773174319416,
+        -110.04755859868601,
+        40.99744358099997
+      ],
+      "geometryTypes": [
+        "Point"
+      ],
+      "fields": {
+        "id": "number",
+        "name": "string"
+      },
+      "crs": "EPSG:26912",
+      "includeUnicode": false,
+      "crsPick": "EPSG:26912",
+      "skipBbox": true
+    },
+    {
+      "id": "T0-xlsx",
+      "file": "t0-points.xlsx",
+      "format": "xlsx",
+      "tier": "T0",
+      "tag": "@tune",
+      "expectedOutcome": "success",
+      "featureCount": 15,
+      "bbox": [
+        -111.85542346118018,
+        39.10274815466255,
+        -110.09357287827879,
+        40.7626280435361
+      ],
+      "geometryTypes": [
+        "Point"
+      ],
+      "fields": {
+        "id": "number",
+        "name": "string",
+        "unicode": "string"
+      },
+      "crs": "EPSG:4326"
+    },
+    {
+      "id": "T0-xls",
+      "file": "t0-points.xls",
+      "format": "xls",
+      "tier": "T0",
+      "tag": "@tune",
+      "expectedOutcome": "success",
+      "featureCount": 15,
+      "bbox": [
+        -111.85542346118018,
+        39.10274815466255,
+        -110.09357287827879,
+        40.7626280435361
+      ],
+      "geometryTypes": [
+        "Point"
+      ],
+      "fields": {
+        "id": "number",
+        "name": "string",
+        "unicode": "string"
+      },
+      "crs": "EPSG:4326"
+    },
+    {
+      "id": "T1-xlsx",
+      "file": "t1-points.xlsx",
+      "format": "xlsx",
+      "tier": "T1",
+      "tag": "@tune",
+      "expectedOutcome": "success",
+      "featureCount": 1000,
+      "bbox": [
+        -111.99923778418452,
+        39.00158209865913,
+        -110.00077140238136,
+        40.99895023368299
+      ],
+      "geometryTypes": [
+        "Point"
+      ],
+      "fields": {
+        "id": "number",
+        "name": "string",
+        "unicode": "string"
+      },
+      "crs": "EPSG:4326"
+    },
+    {
+      "id": "T1-xls",
+      "file": "t1-points.xls",
+      "format": "xls",
+      "tier": "T1",
+      "tag": "@tune",
+      "expectedOutcome": "success",
+      "featureCount": 1000,
+      "bbox": [
+        -111.99923778418452,
+        39.00158209865913,
+        -110.00077140238136,
+        40.99895023368299
+      ],
+      "geometryTypes": [
+        "Point"
+      ],
+      "fields": {
+        "id": "number",
+        "name": "string",
+        "unicode": "string"
+      },
+      "crs": "EPSG:4326"
+    },
+    {
+      "id": "T0-kml",
+      "file": "t0-folder-multigeom.kml",
+      "format": "kml",
+      "tier": "T0",
+      "tag": "@tune",
+      "expectedOutcome": "success",
+      "featureCount": 13,
+      "bbox": [
+        -111.95339566050097,
+        39.000210996717215,
+        -110.04186936980113,
+        40.99218503059819
+      ],
+      "geometryTypes": [
+        "Point"
+      ],
+      "fields": {
+        "id": "number",
+        "name": "string",
+        "unicode": "string"
+      },
+      "crs": "EPSG:4326"
+    },
+    {
+      "id": "T0-kmz",
+      "file": "t0-folder.kmz",
+      "format": "kmz",
+      "tier": "T0",
+      "tag": "@tune",
+      "expectedOutcome": "success",
+      "featureCount": 13,
+      "bbox": [
+        -111.95339566050097,
+        39.000210996717215,
+        -110.04186936980113,
+        40.99218503059819
+      ],
+      "geometryTypes": [
+        "Point"
+      ],
+      "fields": {
+        "id": "number",
+        "name": "string",
+        "unicode": "string"
+      },
+      "crs": "EPSG:4326"
+    },
+    {
+      "id": "T0-kmz-zip-disguised",
+      "file": "t0-kmz-as.zip",
+      "format": "kmz",
+      "tier": "T0",
+      "tag": "@tune",
+      "expectedOutcome": "success",
+      "featureCount": 13,
+      "bbox": [
+        -111.95339566050097,
+        39.000210996717215,
+        -110.04186936980113,
+        40.99218503059819
+      ],
+      "geometryTypes": [
+        "Point"
+      ],
+      "fields": {
+        "id": "number",
+        "name": "string",
+        "unicode": "string"
+      },
+      "crs": "EPSG:4326"
+    },
+    {
+      "id": "T1-kml",
+      "file": "t1-folder-multigeom.kml",
+      "format": "kml",
+      "tier": "T1",
+      "tag": "@tune",
+      "expectedOutcome": "success",
+      "featureCount": 1000,
+      "bbox": [
+        -111.99759020470083,
+        39.000053321011364,
+        -110.00046631507576,
+        40.99492843123153
+      ],
+      "geometryTypes": [
+        "Point"
+      ],
+      "fields": {
+        "id": "number",
+        "name": "string",
+        "unicode": "string"
+      },
+      "crs": "EPSG:4326"
+    },
+    {
+      "id": "T1-kmz",
+      "file": "t1-folder.kmz",
+      "format": "kmz",
+      "tier": "T1",
+      "tag": "@tune",
+      "expectedOutcome": "success",
+      "featureCount": 1000,
+      "bbox": [
+        -111.99759020470083,
+        39.000053321011364,
+        -110.00046631507576,
+        40.99492843123153
+      ],
+      "geometryTypes": [
+        "Point"
+      ],
+      "fields": {
+        "id": "number",
+        "name": "string",
+        "unicode": "string"
+      },
+      "crs": "EPSG:4326"
+    },
+    {
+      "id": "T0-gpx",
+      "file": "t0-wpt-trk-rte.gpx",
+      "format": "gpx",
+      "tier": "T0",
+      "tag": "@tune",
+      "expectedOutcome": "success",
+      "featureCount": 3,
+      "geometryTypes": [
+        "Point",
+        "LineString"
+      ],
+      "fields": {
+        "id": "number",
+        "name": "string"
+      },
+      "crs": "EPSG:4326",
+      "skipBbox": true,
+      "notes": "GPX fixture includes wpt/trk/rte; app materializes 3 features for T0 file"
+    },
+    {
+      "id": "T1-gpx",
+      "file": "t1-wpt-trk-rte.gpx",
+      "format": "gpx",
+      "tier": "T1",
+      "tag": "@tune",
+      "expectedOutcome": "success",
+      "featureCount": 3,
+      "geometryTypes": [
+        "Point",
+        "LineString"
+      ],
+      "fields": {
+        "id": "number",
+        "name": "string"
+      },
+      "crs": "EPSG:4326",
+      "skipBbox": true,
+      "notes": "GPX fixture includes wpt/trk/rte; app materializes 3 features for T0 file"
+    },
+    {
+      "id": "T0-shp-wgs84",
+      "file": "t0-points-wgs84.zip",
+      "format": "shapefile",
+      "tier": "T0",
+      "tag": "@tune",
+      "expectedOutcome": "success",
+      "featureCount": 15,
+      "bbox": [
+        -111.9061693563126,
+        39.02188390539959,
+        -110.0844202823937,
+        40.50744350766763
+      ],
+      "geometryTypes": [
+        "Point"
+      ],
+      "fields": {
+        "id": "number",
+        "name": "string"
+      },
+      "crs": "EPSG:4326",
+      "crsPick": null,
+      "skipBbox": false,
+      "knownBug": null
+    },
+    {
+      "id": "T0-shp-utm",
+      "file": "t0-points-utm26912.zip",
+      "format": "shapefile",
+      "tier": "T0",
+      "tag": "@tune",
+      "expectedOutcome": "success",
+      "featureCount": 8,
+      "bbox": [
+        -111.9061693563126,
+        39.02188390539959,
+        -110.0844202823937,
+        40.50744350766763
+      ],
+      "geometryTypes": [
+        "Point"
+      ],
+      "fields": {
+        "id": "number",
+        "name": "string"
+      },
+      "crs": "EPSG:26912",
+      "crsPick": "EPSG:26912",
+      "skipBbox": true,
+      "knownBug": null
+    },
+    {
+      "id": "T0-shp-noprj",
+      "file": "t0-points-noprj.zip",
+      "format": "shapefile",
+      "tier": "T0",
+      "tag": "@tune",
+      "expectedOutcome": "success",
+      "featureCount": 5,
+      "bbox": [
+        -111.9061693563126,
+        39.02188390539959,
+        -110.0844202823937,
+        40.50744350766763
+      ],
+      "geometryTypes": [
+        "Point"
+      ],
+      "fields": {
+        "id": "number",
+        "name": "string"
+      },
+      "crs": "EPSG:26912",
+      "crsPick": "EPSG:26912",
+      "skipBbox": true,
+      "knownBug": null
+    },
+    {
+      "id": "T0-shp-line",
+      "file": "t0-lines-wgs84.zip",
+      "format": "shapefile",
+      "tier": "T0",
+      "tag": "@tune",
+      "expectedOutcome": "success",
+      "featureCount": 1,
+      "bbox": [
+        -111.9061693563126,
+        39.02188390539959,
+        -110.0844202823937,
+        40.50744350766763
+      ],
+      "geometryTypes": [
+        "LineString"
+      ],
+      "fields": {
+        "id": "number",
+        "name": "string"
+      },
+      "crs": "EPSG:4326",
+      "crsPick": null,
+      "skipBbox": true,
+      "knownBug": null
+    },
+    {
+      "id": "T0-shp-poly",
+      "file": "t0-polygons-wgs84.zip",
+      "format": "shapefile",
+      "tier": "T0",
+      "tag": "@tune",
+      "expectedOutcome": "success",
+      "featureCount": 1,
+      "bbox": [
+        -111.5,
+        40.1,
+        -111.4,
+        40.2
+      ],
+      "geometryTypes": [
+        "Polygon"
+      ],
+      "fields": {
+        "id": "number",
+        "name": "string"
+      },
+      "crs": "EPSG:4326",
+      "crsPick": null,
+      "skipBbox": false,
+      "knownBug": null
+    },
+    {
+      "id": "T1-shp-wgs84",
+      "file": "t1-points-wgs84.zip",
+      "format": "shapefile",
+      "tier": "T1",
+      "tag": "@tune",
+      "expectedOutcome": "success",
+      "featureCount": 1000,
+      "bbox": [
+        -111.99971348093823,
+        39.00067782448605,
+        -110.00033181160688,
+        40.99817306222394
+      ],
+      "geometryTypes": [
+        "Point"
+      ],
+      "fields": {
+        "id": "number",
+        "name": "string"
+      },
+      "crs": "EPSG:4326",
+      "crsPick": null,
+      "skipBbox": false,
+      "knownBug": null
+    },
+    {
+      "id": "T0-gis-toolbox",
+      "file": "t0-mini.gis-toolbox",
+      "format": "gis-toolbox",
+      "tier": "T0",
+      "tag": "@tune",
+      "expectedOutcome": "success",
+      "featureCount": 13,
+      "bbox": [
+        -111.83216193970293,
+        39.0121104773134,
+        -110.1580714257434,
+        40.12841337407008
+      ],
+      "geometryTypes": [
+        "Point"
+      ],
+      "fields": {
+        "id": "number",
+        "name": "string",
+        "unicode": "string"
+      },
+      "crs": "EPSG:4326",
+      "knownBug": "Project kit import does not complete in Playwright (Import Toolbox project flow stalls before layer list updates)"
+    },
+    {
+      "id": "T0-gtbx",
+      "file": "t0-mini.gtbx",
+      "format": "gis-toolbox",
+      "tier": "T0",
+      "tag": "@tune",
+      "expectedOutcome": "success",
+      "featureCount": 13,
+      "bbox": [
+        -111.83216193970293,
+        39.0121104773134,
+        -110.1580714257434,
+        40.12841337407008
+      ],
+      "geometryTypes": [
+        "Point"
+      ],
+      "fields": {
+        "id": "number",
+        "name": "string",
+        "unicode": "string"
+      },
+      "crs": "EPSG:4326",
+      "knownBug": "Project kit import does not complete in Playwright (Import Toolbox project flow stalls before layer list updates)"
+    },
+    {
+      "id": "neg-corrupt-zip",
+      "file": "neg-corrupt.zip",
+      "format": "zip",
+      "tier": "T0",
+      "tag": "@tune",
+      "expectedOutcome": "failure",
+      "featureCount": 0,
+      "geometryTypes": [],
+      "fields": {},
+      "crs": "EPSG:4326"
+    },
+    {
+      "id": "neg-empty",
+      "file": "neg-empty.csv",
+      "format": "csv",
+      "tier": "T0",
+      "tag": "@tune",
+      "expectedOutcome": "failure",
+      "featureCount": 0,
+      "geometryTypes": [],
+      "fields": {},
+      "crs": "EPSG:4326"
+    },
+    {
+      "id": "neg-truncated-geojson",
+      "file": "neg-truncated.geojson",
+      "format": "geojson",
+      "tier": "T0",
+      "tag": "@tune",
+      "expectedOutcome": "failure",
+      "featureCount": 0,
+      "geometryTypes": [],
+      "fields": {},
+      "crs": "EPSG:4326"
+    },
+    {
+      "id": "neg-zero-fc",
+      "file": "neg-zero-fc.geojson",
+      "format": "geojson",
+      "tier": "T0",
+      "tag": "@tune",
+      "expectedOutcome": "success",
+      "featureCount": 0,
+      "bbox": [
+        -112,
+        39,
+        -110,
+        41
+      ],
+      "geometryTypes": [],
+      "fields": {},
+      "crs": "EPSG:4326"
+    }
+  ]
+}
