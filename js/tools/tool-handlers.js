@@ -34,6 +34,7 @@ import { getLayerDefaultColor } from '../map/layer-palette.js';
 import { getActiveTask, TaskRunner } from '../core/task-runner.js';
 import { buildImportSummary, formatImportSummaryToast } from '../import/import-summary.js';
 import { guardFilesBeforeImport } from '../import/import-guard.js';
+import { importProjectKitFromFile } from '../import/project-kit-file-import.js';
 import { assessImportRoute, shouldConvertToWorkspace, arcgisShouldUseWorkspace } from '../import/import-routing.js';
 import { ErrorCategory } from '../core/error-handler.js';
 import { getAvailableFormats, exportDataset, exportMultiLayerKMZFile, exportMultiLayerKMLFile, setExportMapManager } from '../export/exporter.js';
@@ -1049,13 +1050,18 @@ export async function handleFileImport(files, fenceBbox = null, options = {}) {
     let dataFiles = fileList.filter((file) => !isProjectKitFile(file));
 
     if (kitFiles.length) {
-        if (!dataFiles.length) {
+        const kitOnly = !dataFiles.length;
+        try {
+            for (const file of kitFiles) {
+                await importProjectKitFromFile(file);
+            }
+        } catch {
+            return;
+        }
+        if (kitOnly) {
             options.onComplete?.();
+            return;
         }
-        for (const file of kitFiles) {
-            await importProjectKit(file);
-        }
-        if (!dataFiles.length) return;
     }
 
     let progress = null;
