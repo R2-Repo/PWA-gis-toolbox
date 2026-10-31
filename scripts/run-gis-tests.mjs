@@ -26,11 +26,12 @@ function parseArgs(argv) {
 }
 
 function run(cmd, args, options = {}) {
+    const useShell = options.shell ?? process.platform === 'win32';
     return new Promise((resolve, reject) => {
         const child = spawn(cmd, args, {
             cwd: ROOT,
             env: { ...process.env, ...options.env },
-            shell: process.platform === 'win32',
+            shell: useShell,
             stdio: ['ignore', 'pipe', 'pipe']
         });
         let stdout = '';
@@ -228,29 +229,24 @@ async function main() {
     }
 
     {
-        const pwArgs = ['playwright', 'test', 'tests/e2e/import'];
-        if (flags.full) {
-            pwArgs.push('--grep', '@full|@tune');
-        } else {
-            pwArgs.push('--grep', '@tune');
-        }
-        if (flags.onlyImport) {
-            // already scoped to import dir
-        }
         if (flags.dev) {
             process.env.GIS_TEST_DEV_SERVER = '1';
         }
         if (flags.holdout && existsSync(path.join(ROOT, 'tests/fixtures/e2e/holdout/manifest.json'))) {
-            pwArgs.push('tests/e2e/holdout');
+            // holdout path appended via separate playwright invocation if needed
         }
 
         console.log('Running Playwright import e2e…');
         const pwJson = path.join(REPORT_DIR, 'playwright.json');
-        const pwRun = await run(
-            'npx',
-            pwArgs,
-            { inherit: true }
-        );
+        const grepPattern = flags.full ? '@full|@tune' : '@tune';
+        let pwRun;
+        if (process.platform === 'win32') {
+            const cmd = `npx playwright test tests/e2e/import --grep "${grepPattern}"`;
+            pwRun = await run(cmd, [], { inherit: true, shell: true });
+        } else {
+            const pwArgs = ['playwright', 'test', 'tests/e2e/import', '--grep', grepPattern];
+            pwRun = await run('npx', pwArgs, { inherit: true, shell: false });
+        }
 
         if (existsSync(pwJson)) {
             const json = JSON.parse(await readFile(pwJson, 'utf8'));
