@@ -43,7 +43,7 @@ export const MAP_GIS_TOOLS = [
     { id: 'explode', action: 'openExplode', category: 'line-ops', label: '💥 Explode', tip: 'Extract every vertex as a point feature — creates a new point layer.' },
 
     { id: 'combine', action: 'openCombine', category: 'combine-analyze', label: '🔗 Combine', tip: 'Merge all features of the same type into one multi-feature.' },
-    { id: 'union', action: 'openUnion', category: 'combine-analyze', label: '🔶 Union', tip: 'Merge all polygons into a single shape.' },
+    { id: 'union', action: 'openUnion', category: 'combine-analyze', label: '🔶 Union', tip: 'Merge all polygons into a single shape. Attributes on the first polygon are kept on the result.' },
     { id: 'dissolve', action: 'openDissolve', category: 'combine-analyze', label: '🫧 Dissolve', tip: 'Merge polygons by a shared attribute, or merge all when no field is chosen — creates a new layer.' },
     { id: 'nearest-point', action: 'openNearestPoint', category: 'combine-analyze', label: '🎯 Nearest Pt', tip: 'Click the map to find the closest feature in a point layer.' },
     { id: 'nearest-on-line', action: 'openNearestPointOnLine', category: 'combine-analyze', label: '📍→ Snap', tip: 'Click near a line to find the closest point on that line.' },

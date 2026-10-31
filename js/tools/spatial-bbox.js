@@ -35,11 +35,80 @@ export function getBBoxAny(geomOrFeature) {
     }
 }
 
-/** Two lng/lat bboxes intersect (closed intervals). */
+/**
+ * Expand [west,south,east,north] into one or more segments with west <= east in [-180, 180].
+ * Handles MapLibre unwrapped bounds and dateline-crossing boxes (west > east).
+ * @param {number[]} box
+ * @returns {number[][]}
+ */
+export function bboxToLngSegments(box) {
+    let [w, s, e, n] = box;
+    if (![w, s, e, n].every(Number.isFinite)) return [];
+    if (e - w >= 360) return [[-180, s, 180, n]];
+
+    if (w > e) {
+        return [[w, s, 180, n], [-180, s, e, n]];
+    }
+
+    if (w >= -180 && e <= 180) {
+        return [[w, s, e, n]];
+    }
+
+    if (w < -180) {
+        w += 360;
+        e += 360;
+    }
+    if (e > 180) {
+        return [[w, s, 180, n], [-180, s, e - 360, n]];
+    }
+    return [[w, s, e, n]];
+}
+
+function segmentsOverlapOnY(a, b) {
+    return !(a[3] < b[1] || b[3] < a[1]);
+}
+
+function segmentsOverlapOnX(a, b) {
+    return !(a[2] < b[0] || b[2] < a[0]);
+}
+
+/** Two lng/lat bboxes intersect (closed intervals), including antimeridian spans. */
 export function bboxOverlap(boxA, boxB) {
-    const [aw, as, ae, an] = boxA;
-    const [bw, bs, be, bn] = boxB;
-    return !(ae < bw || be < aw || an < bs || bn < as);
+    const segsA = bboxToLngSegments(boxA);
+    const segsB = bboxToLngSegments(boxB);
+    if (segsA.length === 0 || segsB.length === 0) return false;
+    for (const a of segsA) {
+        for (const b of segsB) {
+            if (segmentsOverlapOnX(a, b) && segmentsOverlapOnY(a, b)) return true;
+        }
+    }
+    return false;
+}
+
+/**
+ * Clip geometry for an axis-aligned map extent (handles dateline / unwrapped bounds).
+ * @param {number} west
+ * @param {number} south
+ * @param {number} east
+ * @param {number} north
+ * @returns {import('geojson').Polygon | import('geojson').MultiPolygon}
+ */
+export function bboxToClipGeometry(west, south, east, north) {
+    if (typeof turf === 'undefined') {
+        throw new Error('Turf.js not loaded');
+    }
+    const segments = bboxToLngSegments([west, south, east, north]);
+    if (segments.length === 0) {
+        throw new Error('Invalid clip bounds');
+    }
+    if (segments.length === 1) {
+        const [w, s, e, n] = segments[0];
+        return turf.bboxPolygon([w, s, e, n]).geometry;
+    }
+    return {
+        type: 'MultiPolygon',
+        coordinates: segments.map(([w, s, e, n]) => turf.bboxPolygon([w, s, e, n]).geometry.coordinates)
+    };
 }
 
 const METERS_PER_DEG_LAT = 111320;

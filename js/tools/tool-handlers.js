@@ -2821,13 +2821,16 @@ async function openClip() {
                         close();
                         const bounds = mapService.getBounds();
                         if (!bounds) return showToast('Map bounds not available', 'warning');
-                        const bbox = turf.bboxPolygon([
-                            bounds.getWest(), bounds.getSouth(),
-                            bounds.getEast(), bounds.getNorth()
-                        ]);
+                        const { bboxToClipGeometry } = await import('./spatial-bbox.js');
+                        const clipGeometry = bboxToClipGeometry(
+                            bounds.getWest(),
+                            bounds.getSouth(),
+                            bounds.getEast(),
+                            bounds.getNorth()
+                        );
                         try {
                             const result = await runWithTaskProgress('Clip', () =>
-                                gisTools.clipFeatures(getWorkingDataset(layer, applyTo), bbox.geometry)
+                                gisTools.clipFeatures(getWorkingDataset(layer, applyTo), clipGeometry)
                             );
                             if (!result) return;
                             addLayer(result);

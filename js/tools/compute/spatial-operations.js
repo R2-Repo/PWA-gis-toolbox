@@ -5,6 +5,7 @@ import {
     getFeatureBBox,
     getBBoxAny,
     bboxOverlap,
+    bboxToLngSegments,
     minBBoxSeparationMeters,
     NEAREST_JOIN_SORT_THRESHOLD
 } from '../spatial-bbox.js';
@@ -24,6 +25,23 @@ function fcStats(inCount, outCount, failed = 0) {
 
 function cloneFeature(f) {
     return structuredClone(f);
+}
+
+/** @param {import('geojson').Geometry} clipGeometry */
+function clipGeometryForAntimeridian(clipGeometry) {
+    const clipBox = getBBoxAny(clipGeometry);
+    if (!clipBox || bboxToLngSegments(clipBox).length <= 1) {
+        return clipGeometry;
+    }
+    if (typeof turf === 'undefined') return clipGeometry;
+    const segments = bboxToLngSegments(clipBox);
+    if (segments.length === 1) return clipGeometry;
+    return {
+        type: 'MultiPolygon',
+        coordinates: segments.map(([w, s, e, n]) =>
+            turf.bboxPolygon([w, s, e, n]).geometry.coordinates
+        )
+    };
 }
 
 function requireSpatial(data, label) {
@@ -76,6 +94,7 @@ export function clipFeatureCollection(inputFc, clipGeometry, ctx) {
     const clipped = [];
     let clipFailures = 0;
     const clipBox = getBBoxAny(clipGeometry);
+    const activeClip = clipGeometryForAntimeridian(clipGeometry);
     const tick = createLoopProgress(ctx, features.length);
 
     for (let i = 0; i < features.length; i++) {
@@ -90,12 +109,12 @@ export function clipFeatureCollection(inputFc, clipGeometry, ctx) {
 
         try {
             if (f.geometry.type === 'Point') {
-                if (turf.booleanPointInPolygon(f, clipGeometry)) {
+                if (turf.booleanPointInPolygon(f, activeClip)) {
                     clipped.push(cloneFeature(f));
                 }
             } else if (f.geometry.type === 'MultiPoint') {
                 const inside = f.geometry.coordinates.filter((c) =>
-                    turf.booleanPointInPolygon(turf.point(c), clipGeometry)
+                    turf.booleanPointInPolygon(turf.point(c), activeClip)
                 );
                 if (inside.length > 0) {
                     clipped.push({
@@ -106,7 +125,7 @@ export function clipFeatureCollection(inputFc, clipGeometry, ctx) {
                 }
             } else {
                 const intersection = turf.intersect(
-                    turf.featureCollection([turf.feature(clipGeometry), f])
+                    turf.featureCollection([turf.feature(activeClip), f])
                 );
                 if (intersection) {
                     intersection.properties = { ...f.properties };
@@ -193,19 +212,24 @@ export function lineOffsetFeatureCollection(inputFc, params, ctx) {
     };
 }
 
+/**
+ * Union polygon features. Turf union drops properties; keep the first input polygon's
+ * attribute row on the merged feature (same convention as a single-feature dissolve group).
+ */
 export function unionFeatureCollection(inputFc, ctx) {
     const polygons = (inputFc.features || []).filter(f =>
         f.geometry && (f.geometry.type === 'Polygon' || f.geometry.type === 'MultiPolygon')
     );
     if (polygons.length === 0) throw new Error('No polygon features to union');
+    const firstProps = { ...(polygons[0].properties ?? {}) };
     if (polygons.length === 1) {
         return {
             geojson: { type: 'FeatureCollection', features: [cloneFeature(polygons[0])] },
-            stats: fcStats(polygons.length, 1, 0)
+            stats: { ...fcStats(polygons.length, 1, 0), unionInputCount: 1 }
         };
     }
 
-    let result = polygons[0];
+    let result = cloneFeature(polygons[0]);
     let unionFailures = 0;
     const tick = createLoopProgress(ctx, polygons.length);
     for (let i = 1; i < polygons.length; i++) {
@@ -218,9 +242,10 @@ export function unionFeatureCollection(inputFc, ctx) {
         }
     }
 
+    result.properties = { ...firstProps };
     return {
         geojson: { type: 'FeatureCollection', features: [result] },
-        stats: fcStats(polygons.length, 1, unionFailures)
+        stats: { ...fcStats(polygons.length, 1, unionFailures), unionInputCount: polygons.length }
     };
 }
 
