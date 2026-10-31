@@ -3,6 +3,26 @@
  */
 import { NodeBase } from './node-base.js';
 import { normalizeImporterResult, serializeImportedDataset, finalizeImportedDatasets } from '../../import/post-import.js';
+import {
+    isWorkspaceLayer,
+    isLiveVectorLayer,
+    isPmTilesLayer,
+    isCogLayer,
+    isServiceLayer,
+    getLayerFeatureCount
+} from '../../core/data-model.js';
+import { getAdaptiveMaterializeLimit } from '../../import/import-capacity-context.js';
+import { loadAllWorkspaceFeatures } from '../../workspace/workspace-store.js';
+
+function cloneValue(value) {
+    if (value == null) return value;
+    return structuredClone(value);
+}
+
+function layerInputError(layer, message) {
+    const label = layer?.name ? `"${layer.name}"` : 'The selected layer';
+    throw new Error(`${label} — ${message}`);
+}
 
 // ==============================
 // Layer Input — pick an existing layer
@@ -41,14 +61,91 @@ export class LayerInputNode extends NodeBase {
     async execute(inputs, context) {
         const layer = context.getLayers().find(l => l.id === this.config.layerId);
         if (!layer) throw new Error('Source layer not found');
-        if (layer.type === 'spatial') {
-            const geojson = JSON.parse(JSON.stringify(layer.geojson));
-            const schema = JSON.parse(JSON.stringify(layer.schema));
-            return { type: 'spatial', geojson, schema, name: layer.name };
+
+        if (layer.type === 'table') {
+            if (!Array.isArray(layer.rows)) {
+                layerInputError(layer, 'is a table layer but has no row data loaded.');
+            }
+            return {
+                type: 'table',
+                rows: cloneValue(layer.rows),
+                schema: cloneValue(layer.schema),
+                name: layer.name
+            };
         }
-        const rows = JSON.parse(JSON.stringify(layer.rows));
-        const schema = JSON.parse(JSON.stringify(layer.schema));
-        return { type: 'table', rows, schema, name: layer.name };
+
+        if (isPmTilesLayer(layer)) {
+            layerInputError(
+                layer,
+                'is a PMTiles layer and has no feature geometry in memory for workflow pipelines. Use a feature layer instead.'
+            );
+        }
+
+        if (isCogLayer(layer)) {
+            layerInputError(
+                layer,
+                'is a COG raster layer. Raster layers cannot be used as workflow feature datasets.'
+            );
+        }
+
+        if (isServiceLayer(layer) && !isLiveVectorLayer(layer)) {
+            layerInputError(
+                layer,
+                'is a live map service layer that does not expose features for offline workflow use.'
+            );
+        }
+
+        if (isWorkspaceLayer(layer)) {
+            const wsId = layer.workspaceLayerId || layer.id;
+            const featureCount = getLayerFeatureCount(layer);
+            const materializeLimit = getAdaptiveMaterializeLimit([layer]);
+            if (featureCount > materializeLimit) {
+                layerInputError(
+                    layer,
+                    `has ${featureCount.toLocaleString()} features — too many to load for this workflow step (limit ${materializeLimit.toLocaleString()}).`
+                );
+            }
+            const features = await loadAllWorkspaceFeatures(wsId);
+            return {
+                type: 'spatial',
+                geojson: { type: 'FeatureCollection', features },
+                schema: cloneValue(layer.schema),
+                name: layer.name
+            };
+        }
+
+        if (isLiveVectorLayer(layer)) {
+            const features = layer.geojson?.features;
+            if (!Array.isArray(features) || features.length === 0) {
+                layerInputError(
+                    layer,
+                    'is a live service layer with no features in the current map view. Pan or zoom the map to load features, or choose a different layer.'
+                );
+            }
+            return {
+                type: 'spatial',
+                geojson: {
+                    type: 'FeatureCollection',
+                    features: features.map((f) => cloneValue(f))
+                },
+                schema: cloneValue(layer.schema),
+                name: `${layer.name} (current map view only)`
+            };
+        }
+
+        if (layer.type === 'spatial') {
+            return {
+                type: 'spatial',
+                geojson: cloneValue(layer.geojson),
+                schema: cloneValue(layer.schema),
+                name: layer.name
+            };
+        }
+
+        layerInputError(
+            layer,
+            `has type "${layer.type || 'unknown'}" and cannot be used as a workflow input.`
+        );
     }
 }
 
