@@ -3,34 +3,35 @@
  */
 import { NodeBase } from './node-base.js';
 import {
-    bufferFeatures,
-    lineOffsetFeatures,
-    dissolveFeatures,
-    clipFeatures,
-    unionFeatures,
-    combineFeatures,
-    spatialJoinPointsInPolygons,
-    nearestJoin,
-    intersectLayers,
-    mergeLayers,
-    differenceLayers,
-    summarizeWithin,
-    sampleFeatures,
-    explodeFeatures,
-    polygonToLineFeatures,
-    fillHolesFeatures,
-    splitPolygonsByLine,
-    splitPolygonsByPolygon
-} from '../../tools/gis-tools.js';
-import { reprojectLayer } from '../../tools/reproject.js';
-import { runWithWorkflowContext } from '../workflow-task-bridge.js';
-import { cloneSchema, createLoopProgress } from '../workflow-run-helpers.js';
-import { computeSimplify } from '../compute/simplify.js';
+    computeBuffer,
+    computeLineOffset,
+    computeSimplify,
+    computeDissolve,
+    computeClip,
+    computeUnion,
+    computeCombine,
+    computeSpatialJoin,
+    computeNearestJoin,
+    computeIntersect,
+    computeMergeLayers,
+    computeDifference,
+    computeSummarizeWithin,
+    computeSplitByGeometry,
+    computeSample,
+    computeExplode,
+    computePolygonToLine,
+    computeFillHoles,
+    computeSplitByLine,
+    computeSplitByPolygon,
+    computeReproject
+} from '../compute/spatial-operations.js';
 
 // ==============================
 // Buffer
 // ==============================
 export class BufferNode extends NodeBase {
+    static runsInWorker = true;
+
     constructor() {
         super('buffer', {
             name: 'Buffer',
@@ -49,11 +50,7 @@ export class BufferNode extends NodeBase {
     }
 
     async execute(inputs, context) {
-        const data = inputs[0];
-        if (!data || data.type !== 'spatial') throw new Error('Spatial input required');
-        return runWithWorkflowContext(context, () =>
-            bufferFeatures(data, this.config.distance, this.config.units)
-        );
+        return computeBuffer(inputs, this.config, context);
     }
 }
 
@@ -61,6 +58,8 @@ export class BufferNode extends NodeBase {
 // Line Offset
 // ==============================
 export class LineOffsetNode extends NodeBase {
+    static runsInWorker = true;
+
     constructor() {
         super('line-offset', {
             name: 'Line Offset',
@@ -79,11 +78,7 @@ export class LineOffsetNode extends NodeBase {
     }
 
     async execute(inputs, context) {
-        const data = inputs[0];
-        if (!data || data.type !== 'spatial') throw new Error('Spatial input required');
-        return runWithWorkflowContext(context, () =>
-            lineOffsetFeatures(data, this.config.distance, this.config.units)
-        );
+        return computeLineOffset(inputs, this.config, context);
     }
 }
 
@@ -119,6 +114,8 @@ export class SimplifyNode extends NodeBase {
 // Dissolve
 // ==============================
 export class DissolveNode extends NodeBase {
+    static runsInWorker = true;
+
     constructor() {
         super('dissolve', {
             name: 'Dissolve',
@@ -134,11 +131,7 @@ export class DissolveNode extends NodeBase {
     validate() { return { valid: true, message: '' }; }
 
     async execute(inputs, context) {
-        const data = inputs[0];
-        if (!data || data.type !== 'spatial') throw new Error('Spatial input required');
-        return runWithWorkflowContext(context, () =>
-            dissolveFeatures(data, this.config.field || undefined)
-        );
+        return computeDissolve(inputs, this.config, context);
     }
 }
 
@@ -146,6 +139,8 @@ export class DissolveNode extends NodeBase {
 // Clip
 // ==============================
 export class ClipNode extends NodeBase {
+    static runsInWorker = true;
+
     constructor() {
         super('clip', {
             name: 'Clip',
@@ -164,14 +159,7 @@ export class ClipNode extends NodeBase {
     validate() { return { valid: true, message: '' }; }
 
     async execute(inputs, context) {
-        const data = inputs[0];
-        const clipData = inputs[1];
-        if (!data || data.type !== 'spatial') throw new Error('Spatial features input required');
-        if (!clipData || clipData.type !== 'spatial') throw new Error('Clip area input required');
-
-        const clipGeom = clipData.geojson.features[0]?.geometry;
-        if (!clipGeom) throw new Error('Clip layer has no geometry');
-        return runWithWorkflowContext(context, () => clipFeatures(data, clipGeom));
+        return computeClip(inputs, this.config, context);
     }
 }
 
@@ -179,6 +167,8 @@ export class ClipNode extends NodeBase {
 // Union
 // ==============================
 export class UnionNode extends NodeBase {
+    static runsInWorker = true;
+
     constructor() {
         super('union', {
             name: 'Union',
@@ -194,9 +184,7 @@ export class UnionNode extends NodeBase {
     validate() { return { valid: true, message: '' }; }
 
     async execute(inputs, context) {
-        const data = inputs[0];
-        if (!data || data.type !== 'spatial') throw new Error('Spatial input required');
-        return runWithWorkflowContext(context, () => unionFeatures(data));
+        return computeUnion(inputs, this.config, context);
     }
 }
 
@@ -204,6 +192,8 @@ export class UnionNode extends NodeBase {
 // Combine
 // ==============================
 export class CombineNode extends NodeBase {
+    static runsInWorker = true;
+
     constructor() {
         super('combine', {
             name: 'Combine',
@@ -219,9 +209,7 @@ export class CombineNode extends NodeBase {
     validate() { return { valid: true, message: '' }; }
 
     async execute(inputs, context) {
-        const data = inputs[0];
-        if (!data || data.type !== 'spatial') throw new Error('Spatial input required');
-        return runWithWorkflowContext(context, () => combineFeatures(data));
+        return computeCombine(inputs, this.config, context);
     }
 }
 
@@ -229,6 +217,8 @@ export class CombineNode extends NodeBase {
 // Spatial Join (Point in Polygon) — assign polygon attrs to points
 // ==============================
 export class SpatialJoinNode extends NodeBase {
+    static runsInWorker = true;
+
     constructor() {
         super('spatial-join', {
             name: 'Spatial Join',
@@ -247,17 +237,7 @@ export class SpatialJoinNode extends NodeBase {
     validate() { return { valid: true, message: '' }; }
 
     async execute(inputs, context) {
-        const pointsData = inputs[0];
-        const polygonsData = inputs[1];
-        if (!pointsData || pointsData.type !== 'spatial') throw new Error('Points input required');
-        if (!polygonsData || polygonsData.type !== 'spatial') throw new Error('Polygons input required');
-
-        const joinFields = this.config.joinFields
-            ? this.config.joinFields.split(',').map(f => f.trim()).filter(Boolean)
-            : [];
-        return runWithWorkflowContext(context, () =>
-            spatialJoinPointsInPolygons(pointsData, polygonsData, joinFields, this.config.prefix)
-        );
+        return computeSpatialJoin(inputs, this.config, context);
     }
 }
 
@@ -265,6 +245,8 @@ export class SpatialJoinNode extends NodeBase {
 // Nearest Join — join attrs from nearest feature
 // ==============================
 export class NearestJoinNode extends NodeBase {
+    static runsInWorker = true;
+
     constructor() {
         super('nearest-join', {
             name: 'Nearest Join',
@@ -283,17 +265,7 @@ export class NearestJoinNode extends NodeBase {
     validate() { return { valid: true, message: '' }; }
 
     async execute(inputs, context) {
-        const target = inputs[0];
-        const joinFrom = inputs[1];
-        if (!target || target.type !== 'spatial') throw new Error('Target input required');
-        if (!joinFrom || joinFrom.type !== 'spatial') throw new Error('Join From input required');
-
-        const joinFields = this.config.joinFields
-            ? this.config.joinFields.split(',').map(f => f.trim()).filter(Boolean)
-            : [];
-        return runWithWorkflowContext(context, () =>
-            nearestJoin(target, joinFrom, joinFields, this.config.units)
-        );
+        return computeNearestJoin(inputs, this.config, context);
     }
 }
 
@@ -301,6 +273,8 @@ export class NearestJoinNode extends NodeBase {
 // Intersect — geometric intersection of two polygon layers
 // ==============================
 export class IntersectNode extends NodeBase {
+    static runsInWorker = true;
+
     constructor() {
         super('intersect', {
             name: 'Intersect',
@@ -319,12 +293,7 @@ export class IntersectNode extends NodeBase {
     validate() { return { valid: true, message: '' }; }
 
     async execute(inputs, context) {
-        const a = inputs[0];
-        const b = inputs[1];
-        if (!a || a.type !== 'spatial') throw new Error('Layer A input required');
-        if (!b || b.type !== 'spatial') throw new Error('Layer B input required');
-
-        return runWithWorkflowContext(context, () => intersectLayers(a, b));
+        return computeIntersect(inputs, this.config, context);
     }
 }
 
@@ -332,6 +301,8 @@ export class IntersectNode extends NodeBase {
 // Merge Layers — combine two feature collections
 // ==============================
 export class MergeLayersNode extends NodeBase {
+    static runsInWorker = true;
+
     constructor() {
         super('merge-layers', {
             name: 'Merge Layers',
@@ -350,12 +321,7 @@ export class MergeLayersNode extends NodeBase {
     validate() { return { valid: true, message: '' }; }
 
     async execute(inputs, context) {
-        const a = inputs[0];
-        const b = inputs[1];
-        if (!a || a.type !== 'spatial') throw new Error('Layer A input required');
-        if (!b || b.type !== 'spatial') throw new Error('Layer B input required');
-
-        return runWithWorkflowContext(context, () => mergeLayers(a, b));
+        return computeMergeLayers(inputs, this.config, context);
     }
 }
 
@@ -363,6 +329,8 @@ export class MergeLayersNode extends NodeBase {
 // Difference — subtract polygon B from polygon A
 // ==============================
 export class DifferenceNode extends NodeBase {
+    static runsInWorker = true;
+
     constructor() {
         super('difference', {
             name: 'Difference',
@@ -381,12 +349,7 @@ export class DifferenceNode extends NodeBase {
     validate() { return { valid: true, message: '' }; }
 
     async execute(inputs, context) {
-        const a = inputs[0];
-        const b = inputs[1];
-        if (!a || a.type !== 'spatial') throw new Error('Layer A input required');
-        if (!b || b.type !== 'spatial') throw new Error('Subtract input required');
-
-        return runWithWorkflowContext(context, () => differenceLayers(a, b));
+        return computeDifference(inputs, this.config, context);
     }
 }
 
@@ -394,6 +357,8 @@ export class DifferenceNode extends NodeBase {
 // Summarize Within — count/aggregate points inside polygons
 // ==============================
 export class SummarizeWithinNode extends NodeBase {
+    static runsInWorker = true;
+
     constructor() {
         super('summarize-within', {
             name: 'Summarize Within',
@@ -412,14 +377,7 @@ export class SummarizeWithinNode extends NodeBase {
     validate() { return { valid: true, message: '' }; }
 
     async execute(inputs, context) {
-        const polygons = inputs[0];
-        const points = inputs[1];
-        if (!polygons || polygons.type !== 'spatial') throw new Error('Polygons input required');
-        if (!points || points.type !== 'spatial') throw new Error('Points input required');
-
-        return runWithWorkflowContext(context, () =>
-            summarizeWithin(polygons, points, this.config.sumField || undefined, this.config.avgField || undefined)
-        );
+        return computeSummarizeWithin(inputs, this.config, context);
     }
 }
 
@@ -427,6 +385,8 @@ export class SummarizeWithinNode extends NodeBase {
 // Split By Geometry — separate mixed layers by geometry type
 // ==============================
 export class SplitByGeometryNode extends NodeBase {
+    static runsInWorker = true;
+
     constructor() {
         super('split-by-geometry', {
             name: 'Split By Geometry',
@@ -446,48 +406,7 @@ export class SplitByGeometryNode extends NodeBase {
     validate() { return { valid: true, message: '' }; }
 
     async execute(inputs, context) {
-        const data = inputs[0];
-        if (!data || data.type !== 'spatial') throw new Error('Spatial input required');
-
-        const features = data.geojson.features || [];
-        const tick = createLoopProgress(context, features.length);
-        const pointTypes = new Set(['Point', 'MultiPoint']);
-        const lineTypes = new Set(['LineString', 'MultiLineString']);
-        const polyTypes = new Set(['Polygon', 'MultiPolygon']);
-
-        const pointFeats = [];
-        const lineFeats = [];
-        const polyFeats = [];
-        for (let i = 0; i < features.length; i++) {
-            tick(i, 'Splitting by geometry');
-            const f = features[i];
-            if (!f.geometry) continue;
-            if (pointTypes.has(f.geometry.type)) pointFeats.push(f);
-            else if (lineTypes.has(f.geometry.type)) lineFeats.push(f);
-            else if (polyTypes.has(f.geometry.type)) polyFeats.push(f);
-        }
-
-        const buildOutput = (feats, geomType, suffix) => {
-            const fc = { type: 'FeatureCollection', features: feats };
-            const schema = cloneSchema(data.schema);
-            schema.geometryType = feats.length > 0 ? geomType : null;
-            schema.featureCount = feats.length;
-            return {
-                type: 'spatial',
-                geojson: fc,
-                schema,
-                name: `${data.name}_${suffix}`
-            };
-        };
-
-        return {
-            _multiOutput: true,
-            ports: {
-                points: buildOutput(pointFeats, 'Point', 'points'),
-                lines: buildOutput(lineFeats, 'LineString', 'lines'),
-                polygons: buildOutput(polyFeats, 'Polygon', 'polygons')
-            }
-        };
+        return computeSplitByGeometry(inputs, this.config, context);
     }
 }
 
@@ -495,6 +414,8 @@ export class SplitByGeometryNode extends NodeBase {
 // Sample
 // ==============================
 export class SampleNode extends NodeBase {
+    static runsInWorker = true;
+
     constructor() {
         super('sample', {
             name: 'Sample',
@@ -516,9 +437,7 @@ export class SampleNode extends NodeBase {
     }
 
     async execute(inputs, context) {
-        const data = inputs[0];
-        if (!data || data.type !== 'spatial') throw new Error('Spatial input required');
-        return runWithWorkflowContext(context, () => sampleFeatures(data, this.config.num));
+        return computeSample(inputs, this.config, context);
     }
 }
 
@@ -526,6 +445,8 @@ export class SampleNode extends NodeBase {
 // Explode
 // ==============================
 export class ExplodeNode extends NodeBase {
+    static runsInWorker = true;
+
     constructor() {
         super('explode', {
             name: 'Explode',
@@ -541,9 +462,7 @@ export class ExplodeNode extends NodeBase {
     validate() { return { valid: true, message: '' }; }
 
     async execute(inputs, context) {
-        const data = inputs[0];
-        if (!data || data.type !== 'spatial') throw new Error('Spatial input required');
-        return runWithWorkflowContext(context, () => explodeFeatures(data));
+        return computeExplode(inputs, this.config, context);
     }
 }
 
@@ -551,6 +470,8 @@ export class ExplodeNode extends NodeBase {
 // Polygon to Line
 // ==============================
 export class PolygonToLineNode extends NodeBase {
+    static runsInWorker = true;
+
     constructor() {
         super('polygon-to-line', {
             name: 'Polygon to Line',
@@ -566,9 +487,7 @@ export class PolygonToLineNode extends NodeBase {
     validate() { return { valid: true, message: '' }; }
 
     async execute(inputs, context) {
-        const data = inputs[0];
-        if (!data || data.type !== 'spatial') throw new Error('Spatial input required');
-        return runWithWorkflowContext(context, () => polygonToLineFeatures(data));
+        return computePolygonToLine(inputs, this.config, context);
     }
 }
 
@@ -576,6 +495,8 @@ export class PolygonToLineNode extends NodeBase {
 // Fill Holes
 // ==============================
 export class FillHolesNode extends NodeBase {
+    static runsInWorker = true;
+
     constructor() {
         super('fill-holes', {
             name: 'Fill Holes',
@@ -591,9 +512,7 @@ export class FillHolesNode extends NodeBase {
     validate() { return { valid: true, message: '' }; }
 
     async execute(inputs, context) {
-        const data = inputs[0];
-        if (!data || data.type !== 'spatial') throw new Error('Spatial input required');
-        return runWithWorkflowContext(context, () => fillHolesFeatures(data));
+        return computeFillHoles(inputs, this.config, context);
     }
 }
 
@@ -601,6 +520,8 @@ export class FillHolesNode extends NodeBase {
 // Split by Line
 // ==============================
 export class SplitByLineNode extends NodeBase {
+    static runsInWorker = true;
+
     constructor() {
         super('split-by-line', {
             name: 'Split by Line',
@@ -619,11 +540,7 @@ export class SplitByLineNode extends NodeBase {
     validate() { return { valid: true, message: '' }; }
 
     async execute(inputs, context) {
-        const polygons = inputs[0];
-        const lines = inputs[1];
-        if (!polygons || polygons.type !== 'spatial') throw new Error('Polygons input required');
-        if (!lines || lines.type !== 'spatial') throw new Error('Lines input required');
-        return runWithWorkflowContext(context, () => splitPolygonsByLine(polygons, lines));
+        return computeSplitByLine(inputs, this.config, context);
     }
 }
 
@@ -631,6 +548,8 @@ export class SplitByLineNode extends NodeBase {
 // Split by Polygon
 // ==============================
 export class SplitByPolygonNode extends NodeBase {
+    static runsInWorker = true;
+
     constructor() {
         super('split-by-polygon', {
             name: 'Split by Polygon',
@@ -649,11 +568,7 @@ export class SplitByPolygonNode extends NodeBase {
     validate() { return { valid: true, message: '' }; }
 
     async execute(inputs, context) {
-        const polygons = inputs[0];
-        const splitters = inputs[1];
-        if (!polygons || polygons.type !== 'spatial') throw new Error('Polygons input required');
-        if (!splitters || splitters.type !== 'spatial') throw new Error('Splitters input required');
-        return runWithWorkflowContext(context, () => splitPolygonsByPolygon(polygons, splitters));
+        return computeSplitByPolygon(inputs, this.config, context);
     }
 }
 
@@ -661,6 +576,8 @@ export class SplitByPolygonNode extends NodeBase {
 // Reproject
 // ==============================
 export class ReprojectNode extends NodeBase {
+    static runsInWorker = true;
+
     constructor() {
         super('reproject', {
             name: 'Reproject',
@@ -679,16 +596,7 @@ export class ReprojectNode extends NodeBase {
     }
 
     async execute(inputs, context) {
-        const data = inputs[0];
-        if (!data || data.type !== 'spatial') throw new Error('Spatial input required');
-        const fromCrs = this.config.fromCrs || data.schema?.crs || 'EPSG:4326';
-        return runWithWorkflowContext(context, () =>
-            reprojectLayer(data, {
-                fromCrs,
-                toCrs: this.config.toCrs,
-                name: `${data.name}_reproject`
-            })
-        );
+        return computeReproject(inputs, this.config, context);
     }
 }
 
