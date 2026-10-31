@@ -63,6 +63,10 @@ import {
 import { showToast, showErrorToast } from '../ui/toast.js';
 import { showModal, confirm, confirmArcgisLargeImport, showProgressModal } from '../ui/modals.js';
 import { openToolDialog } from '../ui/open-tool-dialog.js';
+import {
+    applyPendingSendToActiveLayer,
+    emitLayerProducedResult
+} from './tool-result-interop.js';
 import * as transforms from '../dataprep/transforms.js';
 import { applyTemplate } from '../dataprep/template-builder.js';
 import { saveSnapshot, undo as undoHistory, redo as redoHistory, getHistoryState } from '../dataprep/transform-history.js';
@@ -2666,7 +2670,16 @@ function addUID() {
 // ============================
 // GIS Tool modals
 // ============================
+function primeSendToToolOpen(registryToolId) {
+    applyPendingSendToActiveLayer(registryToolId, setActiveLayerAndRefresh);
+}
+
+function publishMapToolLayerResult(registryToolId, layer, stats = {}) {
+    emitLayerProducedResult(registryToolId, layer, { stats });
+}
+
 async function openBuffer() {
+    primeSendToToolOpen('buffer');
     const layer = await requireSpatialLayer(null, 'buffer');
     if (!layer) return;
 
@@ -2695,6 +2708,7 @@ async function openBuffer() {
                             if (!result) return;
                             addLayer(result);
                             mapService.addLayer(result, getLayers().indexOf(result), { fit: true });
+                            publishMapToolLayerResult('buffer', result);
                             showToast(`Buffer complete ??? new layer "${result.name}" created`, 'success');
                             refreshUI();
                         } catch (e) {
@@ -2709,6 +2723,7 @@ async function openBuffer() {
 }
 
 async function openReproject() {
+    primeSendToToolOpen('reproject');
     const layer = await requireSpatialLayer();
     if (!layer) return;
 
@@ -2747,6 +2762,7 @@ async function openReproject() {
                         if (!result) return;
                         addLayer(result);
                         mapService.addLayer(result, getLayers().indexOf(result), { fit: true });
+                        publishMapToolLayerResult('reproject', result);
                         showToast(`Reproject complete — new layer "${result.name}" created`, 'success');
                         refreshUI();
                     } catch (e) {
@@ -2760,6 +2776,7 @@ async function openReproject() {
 }
 
 async function openSimplify() {
+    primeSendToToolOpen('simplify');
     const layer = await requireSpatialLayer();
     if (!layer) return;
 
@@ -2791,6 +2808,7 @@ async function openSimplify() {
                             const { dataset, stats } = simplified;
                             addLayer(dataset);
                             mapService.addLayer(dataset, getLayers().indexOf(dataset), { fit: true });
+                            publishMapToolLayerResult('simplify', dataset, stats);
                             refreshUI();
                         } catch (e) {
                             showErrorToast(handleError(e, 'GISTools', 'Simplify'));
@@ -2804,6 +2822,7 @@ async function openSimplify() {
 }
 
 async function openClip() {
+    primeSendToToolOpen('clip');
     const layer = await requireSpatialLayer();
     if (!layer) return;
 
@@ -2839,6 +2858,7 @@ async function openClip() {
                             if (!result) return;
                             addLayer(result);
                             mapService.addLayer(result, getLayers().indexOf(result), { fit: true });
+                            publishMapToolLayerResult('clip', result);
                             refreshUI();
                         } catch (e) {
                             showErrorToast(handleError(e, 'GISTools', 'Clip'));

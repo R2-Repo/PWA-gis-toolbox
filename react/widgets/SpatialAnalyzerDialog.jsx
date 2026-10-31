@@ -9,9 +9,11 @@ export function SpatialAnalyzerDialog({
     onUseLayerArea,
     onRun,
     onAddResults,
-    onAddArea
+    onAddArea,
+    onSendToTarget,
+    initialInput = null
 }) {
-    const [targetLayerId, setTargetLayerId] = useState('');
+    const [targetLayerId, setTargetLayerId] = useState(() => initialInput?.layerId || '');
     const [areaLayerId, setAreaLayerId] = useState('');
     const [analysisArea, setAnalysisArea] = useState(null);
     const [areaSource, setAreaSource] = useState(null);
@@ -20,6 +22,7 @@ export function SpatialAnalyzerDialog({
     const [result, setResult] = useState(null);
     const [error, setError] = useState('');
     const [message, setMessage] = useState('');
+    const [producedResult, setProducedResult] = useState(null);
 
     const polygonLayers = useMemo(
         () => layers.filter((layer) => layer.hasPolygons),
@@ -94,10 +97,15 @@ export function SpatialAnalyzerDialog({
         return (
             <WidgetPanelShell
                 onCancel={onCancel}
-                onRun={() => onAddResults?.(result)}
+                onRun={async () => {
+                    const produced = await onAddResults?.(result);
+                    if (produced) setProducedResult(produced);
+                }}
                 runLabel="Add Results Layer"
                 cancelLabel="Done"
                 disabled={!result?.features?.length}
+                producedResult={producedResult}
+                onSendToTarget={onSendToTarget}
             >
                 <div className="form-group">
                     <label>Results</label>

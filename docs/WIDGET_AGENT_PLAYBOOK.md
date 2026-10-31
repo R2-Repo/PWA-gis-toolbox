@@ -112,6 +112,17 @@ Do **not** add new widget logic inline in `tool-handlers.js`.
 
 Use class `gis-widget` (via `WidgetPanelShell`) for docked modal CSS.
 
+### Send to… interop (`result:produced`)
+
+When a widget or map GIS tool **successfully produces a layer** (or table output), emit a typed result on the shared registry bus:
+
+- **Helpers:** `js/tools/tool-result-interop.js` — `buildProducedResult`, `emitProducedResult` / `emitLayerProducedResult`, **`getCompatibleTargets(result)`**, `sendResultToTarget(ctx, targetId, result)`, `armSendToInput` (map tools).
+- **Payload:** `{ sourceId, layerIds, outputs: [{ name, type: 'layer'|'table', geometry? }], stats }` via **`emitToolResult`** / **`onToolResult`** (`result:produced` on the core event bus). Legacy field **`id`** equals **`sourceId`**.
+- **Registry ports:** declare **`inputs` / `outputs`** on widget entries (`js/widgets/widget-registry-io.js` + `tool-registry-widgets.js`) and on map tools / nodes in `tool-registry-entries.js`.
+- **UI:** after a run, pass **`producedResult`** + **`onSendToTarget`** into **`WidgetPanelShell`** (or put **`SendToMenu`** in **`RunPreviewFooter`** `middleActions`). **`SendToMenu`** lists only **visible** (`status !== 'hidden'`) **tool** / **widget** targets whose **input port `type`** matches an output (`layer` vs `table`). **`geometry`** on ports is a **soft hint** for menu ordering only — not a hard block unless you add explicit validation in the target widget.
+- **Open with input:** controllers accept **`open(ctx, { initialInput: { layerId, inputName, result } })`** (plus existing **`restoreState`**). Map tools: **`sendResultToTarget`** sets pending input and invokes the tool’s **`mapAction`**.
+- **Workflow hook (future):** Workflow Canvas can **`onToolResult(cb)`** and/or call **`getCompatibleTargets(result)`** to offer “Send to workflow” — do **not** implement workflow UI in widget PRs (`js/workflow/` stays owned by Workflow Canvas Boss).
+
 ---
 
 ## Five-phase pipeline

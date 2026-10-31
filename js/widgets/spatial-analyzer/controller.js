@@ -3,8 +3,19 @@ import { withActivity } from '../../ui/app-activity.js';
 import { getSpatialLayerOptions } from '../widget-context.js';
 import { createAreaDrawHandlers } from '../map-draw-helpers.js';
 import { SPATIAL_RELATIONS, runSpatialAnalysis } from './engine.js';
+import {
+    buildProducedResult,
+    emitProducedResult,
+    inferLayerGeometryTypes,
+    sendResultToTarget
+} from '../../tools/tool-result-interop.js';
 
-export async function openSpatialAnalyzer(ctx) {
+/**
+ * @param {import('../widget-types.js').WidgetContext} ctx
+ * @param {{ initialInput?: object }} [options]
+ */
+export async function openSpatialAnalyzer(ctx, options = {}) {
+    const { initialInput = null } = options;
     const areaHandlers = createAreaDrawHandlers(ctx);
 
     await openReactIsland({
@@ -15,7 +26,9 @@ export async function openSpatialAnalyzer(ctx) {
         getProps: (close) => ({
             layers: getSpatialLayerOptions(ctx, { requirePolygons: true }),
             relationOptions: SPATIAL_RELATIONS,
+            initialInput,
             onCancel: close,
+            onSendToTarget: (targetId, result) => sendResultToTarget(ctx, targetId, result),
             onDrawArea: areaHandlers.draw,
             onUseLayerArea: areaHandlers.useLayerArea,
             onRun: async ({ targetLayerId, analysisArea, spatialRelation }) => {
@@ -52,7 +65,7 @@ export async function openSpatialAnalyzer(ctx) {
             onAddResults: (result) => {
                 if (!result?.features?.length) {
                     ctx.showToast('No matching features to add', 'warning');
-                    return;
+                    return null;
                 }
 
                 const dataset = ctx.createSpatialDataset(
@@ -73,6 +86,22 @@ export async function openSpatialAnalyzer(ctx) {
                     `Added ${result.features.length} matched features as a new layer${note}`,
                     'success'
                 );
+                const geometry = inferLayerGeometryTypes(dataset);
+                const producedResult = buildProducedResult('spatial-analyzer', {
+                    layerIds: [dataset.id],
+                    outputs: [{
+                        name: 'results',
+                        type: 'layer',
+                        ...(geometry ? { geometry } : {})
+                    }],
+                    stats: {
+                        outCount: result.features.length,
+                        matched: result.matched,
+                        total: result.total
+                    }
+                });
+                emitProducedResult(producedResult);
+                return producedResult;
             },
             onAddArea: ({ analysisArea, areaSource }) => {
                 if (!analysisArea) {

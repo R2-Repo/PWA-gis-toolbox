@@ -26,5 +26,6 @@ When the user asks to **build, add, plan, or change a GIS Widget** (left-panel m
 - Wire UI through `controller.js` + `openReactIsland()` — **not** new logic inline in `tool-handlers.js` (existing project-stationing / plan-set-callouts hooks are legacy)
 - Engine logic stays pure under `js/widgets/<id>/`; React gets callbacks via props
 - Reuse `react/widgets/shared/` — **`RunPreviewFooter` required** for all widget footers (see playbook for props/order)
+- **Send-to:** declare registry **`inputs`/`outputs`**, **`emitLayerProducedResult`** on success, **`WidgetPanelShell`** `producedResult` + **`sendResultToTarget`**; support **`open(ctx, { initialInput })`**
 - Widget engines run in the **browser** (JavaScript); no native or server-side compute paths
 - Shared **tool registry** v1: `js/tools/tool-registry.js` + `tool-catalog.js` wrappers (replaces hand-maintained `GIS_TOOL_V1_MODE` lists over time)

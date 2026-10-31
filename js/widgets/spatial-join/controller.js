@@ -2,10 +2,22 @@ import { openReactIsland } from '../../ui/open-react-island.js';
 import { withActivity } from '../../ui/app-activity.js';
 import { getSpatialLayerOptions } from '../widget-context.js';
 import { spatialJoinPointsInPolygons } from '../../tools/gis-tools.js';
+import {
+    buildProducedResult,
+    emitProducedResult,
+    inferLayerGeometryTypes,
+    sendResultToTarget
+} from '../../tools/tool-result-interop.js';
 import { PREDICATE_OPTIONS, validateSpatialJoinConfig } from './engine.js';
 import { materializeLayersForWidget } from '../widget-operation.js';
 
-export async function openSpatialJoin(ctx) {
+/**
+ * @param {import('../widget-types.js').WidgetContext} ctx
+ * @param {{ initialInput?: object, restoreState?: object }} [options]
+ */
+export async function openSpatialJoin(ctx, options = {}) {
+    const { initialInput = null } = options;
+
     await openReactIsland({
         title: 'Spatial Join',
         width: '520px',
@@ -14,7 +26,9 @@ export async function openSpatialJoin(ctx) {
         getProps: (close) => ({
             layers: getSpatialLayerOptions(ctx, { includeFields: true }),
             predicateOptions: PREDICATE_OPTIONS,
+            initialInput,
             onCancel: close,
+            onSendToTarget: (targetId, result) => sendResultToTarget(ctx, targetId, result),
             onLayerFocus: (layerId) => {
                 if (!layerId) return;
                 ctx.setActiveLayer?.(layerId);
@@ -52,7 +66,19 @@ export async function openSpatialJoin(ctx) {
                     ctx.mapService.addLayer(result, ctx.getLayers().indexOf(result), { fit: true });
                     ctx.refreshUI();
                     ctx.showToast(`Spatial join complete — "${result.name}"`, 'success');
-                    return { featureCount: result.geojson?.features?.length || 0 };
+
+                    const geometry = inferLayerGeometryTypes(result);
+                    const producedResult = buildProducedResult('spatial-join', {
+                        layerIds: [result.id],
+                        outputs: [{
+                            name: 'out',
+                            type: 'layer',
+                            ...(geometry ? { geometry } : {})
+                        }],
+                        stats: { outCount: result.geojson?.features?.length || 0 }
+                    });
+                    emitProducedResult(producedResult);
+                    return { featureCount: result.geojson?.features?.length || 0, producedResult };
                 });
             }
         })

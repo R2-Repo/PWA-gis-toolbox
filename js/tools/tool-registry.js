@@ -146,7 +146,7 @@ export function isVisible(entry, surface, opts = {}) {
 }
 
 /**
- * @param {(payload: { id: string, layerIds?: string[], stats?: object }) => void} cb
+ * @param {(payload: import('./tool-result-interop.js').ToolProducedResult & { id: string }) => void} cb
  * @returns {() => void}
  */
 export function onToolResult(cb) {
@@ -154,7 +154,7 @@ export function onToolResult(cb) {
 }
 
 /**
- * @param {{ id: string, layerIds?: string[], stats?: object }} payload
+ * @param {import('./tool-result-interop.js').ToolProducedResult & { id: string }} payload
  */
 export function emitToolResult(payload) {
     bus.emit(TOOL_RESULT_EVENT, payload);

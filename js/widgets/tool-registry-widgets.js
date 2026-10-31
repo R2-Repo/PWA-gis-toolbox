@@ -2,6 +2,7 @@
  * Widget registry entries (kept out of tool-catalog import graph for Vitest).
  */
 import { registerTool, augmentTool, getTool } from '../tools/tool-registry.js';
+import { WIDGET_REGISTRY_IO } from './widget-registry-io.js';
 
 /**
  * @param {{
@@ -24,7 +25,11 @@ export function registerWidgetRegistryEntries(opts) {
         if (widget.type === 'spatial-join') {
             const nodeEntry = getTool('spatial-join');
             if (nodeEntry) {
-                augmentTool('spatial-join', { kind: ['widget'], open: widget.open });
+                augmentTool('spatial-join', {
+                    kind: ['widget'],
+                    open: widget.open,
+                    ...(WIDGET_REGISTRY_IO['spatial-join'] || {})
+                });
             }
             continue;
         }
@@ -32,6 +37,7 @@ export function registerWidgetRegistryEntries(opts) {
         if (visibleWidgetTypes.has(widget.type)) {
             status = widget.badge === 'Beta' ? 'beta' : 'ga';
         }
+        const io = WIDGET_REGISTRY_IO[widget.type] || {};
         registerTool({
             version: 1,
             id: widget.type,
@@ -42,6 +48,8 @@ export function registerWidgetRegistryEntries(opts) {
             category: 'widget',
             status,
             capabilities: widget.requiredCapabilities ?? [],
+            inputs: io.inputs,
+            outputs: io.outputs,
             open: widget.open
         });
     }

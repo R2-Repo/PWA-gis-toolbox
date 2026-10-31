@@ -71,6 +71,7 @@ App layout overview: [`AGENTS.md`](../AGENTS.md).
 
 - **`WidgetPanelShell`** — always use for new dialogs (`gis-widget` class).
 - **`RunPreviewFooter`** — **required** for every footer (shell default or explicit `footer={<RunPreviewFooter … />}`). Order: Cancel · Back (optional) · middleActions · Preview (optional) · Run. Labels: Cancel / Close / Done; Run / Next / Preview / tool-specific primary. See playbook props table. Do not hand-roll `modal-footer`.
+- **`SendToMenu` / `producedResult`** — when the wizard creates an output layer, call **`emitLayerProducedResult(widgetId, layer)`** from the controller, keep the typed **`producedResult`** in dialog state, and wire **`WidgetPanelShell`** `producedResult` + **`onSendToTarget`** → **`sendResultToTarget(ctx, targetId, result)`**. Declare **`outputs`** (and **`inputs`** if the widget consumes layers) in **`widget-registry-io.js`**.
 - **`WidgetStepWizard`** — use for linear steps; pick **`variant="compact"`** when step labels need horizontal space (see Georeference, Fiber Procurement, Layer Match).
 
 ---
@@ -109,7 +110,7 @@ export function mountMyWidgetDialog(element, props = {}) {
 import { openReactIsland } from '../../ui/open-react-island.js';
 import { getSpatialLayerOptions } from '../widget-context.js';
 
-export async function openMyWidget(ctx, { restoreState = null } = {}) {
+export async function openMyWidget(ctx, { restoreState = null, initialInput = null } = {}) {
     await openReactIsland({
         title: 'My Widget',
         width: '560px',
@@ -118,12 +119,19 @@ export async function openMyWidget(ctx, { restoreState = null } = {}) {
         getProps: (close) => ({
             layers: getSpatialLayerOptions(ctx, { includeFields: true }),
             initialState: restoreState,
+            initialInput,
+            onSendToTarget: (targetId, result) => sendResultToTarget(ctx, targetId, result),
             onCancel: close,
-            onRun: async (input) => { /* ctx.mapService, ctx.addLayer, … */ }
+            onRun: async (input) => {
+                /* ctx.addLayer … */
+                /* emitLayerProducedResult('my-widget', outputLayer); return { producedResult }; */
+            }
         })
     });
 }
 ```
+
+Add **`inputs` / `outputs`** for `my-widget` in **`js/widgets/widget-registry-io.js`**.
 
 Implement **`restoreState`** only if the widget serializes open UI into `widget-state-store`.
 

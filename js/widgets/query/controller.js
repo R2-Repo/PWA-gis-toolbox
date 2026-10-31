@@ -11,12 +11,8 @@ import {
     runAttributeQueryAsync
 } from './engine.js';
 import {
-    applyQueryResultEffects,
-    clearQueryResultOverlay,
-    createQueryResultLayer,
-    reapplyQueryResultEffects,
-    selectQueryResults
-} from './result-effects.js';
+    emitLayerProducedResult
+} from '../../tools/tool-result-interop.js';
 
 function getLayerById(ctx, layerId) {
     return ctx.getLayers().find((layer) => layer.id === layerId) || null;
@@ -145,7 +141,17 @@ export async function openQuery(ctx, { restoreState = null } = {}) {
                         ctx.showToast?.('Layer not found', 'warning');
                         return null;
                     }
-                    return createQueryResultLayer(ctx, { layer, matchingIndices });
+                    const createdId = createQueryResultLayer(ctx, { layer, matchingIndices });
+                    if (createdId) {
+                        const created = getLayerById(ctx, createdId);
+                        if (created) {
+                            emitLayerProducedResult('query', created, {
+                                outputName: 'results',
+                                stats: { outCount: matchingIndices?.length || 0 }
+                            });
+                        }
+                    }
+                    return createdId;
                 }
             };
         }

@@ -9,8 +9,19 @@ import {
     runProximityJoin,
     unitAbbr
 } from './engine.js';
+import {
+    buildProducedResult,
+    emitProducedResult,
+    inferLayerGeometryTypes,
+    sendResultToTarget
+} from '../../tools/tool-result-interop.js';
 
-export async function openProximityJoin(ctx) {
+/**
+ * @param {import('../widget-types.js').WidgetContext} ctx
+ * @param {{ initialInput?: object }} [options]
+ */
+export async function openProximityJoin(ctx, options = {}) {
+    const { initialInput = null } = options;
     await openReactIsland({
         title: 'Proximity Join',
         width: '520px',
@@ -18,6 +29,8 @@ export async function openProximityJoin(ctx) {
         mountExport: 'mountProximityJoinDialog',
         getProps: (close) => ({
             layers: getSpatialLayerOptions(ctx, { includeFields: true, includeSelectionCount: true }),
+            initialInput,
+            onSendToTarget: (targetId, result) => sendResultToTarget(ctx, targetId, result),
             unitOptions: UNIT_LABELS.map((entry) => ({
                 value: entry.value,
                 label: `${entry.label} (${entry.abbr})`
@@ -125,9 +138,26 @@ export async function openProximityJoin(ctx) {
                         result.unmatched === 0 ? 'success' : 'info'
                     );
 
+                    const geometry = inferLayerGeometryTypes(sourceLayer);
+                    const producedResult = buildProducedResult('proximity-join', {
+                        layerIds: [sourceLayer.id],
+                        outputs: [{
+                            name: 'out',
+                            type: 'layer',
+                            ...(geometry ? { geometry } : {})
+                        }],
+                        stats: {
+                            outCount: featureIndices.length,
+                            matched: result.matched,
+                            unmatched: result.unmatched
+                        }
+                    });
+                    emitProducedResult(producedResult);
+
                     return {
                         ...result,
-                        unitsLabel: unitAbbr(config.units)
+                        unitsLabel: unitAbbr(config.units),
+                        producedResult
                     };
                 });
             }

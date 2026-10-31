@@ -4,6 +4,7 @@ import { LayerSelect } from './shared/LayerSelect.jsx';
 import { RunPreviewFooter } from './shared/RunPreviewFooter.jsx';
 import { WidgetPanelShell } from './shared/WidgetPanelShell.jsx';
 import { WidgetStepWizard } from './shared/WidgetStepWizard.jsx';
+import { mapInitialInputToFields } from '../../js/widgets/widget-initial-input.js';
 
 const PREVIEW_DEBOUNCE_MS = 500;
 const WIZARD_STEPS = ['Choose layers', 'What to add', 'Review & run'];
@@ -76,11 +77,22 @@ export function ProximityJoinDialog({
     onPreview,
     onRun,
     onLayerFocus,
-    onSubscribeSelection
+    onSubscribeSelection,
+    onSendToTarget,
+    initialInput = null
 }) {
+    const sendToDefaults = useMemo(
+        () => mapInitialInputToFields(initialInput, {
+            source: 'sourceLayerId',
+            target: 'targetLayerId',
+            in: 'sourceLayerId'
+        }),
+        [initialInput]
+    );
+
     const [step, setStep] = useState(1);
-    const [sourceLayerId, setSourceLayerId] = useState('');
-    const [targetLayerId, setTargetLayerId] = useState('');
+    const [sourceLayerId, setSourceLayerId] = useState(() => sendToDefaults.sourceLayerId || '');
+    const [targetLayerId, setTargetLayerId] = useState(() => sendToDefaults.targetLayerId || '');
     const [applyTo, setApplyTo] = useState('layer');
     const [selectionCount, setSelectionCount] = useState(0);
     const [units, setUnits] = useState(unitOptions[0]?.value || 'feet');
@@ -92,6 +104,7 @@ export function ProximityJoinDialog({
     const [selectedFields, setSelectedFields] = useState([]);
     const [preview, setPreview] = useState(null);
     const [results, setResults] = useState(null);
+    const [producedResult, setProducedResult] = useState(null);
     const [status, setStatus] = useState('');
     const [running, setRunning] = useState(false);
     const [previewing, setPreviewing] = useState(false);
@@ -264,6 +277,7 @@ export function ProximityJoinDialog({
                 return;
             }
             setResults(output || null);
+            setProducedResult(output?.producedResult || null);
             setStatus('');
         } catch (err) {
             setError(err?.message || 'Proximity join failed.');
@@ -312,13 +326,21 @@ export function ProximityJoinDialog({
                 onCancel={onCancel}
                 cancelLabel="Done"
                 showRun={false}
-                footer={(
-                    <RunPreviewFooter
-                        onCancel={onCancel}
-                        cancelLabel="Done"
-                        onRun={() => { setResults(null); setStep(3); setError(''); }}
-                        runLabel="Run again"
-                    />
+                producedResult={producedResult}
+                onSendToTarget={onSendToTarget}
+                footerMiddleActions={(
+                    <button
+                        type="button"
+                        className="btn btn-secondary"
+                        onClick={() => {
+                            setResults(null);
+                            setProducedResult(null);
+                            setStep(3);
+                            setError('');
+                        }}
+                    >
+                        Run again
+                    </button>
                 )}
             >
                 <div style={{ fontWeight: 600, marginBottom: 8 }}>Results</div>

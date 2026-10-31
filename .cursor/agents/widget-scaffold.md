@@ -36,7 +36,8 @@ Confirm the plan specifies:
 - Engine pure functions (no DOM/mapService in engine)
 - Controller + React dialog + mount helper
 - Registry entry only in `js/widgets/registry.js` (not new inline hooks in `tool-handlers.js`)
-- Shared UI: `WidgetPanelShell`, **`RunPreviewFooter` (required — no hand-rolled footers)**, `WidgetStepWizard` if multi-step
+- Shared UI: `WidgetPanelShell`, **`RunPreviewFooter` (required — no hand-rolled footers)**, `SendToMenu` when emitting `result:produced`, `WidgetStepWizard` if multi-step
+- Registry **`inputs` / `outputs`** in `widget-registry-io.js`; **`emitLayerProducedResult`** on successful layer output
 - **`restoreState`** if the widget participates in session restore (`widget-state-store.js`)
 - Visible vs **`GIS_WIDGETS_HIDDEN`** (hidden → `openWidget`, not panel actions)
 

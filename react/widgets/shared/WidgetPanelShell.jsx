@@ -1,4 +1,5 @@
 import { RunPreviewFooter } from './RunPreviewFooter.jsx';
+import { SendToMenu } from './SendToMenu.jsx';
 
 export function WidgetPanelShell({
     className = '',
@@ -12,9 +13,28 @@ export function WidgetPanelShell({
     disabled = false,
     showRun = true,
     footer = null,
+    /** When set, shows Send to… in the default footer (compatible registry targets). */
+    producedResult = null,
+    onSendToTarget = null,
+    footerMiddleActions = null,
     children
 }) {
     const rootClass = ['gis-widget', className].filter(Boolean).join(' ');
+
+    const sendToAction = producedResult && onSendToTarget ? (
+        <SendToMenu
+            result={producedResult}
+            disabled={running || disabled}
+            onSelectTarget={(targetId) => onSendToTarget(targetId, producedResult)}
+        />
+    ) : null;
+
+    const mergedMiddle = footerMiddleActions || sendToAction ? (
+        <>
+            {footerMiddleActions}
+            {sendToAction}
+        </>
+    ) : null;
 
     return (
         <div className={rootClass}>
@@ -40,6 +60,7 @@ export function WidgetPanelShell({
                         running={running}
                         disabled={disabled}
                         showRun={showRun}
+                        middleActions={mergedMiddle}
                     />
                 )}
             </div>
