@@ -1,6 +1,8 @@
 /**
  * Load migrated graph JSON into a WorkflowEngine (including unknown-node placeholders).
  */
+import '../tools/tool-catalog.js';
+import { getTool } from '../tools/tool-registry.js';
 import { findNodeDef } from './node-catalog.js';
 import { resetNodeIdCounter } from './nodes/node-base.js';
 import {
@@ -38,9 +40,10 @@ export function loadGraphIntoEngine(engine, graphInput) {
             continue;
         }
 
-        const def = findNodeDef(nd.type);
+        const resolvedType = getTool(nd.type)?.id ?? nd.type;
+        const def = findNodeDef(resolvedType);
         if (!def) {
-            unknownTypes.push(nd.type);
+            unknownTypes.push(resolvedType);
             engine.addNode(createUnknownPlaceholderNode(nd));
             continue;
         }

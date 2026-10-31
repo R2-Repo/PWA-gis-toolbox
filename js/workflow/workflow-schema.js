@@ -2,6 +2,8 @@
  * Workflow graph JSON schema version and migrations.
  * Run migrateWorkflowGraph on every load path (autosave, library, file import, presets, project kits).
  */
+import '../tools/tool-catalog.js';
+import { getTool } from '../tools/tool-registry.js';
 
 /** @typedef {{ schemaVersion: number, nodes: object[], wires: object[] }} WorkflowGraphJSON */
 
@@ -69,6 +71,10 @@ export function migrateWorkflowGraph(input) {
 function normalizeLegacyNode(nd) {
     if (!nd || typeof nd !== 'object') return nd;
     const node = { ...nd };
+    if (typeof node.type === 'string') {
+        const entry = getTool(node.type);
+        if (entry) node.type = entry.id;
+    }
     if (!node.position || typeof node.position !== 'object') {
         node.position = { x: 0, y: 0 };
     }

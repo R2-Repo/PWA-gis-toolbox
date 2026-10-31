@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useSta
 import { createPortal } from 'react-dom';
 import bus from '../../js/core/event-bus.js';
 import { NODE_CATEGORIES } from '../../js/workflow/node-catalog.js';
-import { isPipelineNodeEnabled } from '../../js/tools/tool-catalog.js';
+import { getTool, isVisible } from '../../js/tools/tool-registry.js';
 
 const TOOLTIP_MARGIN = 8;
 const TOOLTIP_GAP = 10;
@@ -118,7 +118,7 @@ export function WorkflowPalette() {
     const visibleCategories = useMemo(() => {
         return NODE_CATEGORIES.map((cat) => ({
             ...cat,
-            visibleNodes: cat.nodes.filter((def) => isPipelineNodeEnabled(def.type))
+            visibleNodes: cat.nodes.filter((def) => isVisible(getTool(def.type), 'palette'))
         })).filter((cat) => cat.visibleNodes.length > 0);
     }, []);
 
