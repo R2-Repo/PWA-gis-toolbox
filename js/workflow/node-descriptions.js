@@ -56,7 +56,8 @@ export const NODE_DESCRIPTIONS = {
 
     // Outputs
     'preview': 'Open a data table preview of the pipeline result without adding it to the map.',
-    'add-to-map': 'Add the pipeline result as a new layer on the map.'
+    'add-to-map': 'Add the pipeline result as a new layer on the map.',
+    'export': 'Download the pipeline result in GeoJSON, CSV, KML, and other app export formats.'
 };
 
 /**
