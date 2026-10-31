@@ -3,6 +3,7 @@ import react from '@vitejs/plugin-react';
 import { resolve, join } from 'node:path';
 import { cpSync, existsSync, readFileSync } from 'node:fs';
 import { VitePWA } from 'vite-plugin-pwa';
+import { GTM_HTML_SNIPPET, shouldInjectGtmHtml } from './scripts/gtm-html-snippet.js';
 
 /**
  * Build targets:
@@ -67,6 +68,19 @@ function createManualChunks(id) {
   }
 
   return undefined;
+}
+
+function gtmHtmlPlugin(enable) {
+  return {
+    name: 'gtm-html-inject',
+    transformIndexHtml: {
+      order: 'pre',
+      handler(html) {
+        if (!enable) return html;
+        return html.replace('</head>', `${GTM_HTML_SNIPPET}\n</head>`);
+      }
+    }
+  };
 }
 
 function createPwaPlugin() {
@@ -155,8 +169,10 @@ function createPwaPlugin() {
   });
 }
 
-export default defineConfig(({ mode }) => {
+export default defineConfig(({ mode, command }) => {
   const outDir = mode === 'web' ? 'dist-web' : 'dist';
+  const injectGtm = shouldInjectGtmHtml(command, mode);
+  const e2eBundle = mode === 'web';
 
   return {
     base: './',
@@ -166,10 +182,12 @@ export default defineConfig(({ mode }) => {
       strictPort: true
     },
     define: {
-      'import.meta.env.VITE_GIS_RUNTIME': JSON.stringify('web')
+      'import.meta.env.VITE_GIS_RUNTIME': JSON.stringify('web'),
+      ...(e2eBundle ? { 'import.meta.env.VITE_E2E': JSON.stringify('1') } : {})
     },
     plugins: [
       react(),
+      gtmHtmlPlugin(injectGtm),
       pipelinesStaticPlugin(outDir),
       createPwaPlugin()
     ],

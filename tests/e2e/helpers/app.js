@@ -25,13 +25,22 @@ export async function resetAppStorage(page, origin = 'http://127.0.0.1:5175') {
     });
 }
 
+/** @param {string} baseURL Playwright baseURL or path */
+function resolveAppOrigin(baseURL) {
+    if (baseURL && baseURL.startsWith('http')) {
+        return baseURL.replace(/\/?$/, '');
+    }
+    return 'http://127.0.0.1:5175';
+}
+
 /**
  * Boot app, dismiss splash guide and session-restore prompts.
  * @param {import('@playwright/test').Page} page
  * @param {string} baseURL
  */
 export async function bootApp(page, baseURL) {
-    await resetAppStorage(page, baseURL);
+    const origin = resolveAppOrigin(baseURL);
+    await resetAppStorage(page, `${origin}/?basemap=offline`);
     await page.reload({ waitUntil: 'domcontentloaded' });
 
     const closeGuide = page.locator('.modal-overlay--splash .close-modal');

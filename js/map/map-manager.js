@@ -42,6 +42,7 @@ import { isPresentationMode, getPresentationModeState } from '../presentation/pr
 import { resolvePresentationMapInit } from '../presentation/presentation-scene-schema.js';
 import { hasAppUrlConfig, getAppUrlConfig } from '../url/app-url-detector.js';
 import { resolveAppUrlMapInit } from '../url/app-url-bootstrap.js';
+import { resolveDefaultBasemapKey } from './map-default-basemap.js';
 import {
     addServiceLayer as engineAddServiceLayer,
     removeServiceLayer as engineRemoveServiceLayer,
@@ -158,7 +159,7 @@ import {
     resolveFeaturesForZoom,
     startQueryResultPulse
 } from './query-result-overlay.js';
-import { getBasemapConfig, getBasemapRegistry, isCartoVectorBasemap, isSatelliteBasemap, usesCartoVector } from './basemap-catalog.js';
+import { getBasemapConfig, getBasemapRegistry, isCartoVectorBasemap, isOfflineBasemap, isSatelliteBasemap, usesCartoVector } from './basemap-catalog.js';
 import {
     BASEMAP_TONE_WASH_LAYER_ID,
     DEFAULT_BASEMAP_TONE,
@@ -427,7 +428,7 @@ class MapManager {
             : hasAppUrlConfig()
                 ? resolveAppUrlMapInit(getAppUrlConfig())
                 : null;
-        const basemapKey = mapInit?.basemap ?? 'voyager';
+        const basemapKey = mapInit?.basemap ?? resolveDefaultBasemapKey();
         this.currentBasemap = basemapKey;
         if (mapInit?.enable3D) {
             this._3dEnabled = true;
@@ -629,15 +630,21 @@ class MapManager {
         const sources = {};
         const layers = [];
         const tone = normalizeBasemapTone(this._basemapTone);
-        const backdropColor = isCartoVectorBasemap(bm) && bm.previewColor
-            ? bm.previewColor
-            : tone.backdrop;
+        const backdropColor = isOfflineBasemap(bm)
+            ? bm.previewColor || '#e8e4dc'
+            : isCartoVectorBasemap(bm) && bm.previewColor
+                ? bm.previewColor
+                : tone.backdrop;
 
         layers.push({
             id: 'basemap-backdrop',
             type: 'background',
             paint: { 'background-color': backdropColor }
         });
+
+        if (isOfflineBasemap(bm)) {
+            return { version: 8, sources, layers };
+        }
 
         if (bm.tiles) {
             sources.basemap = this._buildBasemapSourceSpec(bm);

@@ -57,6 +57,7 @@ export const DEFAULT_BOUNDS_PADDING = 30;
  */
 export function normalizeBasemapKey(value) {
     const key = String(value || '').toLowerCase();
+    if (key === 'offline') return 'offline';
     return BASEMAP_KEYS.includes(key) ? /** @type {BasemapKey} */ (key) : 'voyager';
 }
 

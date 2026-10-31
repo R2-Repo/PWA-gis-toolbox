@@ -1,6 +1,6 @@
 /** @typedef {'map' | 'satellite'} BasemapCategory */
 
-/** @typedef {'carto-vector' | 'raster' | 'hybrid'} BasemapKind */
+/** @typedef {'carto-vector' | 'raster' | 'hybrid' | 'offline'} BasemapKind */
 
 /**
  * @typedef {object} BasemapOption
@@ -117,6 +117,17 @@ for (const [category, config] of Object.entries(BASEMAP_CATEGORIES)) {
     }
 }
 
+/** Local-only basemap for e2e (not shown in header basemap UI). */
+export const OFFLINE_BASEMAP = {
+    key: 'offline',
+    name: 'Offline',
+    kind: 'offline',
+    previewColor: '#e8e4dc',
+    attribution: ''
+};
+
+KEY_INDEX.set(OFFLINE_BASEMAP.key, { category: 'map', option: OFFLINE_BASEMAP });
+
 /**
  * @param {string} key
  * @returns {BasemapOption | null}
@@ -163,6 +174,15 @@ export function isSatelliteBasemap(key) {
 export function isCartoVectorBasemap(keyOrOption) {
     const option = typeof keyOrOption === 'string' ? getBasemapConfig(keyOrOption) : keyOrOption;
     return option?.kind === 'carto-vector';
+}
+
+/**
+ * @param {string | BasemapOption | null | undefined} keyOrOption
+ * @returns {boolean}
+ */
+export function isOfflineBasemap(keyOrOption) {
+    const option = typeof keyOrOption === 'string' ? getBasemapConfig(keyOrOption) : keyOrOption;
+    return option?.kind === 'offline';
 }
 
 /**

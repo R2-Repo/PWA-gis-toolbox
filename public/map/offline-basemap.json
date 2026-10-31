@@ -1,0 +1,14 @@
+{
+  "version": 8,
+  "name": "GIS Toolbox offline test basemap",
+  "sources": {},
+  "layers": [
+    {
+      "id": "offline-background",
+      "type": "background",
+      "paint": {
+        "background-color": "#e8e4dc"
+      }
+    }
+  ]
+}

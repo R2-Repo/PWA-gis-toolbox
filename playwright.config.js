@@ -4,6 +4,8 @@ import { defineConfig, devices } from '@playwright/test';
 
 const repoRoot = fileURLToPath(new URL('.', import.meta.url));
 
+const headed = process.env.GIS_TEST_HEADED === '1';
+
 /** @type {import('@playwright/test').PlaywrightTestConfig} */
 export default defineConfig({
     testDir: join(repoRoot, 'tests/e2e'),
@@ -19,6 +21,7 @@ export default defineConfig({
     ],
     use: {
         baseURL: 'http://127.0.0.1:5175',
+        headless: !headed,
         trace: 'retain-on-failure',
         viewport: { width: 1280, height: 800 },
         serviceWorkers: 'block',

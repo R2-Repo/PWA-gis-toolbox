@@ -34,6 +34,11 @@ describe('app-url parser', () => {
         expect(config.basemap).toBe('voyager');
     });
 
+    it('accepts offline basemap key for test harness', () => {
+        const config = parseAppUrl('?basemap=offline');
+        expect(config.basemap).toBe('offline');
+    });
+
     it('parses live param without map preset bootstrap', () => {
         const config = parseAppUrl('?live=firewatch');
         expect(config.map).toBeUndefined();

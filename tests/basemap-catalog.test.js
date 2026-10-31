@@ -34,7 +34,8 @@ describe('basemap-catalog', () => {
         expect(keys).toContain('positron');
         expect(keys).toContain('satellite');
         expect(keys).toContain('satellite-labels');
-        expect(keys).toHaveLength(5);
+        expect(keys).toContain('offline');
+        expect(keys).toHaveLength(6);
     });
 
     it('returns vector configs for map keys and raster tiles for satellite', () => {

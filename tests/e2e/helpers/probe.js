@@ -27,6 +27,22 @@ export async function readLayerListFeatureCount(page, layerNameSubstring) {
 }
 
 /**
+ * @param {import('@playwright/test').Page} page
+ * @returns {Promise<'chunked'|'memory'|'streamed'|string|null>}
+ */
+export async function readActiveLayerAdmission(page) {
+    return page.evaluate(async () => {
+        const state = await import('/js/core/state.js');
+        const layer = state.getActiveLayer?.() || state.getLayers?.().at(-1);
+        if (!layer) return null;
+        if (layer.type === 'spatial-chunked' || layer.storage === 'workspace') return 'chunked';
+        if (layer._streamImport || layer.source?.streamed) return 'streamed';
+        if (layer.type === 'spatial') return 'memory';
+        return layer.type || null;
+    });
+}
+
+/**
  * Export active layer as GeoJSON via UI and parse in Node.
  * @param {import('@playwright/test').Page} page
  * @param {string} downloadDir
@@ -37,7 +53,8 @@ export async function exportActiveLayerGeoJSON(page, downloadDir) {
     const exportToggle = page.getByRole('button', { name: /^Export/ });
     const geoBtn = page.getByRole('button', { name: 'GeoJSON', exact: true });
     if (!(await geoBtn.isVisible().catch(() => false))) {
-        await exportToggle.click();
+        await exportToggle.scrollIntoViewIfNeeded();
+        await exportToggle.click({ force: true });
     }
 
     const downloadPromise = page.waitForEvent('download', { timeout: 120_000 });
