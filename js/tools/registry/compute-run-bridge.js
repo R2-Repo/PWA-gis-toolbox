@@ -1,10 +1,10 @@
 /**
- * Worker-safe registry run adapters over workflow compute modules (no UI / TaskRunner).
+ * Worker-safe registry run adapters over js/tools/compute (no UI / TaskRunner).
  */
 import { createSpatialDataset } from '../../core/data-model.js';
-import { computeFilterRows } from '../../workflow/compute/filter-rows.js';
-import { computeDeduplicate } from '../../workflow/compute/deduplicate.js';
-import { computeSimplify } from '../../workflow/compute/simplify.js';
+import { computeFilterRows } from '../compute/filter-rows.js';
+import { computeDeduplicate } from '../compute/deduplicate.js';
+import { computeSimplify } from '../compute/simplify.js';
 import {
     computeRenameFields,
     computeDeleteFields,
@@ -20,7 +20,7 @@ import {
     computeConditionalValue,
     computeUnitConvert,
     computeAddField
-} from '../../workflow/compute/transform-operations.js';
+} from '../compute/transform-operations.js';
 import {
     computeBuffer,
     computeLineOffset,
@@ -42,7 +42,7 @@ import {
     computeSplitByLine,
     computeSplitByPolygon,
     computeReproject
-} from '../../workflow/compute/spatial-operations.js';
+} from '../compute/spatial-operations.js';
 
 /** @typedef {import('../tool-registry.js').ToolRegistryContext} ToolRegistryContext */
 
@@ -84,7 +84,8 @@ function adaptContext(ctx) {
             ? (p) => {
                   progress(p.progress ?? 0, p.message);
               }
-            : undefined
+            : undefined,
+        progress
     };
 }
 

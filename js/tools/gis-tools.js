@@ -7,24 +7,45 @@ import { TaskRunner, processInChunks, yieldToUI } from '../core/task-runner.js';
 import { assertDisplayReady } from '../crs/layer-crs.js';
 
 const GIS_FEATURE_CHUNK_SIZE = 50;
-import { computeFeatureDistance, metersToDisplayUnits } from './feature-distance.js';
 import { pointToLineDistanceAny, nearestPointOnLineAny } from './line-geojson.js';
 import {
     getFeatureBBox,
     getBBoxAny,
-    bboxOverlap,
-    minBBoxSeparationMeters,
-    NEAREST_JOIN_SORT_THRESHOLD
+    bboxOverlap
 } from './spatial-bbox.js';
+import { simplifyFeatureCollection } from './compute/simplify.js';
 import {
-    polygonsToLineFeatures,
-    fillHoleFeatures,
-    splitPolygonFeaturesByLines,
-    splitPolygonFeaturesByPolygons,
-    listPolygonFeatures
-} from './polygon-ops.js';
+    bufferFeatureCollection,
+    clipFeatureCollection,
+    dissolveFeatureCollection,
+    lineOffsetFeatureCollection,
+    unionFeatureCollection,
+    combineFeatureCollection,
+    spatialJoinFeatureCollections,
+    nearestJoinFeatureCollections,
+    intersectFeatureCollections,
+    mergeFeatureCollections,
+    differenceFeatureCollections,
+    summarizeWithinFeatureCollections,
+    sampleFeatureCollection,
+    explodeFeatureCollection,
+    polygonToLineFeatureCollection,
+    fillHolesFeatureCollection,
+    splitByLineFeatureCollections,
+    splitByPolygonFeatureCollections
+} from './compute/spatial-operations.js';
 
 const LARGE_DATASET_WARNING = 50000;
+
+function taskProgressCtx(t, scale = 0.9) {
+    return {
+        signal: t.signal,
+        progress: (fraction, msg) => {
+            t.throwIfCancelled();
+            t.updateProgress(Math.round(fraction * scale * 100), msg ?? '');
+        }
+    };
+}
 
 function warnIfFeatureFailures(action, failed, total) {
     if (failed > 0) {
@@ -49,30 +70,13 @@ export async function bufferFeatures(dataset, distance, units = 'kilometers') {
 
     const task = new TaskRunner(`Buffer ${distance} ${units}`, 'GISTools');
     return task.run(async (t) => {
-        const features = dataset.geojson.features;
-        const buffered = [];
-        let failures = 0;
-        for (let i = 0; i < features.length; i++) {
-            t.throwIfCancelled();
-            if (i % 100 === 0) {
-                t.updateProgress(Math.round((i / features.length) * 90), `Buffering ${i}/${features.length}`);
-                await new Promise(r => setTimeout(r, 0));
-            }
-            if (features[i].geometry) {
-                try {
-                    const b = turf.buffer(features[i], distance, { units });
-                    if (b) {
-                        b.properties = { ...features[i].properties };
-                        buffered.push(b);
-                    }
-                } catch (e) {
-                    failures++;
-                }
-            }
-        }
-        warnIfFeatureFailures('Buffer', failures, features.length);
-        const fc = { type: 'FeatureCollection', features: buffered };
-        return createSpatialDataset(`${dataset.name}_buffer_${distance}${units}`, fc, { format: 'derived' });
+        const { geojson, stats } = bufferFeatureCollection(
+            dataset.geojson,
+            { distance, units },
+            taskProgressCtx(t)
+        );
+        warnIfFeatureFailures('Buffer', stats.failed, stats.inCount);
+        return createSpatialDataset(`${dataset.name}_buffer_${distance}${units}`, geojson, { format: 'derived' });
     });
 }
 
@@ -89,35 +93,23 @@ export async function simplifyFeatures(dataset, tolerance = 0.001) {
         t.updateProgress(10, 'Simplifying geometries...');
         t.throwIfCancelled();
 
-        const features = dataset.geojson.features;
-        const verticesBefore = countVertices(dataset.geojson);
-        let simplifyFailures = 0;
-
-        const simplifiedFeatures = await processInChunks(
-            features,
-            GIS_FEATURE_CHUNK_SIZE,
-            (f) => {
-                if (!f?.geometry) return f;
-                try {
-                    return turf.simplify(f, { tolerance, highQuality: true });
-                } catch (e) {
-                    simplifyFailures++;
-                    return f;
-                }
-            },
-            t
+        const { geojson, stats } = simplifyFeatureCollection(
+            dataset.geojson,
+            { tolerance },
+            taskProgressCtx(t)
         );
-        warnIfFeatureFailures('Simplify', simplifyFailures, features.length);
+        warnIfFeatureFailures('Simplify', stats.failed, stats.inCount);
 
-        const simplified = { type: 'FeatureCollection', features: simplifiedFeatures };
         t.throwIfCancelled();
-        const verticesAfter = countVertices(simplified);
-
-        logger.info('GISTools', 'Simplify complete', { verticesBefore, verticesAfter, reduction: `${Math.round((1 - verticesAfter / verticesBefore) * 100)}%` });
+        logger.info('GISTools', 'Simplify complete', {
+            verticesBefore: stats.verticesBefore,
+            verticesAfter: stats.verticesAfter,
+            reduction: `${Math.round((1 - stats.verticesAfter / stats.verticesBefore) * 100)}%`
+        });
 
         return {
-            dataset: createSpatialDataset(`${dataset.name}_simplified`, simplified, { format: 'derived' }),
-            stats: { verticesBefore, verticesAfter }
+            dataset: createSpatialDataset(`${dataset.name}_simplified`, geojson, { format: 'derived' }),
+            stats: { verticesBefore: stats.verticesBefore, verticesAfter: stats.verticesAfter }
         };
     });
 }
@@ -132,60 +124,13 @@ export async function clipFeatures(dataset, clipGeometry) {
 
     const task = new TaskRunner('Clip', 'GISTools');
     return task.run(async (t) => {
-        const features = dataset.geojson.features;
-        const clipped = [];
-        let clipFailures = 0;
-        const clipBox = getBBoxAny(clipGeometry);
-
-        for (let i = 0; i < features.length; i++) {
-            t.throwIfCancelled();
-            if (i % 100 === 0) {
-                t.updateProgress(Math.round((i / features.length) * 90), `Clipping ${i}/${features.length}`);
-                await new Promise(r => setTimeout(r, 0));
-            }
-
-            const f = features[i];
-            if (!f.geometry) continue;
-
-            const fb = getFeatureBBox(f);
-            if (clipBox && fb && !bboxOverlap(clipBox, fb)) {
-                continue;
-            }
-
-            try {
-                if (f.geometry.type === 'Point') {
-                    if (turf.booleanPointInPolygon(f, clipGeometry)) {
-                        clipped.push(f);
-                    }
-                } else if (f.geometry.type === 'MultiPoint') {
-                    const inside = f.geometry.coordinates.filter((c) =>
-                        turf.booleanPointInPolygon(turf.point(c), clipGeometry)
-                    );
-                    if (inside.length > 0) {
-                        clipped.push({
-                            type: 'Feature',
-                            properties: { ...f.properties },
-                            geometry: { type: 'MultiPoint', coordinates: inside }
-                        });
-                    }
-                } else {
-                    const intersection = turf.intersect(
-                        turf.featureCollection([turf.feature(clipGeometry), f])
-                    );
-                    if (intersection) {
-                        intersection.properties = { ...f.properties };
-                        clipped.push(intersection);
-                    }
-                }
-            } catch (e) {
-                clipFailures++;
-            }
-        }
-
-        warnIfFeatureFailures('Clip', clipFailures, features.length);
-
-        const fc = { type: 'FeatureCollection', features: clipped };
-        return createSpatialDataset(`${dataset.name}_clipped`, fc, { format: 'derived' });
+        const { geojson, stats } = clipFeatureCollection(
+            dataset.geojson,
+            clipGeometry,
+            taskProgressCtx(t)
+        );
+        warnIfFeatureFailures('Clip', stats.failed, stats.inCount);
+        return createSpatialDataset(`${dataset.name}_clipped`, geojson, { format: 'derived' });
     });
 }
 
@@ -201,56 +146,14 @@ export async function dissolveFeatures(dataset, field) {
     return task.run(async (t) => {
         t.updateProgress(10, 'Dissolving...');
         t.throwIfCancelled();
-        const trimmed = field != null ? String(field).trim() : '';
-        const features = dataset.geojson.features.filter((f) => f?.geometry);
-
-        const groups = new Map();
-        if (trimmed) {
-            for (const f of features) {
-                const key = String(f.properties?.[trimmed] ?? '');
-                if (!groups.has(key)) groups.set(key, []);
-                groups.get(key).push(f);
-            }
-        } else {
-            groups.set('__all__', features);
-        }
-
-        const dissolvedFeatures = [];
-        let gi = 0;
-        const groupCount = groups.size;
-        for (const [, groupFeatures] of groups) {
-            t.throwIfCancelled();
-            t.updateProgress(
-                Math.round((gi / Math.max(groupCount, 1)) * 90),
-                `Dissolving group ${gi + 1}/${groupCount}...`
-            );
-            const fc = { type: 'FeatureCollection', features: groupFeatures };
-            const part = trimmed
-                ? turf.dissolve(fc, { propertyName: trimmed })
-                : turf.dissolve(fc);
-            if (part?.features) dissolvedFeatures.push(...part.features);
-            gi++;
-            if (gi % 3 === 0) await yieldToUI();
-        }
-
+        const { geojson } = dissolveFeatureCollection(
+            dataset.geojson,
+            { field },
+            taskProgressCtx(t)
+        );
         t.throwIfCancelled();
-        const dissolved = { type: 'FeatureCollection', features: dissolvedFeatures };
-        return createSpatialDataset(`${dataset.name}_dissolved`, dissolved, { format: 'derived' });
+        return createSpatialDataset(`${dataset.name}_dissolved`, geojson, { format: 'derived' });
     });
-}
-
-function countVertices(geojson) {
-    let count = 0;
-    const countCoords = (coords) => {
-        if (typeof coords[0] === 'number') return 1;
-        return coords.reduce((sum, c) => sum + countCoords(c), 0);
-    };
-    for (const f of (geojson.features || [])) {
-        if (f.geometry?.coordinates) {
-            count += countCoords(f.geometry.coordinates);
-        }
-    }
-    return count;
 }
 
 // ============================
@@ -441,35 +344,13 @@ export async function lineOffsetFeatures(dataset, offsetDistance, units = 'kilom
     if (typeof turf === 'undefined') throw new Error('Turf.js not loaded');
     const task = new TaskRunner('Line Offset', 'GISTools');
     return task.run(async (t) => {
-        const features = dataset.geojson.features;
-        const results = [];
-        let failures = 0;
-        for (let i = 0; i < features.length; i++) {
-            t.throwIfCancelled();
-            if (i % 100 === 0) {
-                t.updateProgress(Math.round((i / features.length) * 90), `Offsetting ${i}/${features.length}`);
-                await new Promise(r => setTimeout(r, 0));
-            }
-            const f = features[i];
-            if (!f.geometry) continue;
-            if (f.geometry.type === 'LineString' || f.geometry.type === 'MultiLineString') {
-                try {
-                    const offset = turf.lineOffset(f, offsetDistance, { units });
-                    if (offset) {
-                        offset.properties = { ...f.properties };
-                        results.push(offset);
-                    }
-                } catch (e) {
-                    failures++;
-                    results.push(f);
-                }
-            } else {
-                results.push(f);
-            }
-        }
-        warnIfFeatureFailures('Line offset', failures, features.length);
-        const fc = { type: 'FeatureCollection', features: results };
-        return createSpatialDataset(`${dataset.name}_offset`, fc, { format: 'derived' });
+        const { geojson, stats } = lineOffsetFeatureCollection(
+            dataset.geojson,
+            { distance: offsetDistance, units },
+            taskProgressCtx(t)
+        );
+        warnIfFeatureFailures('Line offset', stats.failed, stats.inCount);
+        return createSpatialDataset(`${dataset.name}_offset`, geojson, { format: 'derived' });
     });
 }
 
@@ -557,8 +438,8 @@ export async function findKinks(dataset) {
 export function combineFeatures(dataset) {
     _requireDisplayReady(dataset, 'Combine');
     if (typeof turf === 'undefined') throw new Error('Turf.js not loaded');
-    const combined = turf.combine(dataset.geojson);
-    return createSpatialDataset(`${dataset.name}_combined`, combined, { format: 'derived' });
+    const { geojson } = combineFeatureCollection(dataset.geojson);
+    return createSpatialDataset(`${dataset.name}_combined`, geojson, { format: 'derived' });
 }
 
 /**
@@ -570,36 +451,10 @@ export async function unionFeatures(dataset) {
     if (typeof turf === 'undefined') throw new Error('Turf.js not loaded');
     const task = new TaskRunner('Union', 'GISTools');
     return task.run(async (t) => {
-        const polygons = dataset.geojson.features.filter(f =>
-            f.geometry && (f.geometry.type === 'Polygon' || f.geometry.type === 'MultiPolygon')
-        );
-        if (polygons.length === 0) throw new Error('No polygon features to union');
-        if (polygons.length === 1) {
-            return createSpatialDataset(`${dataset.name}_union`, {
-                type: 'FeatureCollection', features: [polygons[0]]
-            }, { format: 'derived' });
-        }
-
-        t.updateProgress(10, `Merging ${polygons.length} polygons...`);
-        let result = polygons[0];
-        let unionFailures = 0;
-        for (let i = 1; i < polygons.length; i++) {
-            t.throwIfCancelled();
-            if (i % 20 === 0) {
-                t.updateProgress(Math.round((i / polygons.length) * 90), `Merging ${i}/${polygons.length}`);
-                await new Promise(r => setTimeout(r, 0));
-            }
-            try {
-                const merged = turf.union(turf.featureCollection([result, polygons[i]]));
-                if (merged) result = merged;
-            } catch (e) {
-                unionFailures++;
-            }
-        }
-        warnIfFeatureFailures('Union', unionFailures, polygons.length - 1);
-
-        const fc = { type: 'FeatureCollection', features: [result] };
-        return createSpatialDataset(`${dataset.name}_union`, fc, { format: 'derived' });
+        t.updateProgress(10, 'Merging polygons...');
+        const { geojson, stats } = unionFeatureCollection(dataset.geojson, taskProgressCtx(t));
+        warnIfFeatureFailures('Union', stats.failed, Math.max(0, stats.inCount - 1));
+        return createSpatialDataset(`${dataset.name}_union`, geojson, { format: 'derived' });
     });
 }
 
@@ -682,69 +537,21 @@ export async function spatialJoinPointsInPolygons(pointsDataset, polygonsDataset
 
     const task = new TaskRunner('Spatial Join', 'GISTools');
     return task.run(async (t) => {
-        const points = pointsDataset.geojson.features;
-        const polygons = polygonsDataset.geojson.features.filter(f =>
-            f.geometry && (f.geometry.type === 'Polygon' || f.geometry.type === 'MultiPolygon')
+        const { geojson, schemaFields } = spatialJoinFeatureCollections(
+            pointsDataset.geojson,
+            polygonsDataset.geojson,
+            { joinFields, prefix },
+            taskProgressCtx(t)
         );
-        if (polygons.length === 0) throw new Error('Polygon layer has no polygon features');
 
-        const polyFields = joinFields.length > 0
-            ? joinFields
-            : Object.keys(polygons[0]?.properties || {});
-
-        const polyBoxes = polygons.map(p => getFeatureBBox(p));
-
-        const enriched = [];
-        for (let i = 0; i < points.length; i++) {
-            t.throwIfCancelled();
-            if (i % 200 === 0) {
-                t.updateProgress(Math.round((i / points.length) * 90), `Joining ${i}/${points.length}`);
-                await new Promise(r => setTimeout(r, 0));
-            }
-
-            const pt = points[i];
-            const props = { ...pt.properties };
-            let matched = false;
-
-            if (pt.geometry && pt.geometry.type === 'Point') {
-                const [lng, lat] = pt.geometry.coordinates;
-                for (let pi = 0; pi < polygons.length; pi++) {
-                    const pb = polyBoxes[pi];
-                    if (pb && (lng < pb[0] || lng > pb[2] || lat < pb[1] || lat > pb[3])) {
-                        continue;
-                    }
-                    const poly = polygons[pi];
-                    try {
-                        if (turf.booleanPointInPolygon(pt, poly)) {
-                            for (const field of polyFields) {
-                                props[prefix + field] = poly.properties?.[field] ?? null;
-                            }
-                            matched = true;
-                            break;
-                        }
-                    } catch (_) { /* skip invalid polygons */ }
-                }
-            }
-
-            if (!matched) {
-                for (const field of polyFields) {
-                    if (!(prefix + field in props)) props[prefix + field] = null;
-                }
-            }
-
-            enriched.push({ ...pt, properties: props });
-        }
-
-        // Build updated schema
         const schema = JSON.parse(JSON.stringify(pointsDataset.schema));
-        for (const field of polyFields) {
-            const name = prefix + field;
+        for (const name of schemaFields) {
             if (!schema.fields.find(f => f.name === name)) {
-                const vals = enriched.map(f => f.properties[name]).filter(v => v != null);
+                const vals = geojson.features.map(f => f.properties[name]).filter(v => v != null);
                 schema.fields.push({
                     name,
                     type: typeof vals[0] === 'number' ? 'number' : 'string',
-                    nullCount: enriched.length - vals.length,
+                    nullCount: geojson.features.length - vals.length,
                     uniqueCount: new Set(vals).size,
                     sampleValues: vals.slice(0, 5),
                     selected: true,
@@ -754,8 +561,7 @@ export async function spatialJoinPointsInPolygons(pointsDataset, polygonsDataset
             }
         }
 
-        const fc = { type: 'FeatureCollection', features: enriched };
-        return createSpatialDataset(`${pointsDataset.name}_spatialJoin`, fc, { format: 'derived', schema });
+        return createSpatialDataset(`${pointsDataset.name}_spatialJoin`, geojson, { format: 'derived', schema });
     });
 }
 
@@ -775,82 +581,22 @@ export async function nearestJoin(datasetA, datasetB, joinFields = [], units = '
 
     const task = new TaskRunner('Nearest Join', 'GISTools');
     return task.run(async (t) => {
-        const featuresA = datasetA.geojson.features;
-        const featuresB = datasetB.geojson.features;
-        if (featuresB.length === 0) throw new Error('Join layer has no features');
+        const { geojson, bFields } = nearestJoinFeatureCollections(
+            datasetA.geojson,
+            datasetB.geojson,
+            { joinFields, units },
+            taskProgressCtx(t)
+        );
 
-        const bFields = joinFields.length > 0
-            ? joinFields
-            : Object.keys(featuresB[0]?.properties || {});
-
-        const bboxB = featuresB.map(f => getFeatureBBox(f));
-
-        const enriched = [];
-        for (let i = 0; i < featuresA.length; i++) {
-            t.throwIfCancelled();
-            if (i % 200 === 0) {
-                t.updateProgress(Math.round((i / featuresA.length) * 90), `Joining ${i}/${featuresA.length}`);
-                await new Promise(r => setTimeout(r, 0));
-            }
-
-            const fA = featuresA[i];
-            const props = { ...fA.properties };
-
-            if (fA.geometry) {
-                const ba = getFeatureBBox(fA);
-                let indices = featuresB.map((_, j) => j);
-                const useSortedEarlyExit = ba && featuresB.length >= NEAREST_JOIN_SORT_THRESHOLD;
-                if (useSortedEarlyExit) {
-                    indices.sort((j1, j2) => {
-                        const b1 = bboxB[j1];
-                        const b2 = bboxB[j2];
-                        const s1 = b1 ? minBBoxSeparationMeters(ba, b1) : 0;
-                        const s2 = b2 ? minBBoxSeparationMeters(ba, b2) : 0;
-                        return s1 - s2;
-                    });
-                }
-
-                let minDm = Infinity;
-                let nearestIdx = -1;
-
-                for (const j of indices) {
-                    const fB = featuresB[j];
-                    if (!fB?.geometry) continue;
-                    const bb = bboxB[j];
-                    if (ba && bb && minDm !== Infinity && minBBoxSeparationMeters(ba, bb) >= minDm) {
-                        if (useSortedEarlyExit) break;
-                        continue;
-                    }
-                    const { distanceMeters } = computeFeatureDistance(fA, fB, 'centroid');
-                    if (distanceMeters < minDm) {
-                        minDm = distanceMeters;
-                        nearestIdx = j;
-                    }
-                }
-
-                if (nearestIdx >= 0 && minDm !== Infinity) {
-                    const distDisplay = metersToDisplayUnits(minDm, units);
-                    for (const field of bFields) {
-                        props['nearest_' + field] = featuresB[nearestIdx].properties?.[field] ?? null;
-                    }
-                    props['nearest_distance'] = Math.round(distDisplay * 1000) / 1000;
-                    props['nearest_distance_units'] = units;
-                }
-            }
-
-            enriched.push({ ...fA, properties: props });
-        }
-
-        // Build updated schema
         const schema = JSON.parse(JSON.stringify(datasetA.schema));
         const addedFields = [...bFields.map(f => 'nearest_' + f), 'nearest_distance', 'nearest_distance_units'];
         for (const name of addedFields) {
             if (!schema.fields.find(f => f.name === name)) {
-                const vals = enriched.map(f => f.properties[name]).filter(v => v != null);
+                const vals = geojson.features.map(f => f.properties[name]).filter(v => v != null);
                 schema.fields.push({
                     name,
                     type: name === 'nearest_distance' ? 'number' : 'string',
-                    nullCount: enriched.length - vals.length,
+                    nullCount: geojson.features.length - vals.length,
                     uniqueCount: new Set(vals).size,
                     sampleValues: vals.slice(0, 5),
                     selected: true,
@@ -860,8 +606,7 @@ export async function nearestJoin(datasetA, datasetB, joinFields = [], units = '
             }
         }
 
-        const fc = { type: 'FeatureCollection', features: enriched };
-        return createSpatialDataset(`${datasetA.name}_nearestJoin`, fc, { format: 'derived', schema });
+        return createSpatialDataset(`${datasetA.name}_nearestJoin`, geojson, { format: 'derived', schema });
     });
 }
 
@@ -876,51 +621,15 @@ export async function intersectLayers(datasetA, datasetB) {
 
     const task = new TaskRunner('Intersect Layers', 'GISTools');
     return task.run(async (t) => {
-        const polysA = datasetA.geojson.features.filter(f =>
-            f.geometry && (f.geometry.type === 'Polygon' || f.geometry.type === 'MultiPolygon')
+        const { geojson } = intersectFeatureCollections(
+            datasetA.geojson,
+            datasetB.geojson,
+            taskProgressCtx(t)
         );
-        const polysB = datasetB.geojson.features.filter(f =>
-            f.geometry && (f.geometry.type === 'Polygon' || f.geometry.type === 'MultiPolygon')
-        );
-        if (polysA.length === 0 || polysB.length === 0) {
-            throw new Error('Both layers must have polygon features');
-        }
-
-        const results = [];
-        let pairVisited = 0;
-        const total = polysA.length * polysB.length;
-        const bboxB = polysB.map(p => getFeatureBBox(p));
-
-        for (let i = 0; i < polysA.length; i++) {
-            const ba = getFeatureBBox(polysA[i]);
-            for (let j = 0; j < polysB.length; j++) {
-                t.throwIfCancelled();
-                pairVisited++;
-                if (pairVisited % 500 === 0) {
-                    t.updateProgress(Math.round((pairVisited / total) * 90), `Intersect pairs ${pairVisited}/${total}`);
-                    await new Promise(r => setTimeout(r, 0));
-                }
-                if (ba && bboxB[j] && !bboxOverlap(ba, bboxB[j])) {
-                    continue;
-                }
-                try {
-                    const ix = turf.intersect(turf.featureCollection([polysA[i], polysB[j]]));
-                    if (ix) {
-                        ix.properties = {
-                            ...polysA[i].properties,
-                            ...Object.fromEntries(
-                                Object.entries(polysB[j].properties || {}).map(([k, v]) => ['B_' + k, v])
-                            )
-                        };
-                        results.push(ix);
-                    }
-                } catch (_) { /* skip invalid geometry pairs */ }
-            }
-        }
-
-        const fc = { type: 'FeatureCollection', features: results };
         return createSpatialDataset(
-            `${datasetA.name}_intersect_${datasetB.name}`, fc, { format: 'derived' }
+            `${datasetA.name}_intersect_${datasetB.name}`,
+            geojson,
+            { format: 'derived' }
         );
     });
 }
@@ -931,12 +640,8 @@ export async function intersectLayers(datasetA, datasetB) {
 export function mergeLayers(datasetA, datasetB) {
     _requireDisplayReady(datasetA, 'Merge');
     _requireDisplayReady(datasetB, 'Merge');
-    const featuresA = datasetA.geojson?.features || [];
-    const featuresB = datasetB.geojson?.features || [];
-    const merged = [...featuresA.map(f => ({ ...f, properties: { ...f.properties } })),
-                    ...featuresB.map(f => ({ ...f, properties: { ...f.properties } }))];
-    const fc = { type: 'FeatureCollection', features: merged };
-    return createSpatialDataset(`${datasetA.name}_merged_${datasetB.name}`, fc, { format: 'derived' });
+    const { geojson } = mergeFeatureCollections(datasetA.geojson, datasetB.geojson);
+    return createSpatialDataset(`${datasetA.name}_merged_${datasetB.name}`, geojson, { format: 'derived' });
 }
 
 /**
@@ -950,46 +655,15 @@ export async function differenceLayers(datasetA, datasetB) {
 
     const task = new TaskRunner('Difference', 'GISTools');
     return task.run(async (t) => {
-        const polysA = datasetA.geojson.features.filter(f =>
-            f.geometry && (f.geometry.type === 'Polygon' || f.geometry.type === 'MultiPolygon')
+        const { geojson } = differenceFeatureCollections(
+            datasetA.geojson,
+            datasetB.geojson,
+            taskProgressCtx(t)
         );
-        const polysB = datasetB.geojson.features.filter(f =>
-            f.geometry && (f.geometry.type === 'Polygon' || f.geometry.type === 'MultiPolygon')
-        );
-        if (polysA.length === 0) throw new Error('Layer A has no polygon features');
-
-        const results = [];
-        const bboxBList = polysB.map(p => getFeatureBBox(p));
-
-        for (let i = 0; i < polysA.length; i++) {
-            t.throwIfCancelled();
-            if (i % 50 === 0) {
-                t.updateProgress(Math.round((i / polysA.length) * 90), `Differencing ${i}/${polysA.length}`);
-                await new Promise(r => setTimeout(r, 0));
-            }
-
-            let current = polysA[i];
-            for (let j = 0; j < polysB.length; j++) {
-                if (!current) break;
-                const cb = getFeatureBBox(current);
-                const bb = bboxBList[j];
-                if (cb && bb && !bboxOverlap(cb, bb)) {
-                    continue;
-                }
-                try {
-                    current = turf.difference(turf.featureCollection([current, polysB[j]]));
-                } catch (_) { /* skip on error */ }
-            }
-
-            if (current && current.geometry) {
-                current.properties = { ...polysA[i].properties };
-                results.push(current);
-            }
-        }
-
-        const fc = { type: 'FeatureCollection', features: results };
         return createSpatialDataset(
-            `${datasetA.name}_diff_${datasetB.name}`, fc, { format: 'derived' }
+            `${datasetA.name}_diff_${datasetB.name}`,
+            geojson,
+            { format: 'derived' }
         );
     });
 }
@@ -1010,69 +684,24 @@ export async function summarizeWithin(polygonsDataset, pointsDataset, sumField, 
 
     const task = new TaskRunner('Summarize Within', 'GISTools');
     return task.run(async (t) => {
-        const polygons = polygonsDataset.geojson.features.filter(f =>
-            f.geometry && (f.geometry.type === 'Polygon' || f.geometry.type === 'MultiPolygon')
+        const { geojson, sumField: sumF, avgField: avgF } = summarizeWithinFeatureCollections(
+            polygonsDataset.geojson,
+            pointsDataset.geojson,
+            { sumField, avgField },
+            taskProgressCtx(t)
         );
-        const points = pointsDataset.geojson.features.filter(f =>
-            f.geometry && f.geometry.type === 'Point'
-        );
 
-        if (polygons.length === 0) throw new Error('Polygon layer has no polygon features');
-
-        const polyBoxes = polygons.map(p => getFeatureBBox(p));
-        const ptBoxes = points.map(p => getFeatureBBox(p));
-
-        const enriched = [];
-        for (let i = 0; i < polygons.length; i++) {
-            t.throwIfCancelled();
-            if (i % 50 === 0) {
-                t.updateProgress(Math.round((i / polygons.length) * 90), `Summarizing ${i}/${polygons.length}`);
-                await new Promise(r => setTimeout(r, 0));
-            }
-
-            const poly = polygons[i];
-            const pb = polyBoxes[i];
-            const contained = [];
-
-            for (let k = 0; k < points.length; k++) {
-                const pt = points[k];
-                const tb = ptBoxes[k];
-                if (pb && tb && !bboxOverlap(pb, tb)) {
-                    continue;
-                }
-                try {
-                    if (turf.booleanPointInPolygon(pt, poly)) contained.push(pt);
-                } catch (_) { /* skip */ }
-            }
-
-            const props = { ...poly.properties, point_count: contained.length };
-
-            if (sumField && contained.length > 0) {
-                const vals = contained.map(p => parseFloat(p.properties?.[sumField])).filter(v => !isNaN(v));
-                props['sum_' + sumField] = vals.reduce((a, b) => a + b, 0);
-            }
-            if (avgField && contained.length > 0) {
-                const vals = contained.map(p => parseFloat(p.properties?.[avgField])).filter(v => !isNaN(v));
-                props['avg_' + avgField] = vals.length > 0
-                    ? Math.round((vals.reduce((a, b) => a + b, 0) / vals.length) * 1000) / 1000
-                    : null;
-            }
-
-            enriched.push({ ...poly, properties: props });
-        }
-
-        // Build updated schema
         const schema = JSON.parse(JSON.stringify(polygonsDataset.schema));
         const newFields = ['point_count'];
-        if (sumField) newFields.push('sum_' + sumField);
-        if (avgField) newFields.push('avg_' + avgField);
+        if (sumF) newFields.push('sum_' + sumF);
+        if (avgF) newFields.push('avg_' + avgF);
         for (const name of newFields) {
             if (!schema.fields.find(f => f.name === name)) {
-                const vals = enriched.map(f => f.properties[name]).filter(v => v != null);
+                const vals = geojson.features.map(f => f.properties[name]).filter(v => v != null);
                 schema.fields.push({
                     name,
                     type: 'number',
-                    nullCount: enriched.length - vals.length,
+                    nullCount: geojson.features.length - vals.length,
                     uniqueCount: new Set(vals).size,
                     sampleValues: vals.slice(0, 5),
                     min: vals.length ? Math.min(...vals) : null,
@@ -1084,8 +713,7 @@ export async function summarizeWithin(polygonsDataset, pointsDataset, sumField, 
             }
         }
 
-        const fc = { type: 'FeatureCollection', features: enriched };
-        return createSpatialDataset(`${polygonsDataset.name}_summary`, fc, { format: 'derived', schema });
+        return createSpatialDataset(`${polygonsDataset.name}_summary`, geojson, { format: 'derived', schema });
     });
 }
 
@@ -1105,12 +733,9 @@ export async function sampleFeatures(dataset, num) {
 
     if (typeof turf === 'undefined') throw new Error('Turf.js not loaded');
 
-    const features = dataset.geojson.features.filter((f) => f.geometry);
-    if (features.length === 0) throw new Error('No features to sample');
-
-    const sampleCount = Math.min(count, features.length);
-    const sampled = turf.sample(turf.featureCollection(features), sampleCount);
-    return createSpatialDataset(`${dataset.name}_sample_${sampleCount}`, sampled, { format: 'derived' });
+    const { geojson } = sampleFeatureCollection(dataset.geojson, { num: count });
+    const sampleCount = geojson.features.length;
+    return createSpatialDataset(`${dataset.name}_sample_${sampleCount}`, geojson, { format: 'derived' });
 }
 
 /**
@@ -1123,16 +748,12 @@ export async function explodeFeatures(dataset) {
 
     if (typeof turf === 'undefined') throw new Error('Turf.js not loaded');
 
-    const features = dataset.geojson.features.filter((f) => f.geometry);
-    if (features.length === 0) throw new Error('No features to explode');
-
     const task = new TaskRunner('Explode', 'GISTools');
     return task.run(async (t) => {
         t.updateProgress(50, 'Extracting vertices');
         await yieldToUI();
-        const exploded = turf.explode(turf.featureCollection(features));
-        if (!exploded.features.length) throw new Error('No vertices extracted');
-        return createSpatialDataset(`${dataset.name}_exploded`, exploded, { format: 'derived' });
+        const { geojson } = explodeFeatureCollection(dataset.geojson);
+        return createSpatialDataset(`${dataset.name}_exploded`, geojson, { format: 'derived' });
     });
 }
 
@@ -1145,22 +766,13 @@ export async function polygonToLineFeatures(dataset) {
     _requireDisplayReady(dataset, 'Polygon to line');
     if (typeof turf === 'undefined') throw new Error('Turf.js not loaded');
 
-    const features = dataset.geojson.features.filter((f) => f.geometry);
-    if (listPolygonFeatures(features).length === 0) {
-        throw new Error('No polygon features to convert');
-    }
-
     const task = new TaskRunner('Polygon to Line', 'GISTools');
     return task.run(async (t) => {
         t.updateProgress(40, 'Converting polygons to lines');
         await yieldToUI();
-        const lines = polygonsToLineFeatures(features);
-        if (!lines.length) throw new Error('Could not convert polygons to lines');
+        const { geojson } = polygonToLineFeatureCollection(dataset.geojson);
         t.updateProgress(90, 'Building layer');
-        return createSpatialDataset(`${dataset.name}_outlines`, {
-            type: 'FeatureCollection',
-            features: lines
-        }, { format: 'derived' });
+        return createSpatialDataset(`${dataset.name}_outlines`, geojson, { format: 'derived' });
     });
 }
 
@@ -1173,21 +785,13 @@ export async function fillHolesFeatures(dataset) {
     _requireDisplayReady(dataset, 'Fill holes');
     if (typeof turf === 'undefined') throw new Error('Turf.js not loaded');
 
-    const features = dataset.geojson.features.filter((f) => f.geometry);
-    if (listPolygonFeatures(features).length === 0) {
-        throw new Error('No polygon features to fill');
-    }
-
     const task = new TaskRunner('Fill Holes', 'GISTools');
     return task.run(async (t) => {
         t.updateProgress(40, 'Removing holes');
         await yieldToUI();
-        const { features: filled, holesRemoved } = fillHoleFeatures(features);
+        const { geojson, holesRemoved } = fillHolesFeatureCollection(dataset.geojson);
         t.updateProgress(90, 'Building layer');
-        return createSpatialDataset(`${dataset.name}_filled`, {
-            type: 'FeatureCollection',
-            features: filled
-        }, { format: 'derived', holesRemoved });
+        return createSpatialDataset(`${dataset.name}_filled`, geojson, { format: 'derived', holesRemoved });
     });
 }
 
@@ -1202,24 +806,13 @@ export async function splitPolygonsByLine(polygonDataset, lineDataset) {
     _requireDisplayReady(lineDataset, 'Split by line');
     if (typeof turf === 'undefined') throw new Error('Turf.js not loaded');
 
-    const polygons = listPolygonFeatures(polygonDataset.geojson.features);
-    if (!polygons.length) throw new Error('Polygon layer has no polygon features');
-    const lines = (lineDataset.geojson.features || []).filter((f) => (
-        f.geometry && (f.geometry.type === 'LineString' || f.geometry.type === 'MultiLineString')
-    ));
-    if (!lines.length) throw new Error('Line layer has no line features');
-
     const task = new TaskRunner('Split by Line', 'GISTools');
     return task.run(async (t) => {
-        t.updateProgress(20, `Splitting ${polygons.length} polygon(s)`);
+        t.updateProgress(20, 'Splitting polygons');
         await yieldToUI();
-        const pieces = splitPolygonFeaturesByLines(polygons, lines);
-        if (!pieces.length) throw new Error('Split produced no polygons');
+        const { geojson } = splitByLineFeatureCollections(polygonDataset.geojson, lineDataset.geojson);
         t.updateProgress(90, 'Building layer');
-        return createSpatialDataset(`${polygonDataset.name}_split_line`, {
-            type: 'FeatureCollection',
-            features: pieces
-        }, { format: 'derived' });
+        return createSpatialDataset(`${polygonDataset.name}_split_line`, geojson, { format: 'derived' });
     });
 }
 
@@ -1234,22 +827,13 @@ export async function splitPolygonsByPolygon(polygonDataset, splitterDataset) {
     _requireDisplayReady(splitterDataset, 'Split by polygon');
     if (typeof turf === 'undefined') throw new Error('Turf.js not loaded');
 
-    const polygons = listPolygonFeatures(polygonDataset.geojson.features);
-    if (!polygons.length) throw new Error('Polygon layer has no polygon features');
-    const splitters = listPolygonFeatures(splitterDataset.geojson.features);
-    if (!splitters.length) throw new Error('Splitter layer has no polygon features');
-
     const task = new TaskRunner('Split by Polygon', 'GISTools');
     return task.run(async (t) => {
-        t.updateProgress(20, `Splitting ${polygons.length} polygon(s)`);
+        t.updateProgress(20, 'Splitting polygons');
         await yieldToUI();
-        const pieces = splitPolygonFeaturesByPolygons(polygons, splitters);
-        if (!pieces.length) throw new Error('Split produced no polygons');
+        const { geojson } = splitByPolygonFeatureCollections(polygonDataset.geojson, splitterDataset.geojson);
         t.updateProgress(90, 'Building layer');
-        return createSpatialDataset(`${polygonDataset.name}_split_poly`, {
-            type: 'FeatureCollection',
-            features: pieces
-        }, { format: 'derived' });
+        return createSpatialDataset(`${polygonDataset.name}_split_poly`, geojson, { format: 'derived' });
     });
 }
 
