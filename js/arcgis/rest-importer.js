@@ -1,6 +1,6 @@
 /**
  * ArcGIS REST Feature Layer Importer (public only, no SDK)
- * Uses fetch() and standard REST query parameters
+ * Uses js/arcgis/rest-client.js for HTTP
  */
 import logger from '../core/logger.js';
 import {
@@ -25,68 +25,27 @@ import { createSpatialChunkWriter } from '../workspace/spatial-chunk-writer.js';
 import { applyArcgisScaleRangeToLayer } from '../map/scale-range.js';
 import { requiredStyleFieldsFromDrawingInfo, styleFromArcgisMetadata } from './drawing-info.js';
 import { canonicalUdotFiberLayerUrl } from '../symbology/udot-fiber/constants.js';
-import { assemblePolygon, ringIsClockwise } from '../import/stream/shp-stream-parser.js';
+import {
+    arcgisFetchJson,
+    arcgisLayerCapabilities,
+    arcgisQueryAllEsriFeatures,
+    arcgisQueryFeatureCount,
+    arcgisResolveLayerAttribution,
+    arcgisResponseExceededTransferLimit,
+    closeRing,
+    convertEsriGeometry,
+    esriRingsToGeoJSON,
+    DEFAULT_ARCGIS_QUERY_TIMEOUT_MS
+} from './rest-client.js';
+
+export {
+    arcgisResponseExceededTransferLimit,
+    closeRing,
+    esriRingsToGeoJSON
+} from './rest-client.js';
 
 /** Maximum features to download without explicit user override. */
 export const ARCGIS_MAX_FEATURES = 250_000;
-
-/** Server continue signal for paginated query responses (json or geojson). */
-export function arcgisResponseExceededTransferLimit(data) {
-    return data?.exceededTransferLimit === true || data?.properties?.exceededTransferLimit === true;
-}
-
-/** Close a ring when first and last vertices differ. */
-export function closeRing(ring) {
-    if (!ring?.length) return ring;
-    const [x0, y0] = ring[0];
-    const [x1, y1] = ring[ring.length - 1];
-    if (x0 === x1 && y0 === y1) return ring;
-    return [...ring, [x0, y0]];
-}
-
-/** RFC 7946 winding: exterior counter-clockwise, holes clockwise. */
-function ringToRfc7946(ring, isExterior) {
-    const closed = closeRing(ring);
-    if (closed.length < 4) return null;
-    const clockwise = ringIsClockwise(closed);
-    const wantClockwise = !isExterior;
-    if (clockwise === wantClockwise) return closed;
-    return closed.slice().reverse();
-}
-
-/**
- * Convert Esri JSON polygon rings to GeoJSON Polygon/MultiPolygon.
- * Esri: clockwise exteriors, counter-clockwise holes; holes nest under containing exterior.
- */
-export function esriRingsToGeoJSON(rings) {
-    if (!rings?.length) return null;
-    const closedRings = rings.map(closeRing).filter((ring) => ring.length >= 4);
-    if (!closedRings.length) return null;
-
-    const assembled = assemblePolygon(closedRings);
-    if (!assembled) return null;
-
-    const normalizePolygon = (polyRings) => {
-        const out = [];
-        for (let i = 0; i < polyRings.length; i++) {
-            const normalized = ringToRfc7946(polyRings[i], i === 0);
-            if (normalized) out.push(normalized);
-        }
-        return out.length ? out : null;
-    };
-
-    if (assembled.type === 'Polygon') {
-        const coordinates = normalizePolygon(assembled.coordinates);
-        return coordinates ? { type: 'Polygon', coordinates } : null;
-    }
-
-    const multi = assembled.coordinates.map(normalizePolygon).filter(Boolean);
-    if (!multi.length) return null;
-    if (multi.length === 1) {
-        return { type: 'Polygon', coordinates: multi[0] };
-    }
-    return { type: 'MultiPolygon', coordinates: multi };
-}
 
 /**
  * Convert one ESRI feature JSON object to GeoJSON Feature.
@@ -105,6 +64,7 @@ export function esriFeatureToGeoJSON(f, convertGeometry) {
 /** Whether UI should confirm before downloading a layer over the soft feature cap. */
 export function arcgisNeedsLargeDownloadConfirm(metadata, queryOptions = {}) {
     if (queryOptions.allowLargeDownload || queryOptions.spatialFilter) return false;
+    if (metadata?.countFailed) return true;
     const total = metadata?.totalCount;
     return total != null && total > ARCGIS_MAX_FEATURES;
 }
@@ -166,10 +126,15 @@ export async function appendArcgisFeaturesToWorkspace(
     return writer.writtenCount - startIndex;
 }
 
-function attachArcgisImportStyle(dataset, metadata) {
+function attachArcgisImportStyle(dataset, metadata, importMeta = {}) {
     const styled = applyArcgisScaleRangeToLayer(dataset, metadata);
     const style = styleFromArcgisMetadata(metadata);
     if (style) styled._arcgisStyle = style;
+    if (metadata?.copyrightText) {
+        styled.attribution = metadata.copyrightText;
+    }
+    if (importMeta.truncated) styled.truncated = true;
+    if (importMeta.capped) styled.capped = true;
     return styled;
 }
 
@@ -193,34 +158,7 @@ export class ArcGISRestImporter {
         const cleanUrl = this.normalizeUrl(url);
 
         try {
-            const response = await fetch(`${cleanUrl}?f=json`, {
-                signal: AbortSignal.timeout(15000)
-            });
-
-            if (response.status === 401 || response.status === 403) {
-                throw new AppError(
-                    'This layer requires authentication. Only public layers are supported.',
-                    ErrorCategory.AUTH_REQUIRED,
-                    { url, status: response.status }
-                );
-            }
-            if (!response.ok) {
-                throw new AppError(
-                    `Server returned HTTP ${response.status}`,
-                    ErrorCategory.HTTP_4XX,
-                    { url, status: response.status }
-                );
-            }
-
-            const data = await response.json();
-
-            if (data.error) {
-                throw new AppError(
-                    data.error.message || 'Service returned an error',
-                    ErrorCategory.HTTP_4XX,
-                    { url, error: data.error }
-                );
-            }
+            const data = await arcgisFetchJson(`${cleanUrl}?f=json`);
 
             if (!data.fields && !data.type) {
                 throw new AppError(
@@ -229,6 +167,9 @@ export class ArcGISRestImporter {
                     { url }
                 );
             }
+
+            const capabilities = arcgisLayerCapabilities(data);
+            const copyrightText = await arcgisResolveLayerAttribution(cleanUrl, data);
 
             this.metadata = {
                 name: data.name || 'ArcGIS Layer',
@@ -246,18 +187,22 @@ export class ArcGISRestImporter {
                 maxRecordCount: data.maxRecordCount || 1000,
                 objectIdField: data.objectIdField || data.objectIdFieldName || 'OBJECTID',
                 url: cleanUrl,
-                supportsResultOffset: data.advancedQueryCapabilities?.supportsPagination !== false,
-                totalCount: null
+                capabilities,
+                supportsResultOffset: capabilities.supportsResultOffset,
+                copyrightText,
+                totalCount: null,
+                countFailed: false
             };
 
-            // Try to get total count
-            try {
-                const countResp = await fetch(`${cleanUrl}/query?where=1=1&returnCountOnly=true&f=json`);
-                const countData = await countResp.json();
-                if (countData.count != null) {
-                    this.metadata.totalCount = countData.count;
-                }
-            } catch (_) { /* ignore count errors */ }
+            const { count, countFailed } = await arcgisQueryFeatureCount(cleanUrl, {
+                where: '1=1',
+                returnGeometry: false,
+                outFields: 'OBJECTID'
+            }, { timeoutMs: DEFAULT_ARCGIS_QUERY_TIMEOUT_MS });
+            this.metadata.countFailed = countFailed;
+            if (!countFailed && count != null) {
+                this.metadata.totalCount = count;
+            }
 
             logger.info('ArcGIS', 'Metadata fetched', {
                 name: this.metadata.name,
@@ -297,6 +242,17 @@ export class ArcGISRestImporter {
 
         const t = task || new TaskRunner('ArcGIS Download', 'ArcGIS');
         this.abortController = new AbortController();
+        if (queryOptions.signal) {
+            if (queryOptions.signal.aborted) {
+                this.abortController.abort();
+            } else {
+                queryOptions.signal.addEventListener(
+                    'abort',
+                    () => this.abortController.abort(),
+                    { once: true }
+                );
+            }
+        }
 
         const {
             outFields = '*',
@@ -314,9 +270,7 @@ export class ArcGISRestImporter {
 
         const url = this.metadata.url;
         const maxRec = this.metadata.maxRecordCount || 1000;
-        let offset = 0;
         let page = 0;
-        let done = false;
         const totalExpected = this.metadata.totalCount;
         const streamToWorkspace = returnGeometry && queryOptions.useWorkspace !== false;
         const convertGeom = (g) => this.convertGeometry(g);
@@ -326,6 +280,8 @@ export class ArcGISRestImporter {
         let workspaceLayerId = null;
         let datasetShell = null;
         let featureOffset = 0;
+        let importTruncated = false;
+        let importCapped = false;
 
         if (
             totalExpected != null
@@ -340,136 +296,89 @@ export class ArcGISRestImporter {
             );
         }
 
+        const enforceCap = !allowLargeDownload;
+        const featureCap = enforceCap ? ARCGIS_MAX_FEATURES : null;
+
         logger.info('ArcGIS', 'Starting download', { where, outFields, maxRec, totalExpected });
 
         const run = async (runner) => {
-            while (!done) {
-                runner.throwIfCancelled();
-                page++;
+            runner.throwIfCancelled();
 
-                const params = new URLSearchParams({
+            const queryResult = await arcgisQueryAllEsriFeatures({
+                layerUrl: url,
+                layerMeta: this.metadata,
+                query: {
                     where,
-                    outFields: Array.isArray(outFields) ? outFields.join(',') : outFields,
-                    returnGeometry: String(returnGeometry),
-                    f: 'json',
-                    resultOffset: String(offset),
-                    resultRecordCount: String(maxRec),
-                    outSR: '4326'
-                });
-
-                if (spatialFilter) {
-                    params.set('geometry', JSON.stringify(spatialFilter));
-                    params.set('geometryType', 'esriGeometryEnvelope');
-                    params.set('spatialRel', 'esriSpatialRelIntersects');
-                    params.set('inSR', '4326');
-                }
-
-                const orderBy = queryOptions.orderByFields;
-                params.set(
-                    'orderByFields',
-                    orderBy != null && String(orderBy).length > 0
-                        ? String(orderBy)
-                        : this.metadata.objectIdField
-                );
-
-                let data;
-                let retries = 0;
-                const maxRetries = 3;
-
-                while (retries <= maxRetries) {
-                    try {
-                        const resp = await fetch(`${url}/query?${params}`, {
-                            signal: this.abortController.signal
-                        });
-
-                        if (resp.status === 429) {
-                            retries++;
-                            if (retries > maxRetries) throw new AppError('Rate limited', ErrorCategory.RATE_LIMIT);
-                            logger.warn('ArcGIS', `Rate limited, retry ${retries}/${maxRetries}`);
-                            await new Promise(r => setTimeout(r, 2000 * retries));
-                            continue;
+                    outFields,
+                    returnGeometry,
+                    orderByFields: queryOptions.orderByFields,
+                    ...(spatialFilter
+                        ? {
+                            geometry: spatialFilter,
+                            geometryType: 'esriGeometryEnvelope',
+                            spatialRel: 'esriSpatialRelIntersects',
+                            inSR: '4326'
                         }
-
-                        if (!resp.ok) {
-                            throw new AppError(`HTTP ${resp.status}`, resp.status >= 500 ? ErrorCategory.HTTP_5XX : ErrorCategory.HTTP_4XX);
+                        : {})
+                },
+                signal: this.abortController.signal,
+                featureCap,
+                enforceCapWhenCountUnknown: Boolean(this.metadata.countFailed),
+                onPage: async (features) => {
+                    runner.throwIfCancelled();
+                    page++;
+                    if (streamToWorkspace) {
+                        if (!workspaceLayerId) {
+                            datasetShell = createChunkedSpatialDataset(
+                                this.metadata.name,
+                                { schema: schemaFromArcgisMetadata(this.metadata, selectedFields) },
+                                { format: 'arcgis-rest', url, importSelectedFields: selectedFields || undefined }
+                            );
+                            workspaceLayerId = datasetShell.workspaceLayerId || datasetShell.id;
+                            await createWorkspaceLayer({
+                                id: workspaceLayerId,
+                                name: this.metadata.name,
+                                source: datasetShell.source,
+                                schema: datasetShell.schema
+                            });
                         }
-
-                        data = await resp.json();
-                        break;
-                    } catch (e) {
-                        if (e.name === 'AbortError') throw e;
-                        if (e instanceof AppError) throw e;
-                        retries++;
-                        if (retries > maxRetries) throw e;
-                        logger.warn('ArcGIS', `Request failed, retry ${retries}/${maxRetries}`, { error: e.message });
-                        await new Promise(r => setTimeout(r, 1000 * retries));
-                    }
-                }
-
-                if (data.error) {
-                    throw new AppError(data.error.message || 'Query error', ErrorCategory.HTTP_4XX, { error: data.error });
-                }
-
-                const features = data.features || [];
-                if (features.length === 0) {
-                    done = true;
-                    break;
-                }
-
-                if (streamToWorkspace) {
-                    if (!workspaceLayerId) {
-                        datasetShell = createChunkedSpatialDataset(
-                            this.metadata.name,
-                            { schema: schemaFromArcgisMetadata(this.metadata, selectedFields) },
-                            { format: 'arcgis-rest', url, importSelectedFields: selectedFields || undefined }
+                        const added = await appendArcgisFeaturesToWorkspace(
+                            workspaceLayerId,
+                            features,
+                            convertGeom,
+                            featureOffset,
+                            selectedFields,
+                            mapDisplayFields
                         );
-                        workspaceLayerId = datasetShell.workspaceLayerId || datasetShell.id;
-                        await createWorkspaceLayer({
-                            id: workspaceLayerId,
-                            name: this.metadata.name,
-                            source: datasetShell.source,
-                            schema: datasetShell.schema
-                        });
+                        featureOffset += added;
+                    } else {
+                        _pushAll(allFeatures, features);
                     }
-                    const added = await appendArcgisFeaturesToWorkspace(
-                        workspaceLayerId,
-                        features,
-                        convertGeom,
-                        featureOffset,
-                        selectedFields,
-                        mapDisplayFields
-                    );
-                    featureOffset += added;
-                } else {
-                    _pushAll(allFeatures, features);
+
+                    const fetchedTotal = streamToWorkspace ? featureOffset : allFeatures.length;
+                    logger.debug('ArcGIS', `Page ${page}`, { fetched: features.length, total: fetchedTotal });
+
+                    const pct = totalExpected
+                        ? Math.round((fetchedTotal / totalExpected) * 90)
+                        : Math.min(page * 10, 90);
+                    runner.updateProgress(pct, `Page ${page}: ${fetchedTotal.toLocaleString()} features...`);
+                    await yieldToUI();
                 }
+            });
 
-                const fetchedTotal = streamToWorkspace ? featureOffset : allFeatures.length;
-                logger.debug('ArcGIS', `Page ${page}`, { fetched: features.length, total: fetchedTotal });
+            importTruncated = queryResult.truncated;
+            importCapped = queryResult.capped;
 
-                if (
-                    !streamToWorkspace
-                    && fetchedTotal > ARCGIS_MAX_FEATURES
-                    && !allowLargeDownload
-                ) {
-                    throw new AppError(
-                        `Download exceeded ${ARCGIS_MAX_FEATURES.toLocaleString()} features. Narrow your query or filter.`,
-                        ErrorCategory.OUT_OF_MEMORY,
-                        { fetched: fetchedTotal }
-                    );
-                }
-
-                if (!arcgisResponseExceededTransferLimit(data)) {
-                    done = true;
-                }
-
-                const pct = totalExpected
-                    ? Math.round((fetchedTotal / totalExpected) * 90)
-                    : Math.min(page * 10, 90);
-                runner.updateProgress(pct, `Page ${page}: ${fetchedTotal.toLocaleString()} features...`);
-
-                offset += features.length;
-                await yieldToUI();
+            if (
+                !streamToWorkspace
+                && allFeatures.length > ARCGIS_MAX_FEATURES
+                && !allowLargeDownload
+            ) {
+                throw new AppError(
+                    `Download exceeded ${ARCGIS_MAX_FEATURES.toLocaleString()} features. Narrow your query or filter.`,
+                    ErrorCategory.OUT_OF_MEMORY,
+                    { fetched: allFeatures.length }
+                );
             }
 
             if (streamToWorkspace) {
@@ -496,7 +405,10 @@ export class ArcGISRestImporter {
                     },
                     _viewportCache: true
                 };
-                return attachArcgisImportStyle(workspaceResult, this.metadata);
+                return attachArcgisImportStyle(workspaceResult, this.metadata, {
+                    truncated: importTruncated,
+                    capped: importCapped
+                });
             }
 
             const geojsonFeatures = allFeatures.map((f) => esriFeatureToGeoJSON(f, (g) => this.convertGeometry(g)));
@@ -515,15 +427,22 @@ export class ArcGISRestImporter {
                         mapDisplayFields: mapDisplayFields.length ? mapDisplayFields : undefined
                     }
                 );
-                return attachArcgisImportStyle(dataset, this.metadata);
+                return attachArcgisImportStyle(dataset, this.metadata, {
+                    truncated: importTruncated,
+                    capped: importCapped
+                });
             } else {
                 const rows = geojsonFeatures.map(f => f.properties);
-                return createTableDataset(
+                const table = createTableDataset(
                     this.metadata.name,
                     rows,
                     null,
                     { format: 'arcgis-rest', url }
                 );
+                return attachArcgisImportStyle(table, this.metadata, {
+                    truncated: importTruncated,
+                    capped: importCapped
+                });
             }
         };
 
@@ -707,9 +626,7 @@ export class ArcGISRestImporter {
 
     async _fetchJson(url) {
         const sep = url.includes('?') ? '&' : '?';
-        const resp = await fetch(`${url}${sep}f=json`, { signal: AbortSignal.timeout(15000) });
-        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-        return resp.json();
+        return arcgisFetchJson(`${url}${sep}f=json`);
     }
 }
 
