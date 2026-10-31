@@ -114,7 +114,8 @@ export const V1_PIPELINE_NODE_TYPES = new Set([
     'split-by-line',
     'split-by-polygon',
     'add-to-map',
-    'preview'
+    'preview',
+    'export'
 ]);
 
 /**
