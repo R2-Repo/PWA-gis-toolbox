@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="GIS Toolbox regression">
+  <metadata><name>count-sync</name></metadata>
+  <wpt lat="39.50" lon="-110.68"><name>wpt-a</name></wpt>
+  <wpt lat="39.40" lon="-110.09"><name>wpt-b</name></wpt>
+  <trk>
+    <name>multi-seg-track</name>
+    <trkseg>
+      <trkpt lat="39.50" lon="-110.68"/>
+      <trkpt lat="39.45" lon="-110.40"/>
+    </trkseg>
+    <trkseg>
+      <trkpt lat="39.45" lon="-110.40"/>
+      <trkpt lat="39.86" lon="-110.22"/>
+    </trkseg>
+  </trk>
+  <rte>
+    <name>sample-route</name>
+    <rtept lat="39.50" lon="-110.68"/>
+    <rtept lat="39.40" lon="-110.09"/>
+  </rte>
+</gpx>

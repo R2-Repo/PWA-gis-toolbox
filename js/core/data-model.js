@@ -199,11 +199,25 @@ export function getLayerFeatureCount(layer) {
         return layer.geojson?.features?.length ?? layer.schema?.featureCount ?? 0;
     }
     if (layer.type === 'spatial') {
-        return layer.schema?.featureCount
-            ?? layer.geojson?.features?.length
-            ?? 0;
+        const stored = layer.geojson?.features?.length;
+        if (Number.isFinite(stored) && stored > 0) return stored;
+        return layer.schema?.featureCount ?? (Number.isFinite(stored) ? stored : 0);
     }
     return layer.rows?.length ?? 0;
+}
+
+/**
+ * Keep schema.featureCount aligned with the in-memory FeatureCollection (standard import path).
+ * Workspace / chunked layers store counts in schema + IndexedDB — do not infer from geojson packet.
+ * @param {object|null|undefined} dataset
+ */
+export function syncSpatialSchemaFeatureCount(dataset) {
+    if (!dataset || dataset.type !== 'spatial' || isWorkspaceLayer(dataset)) return dataset;
+    const count = dataset.geojson?.features?.length ?? 0;
+    if (dataset.schema) {
+        dataset.schema = { ...dataset.schema, featureCount: count };
+    }
+    return dataset;
 }
 
 /**
@@ -616,7 +630,7 @@ export function splitByGeometryType(dataset) {
 
 export default {
     createSpatialDataset, createTableDataset, createChunkedSpatialDataset,
-    isWorkspaceLayer, isSpatialLayer, getLayerFeatureCount,
+    isWorkspaceLayer, isSpatialLayer, getLayerFeatureCount, syncSpatialSchemaFeatureCount,
     tableToSpatial, spatialToTable,
     analyzeSchema, analyzeSchemaAsync, analyzeTableSchema, createSchemaAccumulator,
     getSelectedFields, applyFieldSelection,

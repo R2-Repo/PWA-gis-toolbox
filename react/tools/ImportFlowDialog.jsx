@@ -377,18 +377,18 @@ export function ImportFlowDialog({
         const kitOnly = fileList.length > 0 && fileList.every(isProjectKitFile);
 
         if (kitOnly) {
+            setImporting(true);
+            setImportProgress({ percent: 0, step: 'Importing Toolbox project…' });
             try {
-                await onImportFiles?.(fileList, {
-                    preflightConfirmed: true,
-                    selectedFields: fieldNames.length ? fields : null,
-                    useWorkspace: importOptions.useWorkspace ?? routeAssessment?.useWorkspace,
-                    ...importOptions
-                }, {
-                    onComplete: () => onCancel?.(),
-                    onAborted: () => {}
-                });
+                const { importProjectKitFromFile } = await import('../../js/import/project-kit-file-import.js');
+                for (const file of fileList) {
+                    await importProjectKitFromFile(file);
+                }
             } catch (err) {
                 setError(err?.message || 'Unable to import project file.');
+            } finally {
+                setImporting(false);
+                onCancel?.();
             }
             return;
         }
