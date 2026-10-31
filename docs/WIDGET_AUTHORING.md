@@ -5,6 +5,12 @@
 
 ---
 
+## Standing rules
+
+Same as the playbook: **no live API/REST in tests or agent runs** (mocks/fixtures only); **`staging` only** (never `main`, never `.github/workflows/`); **rebase + green `npm test`** before push; **no force-push**.
+
+---
+
 ## Widget vs GIS Tool vs Pipeline Node
 
 | Need | Build as |
@@ -13,33 +19,38 @@
 | Multi-step wizard with map interaction, preview, bulk edits | **GIS Widget** (this guide) |
 | Reusable step in the visual workflow graph | **Pipeline node** (`js/workflow/nodes/`) |
 
+A **shared tool registry** in `js/tools/` (evolving from `tool-catalog.js`) is **planned** to unify tools, widgets, and nodes — not shipped yet.
+
 ---
 
 ## Architecture (one folder per widget)
 
 ```
 js/widgets/<widget-id>/
-  engine.js       — pure logic (Vitest first)
-  controller.js   — opens modal, wires map/layer callbacks
+  engine.js (+ extra modules when complexity grows)
+  controller.js
 
 react/widgets/
   <Widget>Dialog.jsx
   mount<Widget>Dialog.jsx
-  shared/         — LayerSelect, FieldSelect, WidgetStepWizard, RunPreviewFooter
+  shared/         — WidgetPanelShell, WidgetStepWizard, RunPreviewFooter, …
 
 js/widgets/registry.js   — SINGLE registration point
 ```
 
 Shared infrastructure:
 
-- `js/widgets/registry.js` — `GIS_WIDGETS` array, `buildWidgetActions()`, `openWidget()`
-- `react/panels/WidgetPanel.jsx` — panel buttons (reads `GIS_WIDGETS`)
+- `js/widgets/registry.js` — `GIS_WIDGETS`, `GIS_WIDGETS_HIDDEN`, `getVisibleWidgets()`, `buildWidgetActions()`, `openWidget()`
+- `react/panels/WidgetPanel.jsx` — visible widgets only
+- `js/widgets/widget-state-store.js` — session restore → `openWidget(..., { restoreState })`
 - `js/widgets/widget-context.js` — `getSpatialLayerOptions()`, `createWidgetContext()`
-- `js/widgets/map-draw-helpers.js` — `createAreaDrawHandlers()` for area draw workflows
-- `js/ui/open-react-island.js` — modal host + dynamic React dialog mount
-- `js/tools/tool-handlers.js` — merges `buildWidgetActions(getWidgetContext)` into `APP_ACTIONS`
+- `js/widgets/map-draw-helpers.js` — area / centerline draw helpers
+- `js/ui/open-react-island.js` — modal host
+- `js/tools/tool-handlers.js` — `getWidgetContext()`, merges `buildWidgetActions()` (visible widgets only)
 
-Controllers receive `WidgetContext` from `getWidgetContext()` in `tool-handlers.js`. See [ARCHITECTURE.md](ARCHITECTURE.md) for the full app layout.
+**Registry exceptions today:** project-stationing import menu and plan-set-callouts hydrate/context-menu hooks are wired from `tool-handlers.js` — do not add more bypasses.
+
+App layout overview: [`AGENTS.md`](../AGENTS.md).
 
 ---
 
@@ -48,35 +59,40 @@ Controllers receive `WidgetContext` from `getWidgetContext()` in `tool-handlers.
 | Phase | Output | Gate |
 |-------|--------|------|
 | 0. Spec | Inputs, steps, map interactions, output layer | Widget vs Tool decision |
-| 1. Engine | `engine.js` + `tests/<widget>-engine.test.js` | `npm test` green |
-| 2. Dialog | `react/widgets/<Widget>Dialog.jsx` using shared primitives | Renders in modal via `mountIsland` |
-| 3. Controller | `controller.js` wires context → props | Opens from registry |
-| 4. Register | Entry in `GIS_WIDGETS` array | Panel + `APP_ACTIONS` work |
+| 1. Engine | Pure modules under `js/widgets/<id>/` | Update/add Vitest when logic changes |
+| 2. Dialog | `*Dialog.jsx` using shared shell/footer | Renders via `mountIsland` |
+| 3. Controller | Wires context → props; optional `{ restoreState }` | Opens from registry |
+| 4. Register | `GIS_WIDGETS` or `GIS_WIDGETS_HIDDEN` | Panel and/or `openWidget()` |
 | 5. Smoke | Browser checklist | Full workflow end-to-end |
+
+---
+
+## Shared UI conventions
+
+- **`WidgetPanelShell`** — always use for new dialogs (`gis-widget` class).
+- **`RunPreviewFooter`** — **preferred** Cancel/Run footer for new widgets (shell default, or explicit `footer=` / import).
+- **`WidgetStepWizard`** — use for linear steps; pick **`variant="compact"`** when step labels need horizontal space (see Georeference, Fiber Procurement, Layer Match).
 
 ---
 
 ## Adding a new widget (checklist)
 
-### 1. Scaffold (optional)
+### 1. Scaffold
 
-```bash
-npm run new:widget -- --id my-widget --steps 3
-```
+Copy the closest reference under `js/widgets/` and matching `react/widgets/*Dialog.jsx` + mount helper.
 
-### 2. Engine (`js/widgets/my-widget/engine.js`)
+### 2. Engine
 
-- Export pure functions: validation, run, constants
-- No DOM, no `mapService`, no UI imports
-- Add `tests/my-widget-engine.test.js`
+- Pure functions: validation, run, constants
+- No DOM, `mapService`, or UI imports
+- Add or extend `tests/<topic>.test.js` when you change behavior (see existing `*-engine.test.js` files)
 
-### 3. React dialog (`react/widgets/MyWidgetDialog.jsx`)
+### 3. React dialog
 
-- Form state + step UI only
-- Side effects via callback props (`onRun`, `onCancel`, `onDrawArea`, …)
-- Reuse `react/widgets/shared/` components where possible
+- Form state + step UI; side effects via props (`onRun`, `onCancel`, draw callbacks, …)
+- Reuse `react/widgets/shared/`
 
-### 4. Mount helper (`react/widgets/mountMyWidgetDialog.jsx`)
+### 4. Mount helper
 
 ```jsx
 import { mountIsland } from '../mountIsland.jsx';
@@ -87,13 +103,13 @@ export function mountMyWidgetDialog(element, props = {}) {
 }
 ```
 
-### 5. Controller (`js/widgets/my-widget/controller.js`)
+### 5. Controller
 
 ```js
 import { openReactIsland } from '../../ui/open-react-island.js';
 import { getSpatialLayerOptions } from '../widget-context.js';
 
-export async function openMyWidget(ctx) {
+export async function openMyWidget(ctx, { restoreState = null } = {}) {
     await openReactIsland({
         title: 'My Widget',
         width: '560px',
@@ -101,85 +117,90 @@ export async function openMyWidget(ctx) {
         mountExport: 'mountMyWidgetDialog',
         getProps: (close) => ({
             layers: getSpatialLayerOptions(ctx, { includeFields: true }),
+            initialState: restoreState,
             onCancel: close,
-            onRun: async (input) => { /* use ctx.mapService, ctx.getLayers, etc. */ }
+            onRun: async (input) => { /* ctx.mapService, ctx.addLayer, … */ }
         })
     });
 }
 ```
 
-### 6. Registry entry (`js/widgets/registry.js`)
+Implement **`restoreState`** only if the widget serializes open UI into `widget-state-store`.
+
+### 6. Registry entry
 
 ```js
-import { openMyWidget } from './my-widget/controller.js';
-
-// Add to GIS_WIDGETS array:
 {
     type: 'my-widget',
     action: 'openMyWidget',
     label: 'My Widget',
     icon: '⚙️',
-    tip: 'Short description for the panel tooltip.',
+    tip: 'Short panel tooltip.',
+    requiredCapabilities: [],  // optional; omit or [] for web
     open: openMyWidget
 }
 ```
 
-That's it — `WidgetPanel` and `APP_ACTIONS` update automatically from the registry entry.
+- **`GIS_WIDGETS`** — panel button + `APP_ACTIONS` entry (after capability filter).
+- **`GIS_WIDGETS_HIDDEN`** — no panel button; open via **`openWidget('my-widget', ctx)`** from code.
 
-### Hidden widgets
+### 7. Smoke test (browser)
 
-Some widgets stay in the repo but are omitted from `GIS_WIDGETS` (panel + `APP_ACTIONS`). They live in `GIS_WIDGETS_HIDDEN` in `js/widgets/registry.js`. Example: **CRS Manager**. **Plan Set Callouts** is hidden and launched from Sheet Cutter after generate. To re-enable a hidden widget in the panel, move the entry from `GIS_WIDGETS_HIDDEN` into `GIS_WIDGETS`.
-
-### 7. Re-export shim (optional, for old import paths)
-
-If anything still imports from `react/tools/`, add:
-
-```js
-export { mountMyWidgetDialog } from '../widgets/mountMyWidgetDialog.jsx';
-```
+See checklist below.
 
 ---
 
-## WidgetContext (available in controllers)
+## WidgetContext (controllers)
 
-Defined in `js/widgets/widget-types.js`:
+From **`getWidgetContext()`** / **`widget-types.js`**:
 
-- `getLayers()`, `getLayerById(id)`
-- `mapService`, `addLayer`, `createSpatialDataset`
-- `showToast`
-- `setActiveLayer`, `updateSelectionUI` (selection workflows)
-- `analyzeSchema` (schema refresh after attribute writes)
-- `turf`
+- `getLayers()`, `getLayerById(id)`, `getActiveLayer()`
+- `mapService`, `addLayer`, `createSpatialDataset`, `removeLayers`
+- `showToast`, `refreshUI`, `setActiveLayer`
+- `analyzeSchema`, `openStorageManager`
+- `turf`, `platform`, `services`
+
+Selection: use **`mapService.getSelectedIndices`** + **`refreshUI`** (no `updateSelectionUI` on context).
 
 ---
 
-## Existing widgets
+## Existing widgets (engine Vitest coverage)
 
-| Widget | Folder | Engine tests |
-|--------|--------|--------------|
-| Find Features in Area | `spatial-analyzer/` | `spatial-analyzer-engine.test.js` |
-| Bulk Update | `bulk-update/` | `bulk-update-engine.test.js` |
+| Widget | Folder | Example tests |
+|--------|--------|----------------|
 | Route Centerline | `route-milepost-segment/` | `route-milepost-segment-engine.test.js` |
-| Project Stationing | `project-stationing/` | `project-stationing-engine.test.js` |
+| Sheet Cutter | `sheet-cutting/` | `sheet-cutting-engine.test.js` |
+| Plan Set Callouts | `plan-set-callouts/` | `plan-set-callouts-engine.test.js`, … |
+| Layer Match Assistant | `layer-match-assistant/` | `layer-match-assistant-engine.test.js` |
+| Layer Summary | `layer-summary/` | `layer-summary-engine.test.js` |
+| Georeference | `georeference-raster/` | `georeference-raster-engine.test.js` |
+| Fiber Procurement | `fiber-procurement-design/` | `fiber-procurement-design-engine.test.js`, … |
+| Fiber Slack / OTDR | `fiber-slack-otdr-helper/` | `fiber-slack-otdr-helper-engine.test.js` |
+| Wireless Site Planning | `wireless-site-planning/` | `wireless-site-planning-engine.test.js` |
+
+Simple widgets (spatial-analyzer, bulk-update, proximity-join, spatial-join, project-stationing, crs-manager, query) rely on integration tests elsewhere or manual smoke unless you add dedicated engine tests.
+
+**Registered counts:** 9 visible + 9 hidden — see playbook for labels.
 
 ---
 
 ## Smoke checklist (browser)
 
-1. Open widget from left panel **GIS Widgets** section
+1. Open widget from left panel **GIS Widgets** (or trigger hidden widget from its host flow)
 2. Complete full workflow (all steps)
 3. Verify map interactions (draw, select, preview temp features)
 4. Verify output layer / attribute changes
-5. Cancel mid-flow — no stuck draw mode; map selection is always-on when idle (use `mapService.getSelectedIndices`, not local selection state)
-6. `npm test` still green
+5. Cancel mid-flow — no stuck draw mode; selection uses `mapService.getSelectedIndices` when idle
+6. **`npm test`** still green
 
-> **Mobile:** viewports below 768px show `MobileGate` (splash only). Widget smoke is tablet-or-wider only.
+**Mobile:** viewports below 768px show `MobileGate` only — smoke on tablet or wider.
 
 ---
 
 ## What not to do
 
-- Do not add widget logic inline in `tool-handlers.js` — use `controller.js`
-- Do not skip engine tests and go straight to UI
-- Do not build a plugin framework — one registry entry + one folder is enough
-- Do not require legacy `WidgetBase` for new widgets (React-only)
+- Do not add **new** widget logic inline in `tool-handlers.js`
+- Do not skip Vitest updates when changing engine behavior
+- Do not build a plugin framework
+- Do not require legacy `WidgetBase` (React-only)
+- Do not call live external services from tests

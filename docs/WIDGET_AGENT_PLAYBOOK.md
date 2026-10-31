@@ -5,35 +5,40 @@
 
 ---
 
+## Standing rules (agents and tests)
+
+- **No live API or REST calls** in agent work, tests, scripts, or the running app during automated runs (no ArcGIS REST, UGRC, geocoding, routing, tile, or data services). Use **local mocks and fixtures only**.
+- **Git:** develop on **`staging` only**. Never edit, push to, or merge into **`main`**. Never edit **`.github/workflows/`**. Never **force-push**.
+- Before pushing **`staging`**: **rebase** onto latest `origin/staging`, run **`npm ci`** then **`npm test`** (full Vitest suite), and push only when **green**.
+
+---
+
 ## What "widget" means in this repo
 
 In **gis-toolbox**, a "widget" is **not** an ArcGIS Experience Builder widget. It is a **multi-step GIS wizard** in the left panel:
 
-- **Pure JS engine** (`js/widgets/<id>/engine.js`)
-- **React dialog** (`react/widgets/<Widget>Dialog.jsx`)
+- **Pure JS engine** (usually `js/widgets/<id>/engine.js`; large widgets split into multiple modules)
+- **React dialog** (`react/widgets/<Widget>Dialog.jsx` or `PresentationLinkBuilder.jsx`)
 - **Controller** (`js/widgets/<id>/controller.js` — wires map/layer callbacks)
-- **Registry entry** (`js/widgets/registry.js` — makes it appear in the UI)
+- **Registry entry** (`js/widgets/registry.js` — panel visibility and `openWidget()` routing)
 
 ---
 
 ## Documentation in this repo
 
-| Document | Path | Status | Purpose |
-|----------|------|--------|---------|
-| **This playbook** | [`docs/WIDGET_AGENT_PLAYBOOK.md`](WIDGET_AGENT_PLAYBOOK.md) | Present | **Start here** for widget work — architecture, references, workflow |
-| **Authoring checklist** | [`docs/WIDGET_AUTHORING.md`](WIDGET_AUTHORING.md) | Present | Step-by-step build checklist, smoke test list, anti-patterns |
-| **Agent guide** | [`AGENTS.md`](../AGENTS.md) | Present | Git workflow, repo layout, links to widget docs |
-| **Development / deploy** | [`docs/DEVELOPMENT.md`](DEVELOPMENT.md) | Present | Local setup, GitHub Desktop workflow, deployment |
-| **Sheet cutting geometry** | [`docs/SHEET_CUTTING.md`](SHEET_CUTTING.md) | Present | **Clean sheet cutting** — canonical clipped-polygon model |
-| **Human overview** | [`README.md`](../README.md) | Present | Project summary + branch workflow |
+| Document | Path | Purpose |
+|----------|------|---------|
+| **This playbook** | [`docs/WIDGET_AGENT_PLAYBOOK.md`](WIDGET_AGENT_PLAYBOOK.md) | **Start here** — architecture, references, workflow |
+| **Authoring checklist** | [`docs/WIDGET_AUTHORING.md`](WIDGET_AUTHORING.md) | Step-by-step build checklist, smoke test list |
+| **Agent guide** | [`AGENTS.md`](../AGENTS.md) | Git workflow, repo layout |
+| **Development / deploy** | [`docs/DEVELOPMENT.md`](DEVELOPMENT.md) | Local setup, deployment |
+| **Sheet cutting geometry** | [`docs/SHEET_CUTTING.md`](SHEET_CUTTING.md) | Clean sheet cutting model |
 
-**Not in this repo yet** (do not assume these paths exist):
+**Tests:** `tests/` holds **~130 Vitest files** (`npm test` → `vitest run`). Add or update tests when you change engine logic; keep the full suite green before pushing `staging`.
 
-- `docs/ARCHITECTURE.md`, `docs/CRS_MANAGER.md`, `HANDOFF.md`
-- `tests/` (Vitest engine tests — add when requested or when restoring test harness)
-- `scripts/new-widget.mjs` (`npm run new:widget` is defined in `package.json` but the script file is missing)
+**Cursor rules:** `.cursor/rules/project-core.mdc`, `.cursor/rules/git-workflow.mdc`, `.cursor/rules/widget-authoring.mdc`
 
-**Cursor rules** (always applied): `.cursor/rules/project-core.mdc`, `.cursor/rules/git-workflow.mdc`, `.cursor/rules/widget-authoring.mdc`
+**New widgets:** copy the closest reference folder under `js/widgets/` (no `npm run new:widget` script in `package.json` today).
 
 ---
 
@@ -45,48 +50,65 @@ In **gis-toolbox**, a "widget" is **not** an ArcGIS Experience Builder widget. I
 | Multi-step wizard, map interaction, preview, bulk edits | **GIS Widget** | `js/widgets/<id>/` + `react/widgets/` |
 | Reusable step in the visual workflow graph | **Pipeline node** | `js/workflow/nodes/` + `react/workflow/inspectors/` |
 
+**Planned (not done):** a **shared tool registry** under `js/tools/` (likely evolving from `js/tools/tool-catalog.js`) to unify map tools, widgets, and workflow nodes and replace hand-maintained **`GIS_TOOL_V1_MODE`** allowlists. Widget registration stays in `js/widgets/registry.js` until that lands.
+
 ---
 
 ## Architecture at a glance
 
 ```
 Left panel (react/panels/WidgetPanel.jsx)
-    → reads GIS_WIDGETS from js/widgets/registry.js
-    → data-app-action triggers APP_ACTIONS in js/tools/tool-handlers.js
+    → getVisibleWidgets() from js/widgets/registry.js (capability filter)
+    → data-app-action → APP_ACTIONS in js/tools/tool-handlers.js
+    → buildWidgetActions() for visible widgets only
     → controller.js (js/widgets/<id>/)
-    → openReactIsland() (js/ui/open-react-island.js) — docked modal
+    → openReactIsland() (js/ui/open-react-island.js)
     → mount*Dialog.jsx → *Dialog.jsx (react/widgets/)
-    → engine.js (pure logic)
+    → engine (pure logic)
+
+Hidden widgets: openWidget(type, ctx, options) — not panel APP_ACTIONS
+Session restore: widget-state-store → restoreOpenWidget → openWidget(..., { restoreState })
 ```
 
-**Folder layout per widget:**
+**Typical folder layout:**
 
 ```
 js/widgets/<widget-id>/
-  engine.js       — pure logic (no DOM, no mapService, no UI)
-  controller.js   — opens modal, wires map/layer callbacks
+  engine.js           — pure logic (simple widgets)
+  controller.js       — modal + map wiring
+  …                   — complex widgets add modules (e.g. sheet-cutting, plan-set-callouts)
 
 react/widgets/
   <Widget>Dialog.jsx
   mount<Widget>Dialog.jsx
-  shared/         — reusable wizard primitives
+  shared/             — WidgetPanelShell, WidgetStepWizard, RunPreviewFooter, …
 
-js/widgets/registry.js   — SINGLE registration point
+js/widgets/registry.js   — SINGLE registration point (GIS_WIDGETS / GIS_WIDGETS_HIDDEN)
 ```
 
-**Shared infrastructure:**
+**Known exceptions in `tool-handlers.js` (prefer registry + controller over time):**
 
-| File | Role |
-|------|------|
-| `js/widgets/registry.js` | `GIS_WIDGETS`, `GIS_WIDGETS_HIDDEN`, `buildWidgetActions()`, `openWidget()` |
-| `react/panels/WidgetPanel.jsx` | Panel buttons (reads `GIS_WIDGETS`) |
-| `js/widgets/widget-context.js` | `getSpatialLayerOptions()`, `createWidgetContext()` |
-| `js/widgets/map-draw-helpers.js` | `createAreaDrawHandlers()`, `createCenterlineDrawHandlers()` |
-| `js/ui/open-react-island.js` | Modal host + Vite-bundled React mount |
-| `js/tools/tool-handlers.js` | `getWidgetContext()`, merges `buildWidgetActions()` into `APP_ACTIONS` |
-| `react/ui/DockedWidgetModal.jsx` | Single-screen: right panel dock; dual-screen: centered modal |
+- **Project Stationing:** context menu imports `openImportStationTable`, `isProjectStationingCenterline` from widget modules.
+- **Plan Set Callouts:** session bootstrap calls `hydratePlanSetCallouts`; context menu uses `plan-set-callouts/context-menu-bridge.js`.
 
-Controllers receive `WidgetContext` from `getWidgetContext()` in `tool-handlers.js`.
+Do **not** add new widget logic inline in `tool-handlers.js`.
+
+---
+
+## Shared React UX (`react/widgets/shared/`)
+
+| Component | Role |
+|-----------|------|
+| **`WidgetPanelShell`** | Scroll body + footer slot. **Default footer is `RunPreviewFooter`** (Cancel + Run). |
+| **`RunPreviewFooter`** | Standard Cancel / Run bar (`modal-footer`, `cancel-btn` / `apply-btn`). **Preferred for new widgets** — pass custom `runLabel` / `showRun` via shell props, or import directly when the footer is step-specific. |
+| **`WidgetStepWizard`** | Step chrome. **`variant="full"`** (default): numbered step pills. **`variant="compact"`**: “Step N of M” + progress bar (used when horizontal pills would crowd). |
+| **`LayerSelect`**, **`FieldSelect`**, **`CrsPicker`**, route search fields | Shared form controls |
+
+**Current practice:** all 18 dialogs use `WidgetPanelShell`. Seven use `WidgetStepWizard` (mix of `full` and `compact`). Many multi-step dialogs still **hand-roll** `modal-footer` via the shell `footer=` prop instead of `RunPreviewFooter` — behavior works but labels/order drift. **New work:** use `RunPreviewFooter` (or shell defaults) unless Back/Next wizard navigation requires a custom footer.
+
+**Multi-step without `WidgetStepWizard`:** Project Stationing (tabs), Sheet Cutting (phases).
+
+Use class `gis-widget` (via `WidgetPanelShell`) for docked modal CSS.
 
 ---
 
@@ -95,137 +117,48 @@ Controllers receive `WidgetContext` from `getWidgetContext()` in `tool-handlers.
 | Phase | Output | Gate |
 |-------|--------|------|
 | **0. Spec** | Inputs, steps, map interactions, output layer | Widget vs Tool decision |
-| **1. Engine** | `engine.js` (+ optional `tests/<id>-engine.test.js`) | Logic correct; run tests if harness exists |
+| **1. Engine** | Pure modules under `js/widgets/<id>/` | Logic correct; add/update Vitest when engine changes |
 | **2. Dialog** | `react/widgets/<Widget>Dialog.jsx` | Renders in modal |
-| **3. Controller** | `controller.js` wires context → props | Opens from registry |
-| **4. Register** | Entry in `GIS_WIDGETS` (or `GIS_WIDGETS_HIDDEN`) | Panel button works |
-| **5. Smoke** | Browser checklist (see [`WIDGET_AUTHORING.md`](WIDGET_AUTHORING.md)) | Full workflow end-to-end |
+| **3. Controller** | `controller.js` wires context → props | Opens from registry; accept `{ restoreState }` if persisting UI |
+| **4. Register** | `GIS_WIDGETS` or `GIS_WIDGETS_HIDDEN` | Panel / `openWidget()` works |
+| **5. Smoke** | Browser checklist ([`WIDGET_AUTHORING.md`](WIDGET_AUTHORING.md)) | End-to-end on tablet+ viewport |
 
 ---
 
-## Step-by-step: creating a new widget
+## Registry, capabilities, hidden widgets
 
-### Step 0 — Scaffold
+- **`GIS_WIDGETS`** — shown in `WidgetPanel.jsx` after **`getVisibleWidgets()`** filters on **`requiredCapabilities`** (`js/platform/contracts.js`).
+- **`GIS_WIDGETS_HIDDEN`** — implemented but not in the panel. **`buildWidgetActions()` only registers visible widgets** in `APP_ACTIONS`. Open hidden types via **`openWidget(type, ctx, options)`** (e.g. Sheet Cutter → Plan Set Callouts).
+- **`requiredCapabilities`** — if missing on the platform, the panel hides the widget and `buildWidgetActions` shows a toast instead of opening.
+- **`openWidget(type, ctx, options)`** — resolves **`ALL_GIS_WIDGETS`** (visible + hidden). Pass **`options.restoreState`** when restoring serialized wizard state.
 
-**Preferred (when restored):**
+**Session restore:** `js/widgets/widget-state-store.js` → **`restoreOpenWidget(type, ctx)`** → **`openWidget(type, ctx, { restoreState: entry.state })`**. Controllers that persist wizard UI should accept an optional second argument **`{ restoreState }`** (see sheet-cutting, plan-set-callouts, fiber-procurement-design, plan-production-export, query).
 
-```bash
-npm run new:widget -- --id my-widget --steps 3
-```
-
-**Today:** copy the closest reference widget folder and rename (see [Reference widgets](#reference-widgets-by-complexity)). Simplest starting point: duplicate `js/widgets/spatial-analyzer/` + `SpatialAnalyzerDialog.jsx` / `mountSpatialAnalyzerDialog.jsx`.
-
-### Step 1 — Engine (`js/widgets/my-widget/engine.js`)
-
-- Export **pure functions**: validation, run, constants
-- **No** DOM, `mapService`, or UI imports
-- Add `tests/my-widget-engine.test.js` when the test harness is available
-
-### Step 2 — React dialog (`react/widgets/MyWidgetDialog.jsx`)
-
-- Form state + step UI only
-- Side effects via callback props: `onRun`, `onCancel`, `onDrawArea`, etc.
-- Reuse `react/widgets/shared/`:
-
-| File | Purpose |
-|------|---------|
-| `WidgetPanelShell.jsx` | Dialog shell + footer slot |
-| `WidgetStepWizard.jsx` | Multi-step chrome |
-| `RunPreviewFooter.jsx` | Run/Next/Cancel footer |
-| `LayerSelect.jsx` | Layer picker |
-| `FieldSelect.jsx` | Field picker |
-| `CrsPicker.jsx` | CRS picker |
-| `RouteSearchField.jsx`, `RouteSearchResults.jsx` | Route search (Route Centerline) |
-
-Use class `gis-widget` (via `WidgetPanelShell`) so docked panel CSS applies.
-
-### Step 3 — Mount helper (`react/widgets/mountMyWidgetDialog.jsx`)
-
-```jsx
-import { mountIsland } from '../mountIsland.jsx';
-import { MyWidgetDialog } from './MyWidgetDialog.jsx';
-
-export function mountMyWidgetDialog(element, props = {}) {
-    return { unmount: mountIsland(element, MyWidgetDialog, props) };
-}
-```
-
-### Step 4 — Controller (`js/widgets/my-widget/controller.js`)
-
-```js
-import { openReactIsland } from '../../ui/open-react-island.js';
-import { getSpatialLayerOptions } from '../widget-context.js';
-
-export async function openMyWidget(ctx) {
-    await openReactIsland({
-        title: 'My Widget',
-        width: '560px',
-        mountPath: '../../../react/widgets/mountMyWidgetDialog.jsx',
-        mountExport: 'mountMyWidgetDialog',
-        getProps: (close) => ({
-            layers: getSpatialLayerOptions(ctx, { includeFields: true }),
-            onCancel: close,
-            onRun: async (input) => { /* ctx.mapService, ctx.getLayers, ctx.addLayer, etc. */ }
-        })
-    });
-}
-```
-
-**Map drawing:** `js/widgets/map-draw-helpers.js`
-
-- `createAreaDrawHandlers(ctx)` — rectangle / polygon / circle + use-layer-as-area
-- `createCenterlineDrawHandlers(ctx)` — polyline centerline draw
-
-**Reference:** `js/widgets/spatial-analyzer/controller.js` (area draw + run + results).
-
-**Selection workflows:** use `ctx.mapService.getSelectedIndices`, `ctx.setActiveLayer`, `ctx.refreshUI` — see `js/widgets/bulk-update/controller.js`.
-
-### Step 5 — Registry (`js/widgets/registry.js`)
-
-```js
-import { openMyWidget } from './my-widget/controller.js';
-
-// Add to GIS_WIDGETS:
-{
-    type: 'my-widget',
-    action: 'openMyWidget',
-    label: 'My Widget',
-    icon: '⚙️',
-    tip: 'Short description for the panel tooltip.',
-    open: openMyWidget
-}
-```
-
-`WidgetPanel.jsx` and `APP_ACTIONS` update automatically.
-
-**Hidden widgets:** add to `GIS_WIDGETS_HIDDEN` instead of `GIS_WIDGETS`. Example: **CRS Manager** (`crs-manager`) — implemented but not shown in the panel. **Plan Set Callouts** is also hidden; Sheet Cutter opens it after sheets are generated. To re-enable a hidden widget in the panel, move its entry into `GIS_WIDGETS`.
-
-### Step 6 — Re-export shim (optional)
-
-Legacy import paths only — see `js/widgets/spatial-analyzer-engine.js`.
-
-### Step 7 — Smoke test (browser)
-
-See checklist in [`WIDGET_AUTHORING.md`](WIDGET_AUTHORING.md). Run `npm run dev`, tablet-or-wider viewport (mobile shows `MobileGate` only).
+Optional registry fields: **`badge`**, **`optionalCapabilities`** (reserved).
 
 ---
 
 ## WidgetContext API
 
-Built in `getWidgetContext()` (`js/tools/tool-handlers.js`); types in `js/widgets/widget-types.js`.
+Built in **`getWidgetContext()`** (`js/tools/tool-handlers.js`); typedef in **`js/widgets/widget-types.js`**.
 
 | Property | Purpose |
 |----------|---------|
-| `getLayers()`, `getLayerById(id)` | Access datasets |
+| `getLayers()`, `getLayerById(id)` | Workspace datasets |
+| `getActiveLayer()` | Current active layer (runtime; extend typedef if documenting) |
 | `mapService` | MapLibre facade (draw, temp features, selection) |
-| `addLayer`, `createSpatialDataset` | Create/add output layers |
-| `showToast` | User feedback |
-| `refreshUI` | Refresh panels after mutations |
-| `setActiveLayer(id)` | Focus a layer in the UI |
+| `addLayer`, `createSpatialDataset` | Output layers |
+| `removeLayers` | Remove layers (with confirm) |
+| `showToast`, `refreshUI` | Feedback and panel refresh |
+| `setActiveLayer(id)` | Focus layer in UI |
 | `analyzeSchema` | Schema refresh after attribute writes |
-| `turf` | Turf.js geospatial ops |
+| `openStorageManager` | OPFS / storage UI |
+| `turf` | Turf.js |
+| `platform`, `services` | Platform bundle (`getPlatformBundle`) |
 
-Helper: `getSpatialLayerOptions(ctx, opts)` — layer picker options (`includeFields`, `requirePolygons`, `requireLines`, `includeSelectionCount`).
+Selection workflows: **`mapService.getSelectedIndices`**, **`setActiveLayer`**, **`refreshUI`** — not a separate `updateSelectionUI` on context.
+
+Helper: **`getSpatialLayerOptions(ctx, opts)`** — `includeFields`, `requirePolygons`, `requireLines`, `requirePoints`, `includeSelectionCount`.
 
 ---
 
@@ -233,79 +166,85 @@ Helper: `getSpatialLayerOptions(ctx, opts)` — layer picker options (`includeFi
 
 | Complexity | Widget | Folder | Why copy it |
 |------------|--------|--------|-------------|
-| **Simplest** | Find Features in Area | `js/widgets/spatial-analyzer/` | Area draw, layer select, basic engine |
-| **Medium** | Bulk Update | `js/widgets/bulk-update/` | Selection + attribute bulk edit |
-| **Medium** | Proximity Join | `js/widgets/proximity-join/` | 3-step wizard, field checklist, preview |
-| **Complex** | Route Centerline | `js/widgets/route-milepost-segment/` | ArcGIS REST, route search components |
-| **Most complex** | Project Stationing | `js/widgets/project-stationing/` | Large engine, table import sub-module |
-| **Hidden pattern** | CRS Manager | `js/widgets/crs-manager/` | `GIS_WIDGETS_HIDDEN` only |
-| **Hidden + host** | Plan Set Callouts | `js/widgets/plan-set-callouts/` | Hidden; opened from Sheet Cutter |
+| **Simplest** | Find Features in Area | `spatial-analyzer/` | Area draw, layer select, single `engine.js` |
+| **Simple** | Spatial Join | `spatial-join/` | Two-layer join, minimal UI |
+| **Medium** | Bulk Update | `bulk-update/` | Selection + attributes; event bus |
+| **Medium** | Proximity Join | `proximity-join/` | 3-step wizard (custom footer today) |
+| **Medium** | Layer Match Assistant | `layer-match-assistant/` | Long wizard + engine tests |
+| **Complex** | Route Centerline | `route-milepost-segment/` | Route search, REST-backed (mock in tests) |
+| **Complex** | Sheet Cutter | `sheet-cutting/` | Many modules, `restoreState`, opens hidden callouts |
+| **Most complex** | Project Stationing | `project-stationing/` | Large engine, import table sub-flow |
+| **Hidden** | Plan Set Callouts | `plan-set-callouts/` | Opened from Sheet Cutter |
+| **Hidden** | CRS Manager | `crs-manager/` | `GIS_WIDGETS_HIDDEN` pattern |
 
-Re-export shims at `js/widgets/` root (`*-engine.js`) are for old import paths only.
+Re-export shims at `js/widgets/*-engine.js` are legacy import paths only.
 
-### React dialog layer
+### React dialogs (18)
 
 | Dialog | Mount helper |
 |--------|--------------|
 | `SpatialAnalyzerDialog.jsx` | `mountSpatialAnalyzerDialog.jsx` |
 | `BulkUpdateDialog.jsx` | `mountBulkUpdateDialog.jsx` |
 | `ProximityJoinDialog.jsx` | `mountProximityJoinDialog.jsx` |
+| `SpatialJoinDialog.jsx` | `mountSpatialJoinDialog.jsx` |
 | `RouteMilepostSegmentDialog.jsx` | `mountRouteMilepostSegmentDialog.jsx` |
 | `ProjectStationingDialog.jsx` | `mountProjectStationingDialog.jsx` |
+| `LayerMatchAssistantDialog.jsx` | `mountLayerMatchAssistantDialog.jsx` |
+| `SheetCuttingDialog.jsx` | `mountSheetCuttingDialog.jsx` |
+| `GeoreferenceRasterDialog.jsx` | `mountGeoreferenceRasterDialog.jsx` |
+| `PlanSetCalloutsDialog.jsx` | `mountPlanSetCalloutsDialog.jsx` |
+| `FiberProcurementDesignDialog.jsx` | `mountFiberProcurementDesignDialog.jsx` |
+| `LayerSummaryDialog.jsx` | `mountLayerSummaryDialog.jsx` |
+| `QueryDialog.jsx` | `mountQueryDialog.jsx` |
 | `CrsManagerDialog.jsx` | `mountCrsManagerDialog.jsx` |
+| `WirelessSitePlanningDialog.jsx` | `mountWirelessSitePlanningDialog.jsx` |
+| `FiberSlackOtdrHelperDialog.jsx` | `mountFiberSlackOtdrHelperDialog.jsx` |
+| `PresentationLinkBuilder.jsx` | `mountPresentationLinkBuilder.jsx` |
+| `PlanProductionExportDialog.jsx` | `mountPlanProductionExportDialog.jsx` |
 
 ---
 
 ## Currently registered widgets
 
-**Visible (5):** Find Features in Area, Bulk Update, Proximity Join, Route Centerline, Project Stationing.
+**Visible (9):** Find Features in Area, Bulk Update, Proximity Join, Spatial Join, Route Centerline, Project Stationing, Layer Match Assistant, Sheet Cutter (Beta), Georeference Image / PDF.
 
-**Hidden (1):** CRS Manager (`crs-manager`).
+**Hidden (9):** Plan Set Callouts, Fiber Procurement Design, Layer Summary, Query Features, CRS Manager, Wireless Site Planning, Fiber Slack / OTDR Helper, Presentation Link, Plan Production Export.
+
+To re-enable a hidden widget in the panel, move its entry from **`GIS_WIDGETS_HIDDEN`** into **`GIS_WIDGETS`**.
 
 ---
 
 ## Agent workflow expectations
 
-1. **Read this playbook first**, then [`WIDGET_AUTHORING.md`](WIDGET_AUTHORING.md), then the closest reference widget source.
-2. **Match existing patterns** — one folder per widget, one registry entry, controller owns wiring.
-3. **Browser check** — map/UI changes need manual verification via `npm run dev`.
-4. **Git** — local edits on `staging` only; user commits via GitHub Desktop (see [`AGENTS.md`](../AGENTS.md)).
-5. **Errors** — use `handleError` / `showToast` patterns from existing controllers and tools.
-6. **Tests** — add engine tests when the user asks or when restoring the `tests/` harness; not required for every widget by default in this repo.
+1. Read **this playbook**, then [`WIDGET_AUTHORING.md`](WIDGET_AUTHORING.md), then the closest reference source.
+2. Match existing patterns — one registry entry, controller owns wiring, pure engine modules.
+3. Browser-check map/UI changes via `npm run dev` (viewport ≥768px; below that shows `MobileGate`).
+4. **`npm test`** must stay green; add Vitest coverage when you change engine behavior.
+5. Use `handleError` / `showToast` patterns from existing controllers.
 
 ### Do not
 
-- Put widget logic inline in `tool-handlers.js` — use `controller.js`
-- Build a plugin framework — one registry entry + one folder is enough
+- Put **new** widget logic inline in `tool-handlers.js`
+- Build a plugin framework — one folder + one registry entry is enough
 - Require legacy `WidgetBase` (React-only for new widgets)
 - Put MapLibre in the React render tree
-
----
-
-## Suggested reading order
-
-1. **This playbook** — scope and file map
-2. [`docs/WIDGET_AUTHORING.md`](WIDGET_AUTHORING.md) — checklist + smoke steps
-3. `js/widgets/spatial-analyzer/` — simplest end-to-end example
-4. `react/widgets/shared/` — reusable UI primitives
-5. `js/widgets/registry.js` — register your widget
+- Call live external APIs from tests or agent automation
 
 ---
 
 ## Quick commands
 
 ```bash
-npm install          # once
-npm run dev          # Vite dev server (port 5174)
+npm install
+npm run dev          # Vite (port 5174)
+npm test             # full Vitest suite
 npm run build        # production build
-npm run preview      # preview build + manual smoke
-npm test             # Vitest (no tests/ folder yet — will no-op or fail until restored)
 ```
 
 ---
 
 ## Related docs
 
-- [`WIDGET_AUTHORING.md`](WIDGET_AUTHORING.md) — step-by-step authoring checklist
-- [`AGENTS.md`](../AGENTS.md) — agent guide + git workflow
-- [`DEVELOPMENT.md`](DEVELOPMENT.md) — local setup and deployment
+- [`WIDGET_AUTHORING.md`](WIDGET_AUTHORING.md) — checklist
+- [`AGENTS.md`](../AGENTS.md) — agent guide
+- [`DEVELOPMENT.md`](DEVELOPMENT.md) — local setup

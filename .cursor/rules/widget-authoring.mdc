@@ -12,10 +12,19 @@ When the user asks to **build, add, plan, or change a GIS Widget** (left-panel m
 3. **Copy patterns from** the closest reference widget in `js/widgets/` (simplest: `spatial-analyzer/`)
 4. **After a Build Plan:** run `/widget-scaffold` (Composer subagent) before heavy implementation — checks playbook compliance and registry conflicts
 
-## Rules
+## Standing rules
+
+- **No live API/REST** in agent work, tests, scripts, or automated app runs — **mocks and fixtures only**
+- **`staging` only** — never edit/push/merge **`main`**, never edit **`.github/workflows/`**, never **force-push**
+- Before push: **rebase** on `origin/staging`, **`npm ci`** + full **`npm test`**, push only when green
+
+## Widget rules
 
 - Register only in `js/widgets/registry.js` (`GIS_WIDGETS` or `GIS_WIDGETS_HIDDEN`)
-- Wire UI through `controller.js` + `openReactIsland()` — **not** inline in `tool-handlers.js`
-- Engine logic stays pure in `engine.js`; React dialog gets callbacks via props
-- Reuse `react/widgets/shared/` (`WidgetPanelShell`, `LayerSelect`, etc.)
+- Hidden widgets: **`openWidget()`** only — not in panel `APP_ACTIONS`
+- **`requiredCapabilities`** gates panel visibility and `buildWidgetActions`; support **`open(ctx, { restoreState })`** when persisting wizard state
+- Wire UI through `controller.js` + `openReactIsland()` — **not** new logic inline in `tool-handlers.js` (existing project-stationing / plan-set-callouts hooks are legacy)
+- Engine logic stays pure under `js/widgets/<id>/`; React gets callbacks via props
+- Reuse `react/widgets/shared/` — **`RunPreviewFooter`** preferred for new footers
 - Widget engines run in the **browser** (JavaScript); no native or server-side compute paths
+- Shared **tool registry** in `js/tools/` is **planned** (not done) to replace `GIS_TOOL_V1_MODE` lists
