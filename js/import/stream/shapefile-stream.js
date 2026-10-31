@@ -4,6 +4,7 @@
  * matching the standard shpjs behavior of returning WGS84 output.
  * Dependencies injected (proj4) — pure and node-testable.
  */
+import { CrsReprojectError, assertFiniteReprojectOutput } from '../../crs/reproject-crs.js';
 import { createByteReader } from './byte-reader.js';
 import { iterateShpRecords } from './shp-stream-parser.js';
 import { iterateDbfRecords, decoderFromCpg } from './dbf-stream-parser.js';
@@ -31,41 +32,50 @@ export function buildPrjTransform(prjWkt, proj4Lib, sourceCrsDef = null) {
         try {
             const converter = proj4Lib(sourceCrsDef, WGS84_DEF);
             const probe = converter.forward([0, 0]);
-            if (!Number.isFinite(probe[0]) || !Number.isFinite(probe[1])) {
-                throw new Error('probe failed');
-            }
+            assertFiniteReprojectOutput(probe, String(sourceCrsDef).slice(0, 80), 'EPSG:4326');
             return {
-                transform: (coord) => converter.forward([coord[0], coord[1]]),
+                transform: (coord) => {
+                    const out = converter.forward([coord[0], coord[1]]);
+                    assertFiniteReprojectOutput(out, String(sourceCrsDef).slice(0, 80), 'EPSG:4326');
+                    return out;
+                },
                 warning: null
             };
-        } catch {
-            return {
-                transform: null,
-                warning: 'The selected source CRS could not be applied — coordinates imported unprojected.'
-            };
+        } catch (e) {
+            if (e instanceof CrsReprojectError) throw e;
+            throw new CrsReprojectError(
+                `Shapefile import source CRS could not be applied: ${e?.message || 'invalid definition'}`,
+                { side: 'source', crs: String(sourceCrsDef).slice(0, 120), reason: 'malformed' }
+            );
         }
     }
     if (!prjWkt || prjIsWgs84(prjWkt)) {
         return { transform: null, warning: null };
     }
     if (!proj4Lib) {
-        return { transform: null, warning: 'No projection engine available — coordinates imported unprojected.' };
+        throw new CrsReprojectError(
+            'Shapefile import requires a projection engine to reproject from .prj, but none is available.',
+            { side: 'source', crs: String(prjWkt).slice(0, 120), reason: 'unloadable' }
+        );
     }
     try {
         const converter = proj4Lib(prjWkt, WGS84_DEF);
         const probe = converter.forward([0, 0]);
-        if (!Number.isFinite(probe[0]) || !Number.isFinite(probe[1])) {
-            throw new Error('probe failed');
-        }
+        assertFiniteReprojectOutput(probe, String(prjWkt).slice(0, 80), 'EPSG:4326');
         return {
-            transform: (coord) => converter.forward([coord[0], coord[1]]),
+            transform: (coord) => {
+                const out = converter.forward([coord[0], coord[1]]);
+                assertFiniteReprojectOutput(out, String(prjWkt).slice(0, 80), 'EPSG:4326');
+                return out;
+            },
             warning: null
         };
-    } catch {
-        return {
-            transform: null,
-            warning: 'The shapefile projection (.prj) could not be parsed — coordinates imported unprojected.'
-        };
+    } catch (e) {
+        if (e instanceof CrsReprojectError) throw e;
+        throw new CrsReprojectError(
+            'The shapefile projection (.prj) could not be parsed or applied.',
+            { side: 'source', crs: String(prjWkt).slice(0, 120), reason: 'malformed' }
+        );
     }
 }
 

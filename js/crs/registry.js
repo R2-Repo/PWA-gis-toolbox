@@ -2,6 +2,7 @@
  * CRS registry — curated EPSG presets and custom WKT registration.
  */
 import { loadProj4 } from '../core/libs.js';
+import { AppError, ErrorCategory } from '../core/error-handler.js';
 
 /** @type {Map<string, { code: string, label: string, proj4?: string, wkt?: string }>} */
 const _presets = new Map();
@@ -62,6 +63,12 @@ async function _ensureProj4() {
     for (const preset of _presets.values()) {
         if (preset.proj4) {
             proj4.defs(preset.code, preset.proj4);
+        } else if (preset.wkt) {
+            try {
+                proj4.defs(preset.code, preset.wkt);
+            } catch {
+                // invalid preset WKT — resolveCrs will fail later
+            }
         }
     }
     for (const [code, wkt] of _customWkt) {
@@ -119,10 +126,26 @@ export function normalizeCrsCode(code) {
  */
 export async function registerWkt(code, wkt) {
     const normalized = normalizeCrsCode(code);
-    _customWkt.set(normalized, wkt);
-    _presets.set(normalized, { code: normalized, label: normalized, wkt });
+    const trimmed = String(wkt || '').trim();
+    if (!trimmed) {
+        throw new AppError(
+            `Custom CRS "${normalized}" has empty WKT and cannot be registered.`,
+            ErrorCategory.VALIDATION_ERROR,
+            { side: 'source', crs: normalized, reason: 'malformed' }
+        );
+    }
     const proj4 = await _ensureProj4();
-    proj4.defs(normalized, wkt);
+    try {
+        proj4.defs(normalized, trimmed);
+    } catch (e) {
+        throw new AppError(
+            `Custom CRS "${normalized}" WKT could not be parsed: ${e?.message || 'invalid WKT'}`,
+            ErrorCategory.VALIDATION_ERROR,
+            { side: 'source', crs: normalized, reason: 'malformed' }
+        );
+    }
+    _customWkt.set(normalized, trimmed);
+    _presets.set(normalized, { code: normalized, label: normalized, wkt: trimmed });
     _proj4Ready = true;
 }
 
@@ -141,7 +164,8 @@ export async function resolveCrs(code) {
     }
     if (_customWkt.has(normalized) || preset?.wkt) {
         await _ensureProj4();
-        return normalized;
+        const proj4 = await loadProj4();
+        return proj4.defs(normalized) ? normalized : null;
     }
     return null;
 }

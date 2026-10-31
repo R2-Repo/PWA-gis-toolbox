@@ -8,6 +8,7 @@ import {
     isRealZipEntry
 } from '../js/import/stream/zip-central-directory.js';
 import { streamShapefileFeatures, buildPrjTransform, prjIsWgs84 } from '../js/import/stream/shapefile-stream.js';
+import { CrsReprojectError } from '../js/crs/reproject-crs.js';
 import { writeShp, writeDbf } from './helpers/shp-writer.js';
 
 const UTM12_WKT = 'PROJCS["NAD_1983_UTM_Zone_12N",GEOGCS["GCS_North_American_1983",DATUM["D_North_American_1983",SPHEROID["GRS_1980",6378137.0,298.257222101]],PRIMEM["Greenwich",0.0],UNIT["Degree",0.0174532925199433]],PROJECTION["Transverse_Mercator"],PARAMETER["False_Easting",500000.0],PARAMETER["False_Northing",0.0],PARAMETER["Central_Meridian",-111.0],PARAMETER["Scale_Factor",0.9996],PARAMETER["Latitude_Of_Origin",0.0],UNIT["Meter",1.0]]';
@@ -195,9 +196,8 @@ describe('buildPrjTransform', () => {
         expect(lat).toBeCloseTo(40.73, 1);
     });
 
-    it('degrades gracefully for unparseable WKT', () => {
-        const { transform, warning } = buildPrjTransform('PROJCS["garbage', proj4);
-        expect(transform).toBeNull();
-        expect(warning).toMatch(/could not be parsed/i);
+    it('throws for unparseable WKT', () => {
+        expect(() => buildPrjTransform('PROJCS["garbage', proj4)).toThrow(CrsReprojectError);
+        expect(() => buildPrjTransform('PROJCS["garbage', proj4)).toThrow(/could not be parsed/i);
     });
 });

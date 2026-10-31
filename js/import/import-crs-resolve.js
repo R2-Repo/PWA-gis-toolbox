@@ -34,17 +34,13 @@ export async function resolveImportCrsForDatasets(datasets, pickCrs) {
         const projected = ds.geojson?.features?.length && hasProjectedCoordinates(ds.geojson);
 
         if (projected && !isDisplayReady(normalized)) {
-            try {
-                ds.geojson = await reprojectFeatureCollection(ds.geojson, normalized, 'EPSG:4326');
-                ds.schema = analyzeSchema(ds.geojson);
-                ds.schema.crs = 'EPSG:4326';
-                ds.source.originalCrs = normalized;
-                ds.source.crsDetected = 'user';
-                delete ds.source.crsWarning;
-                continue;
-            } catch {
-                // Fall through to metadata-only update
-            }
+            ds.geojson = await reprojectFeatureCollection(ds.geojson, normalized, 'EPSG:4326');
+            ds.schema = analyzeSchema(ds.geojson);
+            ds.schema.crs = 'EPSG:4326';
+            ds.source.originalCrs = normalized;
+            ds.source.crsDetected = 'user';
+            delete ds.source.crsWarning;
+            continue;
         }
 
         ds.schema.crs = normalized;

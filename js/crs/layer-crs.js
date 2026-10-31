@@ -85,7 +85,7 @@ export function resolveReprojectFromCrs(layer, geojson) {
 
     throw new AppError(
         `Layer "${layer.name}" has projected coordinates but is labeled ${crsLabel(schemaCrs)}. Re-import with the correct source CRS, or delete broken reproject copies and start from the original layer.`,
-        ErrorCategory.VALIDATION,
+        ErrorCategory.VALIDATION_ERROR,
         { layerId: layer.id, crs: schemaCrs }
     );
 }
@@ -132,7 +132,7 @@ export function assertDisplayReady(layer, context = 'This operation') {
     const crs = getLayerCrs(layer);
     throw new AppError(
         `${context} requires WGS84 coordinates. Layer "${layer.name}" uses ${crsLabel(crs)}. Reproject to EPSG:4326 first.`,
-        ErrorCategory.VALIDATION,
+        ErrorCategory.VALIDATION_ERROR,
         { layerId: layer.id, crs }
     );
 }
