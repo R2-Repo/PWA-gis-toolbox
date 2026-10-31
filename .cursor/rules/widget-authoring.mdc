@@ -27,4 +27,4 @@ When the user asks to **build, add, plan, or change a GIS Widget** (left-panel m
 - Engine logic stays pure under `js/widgets/<id>/`; React gets callbacks via props
 - Reuse `react/widgets/shared/` — **`RunPreviewFooter`** preferred for new footers
 - Widget engines run in the **browser** (JavaScript); no native or server-side compute paths
-- Shared **tool registry** in `js/tools/` is **planned** (not done) to replace `GIS_TOOL_V1_MODE` lists
+- Shared **tool registry** v1: `js/tools/tool-registry.js` + `tool-catalog.js` wrappers (replaces hand-maintained `GIS_TOOL_V1_MODE` lists over time)

@@ -50,7 +50,7 @@ In **gis-toolbox**, a "widget" is **not** an ArcGIS Experience Builder widget. I
 | Multi-step wizard, map interaction, preview, bulk edits | **GIS Widget** | `js/widgets/<id>/` + `react/widgets/` |
 | Reusable step in the visual workflow graph | **Pipeline node** | `js/workflow/nodes/` + `react/workflow/inspectors/` |
 
-**Planned (not done):** a **shared tool registry** under `js/tools/` (likely evolving from `js/tools/tool-catalog.js`) to unify map tools, widgets, and workflow nodes and replace hand-maintained **`GIS_TOOL_V1_MODE`** allowlists. Widget registration stays in `js/widgets/registry.js` until that lands.
+**Shared tool registry (v1):** `js/tools/tool-registry.js` registers map tools, widgets, and workflow nodes with stable ids, aliases, `status` (`ga` | `beta` | `hidden`), typed ports/params, and optional `run` / `open`. Bootstrap: `tool-registry-entries.js` (tools + nodes) and `js/widgets/tool-registry-widgets.js` (widget entries + `spatial-join` widget seam). `tool-catalog.js` keeps `GIS_TOOL_V1_MODE`, `V1_*`, and `isMapToolEnabled` / `isPipelineNodeEnabled` as thin wrappers. Widget panel registration remains in `js/widgets/registry.js`; new widgets still go in `GIS_WIDGETS` / `GIS_WIDGETS_HIDDEN` and are mirrored into the tool registry on load.
 
 ---
 

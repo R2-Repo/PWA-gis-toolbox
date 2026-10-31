@@ -3,6 +3,9 @@
  * Set GIS_TOOL_V1_MODE to false to restore the full tool catalog.
  */
 
+import { getTool, isVisible, listTools } from './tool-registry.js';
+import { registerAllRegistryEntries } from './tool-registry-entries.js';
+
 /** When true, only V1 tools appear in the map GIS Tools panel and pipeline palette. */
 export const GIS_TOOL_V1_MODE = true;
 
@@ -49,6 +52,8 @@ export const MAP_GIS_TOOLS = [
     { id: 'sample', action: 'openSample', category: 'combine-analyze', label: '🎲 Sample', tip: 'Randomly pick N features from the layer — creates a new layer.' }
 ];
 
+registerAllRegistryEntries({ mapTools: MAP_GIS_TOOLS });
+
 const MAP_CATEGORY_LABELS = {
     coordinates: 'Coordinates',
     measurement: 'Measurement',
@@ -59,25 +64,13 @@ const MAP_CATEGORY_LABELS = {
 
 const MAP_CATEGORY_ORDER = ['transformation', 'combine-analyze', 'coordinates', 'measurement', 'line-ops'];
 
-/** Map tool ids enabled in V1 testing mode. */
-export const V1_MAP_TOOL_IDS = new Set([
-    'buffer',
-    'simplify',
-    'clip-extent',
-    'bbox-clip',
-    'dissolve',
-    'line-offset',
-    'reproject',
-    'union',
-    'kinks',
-    'sample',
-    'explode',
-    'polygon-to-line',
-    'fill-holes',
-    'split-by-line',
-    'split-by-polygon',
-    'vertex-reshape'
-]);
+/** Map tool ids enabled in V1 testing mode (derived from tool registry). */
+export const V1_MAP_TOOL_IDS = new Set(
+    MAP_GIS_TOOLS.filter((t) => {
+        const entry = getTool(t.id);
+        return entry?.kind.includes('tool') && entry.status === 'ga';
+    }).map((t) => t.id)
+);
 
 /** Pipeline nodes matching the map Layer Data Tools panel (see LayerDataToolsPanel.jsx). */
 export const LAYER_DATA_NODE_ORDER = [
@@ -94,29 +87,12 @@ export const LAYER_DATA_NODE_ORDER = [
 
 export const LAYER_DATA_NODE_TYPES = new Set(LAYER_DATA_NODE_ORDER);
 
-/** Pipeline node types enabled in V1 testing mode. */
-export const V1_PIPELINE_NODE_TYPES = new Set([
-    'layer-input',
-    'file-import',
-    ...LAYER_DATA_NODE_ORDER,
-    'buffer',
-    'simplify',
-    'clip',
-    'dissolve',
-    'line-offset',
-    'reproject',
-    'spatial-join',
-    'union',
-    'sample',
-    'explode',
-    'polygon-to-line',
-    'fill-holes',
-    'split-by-line',
-    'split-by-polygon',
-    'add-to-map',
-    'preview',
-    'export'
-]);
+/** Pipeline node types enabled in V1 testing mode (derived from tool registry). */
+export const V1_PIPELINE_NODE_TYPES = new Set(
+    listTools({ kind: 'node' })
+        .filter((e) => e.status === 'ga')
+        .map((e) => e.id)
+);
 
 /**
  * @param {string} id
@@ -124,7 +100,8 @@ export const V1_PIPELINE_NODE_TYPES = new Set([
  */
 export function isMapToolEnabled(id) {
     if (!GIS_TOOL_V1_MODE) return true;
-    return V1_MAP_TOOL_IDS.has(id);
+    const entry = getTool(id);
+    return isVisible(entry, 'mapPanel', { v1Mode: true });
 }
 
 /**
@@ -141,7 +118,8 @@ export function isLayerDataNodeType(type) {
  */
 export function isPipelineNodeEnabled(type) {
     if (!GIS_TOOL_V1_MODE) return true;
-    return V1_PIPELINE_NODE_TYPES.has(type);
+    const entry = getTool(type);
+    return isVisible(entry, 'palette', { v1Mode: true });
 }
 
 /**

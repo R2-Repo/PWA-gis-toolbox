@@ -22,6 +22,8 @@ import {
     listAvailableOptionalCapabilities
 } from '../platform/contracts.js';
 import { getPlatformBundle } from '../platform/create-platform.js';
+import '../tools/tool-catalog.js';
+import { registerWidgetRegistryEntries } from './tool-registry-widgets.js';
 
 /** @typedef {import('./widget-types.js').WidgetContext} WidgetContext */
 /** @typedef {import('../platform/contracts.js').PlatformInfo} PlatformInfo */
@@ -197,6 +199,11 @@ export const GIS_WIDGETS_HIDDEN = [
 
 /** All registered widgets (visible + hidden). */
 export const ALL_GIS_WIDGETS = [...GIS_WIDGETS, ...GIS_WIDGETS_HIDDEN];
+
+registerWidgetRegistryEntries({
+    allWidgets: ALL_GIS_WIDGETS,
+    visibleWidgets: GIS_WIDGETS
+});
 
 /**
  * @param {PlatformInfo} [platform]

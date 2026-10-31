@@ -19,7 +19,7 @@ Same as the playbook: **no live API/REST in tests or agent runs** (mocks/fixture
 | Multi-step wizard with map interaction, preview, bulk edits | **GIS Widget** (this guide) |
 | Reusable step in the visual workflow graph | **Pipeline node** (`js/workflow/nodes/`) |
 
-A **shared tool registry** in `js/tools/` (evolving from `tool-catalog.js`) is **planned** to unify tools, widgets, and nodes — not shipped yet.
+A **shared tool registry** lives in `js/tools/tool-registry.js` (v1). It lists map tools, widgets, and pipeline nodes with one stable id each, legacy **aliases**, per-entry **status** (`ga` | `beta` | `hidden`), **version**, typed **inputs** / **outputs** / **params**, and optional **`run`** (worker-safe compute under `js/tools/registry/compute-run-bridge.js`) or **`open`** (widgets). **`registerTool` / `getTool` / `listTools` / `isVisible`** replace hand-maintained visibility logic over time; **`tool-catalog.js`** still exports **`GIS_TOOL_V1_MODE`** and **`V1_*`** as compatibility wrappers. **`emitToolResult` / `onToolResult`** use the `result:produced` event on the core event bus. Register new widgets in `js/widgets/registry.js` as today — they are copied into the tool registry via `tool-registry-widgets.js`.
 
 ---
 
