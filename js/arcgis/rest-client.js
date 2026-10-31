@@ -591,3 +591,92 @@ export async function arcgisResolveLayerAttribution(cleanLayerUrl, layerJson, op
         return '';
     }
 }
+
+export { combineTimeoutAndCallerSignal, timeoutSignal, classifyFetchFailure };
+
+/**
+ * Read JSON from a fetch Response with a streaming byte cap.
+ * @param {Response} response
+ * @param {number} maxBytes
+ * @param {AbortSignal} [signal]
+ */
+export async function readJsonBodyWithByteCap(response, maxBytes, signal = null) {
+    if (!response.body) {
+        const text = await response.text();
+        if (text.length > maxBytes) {
+            throw new AppError(
+                `Response exceeds ${maxBytes} byte limit`,
+                ErrorCategory.OUT_OF_MEMORY,
+                { maxBytes, size: text.length }
+            );
+        }
+        return JSON.parse(text);
+    }
+
+    const reader = response.body.getReader();
+    const chunks = [];
+    let total = 0;
+    try {
+        while (true) {
+            if (signal?.aborted) {
+                throw classifyFetchFailure(
+                    signal.reason || new DOMException('Aborted', 'AbortError'),
+                    response.url
+                );
+            }
+            const { done, value } = await reader.read();
+            if (done) break;
+            total += value.byteLength;
+            if (total > maxBytes) {
+                await reader.cancel();
+                throw new AppError(
+                    `Response exceeds ${maxBytes} byte limit`,
+                    ErrorCategory.OUT_OF_MEMORY,
+                    { maxBytes, size: total }
+                );
+            }
+            chunks.push(value);
+        }
+    } finally {
+        try {
+            reader.releaseLock();
+        } catch (_) { /* ignore */ }
+    }
+
+    const merged = new Uint8Array(total);
+    let offset = 0;
+    for (const chunk of chunks) {
+        merged.set(chunk, offset);
+        offset += chunk.byteLength;
+    }
+    const text = new TextDecoder().decode(merged);
+    return JSON.parse(text);
+}
+
+/**
+ * Generic JSON GET with timeout, caller abort, and streaming byte cap (non-Esri).
+ * @param {string} url
+ * @param {{ signal?: AbortSignal|null, timeoutMs?: number, maxBytes?: number }} [options]
+ */
+export async function fetchJsonWithLimits(url, options = {}) {
+    const {
+        signal = null,
+        timeoutMs = DEFAULT_ARCGIS_TIMEOUT_MS,
+        maxBytes = 32 * 1024 * 1024
+    } = options;
+
+    const linked = combineTimeoutAndCallerSignal(timeoutMs, signal);
+    try {
+        const response = await fetch(url, { signal: linked });
+        if (!response.ok) {
+            throw new AppError(
+                `Request failed (${response.status})`,
+                response.status >= 500 ? ErrorCategory.HTTP_5XX : ErrorCategory.HTTP_4XX,
+                { url, status: response.status }
+            );
+        }
+        return await readJsonBodyWithByteCap(response, maxBytes, linked);
+    } catch (err) {
+        throw classifyFetchFailure(err, url);
+    }
+}

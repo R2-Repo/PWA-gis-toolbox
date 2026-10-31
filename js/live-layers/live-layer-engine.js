@@ -1,5 +1,6 @@
 import { ArcGISRestImporter, schemaFromArcgisMetadata } from '../arcgis/rest-importer.js';
-import { arcgisQueryGeoJsonPages } from '../arcgis/rest-client.js';
+import { arcgisQueryGeoJsonPages, fetchJsonWithLimits } from '../arcgis/rest-client.js';
+import { LIMITS } from '../import/import-limits.js';
 import { styleFromArcgisMetadata } from '../arcgis/drawing-info.js';
 import {
     pictureMarkersFromDrawingInfo,
@@ -483,8 +484,12 @@ export async function refreshServiceLayer(mapManager, layerId) {
     applyLiveLayerVisibility(map, runtime, true);
     if (action === 'reuse') return;
 
+    runtime.fetchAbortController?.abort();
+    runtime.fetchAbortController = new AbortController();
+
     runtime.fetchGen = (runtime.fetchGen || 0) + 1;
     const fetchGen = runtime.fetchGen;
+    const fetchSignal = runtime.fetchAbortController.signal;
 
     try {
         if (
@@ -495,7 +500,7 @@ export async function refreshServiceLayer(mapManager, layerId) {
             if (runtime.fetchGen !== fetchGen) return;
             runtime.metadataReady = true;
         }
-        const raw = await fetchVectorData(map, runtime);
+        const raw = await fetchVectorData(map, runtime, { signal: fetchSignal });
         const limited = applyRenderLimits(raw.features || []);
         let tagged = tagServiceFeatures(layerId, limited.features, runtime.objectIdField);
         const fiberHit = matchUdotFiberLayerUrl(runtime.url);
@@ -585,12 +590,15 @@ function reconcileLiveSelection(mapManager, layerId, taggedFeatures) {
 /**
  * @param {import('maplibre-gl').Map} map
  * @param {ServiceRuntime} runtime
+ * @param {{ signal?: AbortSignal }} [options]
  */
-async function fetchVectorData(map, runtime) {
+async function fetchVectorData(map, runtime, options = {}) {
     if (runtime.kind === 'geojson-feed') {
-        const resp = await fetch(runtime.url);
-        if (!resp.ok) throw new Error(`GeoJSON feed failed (${resp.status})`);
-        const data = await resp.json();
+        const data = await fetchJsonWithLimits(runtime.url, {
+            signal: options.signal ?? null,
+            timeoutMs: LIMITS.geojsonFeedTimeoutMs,
+            maxBytes: LIMITS.geojsonFeedMaxBytes
+        });
         if (data?.type === 'FeatureCollection') return data;
         if (data?.type === 'Feature') return { type: 'FeatureCollection', features: [data] };
         return { type: 'FeatureCollection', features: [] };
