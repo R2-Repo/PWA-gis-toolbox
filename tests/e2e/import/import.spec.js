@@ -5,9 +5,9 @@ import { test, expect } from '@playwright/test';
 import manifest from '../../fixtures/e2e/tune/manifest.json' with { type: 'json' };
 import { bootApp, dismissOpenModals } from '../helpers/app.js';
 import { importLocalFile, expectImportFailure } from '../helpers/import.js';
-import { exportActiveLayerGeoJSON, readLayerListFeatureCount } from '../helpers/probe.js';
+import { exportActiveLayerGeoJSON, readLayerListFeatureCount, readActiveLayerAdmission } from '../helpers/probe.js';
 import { assertFeatureCollection, assertRoundTrip } from '../helpers/geo-assert.js';
-import { installLongTaskObserver, readLongTaskMetrics, importWallMs } from '../helpers/perf.js';
+import { installLongTaskObserver, buildPerfRow, importWallMs } from '../helpers/perf.js';
 import {
     attachNetworkGuard,
     assertNoUnexpectedBlocks
@@ -68,10 +68,8 @@ for (const fx of fixtures) {
             }
             await expectImportFailure(page);
             await dismissOpenModals(page);
-            testInfo.annotations.push({
-                type: 'perf',
-                description: JSON.stringify(await readLongTaskMetrics(page))
-            });
+            const perfRow = await buildPerfRow(page, { fixtureId: fx.id, importMs: 0 });
+            testInfo.annotations.push({ type: 'perf-row', description: JSON.stringify(perfRow) });
             return;
         } else {
             const timing = await importLocalFile(page, fixturePath, { crsPick: fx.crsPick });
@@ -88,7 +86,15 @@ for (const fx of fixtures) {
             expect(listCount, `layer list count for ${fx.id}`).toBe(fx.featureCount);
         }
 
-        if (fx.expectedOutcome === 'success' && fx.featureCount > 0 && fx.format !== 'gpx') {
+        if (fx.format === 'gpx' && fx.expectedOutcome === 'success') {
+            test.fail(
+                true,
+                'GPX export feature-count assertion blocked: Export GPX does not reliably emit a Playwright download in headless mode (import + layer list pass; see vitest import-kit-gpx-regression)'
+            );
+            throw new Error('GPX export feature-count assertion blocked');
+        }
+
+        if (fx.expectedOutcome === 'success' && fx.featureCount > 0) {
             const exported = await exportActiveLayerGeoJSON(page, path.join(downloadDir, fx.id));
             assertFeatureCollection(exported, fx);
 
@@ -98,10 +104,12 @@ for (const fx of fixtures) {
             }
         }
 
-        testInfo.annotations.push({
-            type: 'perf',
-            description: JSON.stringify(await readLongTaskMetrics(page))
+        const importAnn = testInfo.annotations.find((a) => a.type === 'import-ms');
+        const perfRow = await buildPerfRow(page, {
+            fixtureId: fx.id,
+            importMs: importAnn ? Number(importAnn.description) : 0
         });
+        testInfo.annotations.push({ type: 'perf-row', description: JSON.stringify(perfRow) });
     });
 }
 

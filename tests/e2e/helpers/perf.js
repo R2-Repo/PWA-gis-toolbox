@@ -41,6 +41,44 @@ export async function readLongTaskMetrics(page) {
 }
 
 /**
+ * @param {import('@playwright/test').Page} page
+ * @returns {Promise<{ jsHeapUsed?: number, jsHeapTotal?: number }>}
+ */
+export async function readCdpHeapMetrics(page) {
+    const session = await page.context().newCDPSession(page);
+    await session.send('Performance.enable');
+    const { metrics } = await session.send('Performance.getMetrics');
+    await session.detach().catch(() => {});
+    const byName = Object.fromEntries(metrics.map((m) => [m.name, m.value]));
+    return {
+        jsHeapUsed: byName.JSHeapUsedSize,
+        jsHeapTotal: byName.JSHeapTotalSize
+    };
+}
+
+/**
+ * @param {import('@playwright/test').Page} page
+ * @param {{ importMs: number, fixtureId: string }} row
+ */
+export async function buildPerfRow(page, row) {
+    const longTasks = await readLongTaskMetrics(page);
+    const heap = await readCdpHeapMetrics(page);
+    const ttiMs = await page.evaluate(() => {
+        const nav = performance.getEntriesByType('navigation')[0];
+        return nav ? nav.domInteractive : performance.timing?.domInteractive || 0;
+    });
+    return {
+        id: row.fixtureId,
+        importMs: row.importMs,
+        ttiMs,
+        tbt: Math.round(longTasks.totalBlockingTime),
+        longest: Math.round(longTasks.longestTask),
+        heapUsed: heap.jsHeapUsed != null ? Math.round(heap.jsHeapUsed) : null,
+        heapTotal: heap.jsHeapTotal != null ? Math.round(heap.jsHeapTotal) : null
+    };
+}
+
+/**
  * @param {{ startedAtMs: number, finishedAtMs: number }} timing
  */
 export function importWallMs(timing) {

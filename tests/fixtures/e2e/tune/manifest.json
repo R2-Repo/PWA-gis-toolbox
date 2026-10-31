@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "generatedAt": "2026-10-31T01:32:23.428Z",
+  "generatedAt": "2026-10-31T16:09:56.613Z",
   "fixtures": [
     {
       "id": "T0-geojson-fc",
@@ -770,6 +770,38 @@
       "knownBug": null
     },
     {
+      "id": "neg-shp-missing-shx",
+      "file": "neg-shp-missing-shx.zip",
+      "format": "shapefile",
+      "tier": "T0",
+      "tag": "@tune",
+      "expectedOutcome": "failure",
+      "featureCount": 0,
+      "geometryTypes": [],
+      "fields": {},
+      "crs": "EPSG:4326",
+      "crsPick": null,
+      "notes": "Shapefile zip missing .shx — expect import failure",
+      "skipBbox": false,
+      "knownBug": null
+    },
+    {
+      "id": "neg-shp-missing-dbf",
+      "file": "neg-shp-missing-dbf.zip",
+      "format": "shapefile",
+      "tier": "T0",
+      "tag": "@tune",
+      "expectedOutcome": "failure",
+      "featureCount": 0,
+      "geometryTypes": [],
+      "fields": {},
+      "crs": "EPSG:4326",
+      "crsPick": null,
+      "notes": "Shapefile zip missing .dbf — expect import failure",
+      "skipBbox": false,
+      "knownBug": null
+    },
+    {
       "id": "T1-shp-wgs84",
       "file": "t1-points-wgs84.zip",
       "format": "shapefile",
@@ -817,8 +849,7 @@
         "name": "string",
         "unicode": "string"
       },
-      "crs": "EPSG:4326",
-      "knownBug": "Project kit import does not complete in Playwright (Import Toolbox project flow stalls before layer list updates)"
+      "crs": "EPSG:4326"
     },
     {
       "id": "T0-gtbx",
@@ -842,8 +873,7 @@
         "name": "string",
         "unicode": "string"
       },
-      "crs": "EPSG:4326",
-      "knownBug": "Project kit import does not complete in Playwright (Import Toolbox project flow stalls before layer list updates)"
+      "crs": "EPSG:4326"
     },
     {
       "id": "neg-corrupt-zip",

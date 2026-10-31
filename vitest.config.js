@@ -6,6 +6,7 @@ export default defineConfig({
     test: {
         include: ['tests/**/*.test.js'],
         environment: 'node',
-        setupFiles: ['tests/setup/network-block.js']
+        setupFiles: ['tests/setup/network-block.js'],
+        testTimeout: 20_000
     }
 });

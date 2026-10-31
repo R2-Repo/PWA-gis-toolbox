@@ -42,6 +42,14 @@ export async function readActiveLayerAdmission(page) {
     });
 }
 
+async function openExportSection(page) {
+    const header = page.locator('.panel-section-header').filter({ hasText: 'Export' }).first();
+    if (await header.isVisible().catch(() => false)) {
+        const collapsed = await header.evaluate((el) => el.classList.contains('collapsed'));
+        if (collapsed) await header.click();
+    }
+}
+
 /**
  * Export active layer as GeoJSON via UI and parse in Node.
  * @param {import('@playwright/test').Page} page
@@ -49,12 +57,11 @@ export async function readActiveLayerAdmission(page) {
  */
 export async function exportActiveLayerGeoJSON(page, downloadDir) {
     await fs.mkdir(downloadDir, { recursive: true });
+    await openExportSection(page);
 
-    const exportToggle = page.getByRole('button', { name: /^Export/ });
     const geoBtn = page.getByRole('button', { name: 'GeoJSON', exact: true });
     if (!(await geoBtn.isVisible().catch(() => false))) {
-        await exportToggle.scrollIntoViewIfNeeded();
-        await exportToggle.click({ force: true });
+        await page.getByRole('button', { name: /^Export/ }).first().click({ force: true });
     }
 
     const downloadPromise = page.waitForEvent('download', { timeout: 120_000 });
@@ -64,4 +71,33 @@ export async function exportActiveLayerGeoJSON(page, downloadDir) {
     await download.saveAs(outPath);
     const text = await fs.readFile(outPath, 'utf8');
     return JSON.parse(text);
+}
+
+/**
+ * @param {import('@playwright/test').Page} page
+ * @param {string} downloadDir
+ */
+export async function exportActiveLayerGpx(page, downloadDir) {
+    await fs.mkdir(downloadDir, { recursive: true });
+    const layerItem = page.locator('.layer-list-items .layer-item').last();
+    if (await layerItem.isVisible().catch(() => false)) {
+        await layerItem.click();
+    }
+    await openExportSection(page);
+    const gpxBtn = page.getByRole('button', { name: 'GPX', exact: true });
+    await gpxBtn.waitFor({ state: 'visible', timeout: 15_000 });
+    const downloadPromise = page.waitForEvent('download', { timeout: 90_000 });
+    await gpxBtn.click();
+    const download = await downloadPromise;
+    const outPath = path.join(downloadDir, download.suggestedFilename());
+    await download.saveAs(outPath);
+    return fs.readFile(outPath, 'utf8');
+}
+
+/** Materialized map features represented in exported GPX (wpt + trk + rte). */
+export function countGpxMaterializedFeatures(gpxText) {
+    const wpt = (gpxText.match(/<wpt[\s>]/g) || []).length;
+    const trk = (gpxText.match(/<trk[\s>]/g) || []).length;
+    const rte = (gpxText.match(/<rte[\s>]/g) || []).length;
+    return wpt + trk + rte;
 }

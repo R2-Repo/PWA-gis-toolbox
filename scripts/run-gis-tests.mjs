@@ -5,20 +5,22 @@
  */
 import { spawn } from 'node:child_process';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execSync } from 'node:child_process';
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const REPORT_DIR = path.join(ROOT, 'test-results/gis-report');
+const PERF_BASELINE_PATH = path.join(ROOT, 'tests/e2e/perf-baseline.json');
 
 function parseArgs(argv) {
     const flags = {
         onlyImport: argv.includes('--only') && argv.includes('import'),
         dev: argv.includes('--dev'),
         holdout: argv.includes('--holdout'),
-        full: argv.includes('--full')
+        full: argv.includes('--full'),
+        updateBaseline: argv.includes('--update-baseline')
     };
     return flags;
 }
@@ -100,12 +102,68 @@ function collectPwFailures(suite, out) {
     for (const child of suite.suites || []) collectPwFailures(child, out);
 }
 
+function collectPerfRowsFromSuite(suite, out) {
+    for (const spec of suite.specs || []) {
+        for (const t of spec.tests || []) {
+            for (const result of t.results || []) {
+                for (const ann of result.annotations || []) {
+                    if (ann.type === 'perf-row' && ann.description) {
+                        try {
+                            out.push(JSON.parse(ann.description));
+                        } catch {
+                            // ignore
+                        }
+                    }
+                }
+            }
+        }
+    }
+    for (const child of suite.suites || []) collectPerfRowsFromSuite(child, out);
+}
+
+function collectPerfRows(playwrightJson) {
+    const rows = [];
+    for (const suite of playwrightJson.suites || []) {
+        collectPerfRowsFromSuite(suite, rows);
+    }
+    return rows;
+}
+
+function loadPerfBaseline() {
+    try {
+        return JSON.parse(readFileSync(PERF_BASELINE_PATH, 'utf8'));
+    } catch {
+        return { version: 1, fixtures: {} };
+    }
+}
+
+function checkPerfRegressions(rows, baseline, fullRun) {
+    if (!fullRun) return [];
+    const violations = [];
+    for (const row of rows) {
+        const base = baseline.fixtures?.[row.id];
+        if (base?.importMs && row.importMs > base.importMs * 1.25) {
+            violations.push(
+                `${row.id}: import ms regression ${row.importMs} > 125% of baseline ${base.importMs}`
+            );
+        }
+        if (/15000|threshold.*15000|fc-15000/i.test(row.id) && row.longest > 200) {
+            violations.push(`${row.id}: longest task ${row.longest}ms > 200ms`);
+        }
+        if (/T3-stream|150k/i.test(row.id) && row.longest > 300) {
+            violations.push(`${row.id}: longest task ${row.longest}ms > 300ms`);
+        }
+    }
+    return violations;
+}
+
 function perfTable(importResults) {
     if (!importResults.length) return '_No import perf rows._';
-    const header = '| fixture | import ms | TBT ms | longest task ms |';
-    const sep = '|---|---:|---:|---:|';
+    const header =
+        '| fixture | import ms | TTI ms | TBT ms | longest task ms | heap used |';
+    const sep = '|---|---:|---:|---:|---:|---:|';
     const rows = importResults.map((r) =>
-        `| ${r.id} | ${r.importMs ?? '—'} | ${r.tbt ?? '—'} | ${r.longest ?? '—'} |`
+        `| ${r.id} | ${r.importMs ?? '—'} | ${r.ttiMs ?? '—'} | ${r.tbt ?? '—'} | ${r.longest ?? '—'} | ${r.heapUsed ?? '—'} |`
     );
     return [header, sep, ...rows].join('\n');
 }
@@ -121,6 +179,12 @@ async function main() {
 
     if (!existsSync(path.join(ROOT, 'tests/fixtures/e2e/tune/manifest.json'))) {
         const gen = await run(process.execPath, ['scripts/gen-e2e-fixtures.mjs', '--force']);
+        if (gen.code !== 0) {
+            console.error(gen.stderr || gen.stdout);
+            process.exit(2);
+        }
+    } else if (!existsSync(path.join(ROOT, 'tests/fixtures/e2e/generated/manifest.json'))) {
+        const gen = await run(process.execPath, ['scripts/gen-e2e-fixtures.mjs']);
         if (gen.code !== 0) {
             console.error(gen.stderr || gen.stdout);
             process.exit(2);
@@ -164,15 +228,21 @@ async function main() {
     }
 
     {
-        const pwArgs = ['playwright', 'test'];
-        if (flags.onlyImport) pwArgs.push('tests/e2e/import');
+        const pwArgs = ['playwright', 'test', 'tests/e2e/import'];
+        if (flags.full) {
+            pwArgs.push('--grep', '@full|@tune');
+        } else {
+            pwArgs.push('--grep', '@tune');
+        }
+        if (flags.onlyImport) {
+            // already scoped to import dir
+        }
         if (flags.dev) {
             process.env.GIS_TEST_DEV_SERVER = '1';
         }
         if (flags.holdout && existsSync(path.join(ROOT, 'tests/fixtures/e2e/holdout/manifest.json'))) {
             pwArgs.push('tests/e2e/holdout');
         }
-        pwArgs.push('--grep', '@tune');
 
         console.log('Running Playwright import e2e…');
         const pwJson = path.join(REPORT_DIR, 'playwright.json');
@@ -185,6 +255,7 @@ async function main() {
         if (existsSync(pwJson)) {
             const json = JSON.parse(await readFile(pwJson, 'utf8'));
             summary.import = summarizePlaywright(json);
+            summary.perf = collectPerfRows(json);
             if (summary.import.failed > 0) testFailures = true;
         } else {
             summary.import = {
@@ -217,6 +288,26 @@ async function main() {
     }
     const overall = harnessError ? 'HARNESS ERROR' : testFailures ? 'FAIL' : 'PASS';
 
+    const baseline = loadPerfBaseline();
+    const perfViolations = checkPerfRegressions(summary.perf, baseline, flags.full);
+    if (perfViolations.length) {
+        testFailures = true;
+    }
+
+    if (flags.updateBaseline && summary.perf.length) {
+        const next = { version: 1, updatedAt: new Date().toISOString(), fixtures: { ...baseline.fixtures } };
+        for (const row of summary.perf) {
+            next.fixtures[row.id] = {
+                importMs: row.importMs,
+                ttiMs: row.ttiMs,
+                tbt: row.tbt,
+                longest: row.longest,
+                heapUsed: row.heapUsed
+            };
+        }
+        await writeFile(PERF_BASELINE_PATH, `${JSON.stringify(next, null, 2)}\n`);
+    }
+
     const md = [
         `# GIS test report — ${overall}`,
         '',
@@ -248,11 +339,15 @@ async function main() {
             : ['- (none logged)']),
         '',
         `## Perf (import)`,
-        perfTable(summary.perf)
+        perfTable(summary.perf),
+        ...(perfViolations.length ? ['', '## Perf regressions', ...perfViolations.map((v) => `- ${v}`)] : [])
     ].join('\n');
 
     await writeFile(path.join(REPORT_DIR, 'summary.md'), md);
-    await writeFile(path.join(REPORT_DIR, 'summary.json'), `${JSON.stringify({ ...summary, overall, wallSec }, null, 2)}\n`);
+    await writeFile(
+        path.join(REPORT_DIR, 'summary.json'),
+        `${JSON.stringify({ ...summary, overall, wallSec, perfViolations }, null, 2)}\n`
+    );
 
     if (harnessError) process.exit(2);
     if (testFailures) process.exit(1);

@@ -120,6 +120,35 @@ export function writeShp(shapes) {
 }
 
 /**
+ * Shape index (.shx) for shapes written with {@link writeShp}.
+ * @param {Parameters<typeof writeShp>[0]} shapes
+ * @returns {Uint8Array}
+ */
+export function writeShx(shapes) {
+    const shp = writeShp(shapes);
+    const shpView = new DataView(shp.buffer);
+    const recordCount = shapes.length;
+    const shxWords = 50 + recordCount * 4;
+    const out = new Uint8Array(shxWords * 2);
+    const shxView = new DataView(out.buffer);
+
+    shxView.setInt32(0, 9994, false);
+    shxView.setInt32(24, shxWords, false);
+    out.set(shp.subarray(28, 100), 28);
+
+    let shpPos = 100;
+    let shxPos = 100;
+    for (let i = 0; i < recordCount; i++) {
+        const contentWords = shpView.getInt32(shpPos + 4, false);
+        shxView.setInt32(shxPos, shpPos / 2, false);
+        shxView.setInt32(shxPos + 4, contentWords, false);
+        shxPos += 8;
+        shpPos += 8 + contentWords * 2;
+    }
+    return out;
+}
+
+/**
  * @param {Array<Record<string, unknown>>} rows
  * @param {Array<{ name: string, type: 'C'|'N'|'F'|'L'|'D', length: number, decimal?: number }>} fields
  * @returns {Uint8Array}
@@ -179,4 +208,4 @@ export function writeDbf(rows, fields) {
     return out;
 }
 
-export default { writeShp, writeDbf };
+export default { writeShp, writeShx, writeDbf };

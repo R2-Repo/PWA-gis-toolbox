@@ -14,11 +14,18 @@ import {
     packProjectKit
 } from '../js/core/project-kit.js';
 import { parseGpxForImport } from '../js/import/import-parse-service.js';
-import { writeShp, writeDbf } from '../tests/helpers/shp-writer.js';
+import { writeShp, writeShx, writeDbf } from '../tests/helpers/shp-writer.js';
+import {
+    LIMITS,
+    preflightByteBands
+} from '../js/import/import-limits.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(__dirname, '..');
 const OUT_DIR = path.join(ROOT, 'tests/fixtures/e2e/tune');
+const GEN_DIR = path.join(ROOT, 'tests/fixtures/e2e/generated');
+const GENERATED_VERSION = 1;
+const GENERATED_SEED = 0x6e2e0b01;
 
 /** @type {object[]} */
 const manifestFixtures = [];
@@ -388,11 +395,14 @@ const DBF_FIELDS = [
 
 async function writeShapefileZip(name, shapes, attrs, prjWkt, meta) {
     const shp = writeShp(shapes);
+    const shx = writeShx(shapes);
     const dbf = writeDbf(attrs, DBF_FIELDS);
     const zip = new JSZip();
     zip.file('layer.shp', shp);
-    zip.file('layer.dbf', dbf);
+    if (!meta.omitShx) zip.file('layer.shx', shx);
+    if (!meta.omitDbf) zip.file('layer.dbf', dbf);
     if (prjWkt) zip.file('layer.prj', prjWkt);
+    if (meta.cpg) zip.file('layer.cpg', meta.cpg);
     const buf = await zip.generateAsync({ type: 'nodebuffer' });
     await fs.writeFile(path.join(OUT_DIR, name), buf);
     addFixture({
@@ -509,7 +519,46 @@ async function writeShapefiles(tier) {
                 featureCount: 1,
                 bbox: [-111.5, 40.1, -111.4, 40.2],
                 geometryTypes: ['Polygon'],
-                crs: 'EPSG:4326'
+                crs: 'EPSG:4326',
+                cpg: 'UTF-8'
+            }
+        );
+
+        await writeShapefileZip(
+            'neg-shp-missing-shx.zip',
+            shapes.slice(0, 3),
+            attrs.slice(0, 3),
+            'GEOGCS["WGS 84",DATUM["WGS_1984",SPHEROID["WGS 84",6378137,298.257223563]],PRIMEM["Greenwich",0],UNIT["Degree",0.0174532925199433]]',
+            {
+                id: 'neg-shp-missing-shx',
+                tier: 'T0',
+                tag: '@tune',
+                expectedOutcome: 'failure',
+                featureCount: 0,
+                geometryTypes: [],
+                fields: {},
+                crs: 'EPSG:4326',
+                omitShx: true,
+                notes: 'Shapefile zip missing .shx — expect import failure'
+            }
+        );
+
+        await writeShapefileZip(
+            'neg-shp-missing-dbf.zip',
+            shapes.slice(0, 3),
+            attrs.slice(0, 3),
+            'GEOGCS["WGS 84",DATUM["WGS_1984",SPHEROID["WGS 84",6378137,298.257223563]],PRIMEM["Greenwich",0],UNIT["Degree",0.0174532925199433]]',
+            {
+                id: 'neg-shp-missing-dbf',
+                tier: 'T0',
+                tag: '@tune',
+                expectedOutcome: 'failure',
+                featureCount: 0,
+                geometryTypes: [],
+                fields: {},
+                crs: 'EPSG:4326',
+                omitDbf: true,
+                notes: 'Shapefile zip missing .dbf — expect import failure'
             }
         );
     }
@@ -559,8 +608,7 @@ async function writeProjectKit() {
             tier: 'T0',
             tag: '@tune',
             expectedOutcome: 'success',
-            ...meta,
-            knownBug: 'Project kit import does not complete in Playwright (Import Toolbox project flow stalls before layer list updates)'
+            ...meta
         });
     }
 }
@@ -624,12 +672,423 @@ async function writeNegativeFixtures() {
     });
 }
 
+const largeRand = mulberry32(GENERATED_SEED);
+
+function makeGridFeatures(count, tierLabel = 'GEN') {
+    /** @type {import('geojson').Feature[]} */
+    const features = [];
+    const cols = Math.ceil(Math.sqrt(count));
+    for (let i = 0; i < count; i++) {
+        const row = Math.floor(i / cols);
+        const col = i % cols;
+        const lon = -112 + (col / cols) * 2;
+        const lat = 39 + (row / cols) * 2;
+        features.push({
+            type: 'Feature',
+            properties: { id: i, name: `${tierLabel}-${i}`, unicode: `v-${i}` },
+            geometry: { type: 'Point', coordinates: [lon, lat] }
+        });
+    }
+    return features;
+}
+
+function utf8ByteLength(text) {
+    return Buffer.byteLength(text, 'utf8');
+}
+
+function padGeojsonToBytes(features, targetBytes, over = false) {
+    const fc = { type: 'FeatureCollection', features: [...features] };
+    let pad = '';
+    while (utf8ByteLength(JSON.stringify(fc)) < targetBytes - (over ? 0 : 64)) {
+        pad += 'x'.repeat(512);
+        fc.features[0].properties._pad = pad;
+    }
+    let text = JSON.stringify(fc);
+    if (over) {
+        while (utf8ByteLength(text) <= targetBytes) {
+            pad += 'y';
+            fc.features[0].properties._pad = pad;
+            text = JSON.stringify(fc);
+        }
+    } else {
+        while (utf8ByteLength(text) >= targetBytes && pad.length > 0) {
+            pad = pad.slice(0, -256);
+            fc.features[0].properties._pad = pad;
+            text = JSON.stringify(fc);
+        }
+    }
+    return text;
+}
+
+function rowsForFeatures(features) {
+    return features.map((f, i) => ({
+        latitude: f.geometry.coordinates[1],
+        longitude: f.geometry.coordinates[0],
+        id: i,
+        name: f.properties.name,
+        unicode: f.properties.unicode
+    }));
+}
+
+async function writeGeneratedManifest(entries) {
+    const manifestPath = path.join(GEN_DIR, 'manifest.json');
+    await fs.writeFile(
+        manifestPath,
+        `${JSON.stringify(
+            {
+                version: GENERATED_VERSION,
+                seed: GENERATED_SEED,
+                generatedAt: new Date().toISOString(),
+                fixtures: entries
+            },
+            null,
+            2
+        )}\n`
+    );
+}
+
+async function loadGeneratedCache() {
+    const cachePath = path.join(GEN_DIR, '.cache.json');
+    try {
+        const raw = await fs.readFile(cachePath, 'utf8');
+        return JSON.parse(raw);
+    } catch {
+        return null;
+    }
+}
+
+async function saveGeneratedCache(cache) {
+    await fs.writeFile(path.join(GEN_DIR, '.cache.json'), `${JSON.stringify(cache, null, 2)}\n`);
+}
+
+async function zipWithPadding(files, targetBytes, over = false) {
+    const zip = new JSZip();
+    for (const [name, data] of files) zip.file(name, data);
+    let buf = await zip.generateAsync({ type: 'nodebuffer', compression: 'STORE' });
+    const goal = over ? targetBytes + 1024 : targetBytes - 512;
+    const need = goal - buf.length;
+    if (need > 0) {
+        zip.file('padding.bin', Buffer.alloc(need, 0x41));
+        buf = await zip.generateAsync({ type: 'nodebuffer', compression: 'STORE' });
+    }
+    return buf;
+}
+
+async function writeXlsxNearBytes(filePath, baseRows, targetBytes, over = false) {
+    let rows = baseRows.map((row) => ({ ...row }));
+    for (;;) {
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), 'data');
+        XLSX.writeFile(wb, filePath);
+        const size = (await fs.stat(filePath)).size;
+        if (over) {
+            if (size > targetBytes) break;
+        } else if (size >= targetBytes - 512) {
+            break;
+        }
+        const start = rows.length;
+        for (let i = 0; i < 400; i++) {
+            rows.push({
+                latitude: 39 + (start + i) * 0.00001,
+                longitude: -111 + (start + i) * 0.00001,
+                id: start + i,
+                name: `pad-${start + i}`,
+                unicode: 'x'.repeat(32)
+            });
+        }
+    }
+}
+
+async function writeGeojsonFile(filePath, features) {
+    const header = '{"type":"FeatureCollection","features":[';
+    const footer = ']}';
+    await fs.writeFile(filePath, header);
+    for (let i = 0; i < features.length; i++) {
+        const chunk = (i ? ',' : '') + JSON.stringify(features[i]);
+        await fs.appendFile(filePath, chunk);
+    }
+    await fs.appendFile(filePath, footer);
+}
+
+async function generateLargeFixtures(force = false) {
+    await fs.mkdir(GEN_DIR, { recursive: true });
+    const cachePath = path.join(GEN_DIR, '.cache.json');
+    const cacheKey = `${GENERATED_VERSION}:${GENERATED_SEED}`;
+    const existing = await loadGeneratedCache();
+    if (!force && existing?.key === cacheKey && (await fs.stat(path.join(GEN_DIR, 'manifest.json')).catch(() => null))) {
+        console.log('generated fixtures cache hit — use --force to regenerate');
+        return;
+    }
+
+    /** @type {object[]} */
+    const generated = [];
+
+    const textBands = preflightByteBands('geojson', LIMITS);
+    const binaryBands = preflightByteBands('zip', LIMITS);
+
+    const textTargets = [
+        ['soft-under', textBands.soft - 4096, false],
+        ['soft-over', textBands.soft + 4096, true],
+        ['strong-under', textBands.strong - 4096, false],
+        ['strong-over', textBands.strong + 4096, true],
+        ['hard-under', textBands.hard - 4096, false],
+        ['hard-over', textBands.hard + 4096, true]
+    ];
+
+    for (const [label, target, over] of textTargets) {
+        const features = makeGridFeatures(40, label);
+        const geoName = `geojson-${label}.geojson`;
+        await fs.writeFile(path.join(GEN_DIR, geoName), padGeojsonToBytes(features, target, over));
+        generated.push({
+            id: `byte-geojson-${label}`,
+            file: geoName,
+            format: 'geojson',
+            tier: 'T2',
+            tag: '@full',
+            expectedOutcome: over && label.includes('hard-over') ? 'failure' : 'success',
+            featureCount: features.length,
+            byteTarget: target,
+            crs: 'EPSG:4326'
+        });
+
+        const csvName = `csv-${label}.csv`;
+        const csvRows = rowsForFeatures(features);
+        let csvText = [Object.keys(csvRows[0]).join(','), ...csvRows.map((r) => Object.values(r).join(','))].join('\n');
+        while (utf8ByteLength(csvText) < target - (over ? 0 : 64)) {
+            csvText += `\n#${'z'.repeat(512)}`;
+        }
+        if (over) {
+            while (utf8ByteLength(csvText) <= target) csvText += `\n#${'w'.repeat(512)}`;
+        }
+        await fs.writeFile(path.join(GEN_DIR, csvName), csvText);
+        generated.push({
+            id: `byte-csv-${label}`,
+            file: csvName,
+            format: 'csv',
+            tier: 'T2',
+            tag: '@full',
+            expectedOutcome: over && label.includes('hard-over') ? 'failure' : 'success',
+            featureCount: features.length,
+            byteTarget: target,
+            crs: 'EPSG:4326'
+        });
+    }
+
+    const binTargets = [
+        ['soft-under', binaryBands.soft - 4096, false],
+        ['soft-over', binaryBands.soft + 4096, true],
+        ['strong-under', binaryBands.strong - 4096, false],
+        ['strong-over', binaryBands.strong + 4096, true],
+        ['hard-under', binaryBands.hard - 4096, false],
+        ['hard-over', binaryBands.hard + 4096, true]
+    ];
+
+    for (const [label, target, over] of binTargets) {
+        const features = makeGridFeatures(30, `bin-${label}`);
+        const shapes = features.map((f) => ({
+            type: 'Point',
+            points: [[f.geometry.coordinates[0], f.geometry.coordinates[1]]]
+        }));
+        const attrs = features.map((f, i) => ({ id: i, name: f.properties.name }));
+        const shp = writeShp(shapes);
+        const shx = writeShx(shapes);
+        const dbf = writeDbf(attrs, DBF_FIELDS);
+        const shpZipName = `shapefile-${label}.zip`;
+        const zipBuf = await zipWithPadding(
+            [
+                ['layer.shp', shp],
+                ['layer.shx', shx],
+                ['layer.dbf', dbf]
+            ],
+            target,
+            over
+        );
+        await fs.writeFile(path.join(GEN_DIR, shpZipName), zipBuf);
+        generated.push({
+            id: `byte-shp-${label}`,
+            file: shpZipName,
+            format: 'shapefile',
+            tier: 'T2',
+            tag: '@full',
+            expectedOutcome: over && label.includes('hard-over') ? 'failure' : 'success',
+            featureCount: features.length,
+            byteTarget: target,
+            crs: 'EPSG:4326'
+        });
+
+        const kml = buildKml(features, label);
+        const kmzName = `kmz-${label}.kmz`;
+        const kmzBuf = await zipWithPadding([['doc.kml', kml]], target, over);
+        await fs.writeFile(path.join(GEN_DIR, kmzName), kmzBuf);
+        generated.push({
+            id: `byte-kmz-${label}`,
+            file: kmzName,
+            format: 'kmz',
+            tier: 'T2',
+            tag: '@full',
+            expectedOutcome: over && label.includes('hard-over') ? 'failure' : 'success',
+            featureCount: features.length,
+            byteTarget: target,
+            crs: 'EPSG:4326'
+        });
+
+        const xlsxName = `xlsx-${label}.xlsx`;
+        const xlsxPath = path.join(GEN_DIR, xlsxName);
+        await writeXlsxNearBytes(xlsxPath, rowsForFeatures(features), target, over);
+        const xlsxStat = await fs.stat(xlsxPath);
+        generated.push({
+            id: `byte-xlsx-${label}`,
+            file: xlsxName,
+            format: 'xlsx',
+            tier: 'T2',
+            tag: '@full',
+            expectedOutcome: over && label.includes('hard-over') ? 'failure' : 'success',
+            featureCount: features.length,
+            byteTarget: target,
+            crs: 'EPSG:4326',
+            sizeBytes: xlsxStat.size
+        });
+    }
+
+    for (const count of [14_999, 15_000]) {
+        const features = makeGridFeatures(count, `fc-${count}`);
+        const geoName = `geojson-fc-${count}.geojson`;
+        await writeGeojsonFile(path.join(GEN_DIR, geoName), features);
+        generated.push({
+            id: `threshold-geojson-${count}`,
+            file: geoName,
+            format: 'geojson',
+            tier: 'T2',
+            tag: '@full',
+            expectedOutcome: 'success',
+            featureCount: count,
+            workspaceExpect: count >= 15_000 ? 'chunked' : 'memory',
+            crs: 'EPSG:4326',
+            skipBbox: true
+        });
+
+        const csvName = `csv-fc-${count}.csv`;
+        await fs.writeFile(path.join(GEN_DIR, csvName), rowsToCsv(rowsForFeatures(features)));
+        generated.push({
+            id: `threshold-csv-${count}`,
+            file: csvName,
+            format: 'csv',
+            tier: 'T2',
+            tag: '@full',
+            expectedOutcome: 'success',
+            featureCount: count,
+            workspaceExpect: count >= 15_000 ? 'chunked' : 'memory',
+            crs: 'EPSG:4326',
+            skipBbox: true
+        });
+
+        const kmlName = `kml-fc-${count}.kml`;
+        await fs.writeFile(path.join(GEN_DIR, kmlName), buildKml(features, String(count)));
+        generated.push({
+            id: `threshold-kml-${count}`,
+            file: kmlName,
+            format: 'kml',
+            tier: 'T2',
+            tag: '@full',
+            expectedOutcome: 'success',
+            featureCount: count,
+            workspaceExpect: count >= 15_000 ? 'chunked' : 'memory',
+            crs: 'EPSG:4326',
+            skipBbox: true
+        });
+
+        const shapes = features.map((f) => ({
+            type: 'Point',
+            points: [[f.geometry.coordinates[0], f.geometry.coordinates[1]]]
+        }));
+        const attrs = features.map((f, i) => ({ id: i, name: f.properties.name }));
+        const shpZipName = `shapefile-fc-${count}.zip`;
+        const zip = new JSZip();
+        zip.file('layer.shp', writeShp(shapes));
+        zip.file('layer.shx', writeShx(shapes));
+        zip.file('layer.dbf', writeDbf(attrs, DBF_FIELDS));
+        zip.file(
+            'layer.prj',
+            'GEOGCS["WGS 84",DATUM["WGS_1984",SPHEROID["WGS 84",6378137,298.257223563]],PRIMEM["Greenwich",0],UNIT["Degree",0.0174532925199433]]'
+        );
+        await fs.writeFile(path.join(GEN_DIR, shpZipName), await zip.generateAsync({ type: 'nodebuffer' }));
+        generated.push({
+            id: `threshold-shp-${count}`,
+            file: shpZipName,
+            format: 'shapefile',
+            tier: 'T2',
+            tag: '@full',
+            expectedOutcome: 'success',
+            featureCount: count,
+            workspaceExpect: count >= 15_000 ? 'chunked' : 'memory',
+            crs: 'EPSG:4326',
+            skipBbox: true
+        });
+
+        const xlsxName = `xlsx-fc-${count}.xlsx`;
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rowsForFeatures(features)), 'data');
+        XLSX.writeFile(wb, path.join(GEN_DIR, xlsxName));
+        generated.push({
+            id: `threshold-xlsx-${count}`,
+            file: xlsxName,
+            format: 'xlsx',
+            tier: 'T2',
+            tag: '@full',
+            expectedOutcome: 'success',
+            featureCount: count,
+            workspaceExpect: count >= 15_000 ? 'chunked' : 'memory',
+            crs: 'EPSG:4326',
+            skipBbox: true
+        });
+    }
+
+    const t3Count = 120_000;
+    const t3Features = makeGridFeatures(t3Count, 'T3');
+    const t3Name = 't3-stream-120k.geojson';
+    await writeGeojsonFile(path.join(GEN_DIR, t3Name), t3Features);
+    generated.push({
+        id: 'T3-stream-120k',
+        file: t3Name,
+        format: 'geojson',
+        tier: 'T3',
+        tag: '@full',
+        expectedOutcome: 'success',
+        featureCount: t3Count,
+        stream: true,
+        crs: 'EPSG:4326',
+        skipBbox: true,
+        timeoutMs: 600_000
+    });
+
+    const t4Name = 't4-over-hard.geojson';
+    await fs.writeFile(
+        path.join(GEN_DIR, t4Name),
+        padGeojsonToBytes(makeGridFeatures(50, 'T4'), LIMITS.textHardBytes + 8192, true)
+    );
+    generated.push({
+        id: 'T4-over-hard',
+        file: t4Name,
+        format: 'geojson',
+        tier: 'T4',
+        tag: '@full',
+        expectedOutcome: 'failure',
+        featureCount: 0,
+        crs: 'EPSG:4326'
+    });
+
+    await writeGeneratedManifest(generated);
+    await saveGeneratedCache({ key: cacheKey, version: GENERATED_VERSION, seed: GENERATED_SEED, count: generated.length });
+    console.log(`Wrote ${generated.length} generated fixtures to ${GEN_DIR}`);
+}
+
 async function main() {
     const force = process.argv.includes('--force');
     await fs.mkdir(OUT_DIR, { recursive: true });
     const manifestPath = path.join(OUT_DIR, 'manifest.json');
     if (!force && (await fs.stat(manifestPath).catch(() => null))) {
-        console.log('manifest exists — use --force to regenerate');
+        console.log('tune manifest exists — use --force to regenerate tune fixtures');
+        await generateLargeFixtures(force);
         return;
     }
 
@@ -659,6 +1118,7 @@ async function main() {
         `${JSON.stringify({ version: 1, generatedAt: new Date().toISOString(), fixtures: manifestFixtures }, null, 2)}\n`
     );
     console.log(`Wrote ${manifestFixtures.length} fixtures to ${OUT_DIR}`);
+    await generateLargeFixtures(force);
 }
 
 main().catch((err) => {
