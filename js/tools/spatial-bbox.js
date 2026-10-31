@@ -102,11 +102,23 @@ export function bboxPreFilterByRadius(srcFeature, tgtIndex, tgtFeatures, maxRadi
     if (!(maxRadiusM > 0 && maxRadiusM < Infinity)) return tgtFeatures;
     try {
         const srcBbox = turf.bbox(srcFeature);
-        const bufDeg = (maxRadiusM / 111000) * 1.5;
-        const sMinX = srcBbox[0] - bufDeg;
-        const sMinY = srcBbox[1] - bufDeg;
-        const sMaxX = srcBbox[2] + bufDeg;
-        const sMaxY = srcBbox[3] + bufDeg;
+        const latRef = (srcBbox[1] + srcBbox[3]) / 2;
+        if (Math.abs(latRef) >= 89 || srcBbox[2] - srcBbox[0] > 180) {
+            return tgtFeatures;
+        }
+
+        const latPad = ((maxRadiusM / METERS_PER_DEG_LAT) * 1.5);
+        const cosLat = Math.cos((latRef * Math.PI) / 180);
+        const lonPad = Math.abs(cosLat) < 1e-6 ? 180 : latPad / cosLat;
+
+        const sMinX = srcBbox[0] - lonPad;
+        const sMinY = srcBbox[1] - latPad;
+        const sMaxX = srcBbox[2] + lonPad;
+        const sMaxY = srcBbox[3] + latPad;
+
+        if (sMinX < -180 || sMaxX > 180) {
+            return tgtFeatures;
+        }
 
         const candidates = [];
         for (const entry of tgtIndex) {

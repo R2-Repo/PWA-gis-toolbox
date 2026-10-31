@@ -134,6 +134,7 @@ export async function clipFeatures(dataset, clipGeometry) {
     return task.run(async (t) => {
         const features = dataset.geojson.features;
         const clipped = [];
+        let clipFailures = 0;
         const clipBox = getBBoxAny(clipGeometry);
 
         for (let i = 0; i < features.length; i++) {
@@ -156,6 +157,17 @@ export async function clipFeatures(dataset, clipGeometry) {
                     if (turf.booleanPointInPolygon(f, clipGeometry)) {
                         clipped.push(f);
                     }
+                } else if (f.geometry.type === 'MultiPoint') {
+                    const inside = f.geometry.coordinates.filter((c) =>
+                        turf.booleanPointInPolygon(turf.point(c), clipGeometry)
+                    );
+                    if (inside.length > 0) {
+                        clipped.push({
+                            type: 'Feature',
+                            properties: { ...f.properties },
+                            geometry: { type: 'MultiPoint', coordinates: inside }
+                        });
+                    }
                 } else {
                     const intersection = turf.intersect(
                         turf.featureCollection([turf.feature(clipGeometry), f])
@@ -166,15 +178,11 @@ export async function clipFeatures(dataset, clipGeometry) {
                     }
                 }
             } catch (e) {
-                // For complex geometries or errors, include if centroid is inside
-                try {
-                    const centroid = turf.centroid(f);
-                    if (turf.booleanPointInPolygon(centroid, clipGeometry)) {
-                        clipped.push(f);
-                    }
-                } catch (_) { }
+                clipFailures++;
             }
         }
+
+        warnIfFeatureFailures('Clip', clipFailures, features.length);
 
         const fc = { type: 'FeatureCollection', features: clipped };
         return createSpatialDataset(`${dataset.name}_clipped`, fc, { format: 'derived' });

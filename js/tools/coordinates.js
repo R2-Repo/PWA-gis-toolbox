@@ -12,15 +12,44 @@ export const COORD_FORMATS = [
     { id: 'utm', label: 'UTM',                       example: '17T 585360 4477462' }
 ];
 
+function _dmsPartsFromAbs(absDd) {
+    let totalSec = absDd * 3600;
+    let d = Math.floor(totalSec / 3600);
+    totalSec -= d * 3600;
+    let m = Math.floor(totalSec / 60);
+    let s = totalSec - m * 60;
+    s = Math.round(s * 100) / 100;
+    if (s >= 60) {
+        s = 0;
+        m += 1;
+    }
+    if (m >= 60) {
+        m = 0;
+        d += 1;
+    }
+    return { d, m, s: s.toFixed(2) };
+}
+
+function _ddmPartsFromAbs(absDd) {
+    let d = Math.floor(absDd);
+    let m = (absDd - d) * 60;
+    m = Math.round(m * 10000) / 10000;
+    if (m >= 60) {
+        m = 0;
+        d += 1;
+    }
+    return { d, m: m.toFixed(4) };
+}
+
+function _parseLeadingNegative(degToken) {
+    return /^-/.test(String(degToken).trim());
+}
+
 /**
  * Decimal Degrees to DMS string
  */
 export function ddToDms(dd, isLon = false) {
-    const abs = Math.abs(dd);
-    const d = Math.floor(abs);
-    const minfloat = (abs - d) * 60;
-    const m = Math.floor(minfloat);
-    const s = ((minfloat - m) * 60).toFixed(2);
+    const { d, m, s } = _dmsPartsFromAbs(Math.abs(dd));
     const dir = isLon ? (dd >= 0 ? 'E' : 'W') : (dd >= 0 ? 'N' : 'S');
     return `${d}° ${m}' ${s}" ${dir}`;
 }
@@ -29,9 +58,7 @@ export function ddToDms(dd, isLon = false) {
  * Decimal Degrees to DDM (Degrees Decimal Minutes) string
  */
 export function ddToDdm(dd, isLon = false) {
-    const abs = Math.abs(dd);
-    const d = Math.floor(abs);
-    const m = ((abs - d) * 60).toFixed(4);
+    const { d, m } = _ddmPartsFromAbs(Math.abs(dd));
     const dir = isLon ? (dd >= 0 ? 'E' : 'W') : (dd >= 0 ? 'N' : 'S');
     return `${d}° ${m}' ${dir}`;
 }
@@ -45,9 +72,8 @@ export function dmsToDd(dmsStr) {
     const regex = /(-?\d+)[°\s]+(\d+)['\s]+(\d+\.?\d*)["\s]*([NSEW])?/;
     const match = cleaned.match(regex);
     if (match) {
-        let dd = parseFloat(match[1]) + parseFloat(match[2]) / 60 + parseFloat(match[3]) / 3600;
-        if (match[4] === 'S' || match[4] === 'W') dd = -dd;
-        if (parseFloat(match[1]) < 0) dd = -Math.abs(dd);
+        let dd = Math.abs(parseFloat(match[1])) + parseFloat(match[2]) / 60 + parseFloat(match[3]) / 3600;
+        if (match[4] === 'S' || match[4] === 'W' || _parseLeadingNegative(match[1])) dd = -dd;
         return dd;
     }
     // Try plain number
@@ -65,9 +91,8 @@ export function ddmToDd(ddmStr) {
     const regex = /(-?\d+)[°\s]+(\d+\.?\d*)['\s]*([NSEW])?/;
     const match = cleaned.match(regex);
     if (match) {
-        let dd = parseFloat(match[1]) + parseFloat(match[2]) / 60;
-        if (match[3] === 'S' || match[3] === 'W') dd = -dd;
-        if (parseFloat(match[1]) < 0) dd = -Math.abs(dd);
+        let dd = Math.abs(parseFloat(match[1])) + parseFloat(match[2]) / 60;
+        if (match[3] === 'S' || match[3] === 'W' || _parseLeadingNegative(match[1])) dd = -dd;
         return dd;
     }
     return null;

@@ -73,6 +73,19 @@ export function computeFeatureDistance(srcFeature, tgtFeature, srcRepMethod = 'c
             return { distanceMeters: d, nearestCoord: tg.coordinates };
         }
 
+        if (tg.type === 'MultiPoint') {
+            let best = Infinity;
+            let nearestCoord = null;
+            for (const coord of tg.coordinates) {
+                const d = turf.distance(srcPt, turf.point(coord), { units: 'meters' });
+                if (d < best) {
+                    best = d;
+                    nearestCoord = coord;
+                }
+            }
+            return { distanceMeters: best, nearestCoord };
+        }
+
         if (tg.type === 'LineString') {
             const snapped = turf.nearestPointOnLine(tgtFeature, srcPt, { units: 'meters' });
             return {
