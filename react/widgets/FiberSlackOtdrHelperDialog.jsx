@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { LayerSelect } from './shared/LayerSelect.jsx';
+import { RunPreviewFooter } from './shared/RunPreviewFooter.jsx';
 import { WidgetPanelShell } from './shared/WidgetPanelShell.jsx';
 import { WidgetStepWizard } from './shared/WidgetStepWizard.jsx';
 
@@ -288,48 +289,38 @@ export function FiberSlackOtdrHelperDialog({
         setInputDistance('');
     };
 
-    const wizardFooter = (extraButtons = null) => (
-        <div className="modal-footer">
-            <button type="button" className="btn btn-secondary cancel-btn" onClick={() => onCancel?.()}>
-                Cancel
-            </button>
-            {step > 1 && !result ? (
-                <button type="button" className="btn btn-secondary" onClick={goBack}>
-                    Back
-                </button>
-            ) : null}
-            {extraButtons}
-        </div>
-    );
-
     if (result) {
         return (
             <WidgetPanelShell
-                footer={wizardFooter(
-                    <>
-                        {!isCalculator && !layerCreated ? (
-                            <button
-                                type="button"
-                                className="btn btn-primary apply-btn"
-                                onClick={async () => {
-                                    try {
-                                        await onCreateResultLayer?.(result);
-                                        setLayerCreated(true);
-                                    } catch (err) {
-                                        setError(err?.message || 'Could not create result layer.');
-                                    }
-                                }}
-                            >
-                                Create result layer
-                            </button>
-                        ) : null}
-                        <button type="button" className="btn btn-primary apply-btn" onClick={() => onCancel?.()}>
-                            Done
-                        </button>
-                        <button type="button" className="btn btn-secondary" onClick={resetAll}>
-                            New calculation
-                        </button>
-                    </>
+                footer={(
+                    <RunPreviewFooter
+                        onCancel={onCancel}
+                        cancelLabel="Done"
+                        showRun={false}
+                        middleActions={(
+                            <>
+                                {!isCalculator && !layerCreated ? (
+                                    <button
+                                        type="button"
+                                        className="btn btn-secondary"
+                                        onClick={async () => {
+                                            try {
+                                                await onCreateResultLayer?.(result);
+                                                setLayerCreated(true);
+                                            } catch (err) {
+                                                setError(err?.message || 'Could not create result layer.');
+                                            }
+                                        }}
+                                    >
+                                        Create result layer
+                                    </button>
+                                ) : null}
+                                <button type="button" className="btn btn-secondary" onClick={resetAll}>
+                                    New calculation
+                                </button>
+                            </>
+                        )}
+                    />
                 )}
             >
                 <div style={{ fontWeight: 600, marginBottom: 10 }}>Results</div>
@@ -387,15 +378,17 @@ export function FiberSlackOtdrHelperDialog({
         <WidgetPanelShell
             status={error || (picking ? 'Click a point on the selected route…' : '')}
             statusTone={error ? 'danger' : 'muted'}
-            footer={wizardFooter(
-                <button
-                    type="button"
-                    className="btn btn-primary apply-btn"
-                    onClick={handlePrimaryAction}
-                    disabled={running || picking || primaryDisabled}
-                >
-                    {running ? 'Working…' : picking ? 'Waiting for map click…' : primaryLabel}
-                </button>
+            footer={(
+                <RunPreviewFooter
+                    onCancel={onCancel}
+                    showBack={step > 1}
+                    onBack={goBack}
+                    onRun={handlePrimaryAction}
+                    runLabel={primaryLabel}
+                    running={running || picking}
+                    runBusyLabel={picking ? 'Waiting for map click…' : 'Working…'}
+                    disabled={primaryDisabled}
+                />
             )}
         >
             <WidgetStepWizard steps={wizardSteps} currentStep={step} />

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { LayerSelect } from '../shared/LayerSelect.jsx';
+import { RunPreviewFooter } from '../shared/RunPreviewFooter.jsx';
 import { WidgetPanelShell } from '../shared/WidgetPanelShell.jsx';
 
 const WIZARD_STEPS = [
@@ -102,6 +103,7 @@ function DrawPointsBlock({ label, count, drawing, onStart, onStop, disabled }) {
 export function PoleSectorOptimizerPanel({
     layers = [],
     unitOptions = [],
+    onCancel,
     onValidateLocations,
     onStartDrawClientPoints,
     onStartDrawPolePoints,
@@ -289,53 +291,48 @@ export function PoleSectorOptimizerPanel({
         setError('');
     };
 
-    const wizardFooter = () => (
-        <div style={{ display: 'flex', gap: 8, justifyContent: 'space-between', width: '100%' }}>
-            <div style={{ display: 'flex', gap: 8 }}>
-                {step === 4 ? (
-                    <button type="button" className="btn btn-sm btn-secondary" onClick={handleBackFromResults}>
-                        Back
-                    </button>
-                ) : null}
-                {step > 1 && step < 4 ? (
-                    <button type="button" className="btn btn-sm btn-secondary" onClick={() => setStep((s) => s - 1)}>Back</button>
-                ) : null}
-            </div>
-            {step < 3 ? (
-                <button
-                    type="button"
-                    className="btn btn-sm btn-primary"
+    const wizardFooter = () => {
+        if (step < 3) {
+            return (
+                <RunPreviewFooter
+                    onCancel={onCancel}
+                    showBack={step > 1}
+                    onBack={() => setStep((s) => s - 1)}
+                    onRun={() => setStep((s) => s + 1)}
+                    runLabel="Next"
                     disabled={
                         (step === 1 && !canAdvanceStep1)
                         || (step === 2 && !canAdvanceStep2)
                     }
-                    onClick={() => setStep((s) => s + 1)}
-                >
-                    Next
-                </button>
-            ) : null}
-            {step === 3 ? (
-                <button
-                    type="button"
-                    className="btn btn-sm btn-primary"
+                />
+            );
+        }
+        if (step === 3) {
+            return (
+                <RunPreviewFooter
+                    onCancel={onCancel}
+                    showBack
+                    onBack={() => setStep(2)}
+                    onRun={handleRun}
+                    runLabel="Run optimizer"
+                    running={running}
                     disabled={running || !canAdvanceStep2}
-                    onClick={handleRun}
-                >
-                    {running ? 'Running…' : 'Run optimizer'}
-                </button>
-            ) : null}
-            {step === 4 ? (
-                <button
-                    type="button"
-                    className="btn btn-sm btn-primary"
-                    disabled={creating}
-                    onClick={handleCreateOutputs}
-                >
-                    {creating ? 'Creating…' : 'Create output layers'}
-                </button>
-            ) : null}
-        </div>
-    );
+                />
+            );
+        }
+        return (
+            <RunPreviewFooter
+                onCancel={onCancel}
+                showBack
+                onBack={handleBackFromResults}
+                onRun={handleCreateOutputs}
+                runLabel="Create output layers"
+                running={creating}
+                runBusyLabel="Creating…"
+                disabled={creating}
+            />
+        );
+    };
 
     return (
         <WidgetPanelShell

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { FieldSelect } from './shared/FieldSelect.jsx';
 import { LayerSelect } from './shared/LayerSelect.jsx';
+import { RunPreviewFooter } from './shared/RunPreviewFooter.jsx';
 import { WidgetPanelShell } from './shared/WidgetPanelShell.jsx';
 import { WidgetStepWizard } from './shared/WidgetStepWizard.jsx';
 
@@ -360,38 +361,15 @@ export function LayerMatchAssistantDialog({
         setStep((current) => Math.min(current + 1, 4));
     };
 
-    const wizardFooter = (primaryAction) => (
-        <div className="modal-footer">
-            <button type="button" className="btn btn-secondary cancel-btn" onClick={() => onCancel?.()}>
-                Cancel
-            </button>
-            {step > 1 && step < 5 ? (
-                <button
-                    type="button"
-                    className="btn btn-secondary"
-                    onClick={() => { setError(''); setStep((current) => current - 1); }}
-                >
-                    Back
-                </button>
-            ) : null}
-            {primaryAction}
-        </div>
-    );
-
     if (running) {
         return (
             <WidgetPanelShell
                 status={status || 'Working...'}
                 footer={(
-                    <div className="modal-footer">
-                        <button
-                            type="button"
-                            className="btn btn-secondary cancel-btn"
-                            onClick={() => { cancelRef.current = true; setStatus('Cancelling...'); }}
-                        >
-                            Cancel
-                        </button>
-                    </div>
+                    <RunPreviewFooter
+                        onCancel={() => { cancelRef.current = true; setStatus('Cancelling...'); }}
+                        showRun={false}
+                    />
                 )}
             >
                 <div className="gis-widget__running">
@@ -407,23 +385,22 @@ export function LayerMatchAssistantDialog({
                 onCancel={onCancel}
                 cancelLabel="Done"
                 showRun={false}
-                footer={wizardFooter(
-                    <>
-                        <button
-                            type="button"
-                            className="btn btn-secondary"
-                            onClick={() => { setStep(4); setResults(null); setMatchRows([]); }}
-                        >
-                            Run again
-                        </button>
-                        <button
-                            type="button"
-                            className="btn btn-primary apply-btn"
-                            onClick={handleAddOutputs}
-                        >
-                            Add outputs
-                        </button>
-                    </>
+                footer={(
+                    <RunPreviewFooter
+                        onCancel={onCancel}
+                        cancelLabel="Done"
+                        middleActions={(
+                            <button
+                                type="button"
+                                className="btn btn-secondary"
+                                onClick={() => { setStep(4); setResults(null); setMatchRows([]); }}
+                            >
+                                Run again
+                            </button>
+                        )}
+                        onRun={handleAddOutputs}
+                        runLabel="Add outputs"
+                    />
                 )}
             >
                 <div style={{ fontWeight: 600, marginBottom: 8 }}>Match results</div>
@@ -536,21 +513,21 @@ export function LayerMatchAssistantDialog({
             status={statusText}
             statusTone={error ? 'danger' : 'muted'}
             showRun={false}
-            footer={wizardFooter(
-                step < 4 ? (
-                    <button type="button" className="btn btn-primary apply-btn" onClick={goNext}>
-                        Next
-                    </button>
-                ) : (
-                    <button
-                        type="button"
-                        className="btn btn-primary apply-btn"
-                        onClick={runMatching}
-                        disabled={!canRun}
-                    >
-                        Run matching
-                    </button>
-                )
+            footer={(
+                <RunPreviewFooter
+                    onCancel={onCancel}
+                    showBack={step > 1 && step < 5}
+                    onBack={() => { setError(''); setStep((current) => current - 1); }}
+                    showRun={step >= 4}
+                    onRun={runMatching}
+                    runLabel="Run matching"
+                    disabled={!canRun}
+                    primaryAction={step < 4 ? (
+                        <button type="button" className="btn btn-primary apply-btn" onClick={goNext}>
+                            Next
+                        </button>
+                    ) : null}
+                />
             )}
         >
             <WidgetStepWizard steps={WIZARD_STEPS} currentStep={Math.min(step, 4)} />

@@ -4,6 +4,7 @@ import {
     getPresentationLinkSceneBundle,
     subscribePresentationLinkSceneBundle
 } from '../../js/widgets/presentation-link-builder/scene-store.js';
+import { RunPreviewFooter } from './shared/RunPreviewFooter.jsx';
 import { WidgetPanelShell } from './shared/WidgetPanelShell.jsx';
 import { LayerSelect } from './shared/LayerSelect.jsx';
 import {
@@ -365,17 +366,18 @@ export function PresentationLinkBuilder({
             cancelLabel="Close"
             showRun={false}
             footer={(
-                <div className="modal-footer presentation-link-builder__footer">
-                    <button type="button" className="btn btn-secondary" onClick={() => { onResetPreview?.(); onCancel?.(); }}>
-                        Close
-                    </button>
-                    <button type="button" className="btn btn-secondary" disabled={isBusy || !validation.ok} onClick={() => { void handlePreview(); }}>
-                        {busy ? 'Previewing…' : 'Preview'}
-                    </button>
-                    <button type="button" className="btn btn-primary" disabled={!validation.ok || !url || isBusy} onClick={() => { void handleCopy(); }}>
-                        Copy Link
-                    </button>
-                </div>
+                <RunPreviewFooter
+                    className="presentation-link-builder__footer"
+                    onCancel={() => { onResetPreview?.(); onCancel?.(); }}
+                    cancelLabel="Close"
+                    showPreview
+                    onPreview={() => { void handlePreview(); }}
+                    previewDisabled={isBusy || !validation.ok}
+                    previewBusy={busy}
+                    onRun={() => { void handleCopy(); }}
+                    runLabel="Copy Link"
+                    disabled={!validation.ok || !url || isBusy}
+                />
             )}
         >
             <div className="presentation-link-builder__selection">

@@ -77,6 +77,7 @@ export function WirelessSitePlanningDialog({
                 <PoleSectorOptimizerPanel
                     layers={layers}
                     unitOptions={unitOptions}
+                    onCancel={() => closeWidget?.() ?? onCancel?.()}
                     onValidateLocations={onValidateLocations}
                     onStartDrawClientPoints={onStartDrawClientPoints}
                     onStartDrawPolePoints={onStartDrawPolePoints}

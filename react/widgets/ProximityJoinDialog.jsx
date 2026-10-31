@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ApplyToSelector, isApplyToValid } from '../tools/ApplyToSelector.jsx';
 import { LayerSelect } from './shared/LayerSelect.jsx';
+import { RunPreviewFooter } from './shared/RunPreviewFooter.jsx';
 import { WidgetPanelShell } from './shared/WidgetPanelShell.jsx';
 import { WidgetStepWizard } from './shared/WidgetStepWizard.jsx';
 
@@ -287,34 +288,15 @@ export function ProximityJoinDialog({
         setStep((current) => Math.min(current + 1, 3));
     };
 
-    const wizardFooter = (primaryAction) => (
-        <div className="modal-footer">
-            <button type="button" className="btn btn-secondary cancel-btn" onClick={() => onCancel?.()}>
-                Cancel
-            </button>
-            {step > 1 ? (
-                <button type="button" className="btn btn-secondary" onClick={() => { setError(''); setStep((current) => current - 1); }}>
-                    Back
-                </button>
-            ) : null}
-            {primaryAction}
-        </div>
-    );
-
     if (running) {
         return (
             <WidgetPanelShell
                 status={status || 'Working...'}
                 footer={(
-                    <div className="modal-footer">
-                        <button
-                            type="button"
-                            className="btn btn-secondary cancel-btn"
-                            onClick={() => { cancelRef.current = true; setStatus('Cancelling...'); }}
-                        >
-                            Cancel
-                        </button>
-                    </div>
+                    <RunPreviewFooter
+                        onCancel={() => { cancelRef.current = true; setStatus('Cancelling...'); }}
+                        showRun={false}
+                    />
                 )}
             >
                 <div className="gis-widget__running">
@@ -330,14 +312,13 @@ export function ProximityJoinDialog({
                 onCancel={onCancel}
                 cancelLabel="Done"
                 showRun={false}
-                footer={wizardFooter(
-                    <button
-                        type="button"
-                        className="btn btn-primary apply-btn"
-                        onClick={() => { setResults(null); setStep(3); setError(''); }}
-                    >
-                        Run again
-                    </button>
+                footer={(
+                    <RunPreviewFooter
+                        onCancel={onCancel}
+                        cancelLabel="Done"
+                        onRun={() => { setResults(null); setStep(3); setError(''); }}
+                        runLabel="Run again"
+                    />
                 )}
             >
                 <div style={{ fontWeight: 600, marginBottom: 8 }}>Results</div>
@@ -380,25 +361,21 @@ export function ProximityJoinDialog({
             status={statusText}
             statusTone={error ? 'danger' : 'muted'}
             showRun={false}
-            footer={wizardFooter(
-                step < 3 ? (
-                    <button
-                        type="button"
-                        className="btn btn-primary apply-btn"
-                        onClick={goNext}
-                    >
-                        Next
-                    </button>
-                ) : (
-                    <button
-                        type="button"
-                        className="btn btn-primary apply-btn"
-                        onClick={runJoin}
-                        disabled={!canRun}
-                    >
-                        Run Proximity Join
-                    </button>
-                )
+            footer={(
+                <RunPreviewFooter
+                    onCancel={onCancel}
+                    showBack={step > 1}
+                    onBack={() => { setError(''); setStep((current) => current - 1); }}
+                    showRun={step >= 3}
+                    onRun={runJoin}
+                    runLabel="Run Proximity Join"
+                    disabled={!canRun}
+                    primaryAction={step < 3 ? (
+                        <button type="button" className="btn btn-primary apply-btn" onClick={goNext}>
+                            Next
+                        </button>
+                    ) : null}
+                />
             )}
         >
             <WidgetStepWizard steps={WIZARD_STEPS} currentStep={step} />

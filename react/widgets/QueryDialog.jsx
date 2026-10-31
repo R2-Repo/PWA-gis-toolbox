@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { RunPreviewFooter } from './shared/RunPreviewFooter.jsx';
 import { WidgetPanelShell } from './shared/WidgetPanelShell.jsx';
 import { LayerSelect } from './shared/LayerSelect.jsx';
 import { DEFAULT_RESULT_BEHAVIOR, QUERY_OPERATORS, ZOOM_MODES } from '../../js/widgets/query/engine.js';
@@ -250,10 +251,16 @@ export function QueryDialog({
                 status={error || result.message || ''}
                 statusTone={error ? 'danger' : 'muted'}
                 footer={(
-                    <div className="gis-widget__btn-row">
-                        <button type="button" className="btn btn-secondary" onClick={onCancel}>Done</button>
-                        <button type="button" className="btn btn-secondary" onClick={resetQuery}>New query</button>
-                    </div>
+                    <RunPreviewFooter
+                        onCancel={onCancel}
+                        cancelLabel="Done"
+                        showRun={false}
+                        middleActions={(
+                            <button type="button" className="btn btn-secondary" onClick={resetQuery}>
+                                New query
+                            </button>
+                        )}
+                    />
                 )}
             >
                 <div className="form-group">

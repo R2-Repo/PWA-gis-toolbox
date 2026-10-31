@@ -100,11 +100,13 @@ Do **not** add new widget logic inline in `tool-handlers.js`.
 | Component | Role |
 |-----------|------|
 | **`WidgetPanelShell`** | Scroll body + footer slot. **Default footer is `RunPreviewFooter`** (Cancel + Run). |
-| **`RunPreviewFooter`** | Standard Cancel / Run bar (`modal-footer`, `cancel-btn` / `apply-btn`). **Preferred for new widgets** — pass custom `runLabel` / `showRun` via shell props, or import directly when the footer is step-specific. |
+| **`RunPreviewFooter`** | **Required** for every widget footer (including wizards). Standard order left→right: **Cancel** (`cancel-btn`) · **Back** (optional) · **`middleActions`** · **Preview** (optional) · **Run** (`apply-btn`, label e.g. Run / Next / Copy Link). Props: `onCancel`, `cancelLabel` (Cancel | Close | Done), `onRun`, `runLabel`, `running`, `runBusyLabel`, `disabled`, `showRun`, `showCancel`, `showBack`, `onBack`, `showPreview`, `onPreview`, `previewLabel`, `previewBusy`, `middleActions`, `primaryAction` (escape hatch), `className`. |
 | **`WidgetStepWizard`** | Step chrome. **`variant="full"`** (default): numbered step pills. **`variant="compact"`**: “Step N of M” + progress bar (used when horizontal pills would crowd). |
 | **`LayerSelect`**, **`FieldSelect`**, **`CrsPicker`**, route search fields | Shared form controls |
 
-**Current practice:** all 18 dialogs use `WidgetPanelShell`. Seven use `WidgetStepWizard` (mix of `full` and `compact`). Many multi-step dialogs still **hand-roll** `modal-footer` via the shell `footer=` prop instead of `RunPreviewFooter` — behavior works but labels/order drift. **New work:** use `RunPreviewFooter` (or shell defaults) unless Back/Next wizard navigation requires a custom footer.
+**Footer rule:** all GIS widget dialogs use **`RunPreviewFooter`** — either via **`WidgetPanelShell`** defaults (`onCancel` / `onRun` props) or an explicit `footer={<RunPreviewFooter … />}`. Do **not** hand-roll `modal-footer` or ad-hoc footer button rows in dialog files. **`tests/widget-run-preview-footer.test.js`** fails if a widget dialog regresses.
+
+**Multi-step:** keep **`WidgetStepWizard`** for step chrome; wire **Back** / **Next** / final **Run** through **`RunPreviewFooter`** (`showBack`, `runLabel="Next"` on non-final steps, custom `runLabel` on the final step).
 
 **Multi-step without `WidgetStepWizard`:** Project Stationing (tabs), Sheet Cutting (phases).
 

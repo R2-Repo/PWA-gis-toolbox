@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { RunPreviewFooter } from './shared/RunPreviewFooter.jsx';
 import { WidgetPanelShell } from './shared/WidgetPanelShell.jsx';
 import { WidgetStepWizard } from './shared/WidgetStepWizard.jsx';
 
@@ -224,14 +225,16 @@ export function PlanProductionExportDialog({
             statusTone={error ? 'danger' : 'muted'}
             onCancel={onCancel}
             footer={(
-                <div className="gis-widget__btn-row" style={{ justifyContent: 'space-between', width: '100%' }}>
-                    <button type="button" className="gis-widget__link-btn" disabled={busy || step <= 1} onClick={() => setStep((current) => Math.max(1, current - 1))}>
-                        Back
-                    </button>
-                    <button type="button" className="gis-widget__primary-btn" disabled={!canGoNext || busy || step >= steps.length} onClick={handleNext}>
-                        {step >= steps.length ? 'Done' : 'Next'}
-                    </button>
-                </div>
+                <RunPreviewFooter
+                    onCancel={onCancel}
+                    showBack={step > 1}
+                    onBack={() => setStep((current) => Math.max(1, current - 1))}
+                    backDisabled={busy}
+                    onRun={handleNext}
+                    runLabel={step >= steps.length ? 'Done' : 'Next'}
+                    disabled={!canGoNext || busy || step >= steps.length}
+                    running={busy}
+                />
             )}
         >
             <WidgetStepWizard steps={steps} currentStep={step} />

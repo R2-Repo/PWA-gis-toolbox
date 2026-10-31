@@ -2777,11 +2777,15 @@ async function openSimplify() {
                     totalCount: work.totalCount,
                     layerName: layer.name,
                     onCancel: () => close(),
-                    onApply: async ({ tol, applyTo }) => {
+                    onApply: async ({ tol, toleranceUnit, applyTo }) => {
                         close();
                         try {
                             const simplified = await runWithTaskProgress('Simplify', () =>
-                                gisTools.simplifyFeatures(getWorkingDataset(layer, applyTo), tol)
+                                gisTools.simplifyFeatures(
+                                    getWorkingDataset(layer, applyTo),
+                                    tol,
+                                    { toleranceUnit: toleranceUnit || 'deg' }
+                                )
                             );
                             if (!simplified) return;
                             const { dataset, stats } = simplified;

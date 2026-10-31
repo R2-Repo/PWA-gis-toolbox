@@ -70,7 +70,7 @@ App layout overview: [`AGENTS.md`](../AGENTS.md).
 ## Shared UI conventions
 
 - **`WidgetPanelShell`** — always use for new dialogs (`gis-widget` class).
-- **`RunPreviewFooter`** — **preferred** Cancel/Run footer for new widgets (shell default, or explicit `footer=` / import).
+- **`RunPreviewFooter`** — **required** for every footer (shell default or explicit `footer={<RunPreviewFooter … />}`). Order: Cancel · Back (optional) · middleActions · Preview (optional) · Run. Labels: Cancel / Close / Done; Run / Next / Preview / tool-specific primary. See playbook props table. Do not hand-roll `modal-footer`.
 - **`WidgetStepWizard`** — use for linear steps; pick **`variant="compact"`** when step labels need horizontal space (see Georeference, Fiber Procurement, Layer Match).
 
 ---

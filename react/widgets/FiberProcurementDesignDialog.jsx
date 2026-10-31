@@ -1,4 +1,5 @@
 import { useMemo, useRef, useState } from 'react';
+import { RunPreviewFooter } from './shared/RunPreviewFooter.jsx';
 import { WidgetPanelShell } from './shared/WidgetPanelShell.jsx';
 import { WidgetStepWizard } from './shared/WidgetStepWizard.jsx';
 import { LayerSelect } from './shared/LayerSelect.jsx';
@@ -1078,36 +1079,26 @@ export function FiberProcurementDesignDialog({
             statusTone="danger"
             onCancel={onCancel}
             footer={(
-                <div className="gis-widget__btn-row" style={{ justifyContent: 'space-between', width: '100%' }}>
-                    <button
-                        type="button"
-                        className="btn btn-secondary btn-sm"
-                        disabled={busy || step <= 1}
-                        onClick={() => setStep((current) => Math.max(1, current - 1))}
-                    >
-                        Back
-                    </button>
-                    <div className="gis-widget__btn-row" style={{ marginBottom: 0 }}>
-                        {step === 2 ? (
-                            <button
-                                type="button"
-                                className="btn btn-secondary btn-sm"
-                                disabled={busy}
-                                onClick={() => setStep(3)}
-                            >
-                                Skip
-                            </button>
-                        ) : null}
+                <RunPreviewFooter
+                    onCancel={onCancel}
+                    showBack={step > 1}
+                    onBack={() => setStep((current) => Math.max(1, current - 1))}
+                    backDisabled={busy}
+                    middleActions={step === 2 ? (
                         <button
                             type="button"
-                            className="gis-widget__primary-btn"
-                            disabled={!canGoNext || !canAdvanceFromStationing || busy || step >= DESIGN_STEPS.length}
-                            onClick={handleNext}
+                            className="btn btn-secondary btn-sm"
+                            disabled={busy}
+                            onClick={() => setStep(3)}
                         >
-                            {step >= DESIGN_STEPS.length ? 'Done' : 'Next'}
+                            Skip
                         </button>
-                    </div>
-                </div>
+                    ) : null}
+                    onRun={handleNext}
+                    runLabel={step >= DESIGN_STEPS.length ? 'Done' : 'Next'}
+                    disabled={!canGoNext || !canAdvanceFromStationing || busy || step >= DESIGN_STEPS.length}
+                    running={busy}
+                />
             )}
         >
             <WidgetStepWizard steps={DESIGN_STEPS} currentStep={step} variant="compact" />

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { RunPreviewFooter } from './shared/RunPreviewFooter.jsx';
 import { WidgetPanelShell } from './shared/WidgetPanelShell.jsx';
 import { WidgetStepWizard } from './shared/WidgetStepWizard.jsx';
 import { findCoveringInset, notesUsedOnSheet } from '../../js/widgets/plan-set-callouts/leader-placement.js';
@@ -251,14 +252,16 @@ export function PlanSetCalloutsDialog({
             statusTone={error ? 'danger' : 'muted'}
             onCancel={onCancel}
             footer={(
-                <div className="gis-widget__btn-row" style={{ justifyContent: 'space-between', width: '100%' }}>
-                    <button type="button" className="gis-widget__link-btn" disabled={busy || step <= 1} onClick={() => setStep((current) => Math.max(1, current - 1))}>
-                        Back
-                    </button>
-                    <button type="button" className="gis-widget__primary-btn" disabled={primaryDisabled} onClick={handleNext}>
-                        {isLastStep ? 'Done' : 'Next'}
-                    </button>
-                </div>
+                <RunPreviewFooter
+                    onCancel={onCancel}
+                    showBack={step > 1}
+                    onBack={() => setStep((current) => Math.max(1, current - 1))}
+                    backDisabled={busy}
+                    onRun={handleNext}
+                    runLabel={isLastStep ? 'Done' : 'Next'}
+                    disabled={primaryDisabled}
+                    running={busy}
+                />
             )}
         >
             <WidgetStepWizard steps={steps} currentStep={step} />

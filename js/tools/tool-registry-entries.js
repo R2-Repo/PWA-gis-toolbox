@@ -308,7 +308,10 @@ export function registerAllRegistryEntries(opts) {
             { name: 'distance', type: 'number', unit: 'm', default: 30.48, min: 0 },
             { name: 'units', type: 'string', default: 'feet' }
         ],
-        simplify: [{ name: 'tolerance', type: 'number', unit: 'deg', default: 0.001, min: 0 }],
+        simplify: [
+            { name: 'tolerance', type: 'number', unit: 'm', default: 10, min: 0.001 },
+            { name: 'toleranceUnit', type: 'string', default: 'm' }
+        ],
         dissolve: [{ name: 'field', type: 'field', of: 'in' }],
         sample: [{ name: 'num', type: 'number', default: 10, min: 1 }],
         reproject: [

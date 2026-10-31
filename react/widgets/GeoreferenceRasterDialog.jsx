@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { RunPreviewFooter } from './shared/RunPreviewFooter.jsx';
 import { WidgetPanelShell } from './shared/WidgetPanelShell.jsx';
 import { WidgetStepWizard } from './shared/WidgetStepWizard.jsx';
 import { LayerSelect } from './shared/LayerSelect.jsx';
@@ -363,63 +364,54 @@ export function GeoreferenceRasterDialog({
     const footerForStep = () => {
         if (step === 1) {
             return (
-                <div className="modal-footer">
-                    <button className="btn btn-secondary cancel-btn" type="button" onClick={onCancel}>Cancel</button>
-                    <button
-                        className="btn btn-primary apply-btn"
-                        type="button"
-                        disabled={!canAdvanceSource || busy}
-                        onClick={() => setStep(2)}
-                    >
-                        Next
-                    </button>
-                </div>
+                <RunPreviewFooter
+                    onCancel={onCancel}
+                    onRun={() => setStep(2)}
+                    runLabel="Next"
+                    disabled={!canAdvanceSource || busy}
+                />
             );
         }
         if (step === 2) {
             return (
-                <div className="modal-footer">
-                    <button className="btn btn-secondary cancel-btn" type="button" onClick={() => setStep(1)}>Back</button>
-                    <button
-                        className="btn btn-primary apply-btn"
-                        type="button"
-                        disabled={!alignment?.ok}
-                        onClick={() => {
-                            setReviewed(true);
-                            setStep(3);
-                        }}
-                    >
-                        Review
-                    </button>
-                </div>
+                <RunPreviewFooter
+                    onCancel={onCancel}
+                    showBack
+                    onBack={() => setStep(1)}
+                    onRun={() => {
+                        setReviewed(true);
+                        setStep(3);
+                    }}
+                    runLabel="Review"
+                    disabled={!alignment?.ok}
+                />
             );
         }
         return (
-            <div className="modal-footer">
-                <button className="btn btn-secondary cancel-btn" type="button" onClick={() => setStep(2)}>Back</button>
-                <button
-                    className="btn btn-primary apply-btn"
-                    type="button"
-                    disabled={!canCommit || busy}
-                    onClick={async () => {
-                        setError('');
-                        setBusy(true);
-                        try {
-                            await onCommit?.({
-                                name: layerName,
-                                gcps,
-                                reviewed: true,
-                                layerId: editingLayerId || undefined
-                            });
-                        } catch (err) {
-                            setError(err?.message || 'Could not add the image to the map.');
-                            setBusy(false);
-                        }
-                    }}
-                >
-                    {busy ? 'Adding…' : 'Add to Map'}
-                </button>
-            </div>
+            <RunPreviewFooter
+                onCancel={onCancel}
+                showBack
+                onBack={() => setStep(2)}
+                onRun={async () => {
+                    setError('');
+                    setBusy(true);
+                    try {
+                        await onCommit?.({
+                            name: layerName,
+                            gcps,
+                            reviewed: true,
+                            layerId: editingLayerId || undefined
+                        });
+                    } catch (err) {
+                        setError(err?.message || 'Could not add the image to the map.');
+                        setBusy(false);
+                    }
+                }}
+                runLabel="Add to Map"
+                running={busy}
+                runBusyLabel="Adding…"
+                disabled={!canCommit || busy}
+            />
         );
     };
 

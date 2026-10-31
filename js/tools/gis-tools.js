@@ -13,7 +13,7 @@ import {
     getBBoxAny,
     bboxOverlap
 } from './spatial-bbox.js';
-import { simplifyFeatureCollection } from './compute/simplify.js';
+import { computeWorkflowSimplify } from '../workflow/compute/simplify-units.js';
 import {
     bufferFeatureCollection,
     clipFeatureCollection,
@@ -81,37 +81,72 @@ export async function bufferFeatures(dataset, distance, units = 'kilometers') {
 }
 
 /**
- * Simplify geometries
+ * Simplify geometries. `tolerance` is in the unit given by `options.toleranceUnit`
+ * (`m`, `ft`, or legacy `deg`); defaults to degrees for backward compatibility.
  */
-export async function simplifyFeatures(dataset, tolerance = 0.001) {
+export async function simplifyFeatures(dataset, tolerance = 0.001, options = {}) {
     _requireDisplayReady(dataset, 'Simplify');
 
     if (typeof turf === 'undefined') throw new Error('Turf.js not loaded');
+
+    const toleranceUnit = options.toleranceUnit ?? 'deg';
 
     const task = new TaskRunner('Simplify', 'GISTools');
     return task.run(async (t) => {
         t.updateProgress(10, 'Simplifying geometries...');
         t.throwIfCancelled();
 
-        const { geojson, stats } = simplifyFeatureCollection(
-            dataset.geojson,
-            { tolerance },
+        const spatialInput = {
+            type: 'spatial',
+            name: dataset.name,
+            geojson: dataset.geojson,
+            schema: dataset.schema || {}
+        };
+
+        const simplified = computeWorkflowSimplify(
+            [spatialInput],
+            { tolerance, toleranceUnit },
             taskProgressCtx(t)
         );
+
+        const stats = {
+            inCount: spatialInput.geojson?.features?.length ?? 0,
+            outCount: simplified.geojson?.features?.length ?? 0,
+            failed: 0,
+            verticesBefore: countSimplifyVertices(spatialInput.geojson),
+            verticesAfter: countSimplifyVertices(simplified.geojson)
+        };
+
         warnIfFeatureFailures('Simplify', stats.failed, stats.inCount);
 
         t.throwIfCancelled();
         logger.info('GISTools', 'Simplify complete', {
             verticesBefore: stats.verticesBefore,
             verticesAfter: stats.verticesAfter,
-            reduction: `${Math.round((1 - stats.verticesAfter / stats.verticesBefore) * 100)}%`
+            reduction: stats.verticesBefore
+                ? `${Math.round((1 - stats.verticesAfter / stats.verticesBefore) * 100)}%`
+                : '0%'
         });
 
         return {
-            dataset: createSpatialDataset(`${dataset.name}_simplified`, geojson, { format: 'derived' }),
+            dataset: createSpatialDataset(simplified.name || `${dataset.name}_simplified`, simplified.geojson, {
+                format: 'derived'
+            }),
             stats: { verticesBefore: stats.verticesBefore, verticesAfter: stats.verticesAfter }
         };
     });
+}
+
+function countSimplifyVertices(geojson) {
+    let count = 0;
+    const walk = (coords) => {
+        if (typeof coords[0] === 'number') return 1;
+        return coords.reduce((sum, c) => sum + walk(c), 0);
+    };
+    for (const f of geojson?.features || []) {
+        if (f.geometry?.coordinates) count += walk(f.geometry.coordinates);
+    }
+    return count;
 }
 
 /**
