@@ -231,7 +231,7 @@ export function createWorkflowController(deps) {
     };
 
     const runPipeline = async () => {
-        if (engine.isRunning) return;
+        if (engine.isRunning) return null;
 
         const invalid = collectInvalidNodes(engine);
         if (invalid.length > 0) {
@@ -242,7 +242,7 @@ export function createWorkflowController(deps) {
             const extra = invalid.length > 3 ? ` (+${invalid.length - 3} more)` : '';
             showToast(`Fix configuration before running — ${summary}${extra}`, 'error');
             bus.emit('workflow:node-selected', { nodeId: invalid[0].node.id });
-            return;
+            return null;
         }
 
         try {
@@ -256,13 +256,28 @@ export function createWorkflowController(deps) {
                 getUpstreamOutput: (id) => engine.getUpstreamOutput(id)
             };
 
-            await engine.run(context);
+            const result = await engine.run(context);
             refreshCanvasViews();
+
+            if (result?.status === 'cancelled') {
+                showToast('Pipeline run cancelled.', 'warn');
+            } else if (result?.status === 'partial') {
+                showToast('Pipeline finished with errors on one or more branches.', 'warn');
+            } else if (result?.status === 'failed') {
+                showToast('Pipeline failed.', 'error');
+            }
+
+            return result;
         } catch (err) {
             refreshCanvasViews();
             showToast(`Pipeline error: ${err.message}`, 'error');
             throw err;
         }
+    };
+
+    const cancelPipeline = () => {
+        if (!engine.isRunning) return;
+        engine.cancel();
     };
 
     bus.on('workflow:node-data-ready', ({ nodeId }) => {
@@ -354,7 +369,8 @@ export function createWorkflowController(deps) {
         exportConfig,
         importConfig,
         clearPipeline,
-        runPipeline
+        runPipeline,
+        cancelPipeline
     };
 
     return controller;

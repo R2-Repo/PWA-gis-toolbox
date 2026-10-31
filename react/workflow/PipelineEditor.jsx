@@ -14,6 +14,19 @@ import { findNodeDef } from '../../js/workflow/node-catalog.js';
 
 const PORT_GAP = 20;
 
+function statusBorderColor(data) {
+    if (data.error) return '#ef4444';
+    switch (data.runStatus) {
+        case 'running': return '#3b82f6';
+        case 'done': return data.hasOutput ? '#22c55e' : '#6b7280';
+        case 'skipped':
+        case 'cancelled': return '#9ca3af';
+        case 'error': return '#ef4444';
+        case 'queued': return data.color;
+        default: return data.hasOutput ? '#22c55e' : data.color;
+    }
+}
+
 function toReactFlowNodes(engine, selectedNodeId = null, getLayers = null) {
     if (!engine?.nodes) return [];
     const layersFn = () => getLayers?.() || [];
@@ -27,8 +40,9 @@ function toReactFlowNodes(engine, selectedNodeId = null, getLayers = null) {
             detail: node.getCanvasDetail?.({ getLayers: layersFn }) || '',
             inputPorts: node.inputPorts || [],
             outputPorts: node.outputPorts || [],
-            error: node._error || '',
+            error: node._error || node._skipReason || '',
             running: Boolean(node._running),
+            runStatus: node._runStatus || 'queued',
             badge: node.getOutputStats?.() || '',
             hasOutput: Boolean(node._outputData || node._outputPorts)
         },
@@ -56,7 +70,16 @@ function WorkflowNode({ data, selected }) {
     const maxPorts = Math.max(inputPorts.length, outputPorts.length);
     const height = Math.max(56, 32 + maxPorts * PORT_GAP);
 
-    const borderColor = data.error ? '#ef4444' : (data.hasOutput ? '#22c55e' : data.color);
+    const borderColor = statusBorderColor(data);
+    const footerText = (() => {
+        if (data.error) return `⚠ ${data.error}`;
+        if (data.running || data.runStatus === 'running') return '⏳ Running…';
+        if (data.runStatus === 'skipped') return '⊘ Skipped';
+        if (data.runStatus === 'cancelled') return '⊘ Cancelled';
+        if (data.runStatus === 'queued') return 'Queued';
+        return data.badge || '';
+    })();
+    const footerColor = data.error ? '#ef4444' : 'var(--text-muted, #b2b2b2)';
     return (
         <div
             style={{
@@ -135,8 +158,8 @@ function WorkflowNode({ data, selected }) {
                 </React.Fragment>
             ))}
 
-            <div style={{ fontSize: 10, color: data.error ? '#ef4444' : 'var(--text-muted, #b2b2b2)', padding: '6px 8px 8px' }}>
-                {data.error ? `⚠ ${data.error}` : (data.running ? '⏳ Running…' : (data.badge || ''))}
+            <div style={{ fontSize: 10, color: footerColor, padding: '6px 8px 8px' }}>
+                {footerText}
             </div>
         </div>
     );
@@ -165,6 +188,7 @@ function PipelineEditorCanvas({ engine, getLayers }) {
             bus.on('workflow:node-start', syncFromEngine),
             bus.on('workflow:node-done', syncFromEngine),
             bus.on('workflow:run-done', syncFromEngine),
+            bus.on('workflow:run-event', syncFromEngine),
             bus.on('workflow:node-data-ready', syncFromEngine),
             bus.on('workflow:node-selected', ({ nodeId }) => setSelectedNodeId(nodeId || null)),
             bus.on('workflow:node-deselected', () => setSelectedNodeId(null)),

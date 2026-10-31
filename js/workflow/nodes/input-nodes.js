@@ -13,6 +13,7 @@ import {
 } from '../../core/data-model.js';
 import { getAdaptiveMaterializeLimit } from '../../import/import-capacity-context.js';
 import { loadAllWorkspaceFeatures } from '../../workspace/workspace-store.js';
+import { cloneDatasetOutput } from '../workflow-run-helpers.js';
 
 function cloneValue(value) {
     if (value == null) return value;
@@ -183,7 +184,7 @@ export class FileImportNode extends NodeBase {
 
     async execute(inputs, context) {
         if (this._cachedResult) {
-            return JSON.parse(JSON.stringify(this._cachedResult));
+            return cloneDatasetOutput(this._cachedResult);
         }
         if (!this._pendingFile) throw new Error('No file imported — select a file first');
         const result = await context.importFile(this._pendingFile);
@@ -194,7 +195,7 @@ export class FileImportNode extends NodeBase {
         const out = serializeImportedDataset(expanded[0]);
         this._cachedResult = out;
         this._pendingFile = null;
-        return JSON.parse(JSON.stringify(out));
+        return cloneDatasetOutput(out);
     }
 }
 

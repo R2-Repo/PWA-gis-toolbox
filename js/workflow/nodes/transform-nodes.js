@@ -5,6 +5,7 @@ import { NodeBase } from './node-base.js';
 import { applyTemplate } from '../../dataprep/template-builder.js';
 import { typeConvert } from '../../dataprep/transforms.js';
 import { convertFeatureCoords } from '../../tools/coordinates.js';
+import { throwIfAbortedPeriodic } from '../workflow-run-helpers.js';
 
 /** Map legacy/camelCase filter operator names to canonical snake_case keys. */
 export const FILTER_OPERATOR_ALIASES = {
@@ -298,7 +299,7 @@ export class DeduplicateNode extends NodeBase {
         return { valid: true, message: '' };
     }
 
-    async execute(inputs) {
+    async execute(inputs, context) {
         const data = inputs[0];
         if (!data) throw new Error('No input data');
 
@@ -306,7 +307,9 @@ export class DeduplicateNode extends NodeBase {
         const seen = new Map();
         const result = [];
 
-        for (const item of items) {
+        for (let i = 0; i < items.length; i++) {
+            throwIfAbortedPeriodic(context?.signal, i);
+            const item = items[i];
             const props = data.type === 'spatial' ? item.properties : item;
             const key = this.config.keyFields.map(f => String(props[f] ?? '')).join('|');
             if (this.config.keep === 'first') {

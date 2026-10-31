@@ -30,6 +30,9 @@ export class NodeBase {
         this._outputPorts = null;  // { portId: data } for multi-output nodes
         this._error = null;
         this._running = false;
+        this._runStatus = 'queued';
+        this._skipReason = null;
+        this._runDurationMs = null;
     }
 
     /** Override: Execute this node's operation */

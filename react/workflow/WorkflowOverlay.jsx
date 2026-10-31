@@ -95,6 +95,10 @@ export function WorkflowOverlay({ controller, getLayers, importFile }) {
         bus.emit('workflow:add-node-request', { type, clientX: e.clientX, clientY: e.clientY });
     }, []);
 
+    const onStop = useCallback(() => {
+        controller.cancelPipeline?.();
+    }, [controller]);
+
     const onRun = useCallback(async () => {
         if (engine.isRunning || running) return;
         setRunning(true);
@@ -247,6 +251,16 @@ export function WorkflowOverlay({ controller, getLayers, importFile }) {
                         </div>
                     </div>
 
+                    <button
+                        type="button"
+                        className="wf-topbar-btn wf-topbar-run"
+                        id="wf-stop"
+                        title="Stop pipeline run"
+                        disabled={!running && !engine.isRunning}
+                        onClick={onStop}
+                    >
+                        ■ Stop
+                    </button>
                     <button
                         type="button"
                         className="wf-topbar-btn wf-topbar-run"
