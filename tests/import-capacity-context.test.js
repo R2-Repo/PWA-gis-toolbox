@@ -31,11 +31,7 @@ function residentLayer(featureCount) {
         type: 'spatial',
         geojson: {
             type: 'FeatureCollection',
-            features: Array.from({ length: Math.min(featureCount, 3) }, (_, i) => ({
-                type: 'Feature',
-                geometry: { type: 'Point', coordinates: [0, i] },
-                properties: {}
-            }))
+            features: []
         },
         schema: { featureCount, fields: [] }
     };

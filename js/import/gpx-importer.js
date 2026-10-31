@@ -1,7 +1,11 @@
 /**
  * GPX importer using toGeoJSON library
  */
-import { createSpatialDataset, explodeGeometryCollectionsInFeatureCollectionAsync } from '../core/data-model.js';
+import {
+    createSpatialDataset,
+    explodeGeometryCollectionsInFeatureCollectionAsync,
+    syncSpatialSchemaFeatureCount
+} from '../core/data-model.js';
 import { AppError, ErrorCategory } from '../core/error-handler.js';
 import { parseGpxForImport } from './import-parse-service.js';
 
@@ -48,10 +52,10 @@ export async function importGPX(file, task, meta = {}) {
         ? (meta.sourceFileName || 'data.gpx')
         : file.name;
 
-    const dataset = createSpatialDataset(defaultName, geojson, {
+    const dataset = syncSpatialSchemaFeatureCount(createSpatialDataset(defaultName, geojson, {
         file: sourceFile,
         format: 'gpx'
-    });
+    }));
 
     if (featCount === 0) {
         dataset._importWarning = 'GPX contains no tracks, routes, or waypoints. An empty layer was created.';

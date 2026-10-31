@@ -3,7 +3,12 @@
  * apply fence/style prep before map render. Used by main import, workflow, dual-screen.
  */
 import logger from '../core/logger.js';
-import { analyzeSchema, splitByGeometryType, isSpatialLayer } from '../core/data-model.js';
+import {
+    analyzeSchema,
+    splitByGeometryType,
+    isSpatialLayer,
+    syncSpatialSchemaFeatureCount
+} from '../core/data-model.js';
 import { processInChunks } from '../core/task-runner.js';
 import { isSmartStyleActive } from '../map/style-engine.js';
 import { getLayerDefaultColor } from '../map/layer-palette.js';
@@ -293,6 +298,7 @@ export async function finalizeImportedDatasets(datasets, options = {}) {
         }
         if (ds.type === 'spatial') {
             ds._geometryExploded = true;
+            syncSpatialSchemaFeatureCount(ds);
         }
     }
 
