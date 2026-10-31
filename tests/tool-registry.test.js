@@ -1,7 +1,11 @@
+/**
+ * @vitest-environment jsdom
+ */
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { describe, it, expect } from 'vitest';
+import '../js/widgets/registry.js';
 import {
     MAP_GIS_TOOLS,
     V1_MAP_TOOL_IDS,
@@ -185,6 +189,20 @@ describe('tool registry v1', () => {
         emitToolResult({ id: 'export', layerIds: ['a'], stats: { outCount: 1 } });
         off();
         expect(received).toEqual({ id: 'export', layerIds: ['a'], stats: { outCount: 1 } });
+    });
+
+    it('registry entry counts by kind and status', () => {
+        const byKind = { tool: 0, widget: 0, node: 0 };
+        const byStatus = { ga: 0, beta: 0, hidden: 0 };
+        for (const entry of listTools()) {
+            for (const k of entry.kind) byKind[k] += 1;
+            byStatus[entry.status] += 1;
+        }
+        expect({ total: listTools().length, byKind, byStatus }).toEqual({
+            total: 78,
+            byKind: { tool: 32, widget: 18, node: 44 },
+            byStatus: { ga: 37, beta: 1, hidden: 40 }
+        });
     });
 
     it('coord-convert stays hidden on map panel when v1 mode is on', () => {
