@@ -1,20 +1,27 @@
 /**
- * Workflow Store — save/load pipeline JSON to sessionStorage
- * Node cached data (e.g. imported file results) stored in IndexedDB
+ * Workflow Store — autosave graph to IndexedDB library draft; node caches in separate IDB.
  */
-import { resetNodeIdCounter } from './nodes/node-base.js';
-import { findNodeDef } from './node-catalog.js';
+import { loadGraphIntoEngine } from './workflow-graph-loader.js';
+import { graphFromEngine } from './workflow-schema.js';
+import {
+    clearAutosaveDraft,
+    loadAutosaveDraft,
+    saveAutosaveDraft
+} from './workflow-library-db.js';
 
-const STORAGE_KEY = 'gis-toolbox-workflow';
-const IDB_NAME = 'gis-toolbox-workflow-cache';
+const LEGACY_SESSION_KEY = 'gis-toolbox-workflow';
+const SESSION_MIGRATION_FLAG = 'gis-toolbox-workflow-idb-migrated';
+
+/** Node execution cache (imported files, etc.) — separate from graph library DB */
+export const WORKFLOW_CACHE_IDB_NAME = 'gis-toolbox-workflow-cache';
 const IDB_STORE = 'node-data';
 const IDB_VERSION = 1;
 
-// ── IndexedDB helpers ──
+let _sessionMigrationPromise = null;
 
-function _openDB() {
+function _openCacheDB() {
     return new Promise((resolve, reject) => {
-        const req = indexedDB.open(IDB_NAME, IDB_VERSION);
+        const req = indexedDB.open(WORKFLOW_CACHE_IDB_NAME, IDB_VERSION);
         req.onupgradeneeded = () => {
             const db = req.result;
             if (!db.objectStoreNames.contains(IDB_STORE)) {
@@ -28,7 +35,7 @@ function _openDB() {
 
 async function _saveNodeData(engine) {
     try {
-        const db = await _openDB();
+        const db = await _openCacheDB();
         const tx = db.transaction(IDB_STORE, 'readwrite');
         const store = tx.objectStore(IDB_STORE);
         store.clear();
@@ -51,7 +58,7 @@ async function _saveNodeData(engine) {
 
 async function _loadNodeData(engine) {
     try {
-        const db = await _openDB();
+        const db = await _openCacheDB();
         const tx = db.transaction(IDB_STORE, 'readonly');
         const store = tx.objectStore(IDB_STORE);
         const promises = [];
@@ -73,7 +80,7 @@ async function _loadNodeData(engine) {
 
 async function _clearNodeData() {
     try {
-        const db = await _openDB();
+        const db = await _openCacheDB();
         const tx = db.transaction(IDB_STORE, 'readwrite');
         tx.objectStore(IDB_STORE).clear();
         await new Promise((res, rej) => { tx.oncomplete = res; tx.onerror = () => rej(tx.error); });
@@ -83,82 +90,73 @@ async function _clearNodeData() {
     }
 }
 
+async function migrateLegacySessionStorageOnce() {
+    if (_sessionMigrationPromise) return _sessionMigrationPromise;
+    _sessionMigrationPromise = (async () => {
+        try {
+            if (sessionStorage.getItem(SESSION_MIGRATION_FLAG)) return;
+            const raw = sessionStorage.getItem(LEGACY_SESSION_KEY);
+            if (raw) {
+                const data = JSON.parse(raw);
+                await saveAutosaveDraft(data);
+                sessionStorage.removeItem(LEGACY_SESSION_KEY);
+            }
+            sessionStorage.setItem(SESSION_MIGRATION_FLAG, '1');
+        } catch (e) {
+            console.warn('[WorkflowStore] sessionStorage migration failed', e);
+        }
+    })();
+    return _sessionMigrationPromise;
+}
+
 // ── Public API ──
 
 export class WorkflowStore {
     /**
-     * Save pipeline structure to sessionStorage + cached data to IndexedDB
+     * Autosave pipeline structure to IndexedDB (graph only) + cached data to node cache IDB.
      */
     static save(engine) {
-        try {
-            const data = engine.toJSON();
-            sessionStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-        } catch (e) {
-            console.warn('[WorkflowStore] save failed', e);
-        }
-        // Fire-and-forget: persist cached node data (imported files, etc.)
+        const graph = graphFromEngine(engine);
+        saveAutosaveDraft(graph).catch((e) => {
+            console.warn('[WorkflowStore] autosave failed', e);
+        });
         _saveNodeData(engine);
     }
 
     /**
-     * Load pipeline structure from sessionStorage into engine.
-     * @returns {{ loaded: boolean, skipped: string[] }}
+     * Load autosaved pipeline from IndexedDB into engine.
+     * @returns {Promise<{ loaded: boolean, unknownTypes: string[] }>}
      */
-    static load(engine) {
-        const skipped = [];
+    static async load(engine) {
+        await migrateLegacySessionStorageOnce();
         try {
-            const raw = sessionStorage.getItem(STORAGE_KEY);
-            if (!raw) return { loaded: false, skipped };
-            const data = JSON.parse(raw);
-            if (!data?.nodes?.length) return { loaded: false, skipped };
-
-            engine.clear();
-
-            // Find max id to reset counter
-            let maxId = 0;
-            for (const nd of data.nodes) {
-                const num = parseInt(String(nd.id).replace('node-', ''));
-                if (!isNaN(num) && num > maxId) maxId = num;
-            }
-            resetNodeIdCounter(maxId);
-
-            // Recreate nodes from definitions
-            for (const nd of data.nodes) {
-                const def = findNodeDef(nd.type);
-                if (!def) {
-                    skipped.push(nd.type);
-                    continue;
-                }
-                const node = def.create();
-                // Restore saved state
-                node.id = nd.id;
-                node.position = nd.position || { x: 0, y: 0 };
-                node.config = { ...node.config, ...nd.config };
-                if (nd.comment) node.comment = nd.comment;
-                engine.addNode(node);
-            }
-
-            // Recreate wires
-            for (const w of (data.wires || [])) {
-                engine.addWire(w);
-            }
-
-            return { loaded: true, skipped };
+            const graph = await loadAutosaveDraft();
+            if (!graph?.nodes?.length) return { loaded: false, unknownTypes: [] };
+            return loadGraphIntoEngine(engine, graph);
         } catch (e) {
             console.warn('[WorkflowStore] load failed', e);
-            return { loaded: false, skipped };
+            return { loaded: false, unknownTypes: [] };
         }
     }
 
-    /**
-     * Restore _cachedResult from IndexedDB for nodes that need it
-     */
     static async restoreNodeData(engine) {
         await _loadNodeData(engine);
     }
 
     static clear() {
-        sessionStorage.removeItem(STORAGE_KEY);
+        clearAutosaveDraft().catch((e) => {
+            console.warn('[WorkflowStore] clear autosave failed', e);
+        });
         _clearNodeData();
+    }
+
+    /** @internal test helper */
+    static _resetSessionMigrationForTests() {
+        _sessionMigrationPromise = null;
+        try {
+            sessionStorage.removeItem(SESSION_MIGRATION_FLAG);
+        } catch {
+            /* noop in non-browser tests without mock */
+        }
     }
 }

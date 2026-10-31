@@ -4,6 +4,7 @@
 import { bus } from '../core/event-bus.js';
 import logger from '../core/logger.js';
 import { throwIfAborted } from './workflow-run-helpers.js';
+import { CURRENT_WORKFLOW_SCHEMA_VERSION } from './workflow-schema.js';
 
 /** @typedef {'queued'|'running'|'progress'|'done'|'error'|'skipped'|'cancelled'} WorkflowNodeRunStatus */
 
@@ -491,6 +492,7 @@ export class WorkflowEngine {
 
     toJSON() {
         return {
+            schemaVersion: CURRENT_WORKFLOW_SCHEMA_VERSION,
             nodes: [...this.nodes.values()].map(n => n.toJSON()),
             wires: this.wires.map(w => ({ ...w }))
         };

@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import bus from '../../js/core/event-bus.js';
 import { getNodeInspector } from './inspectors/index.js';
+import { UNKNOWN_PLACEHOLDER_NODE_TYPE } from '../../js/workflow/nodes/unknown-placeholder-node.js';
 function fieldTypeClass(type) {
     if (!type) return '';
     const t = type.toLowerCase();
@@ -169,7 +170,14 @@ export function InspectorPanel({ engine, getLayers, importFile }) {
                         )}
 
                         <div className="wf-inspector-config">
-                            {InspectorComponent ? (
+                            {node.type === UNKNOWN_PLACEHOLDER_NODE_TYPE ? (
+                                <p className="wf-val-warn">
+                                    This node type (
+                                    {node.config?.originalType || 'unknown'}
+                                    ) is not available in this app. Replace it from the palette or delete it.
+                                    Wires are preserved; running this branch will fail.
+                                </p>
+                            ) : InspectorComponent ? (
                                 <InspectorComponent
                                     node={node}
                                     config={node.config}

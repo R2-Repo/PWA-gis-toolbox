@@ -5,10 +5,21 @@
 import { bus } from '../core/event-bus.js';
 import { showToast } from '../ui/toast.js';
 import { WorkflowEngine } from './workflow-engine.js';
-import { findNodeDef } from './node-catalog.js';
 import { WorkflowStore } from './workflow-store.js';
-import { resetNodeIdCounter } from './nodes/node-base.js';
 import { collectInvalidNodes } from './workflow-validation.js';
+import { loadGraphIntoEngine } from './workflow-graph-loader.js';
+import { graphFromEngine, migrateWorkflowGraph } from './workflow-schema.js';
+import {
+    deleteSavedGraph,
+    duplicateSavedGraph,
+    listGraphVersions,
+    listSavedGraphs,
+    loadVersionGraph,
+    openSavedGraph,
+    renameSavedGraph,
+    saveGraphVersion,
+    saveNewGraph
+} from './workflow-library-db.js';
 
 const SAVE_DEBOUNCE_MS = 1000;
 
@@ -30,6 +41,8 @@ export function createWorkflowController(deps) {
     let reactUnmount = null;
     let previewApi = null;
     let saveTimer = null;
+    let activeLibraryGraphId = null;
+    let activeLibraryGraphName = null;
 
     const isOpening = () => openPromise != null;
 
@@ -107,50 +120,48 @@ export function createWorkflowController(deps) {
         emitEngineChanged();
     };
 
-    const applyConfig = (config) => {
-        const pipeline = config?.pipeline ?? config;
-        if (!Array.isArray(pipeline?.nodes) || !pipeline.nodes.length) {
+    const showUnknownTypeWarning = (unknownTypes) => {
+        if (!unknownTypes?.length) return;
+        const types = [...new Set(unknownTypes)].join(', ');
+        showToast(`Unknown node type(s): ${types}. Placeholders were added — wires preserved.`, 'warn');
+    };
+
+    const applyGraph = (graphInput, { center = true, clearLibraryLink = false } = {}) => {
+        const result = loadGraphIntoEngine(engine, graphInput);
+        if (!result.loaded) {
             showToast('Config file contains no workflow nodes.', 'error');
-            return;
+            return false;
         }
-        if (config._format && config._format !== 'gis-toolbox-workflow') {
+        if (clearLibraryLink) {
+            activeLibraryGraphId = null;
+            activeLibraryGraphName = null;
+        }
+        previewApi?.hide();
+        refreshCanvasViews({ center });
+        engineLoaded = true;
+        WorkflowStore.save(engine);
+        showUnknownTypeWarning(result.unknownTypes);
+        return true;
+    };
+
+    const applyConfig = (config) => {
+        if (config?._format && config._format !== 'gis-toolbox-workflow') {
             showToast('Unrecognised config format.', 'error');
             return;
         }
 
+        const pipeline = migrateWorkflowGraph(config?.pipeline ?? config);
+        if (!pipeline.nodes.length) {
+            showToast('Config file contains no workflow nodes.', 'error');
+            return;
+        }
+
         engine.clear();
-        previewApi?.hide();
         WorkflowStore.clear();
 
-        let maxId = 0;
-        for (const nd of pipeline.nodes) {
-            const num = parseInt(String(nd.id).replace('node-', ''), 10);
-            if (!isNaN(num) && num > maxId) maxId = num;
+        if (applyGraph(pipeline, { center: true, clearLibraryLink: true })) {
+            showToast(`Imported ${engine.nodes.size} nodes.`, 'success');
         }
-        resetNodeIdCounter(maxId);
-
-        for (const nd of pipeline.nodes) {
-            const def = findNodeDef(nd.type);
-            if (!def) {
-                showToast(`Unknown node type "${nd.type}" — skipped.`, 'warn');
-                continue;
-            }
-            const node = def.create();
-            node.id = nd.id;
-            node.position = nd.position || { x: 0, y: 0 };
-            node.config = { ...node.config, ...nd.config };
-            if (nd.comment) node.comment = nd.comment;
-            engine.addNode(node);
-        }
-
-        for (const w of (pipeline.wires || [])) {
-            engine.addWire(w);
-        }
-
-        refreshCanvasViews({ center: true });
-        engineLoaded = true;
-        WorkflowStore.save(engine);
-        showToast(`Imported ${engine.nodes.size} nodes.`, 'success');
     };
 
     const loadExample = async (fileName) => {
@@ -179,7 +190,7 @@ export function createWorkflowController(deps) {
     };
 
     const exportConfig = () => {
-        const pipeline = engine.toJSON();
+        const pipeline = graphFromEngine(engine);
         if (!pipeline.nodes.length) {
             showToast('Nothing to export — add some nodes first.', 'warn');
             return;
@@ -227,6 +238,8 @@ export function createWorkflowController(deps) {
         previewApi?.hide();
         WorkflowStore.clear();
         engineLoaded = false;
+        activeLibraryGraphId = null;
+        activeLibraryGraphName = null;
         bus.emit('workflow:node-deselected');
     };
 
@@ -303,15 +316,12 @@ export function createWorkflowController(deps) {
                     if (generation !== openGeneration) return;
 
                     if (!engineLoaded) {
-                        const loadResult = WorkflowStore.load(engine);
+                        const loadResult = await WorkflowStore.load(engine);
                         await WorkflowStore.restoreNodeData(engine);
                         if (generation !== openGeneration) return;
 
                         engineLoaded = true;
-                        if (loadResult?.skipped?.length) {
-                            const types = [...new Set(loadResult.skipped)].join(', ');
-                            showToast(`Restored pipeline; skipped unknown node type(s): ${types}`, 'warn');
-                        }
+                        showUnknownTypeWarning(loadResult?.unknownTypes);
                     }
 
                     if (generation !== openGeneration) return;
@@ -370,7 +380,125 @@ export function createWorkflowController(deps) {
         importConfig,
         clearPipeline,
         runPipeline,
-        cancelPipeline
+        cancelPipeline,
+
+        getActiveLibraryGraph() {
+            return activeLibraryGraphId
+                ? { id: activeLibraryGraphId, name: activeLibraryGraphName }
+                : null;
+        },
+
+        async listSavedWorkflows() {
+            return listSavedGraphs();
+        },
+
+        async listWorkflowVersions(graphId) {
+            return listGraphVersions(graphId);
+        },
+
+        async saveWorkflowToLibrary(name, { saveAs = false } = {}) {
+            const trimmed = (name || '').trim() || 'Untitled workflow';
+            const graph = graphFromEngine(engine);
+            if (!graph.nodes.length) {
+                showToast('Nothing to save — add some nodes first.', 'warn');
+                return null;
+            }
+            try {
+                if (!saveAs && activeLibraryGraphId) {
+                    await saveGraphVersion(activeLibraryGraphId, trimmed, graph, { label: 'Saved' });
+                    activeLibraryGraphName = trimmed;
+                    showToast(`Saved "${trimmed}".`, 'success');
+                    return activeLibraryGraphId;
+                }
+                const id = await saveNewGraph(trimmed, graph);
+                activeLibraryGraphId = id;
+                activeLibraryGraphName = trimmed;
+                showToast(`Saved "${trimmed}" to My workflows.`, 'success');
+                return id;
+            } catch (err) {
+                showToast(`Could not save workflow: ${err.message}`, 'error');
+                return null;
+            }
+        },
+
+        async openWorkflowFromLibrary(graphId) {
+            try {
+                const graph = await openSavedGraph(graphId);
+                if (!graph) {
+                    showToast('Saved workflow not found.', 'error');
+                    return false;
+                }
+                engine.clear();
+                WorkflowStore.clear();
+                const meta = (await listSavedGraphs()).find((g) => g.id === graphId);
+                activeLibraryGraphId = graphId;
+                activeLibraryGraphName = meta?.name || 'Workflow';
+                applyGraph(graph, { center: true });
+                await WorkflowStore.restoreNodeData(engine);
+                showToast(`Opened "${activeLibraryGraphName}".`, 'success');
+                return true;
+            } catch (err) {
+                showToast(`Could not open workflow: ${err.message}`, 'error');
+                return false;
+            }
+        },
+
+        async renameWorkflowInLibrary(graphId, newName) {
+            try {
+                await renameSavedGraph(graphId, newName);
+                if (graphId === activeLibraryGraphId) {
+                    activeLibraryGraphName = newName.trim();
+                }
+                showToast('Workflow renamed.', 'success');
+                return true;
+            } catch (err) {
+                showToast(err.message, 'error');
+                return false;
+            }
+        },
+
+        async deleteWorkflowFromLibrary(graphId) {
+            try {
+                await deleteSavedGraph(graphId);
+                if (graphId === activeLibraryGraphId) {
+                    activeLibraryGraphId = null;
+                    activeLibraryGraphName = null;
+                }
+                showToast('Workflow deleted.', 'success');
+                return true;
+            } catch (err) {
+                showToast(err.message, 'error');
+                return false;
+            }
+        },
+
+        async duplicateWorkflowInLibrary(graphId, newName) {
+            try {
+                const id = await duplicateSavedGraph(graphId, newName);
+                showToast('Workflow duplicated.', 'success');
+                return id;
+            } catch (err) {
+                showToast(err.message, 'error');
+                return null;
+            }
+        },
+
+        async restoreWorkflowVersion(versionId) {
+            try {
+                const graph = await loadVersionGraph(versionId);
+                if (!graph) {
+                    showToast('Version not found.', 'error');
+                    return false;
+                }
+                applyGraph(graph, { center: true });
+                await WorkflowStore.restoreNodeData(engine);
+                showToast('Restored workflow version.', 'success');
+                return true;
+            } catch (err) {
+                showToast(err.message, 'error');
+                return false;
+            }
+        }
     };
 
     return controller;

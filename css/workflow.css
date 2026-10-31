@@ -1053,3 +1053,167 @@
     color: #ef4444;
 }
 
+/* ── My workflows library dialog ── */
+.wf-library-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 9200;
+    background: rgba(0, 0, 0, 0.55);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+}
+
+.wf-library-panel {
+    width: min(920px, 100%);
+    max-height: min(80vh, 720px);
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: 0 16px 48px rgba(0, 0, 0, 0.45);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.wf-library-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+}
+
+.wf-library-header h2 {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 600;
+}
+
+.wf-library-save-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+}
+
+.wf-library-name-input {
+    flex: 1;
+    min-width: 160px;
+    padding: 6px 10px;
+    font-size: 13px;
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text);
+}
+
+.wf-library-body {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0;
+    min-height: 0;
+    flex: 1;
+    overflow: hidden;
+}
+
+@media (max-width: 720px) {
+    .wf-library-body {
+        grid-template-columns: 1fr;
+    }
+}
+
+.wf-library-list-wrap,
+.wf-library-versions-wrap {
+    overflow-y: auto;
+    padding: 12px 16px;
+}
+
+.wf-library-versions-wrap {
+    border-left: 1px solid var(--border);
+}
+
+.wf-library-section-title {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-muted);
+    margin-bottom: 8px;
+}
+
+.wf-library-hint {
+    font-size: 12px;
+    color: var(--text-muted);
+    font-style: italic;
+}
+
+.wf-library-list,
+.wf-library-version-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.wf-library-item {
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    margin-bottom: 8px;
+    background: var(--bg-surface);
+}
+
+.wf-library-item.selected {
+    border-color: var(--gold);
+}
+
+.wf-library-item-main {
+    display: block;
+    width: 100%;
+    text-align: left;
+    background: none;
+    border: none;
+    padding: 10px 12px;
+    cursor: pointer;
+    color: var(--text);
+}
+
+.wf-library-item-name {
+    display: block;
+    font-weight: 600;
+    font-size: 13px;
+}
+
+.wf-library-item-meta {
+    display: block;
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-top: 2px;
+}
+
+.wf-library-item-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    padding: 0 8px 8px;
+}
+
+.wf-library-version-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--border);
+}
+
+.wf-library-version-label {
+    font-size: 13px;
+    font-weight: 500;
+}
+
+.wf-library-danger {
+    color: #ef4444;
+}
+

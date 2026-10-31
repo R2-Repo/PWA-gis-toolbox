@@ -7,6 +7,7 @@ import { WorkflowPalette } from './WorkflowPalette.jsx';
 import { WorkflowStepsPanel } from './WorkflowStepsPanel.jsx';
 import { InspectorPanel } from './InspectorPanel.jsx';
 import { DataPreviewPanel } from './DataPreviewPanel.jsx';
+import { WorkflowLibraryPanel } from './WorkflowLibraryPanel.jsx';
 
 export function WorkflowOverlay({ controller, getLayers, importFile }) {
     const { engine } = controller;
@@ -20,6 +21,7 @@ export function WorkflowOverlay({ controller, getLayers, importFile }) {
     const [running, setRunning] = useState(false);
     const [nodeCount, setNodeCount] = useState(() => engine.nodes.size);
     const [viewMode, setViewMode] = useState('graph');
+    const [libraryOpen, setLibraryOpen] = useState(false);
 
     useEffect(() => {
         controller.setPreviewApi({
@@ -212,6 +214,16 @@ export function WorkflowOverlay({ controller, getLayers, importFile }) {
                         </div>
                     </div>
 
+                    <button
+                        type="button"
+                        className="wf-topbar-btn wf-topbar-io"
+                        id="wf-my-workflows"
+                        title="Save and open workflows"
+                        onClick={() => { setLibraryOpen(true); setExamplesOpen(false); setMoreOpen(false); }}
+                    >
+                        My workflows
+                    </button>
+
                     <button type="button" className="wf-topbar-btn" id="wf-fit-view" title="Fit pipeline to view" onClick={onFitView}>
                         Fit view
                     </button>
@@ -311,6 +323,11 @@ export function WorkflowOverlay({ controller, getLayers, importFile }) {
             </div>
 
             <DataPreviewPanel ref={previewRef} />
+            <WorkflowLibraryPanel
+                controller={controller}
+                open={libraryOpen}
+                onClose={() => setLibraryOpen(false)}
+            />
         </div>
     );
 }
