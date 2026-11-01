@@ -4,6 +4,7 @@
  */
 import { processInChunks } from './task-runner.js';
 import { DEFAULT_SCALE_RANGE } from '../map/scale-range.js';
+import { isArcgisPictureMarkerProp } from '../workspace/feature-identity.js';
 
 /** Feature count above which explode uses chunked async processing when a task is provided. */
 export const EXPLODE_CHUNK_THRESHOLD = 100;
@@ -488,6 +489,9 @@ export function applyFieldSelection(features, schema) {
         const newProps = {};
         for (const field of selected) {
             newProps[field.outputName] = f.properties?.[field.name] ?? null;
+        }
+        for (const [key, value] of Object.entries(f.properties || {})) {
+            if (isArcgisPictureMarkerProp(key)) newProps[key] = value;
         }
         return { ...f, properties: newProps };
     });

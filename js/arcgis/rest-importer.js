@@ -24,6 +24,7 @@ import {
 import { createSpatialChunkWriter } from '../workspace/spatial-chunk-writer.js';
 import { applyArcgisScaleRangeToLayer } from '../map/scale-range.js';
 import { requiredStyleFieldsFromDrawingInfo, styleFromArcgisMetadata } from './drawing-info.js';
+import { attachPictureMarkersToDataset } from './picture-markers.js';
 import { canonicalUdotFiberLayerUrl } from '../symbology/udot-fiber/constants.js';
 import {
     arcgisFetchJson,
@@ -137,6 +138,7 @@ function attachArcgisImportStyle(dataset, metadata, importMeta = {}) {
     }
     if (importMeta.truncated) styled.truncated = true;
     if (importMeta.capped) styled.capped = true;
+    attachPictureMarkersToDataset(styled, metadata?.drawingInfo || null);
     return styled;
 }
 

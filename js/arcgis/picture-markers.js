@@ -38,29 +38,99 @@ export function resolveEsriLineDasharray(classes) {
 }
 
 /**
+ * @param {object} symbol
+ * @param {string} key
+ * @param {Set<string>} seenImage
+ * @param {object[]} markers
+ * @param {{ value?: string, classMin?: number, classMax?: number }} [opts]
+ */
+function pushEsriPmsMarker(symbol, key, seenImage, markers, opts = {}) {
+    if (!symbol || symbol.type !== 'esriPMS' || !symbol.imageData) return;
+    const imageId = `arcgis-pms-${String(symbol.url || key).replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 40)}`;
+    const value = opts.value != null ? String(opts.value) : String(key);
+    if (seenImage.has(imageId) && markers.some((m) => m.value === value && m.imageId === imageId)) return;
+    seenImage.add(imageId);
+    const entry = {
+        value,
+        imageId,
+        imageData: String(symbol.imageData),
+        contentType: symbol.contentType || 'image/png',
+        esriWidth: Number(symbol.width) || Number(symbol.height) || 24
+    };
+    if (opts.classMin != null || opts.classMax != null) {
+        entry.classMin = Number(opts.classMin);
+        entry.classMax = Number(opts.classMax);
+    }
+    markers.push(entry);
+}
+
+/**
  * @param {object|null|undefined} drawingInfo
- * @returns {{ field: string|null, markers: Array<{ value: string, imageId: string, imageData: string, contentType: string }> }}
+ * @returns {{
+ *   field: string|null,
+ *   matchMode: 'unique'|'classBreaks'|'all',
+ *   markers: Array<{ value: string, imageId: string, imageData: string, contentType: string, esriWidth?: number, classMin?: number, classMax?: number }>
+ * }}
  */
 export function pictureMarkersFromDrawingInfo(drawingInfo) {
     const renderer = drawingInfo?.renderer;
-    const field = renderer?.field1 && renderer.field1 !== '*' ? String(renderer.field1) : null;
+    if (!renderer) return { field: null, matchMode: 'unique', markers: [] };
+
     const markers = [];
     const seenImage = new Set();
-    for (const info of collectUniqueInfos(renderer || {})) {
-        const symbol = info.symbol;
-        if (!symbol || symbol.type !== 'esriPMS' || !symbol.imageData) continue;
-        const imageId = `arcgis-pms-${String(symbol.url || info.value).replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 40)}`;
-        if (seenImage.has(imageId) && markers.some((m) => m.value === String(info.value))) continue;
-        seenImage.add(imageId);
-        markers.push({
-            value: String(info.value),
-            imageId,
-            imageData: String(symbol.imageData),
-            contentType: symbol.contentType || 'image/png',
-            esriWidth: Number(symbol.width) || Number(symbol.height) || 24
-        });
+    const rendererType = String(renderer.type || '');
+
+    if (rendererType === 'classBreaks' && renderer.field) {
+        const field = String(renderer.field);
+        for (const info of renderer.classBreakInfos || []) {
+            pushEsriPmsMarker(
+                info.symbol,
+                `${info.classMinValue}-${info.classMaxValue}`,
+                seenImage,
+                markers,
+                {
+                    value: `${info.classMinValue ?? ''}-${info.classMaxValue ?? ''}`,
+                    classMin: info.classMinValue ?? renderer.minValue,
+                    classMax: info.classMaxValue ?? renderer.maxValue
+                }
+            );
+        }
+        return { field, matchMode: 'classBreaks', markers };
     }
-    return { field, markers };
+
+    let field = renderer.field1 && renderer.field1 !== '*' ? String(renderer.field1) : null;
+    let matchMode = 'unique';
+
+    for (const info of collectUniqueInfos(renderer)) {
+        pushEsriPmsMarker(info.symbol, info.value, seenImage, markers, { value: info.value });
+    }
+
+    if (!markers.length && renderer.symbol?.type === 'esriPMS') {
+        matchMode = 'all';
+        field = null;
+        pushEsriPmsMarker(renderer.symbol, 'all', seenImage, markers, { value: '__all__' });
+    }
+
+    return { field, matchMode, markers };
+}
+
+/**
+ * Stamp picture-marker props on an imported dataset and retain the marker pack for map registration.
+ * @param {object} dataset
+ * @param {object|null|undefined} drawingInfo
+ */
+export function attachPictureMarkersToDataset(dataset, drawingInfo) {
+    if (!dataset) return dataset;
+    const pack = pictureMarkersFromDrawingInfo(drawingInfo);
+    if (!pack.markers.length) return dataset;
+    dataset._arcgisPictureMarkers = pack;
+    if (dataset.geojson?.features?.length) {
+        dataset.geojson = {
+            ...dataset.geojson,
+            features: decorateFeaturesWithPictureMarkers(dataset.geojson.features, pack)
+        };
+    }
+    return dataset;
 }
 
 /**
@@ -105,28 +175,54 @@ export function loadPictureMarker(map, marker) {
     });
 }
 
+function stampFeatureGlyph(feature, marker) {
+    if (!marker?.imageId) return feature;
+    return {
+        ...feature,
+        properties: {
+            ...(feature.properties || {}),
+            _udotGlyph: marker.imageId,
+            _udotEsriWidth: marker.esriWidth || 24
+        }
+    };
+}
+
 /**
  * Stamp `_udotGlyph` with the published PMS image id for the class field.
  * @param {object[]} features
- * @param {{ field: string|null, markers: Array<{ value: string, imageId: string }> }} pack
+ * @param {{ field: string|null, matchMode?: string, markers: Array<{ value: string, imageId: string, esriWidth?: number, classMin?: number, classMax?: number }> }} pack
  * @returns {object[]}
  */
 export function decorateFeaturesWithPictureMarkers(features, pack) {
-    if (!pack?.field || !pack.markers?.length || !features?.length) return features;
+    if (!pack?.markers?.length || !features?.length) return features;
+
+    if (pack.matchMode === 'all' || (!pack.field && pack.markers.length === 1)) {
+        const marker = pack.markers[0];
+        return features.map((feature) => stampFeatureGlyph(feature, marker));
+    }
+
+    if (pack.matchMode === 'classBreaks' && pack.field) {
+        return features.map((feature) => {
+            const num = Number(feature?.properties?.[pack.field]);
+            if (!Number.isFinite(num)) return feature;
+            const marker = pack.markers.find((m) => {
+                const lo = Number(m.classMin);
+                const hi = Number(m.classMax);
+                if (!Number.isFinite(lo) || !Number.isFinite(hi)) return false;
+                return num >= lo && num <= hi;
+            });
+            return marker ? stampFeatureGlyph(feature, marker) : feature;
+        });
+    }
+
+    if (!pack.field) return features;
+
     const byValue = new Map(pack.markers.map((m) => [m.value, m]));
     return features.map((feature) => {
         const raw = feature?.properties?.[pack.field];
         if (raw == null || raw === '') return feature;
         const marker = byValue.get(String(raw));
-        if (!marker?.imageId) return feature;
-        return {
-            ...feature,
-            properties: {
-                ...feature.properties,
-                _udotGlyph: marker.imageId,
-                _udotEsriWidth: marker.esriWidth || 24
-            }
-        };
+        return marker ? stampFeatureGlyph(feature, marker) : feature;
     });
 }
 
@@ -134,6 +230,7 @@ export default {
     esriLineStyleToDash,
     resolveEsriLineDasharray,
     pictureMarkersFromDrawingInfo,
+    attachPictureMarkersToDataset,
     registerPictureMarkers,
     loadPictureMarker,
     decorateFeaturesWithPictureMarkers

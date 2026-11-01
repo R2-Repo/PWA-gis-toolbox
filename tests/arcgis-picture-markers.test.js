@@ -3,7 +3,8 @@ import {
     resolveEsriLineDasharray,
     decorateFeaturesWithPictureMarkers,
     esriLineStyleToDash,
-    pictureMarkersFromDrawingInfo
+    pictureMarkersFromDrawingInfo,
+    attachPictureMarkersToDataset
 } from '../js/arcgis/picture-markers.js';
 
 const PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
@@ -41,6 +42,7 @@ describe('ArcGIS picture markers', () => {
             }
         });
         expect(pack.field).toBe('MODEL');
+        expect(pack.matchMode).toBe('unique');
         expect(pack.markers).toHaveLength(1);
         expect(pack.markers[0].value).toBe('CCTV(E)-R1');
         expect(pack.markers[0].imageData).toBe(PNG);
@@ -57,6 +59,55 @@ describe('ArcGIS picture markers', () => {
             { type: 'Feature', properties: { MODEL: 'Other' }, geometry: null }
         ], pack);
         expect(out[0].properties._udotGlyph).toBe('arcgis-pms-cab');
+        expect(out[0].properties._udotEsriWidth).toBe(24);
         expect(out[1].properties._udotGlyph).toBeUndefined();
+    });
+
+    it('extracts esriPMS from a simple renderer symbol', () => {
+        const pack = pictureMarkersFromDrawingInfo({
+            renderer: {
+                type: 'simple',
+                symbol: {
+                    type: 'esriPMS',
+                    url: 'pin1',
+                    imageData: PNG,
+                    width: 18,
+                    height: 18
+                }
+            }
+        });
+        expect(pack.matchMode).toBe('all');
+        expect(pack.field).toBeNull();
+        expect(pack.markers).toHaveLength(1);
+        expect(pack.markers[0].esriWidth).toBe(18);
+        const out = decorateFeaturesWithPictureMarkers([
+            { type: 'Feature', properties: { NAME: 'A' }, geometry: null },
+            { type: 'Feature', properties: {}, geometry: null }
+        ], pack);
+        expect(out[0].properties._udotGlyph).toMatch(/^arcgis-pms-/);
+        expect(out[1].properties._udotGlyph).toMatch(/^arcgis-pms-/);
+    });
+
+    it('attachPictureMarkersToDataset stamps geojson on import shell', () => {
+        const ds = {
+            geojson: {
+                type: 'FeatureCollection',
+                features: [
+                    { type: 'Feature', properties: { MODEL: 'Cabinet' }, geometry: { type: 'Point', coordinates: [0, 0] } }
+                ]
+            }
+        };
+        attachPictureMarkersToDataset(ds, {
+            renderer: {
+                type: 'uniqueValue',
+                field1: 'MODEL',
+                uniqueValueInfos: [{
+                    value: 'Cabinet',
+                    symbol: { type: 'esriPMS', url: 'cab', imageData: PNG, width: 24 }
+                }]
+            }
+        });
+        expect(ds._arcgisPictureMarkers?.markers).toHaveLength(1);
+        expect(ds.geojson.features[0].properties._udotGlyph).toMatch(/^arcgis-pms-/);
     });
 });

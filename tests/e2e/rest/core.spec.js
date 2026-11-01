@@ -144,9 +144,7 @@ test('@tune rest drawingInfo renderer stored on layer', async ({ page }) => {
     expect(style?.smart?.visualVariables?.[0]?.field).toBe('CARTO_CODE');
 });
 
-test.fixme('@tune rest picture marker glyph on features', async ({ page }) => {
-    // ArcGIS REST import does not stamp esriPMS picture markers on features yet.
-    // Import & REST Boss: js/import/post-import.js applyImportLayerStyles / rest-importer download path.
+test('@tune rest picture marker glyph on features', async ({ page }) => {
     test.setTimeout(120_000);
     await bootApp(page, '/');
     await importArcgisRestUrl(page, mockLayerUrl('mock/FeatureServer/5'));

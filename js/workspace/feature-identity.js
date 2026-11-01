@@ -42,10 +42,19 @@ export function ensureFeatureLgid(feature) {
 
 /**
  * @param {string} key
+ * @returns {boolean}
+ */
+export function isArcgisPictureMarkerProp(key) {
+    return key === '_udotGlyph' || key === '_udotEsriWidth';
+}
+
+/**
+ * @param {string} key
  * @returns {boolean} true for internal map/workspace props (not user fields)
  */
 export function isInternalFeatureProp(key) {
     if (key === LGID_PROP) return true;
+    if (isArcgisPictureMarkerProp(key)) return false;
     return typeof key === 'string' && key.startsWith('_');
 }
 

@@ -4,7 +4,8 @@ import { LIMITS } from '../import/import-limits.js';
 import { styleFromArcgisMetadata } from '../arcgis/drawing-info.js';
 import {
     pictureMarkersFromDrawingInfo,
-    registerPictureMarkers
+    registerPictureMarkers,
+    decorateFeaturesWithPictureMarkers
 } from '../arcgis/picture-markers.js';
 import { analyzeSchema, createSpatialDataset } from '../core/data-model.js';
 import { getLayers } from '../core/state.js';
@@ -511,6 +512,9 @@ export async function refreshServiceLayer(mapManager, layerId) {
             tagged = applyUdotFiberDisplayOffsets(tagged);
         }
         tagged = decorateUdotFiberGlyphProps(runtime.url, tagged, map);
+        if (!fiberHit && runtime.pictureMarkers?.markers?.length) {
+            tagged = decorateFeaturesWithPictureMarkers(tagged, runtime.pictureMarkers);
+        }
         const geojson = { type: 'FeatureCollection', features: tagged };
 
         if (runtime.fetchGen !== fetchGen) return;

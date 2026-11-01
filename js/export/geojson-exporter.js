@@ -3,6 +3,7 @@
  */
 import { withBakedSimpleStyle } from './style-baker.js';
 import { isWorkspaceLayer } from '../core/data-model.js';
+import { isInternalFeatureProp, LGID_PROP } from '../workspace/feature-identity.js';
 
 const EXPORT_BATCH_SIZE = 500;
 
@@ -10,9 +11,8 @@ function _cleanFeatureProperties(styled, layerStyle) {
     return Object.fromEntries(
         Object.entries(styled.properties || {}).filter(([k]) => {
             if (k === '_thumbnailDataUrl') return true;
-            // Stable workspace identity — kept for export restoration / reimport.
-            if (k === '__lgid') return true;
-            return !k.startsWith('_');
+            if (k === LGID_PROP) return true;
+            return !isInternalFeatureProp(k);
         }).map(([k, v]) => [k === '_thumbnailDataUrl' ? 'photo' : k, v])
     );
 }

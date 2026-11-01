@@ -14,6 +14,7 @@ import { isSmartStyleActive } from '../map/style-engine.js';
 import { getLayerDefaultColor } from '../map/layer-palette.js';
 import { detectEmbeddedSimpleStyle, convertLayerSimpleStyleToSmart } from '../map/style-import.js';
 import { resolveUdotFiberStyleForDataset } from '../symbology/udot-fiber/resolve-style.js';
+import { registerPictureMarkers } from '../arcgis/picture-markers.js';
 import {
     filterFeaturesByImportFilters,
     hasActiveFeatureFilter
@@ -132,6 +133,7 @@ export function extractImportMetadata(source) {
     const meta = {};
     if (source._kmlStyle) meta._kmlStyle = { ...source._kmlStyle };
     if (source._arcgisStyle) meta._arcgisStyle = source._arcgisStyle;
+    if (source._arcgisPictureMarkers) meta._arcgisPictureMarkers = source._arcgisPictureMarkers;
     if (source._importWarning) meta._importWarning = source._importWarning;
     if (source._networkLinkHrefs?.length) meta._networkLinkHrefs = [...source._networkLinkHrefs];
     if (source._blobUrls?.length) meta._blobUrls = [...source._blobUrls];
@@ -148,6 +150,7 @@ export function applyImportMetadata(target, meta) {
     if (!meta) return target;
     if (meta._kmlStyle) target._kmlStyle = meta._kmlStyle;
     if (meta._arcgisStyle) target._arcgisStyle = meta._arcgisStyle;
+    if (meta._arcgisPictureMarkers) target._arcgisPictureMarkers = meta._arcgisPictureMarkers;
     if (meta._importWarning) target._importWarning = meta._importWarning;
     if (meta._networkLinkHrefs) target._networkLinkHrefs = meta._networkLinkHrefs;
     if (meta._blobUrls) target._blobUrls = meta._blobUrls;
@@ -218,6 +221,13 @@ export function applyImportLayerStyles(ds, options) {
                 mapService.setLayerStyle(ds.id, udotStyle);
             }
             return ds;
+        }
+    }
+
+    if (ds._arcgisPictureMarkers?.markers?.length) {
+        const map = mapService.getMap?.();
+        if (map) {
+            void registerPictureMarkers(map, ds._arcgisPictureMarkers);
         }
     }
 
