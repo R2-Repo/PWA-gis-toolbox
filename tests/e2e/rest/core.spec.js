@@ -153,6 +153,52 @@ test('@tune rest picture marker glyph on features', async ({ page }) => {
     expect(withGlyph.length).toBeGreaterThan(0);
 });
 
+test('@tune rest picture marker icons render on map', async ({ page }) => {
+    test.setTimeout(120_000);
+    await bootApp(page, '/');
+    await importArcgisRestUrl(page, mockLayerUrl('mock/FeatureServer/5'));
+    await page.waitForTimeout(3500);
+
+    const mapState = await page.evaluate(async () => {
+        const mapService = globalThis.__gisE2eMapService;
+        const map = mapService?.getMap?.();
+        if (!map) return { ok: false, reason: 'no-map' };
+        await new Promise((resolve) => {
+            if (map.loaded()) resolve();
+            else map.once('idle', () => resolve());
+        });
+        const style = map.getStyle();
+        const glyphLayer = style.layers.find((l) => String(l.id).endsWith('-pms-glyph'));
+        const imageId = exportedGlyphIdFromStyle(style);
+        const rendered = map.queryRenderedFeatures(undefined, {
+            layers: glyphLayer ? [glyphLayer.id] : []
+        });
+        return {
+            ok: true,
+            glyphLayerId: glyphLayer?.id || null,
+            hasImage: imageId ? map.hasImage(imageId) : false,
+            imageId,
+            renderedGlyphs: rendered.length
+        };
+
+        function exportedGlyphIdFromStyle(styleObj) {
+            const sources = styleObj.sources || {};
+            for (const src of Object.values(sources)) {
+                if (src?.type !== 'geojson' || !src.data?.features?.length) continue;
+                const hit = src.data.features.find((f) => f.properties?._udotGlyph);
+                if (hit?.properties?._udotGlyph) return hit.properties._udotGlyph;
+            }
+            return null;
+        }
+    });
+
+    expect(mapState.ok).toBe(true);
+    expect(mapState.glyphLayerId).toMatch(/-pms-glyph$/);
+    expect(mapState.hasImage).toBe(true);
+    expect(mapState.imageId).toMatch(/^arcgis-pms-/);
+    expect(mapState.renderedGlyphs).toBeGreaterThan(0);
+});
+
 test('@tune rest error http 500 metadata', async ({ page }) => {
     test.setTimeout(90_000);
     await runArcgisFailure(page, 'error-http500/FeatureServer/0');

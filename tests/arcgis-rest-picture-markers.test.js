@@ -3,8 +3,24 @@ import * as restClient from '../js/arcgis/rest-client.js';
 
 const PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
 
+const workspaceBatches = [];
+
+vi.mock('../js/workspace/workspace-store.js', async (importOriginal) => {
+    const actual = await importOriginal();
+    return {
+        ...actual,
+        createWorkspaceLayer: vi.fn(async () => {}),
+        appendWorkspaceBatch: vi.fn(async (_layerId, features) => {
+            workspaceBatches.push(features);
+            return 'chunk-0';
+        }),
+        flushSpatialIndexSave: vi.fn(async () => {})
+    };
+});
+
 describe('ArcGIS REST import picture markers', () => {
     beforeEach(() => {
+        workspaceBatches.length = 0;
         vi.spyOn(restClient, 'arcgisFetchJson').mockImplementation(async (url) => {
             if (String(url).includes('?f=json') && !String(url).includes('/query')) {
                 return {
@@ -56,6 +72,23 @@ describe('ArcGIS REST import picture markers', () => {
         const dataset = await importer.downloadFeatures({ allowLargeDownload: true });
         expect(dataset._arcgisPictureMarkers?.markers?.length).toBeGreaterThan(0);
         const stamped = dataset.geojson.features.filter((f) => f.properties?._udotGlyph);
+        expect(stamped.length).toBeGreaterThan(0);
+        expect(stamped[0].properties._udotGlyph).toMatch(/^arcgis-pms-/);
+    });
+
+    it('workspace stream path stamps _udotGlyph on chunked batches', async () => {
+        const { ArcGISRestImporter } = await import('../js/arcgis/rest-importer.js');
+        const importer = new ArcGISRestImporter();
+        await importer.fetchMetadata('http://127.0.0.1:18765/mock/FeatureServer/5');
+        const dataset = await importer.downloadFeatures({
+            allowLargeDownload: true,
+            useWorkspace: true
+        });
+        expect(dataset.type).toBe('spatial-chunked');
+        expect(dataset._arcgisPictureMarkers?.markers?.length).toBeGreaterThan(0);
+        expect(workspaceBatches.length).toBeGreaterThan(0);
+        const stored = workspaceBatches.flat();
+        const stamped = stored.filter((f) => f.properties?._udotGlyph);
         expect(stamped.length).toBeGreaterThan(0);
         expect(stamped[0].properties._udotGlyph).toMatch(/^arcgis-pms-/);
     });

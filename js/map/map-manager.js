@@ -61,6 +61,13 @@ import { addUdotFiberVectorLayers } from '../symbology/udot-fiber/paint.js';
 import { prepareUdotFiberMapFeatures } from '../symbology/udot-fiber/map-prepare.js';
 import { spanMemberKey } from '../widgets/plan-set-callouts/span-grouping.js';
 import { renderProcurementIcon } from '../plan-project/symbol-icons.js';
+import {
+    registerPictureMarkers,
+    arcgisPictureMarkerPointLayerParts,
+    addArcgisPictureMarkerGlyphLayer,
+    releaseArcgisPictureMarkerImages,
+    arcgisPictureMarkerImageIds
+} from '../arcgis/picture-markers.js';
 
 function prepareSnapshotMapFeatures(dataset, taggedFeatures, fiberKey, map) {
     let features = taggedFeatures;
@@ -1179,7 +1186,10 @@ class MapManager {
                 ? buildSymbolLayerLayout(layerStyle, 'point', (shape, color, fillColor, size, opacity) =>
                     this._ensureSymbolImage(shape, color, fillColor, size, opacity))
                 : null;
-            const pointGeomFilter = excludeAnnotationsFilter(_geomTypesFilter(['Point', 'MultiPoint']));
+            let pointGeomFilter = excludeAnnotationsFilter(_geomTypesFilter(['Point', 'MultiPoint']));
+            pointGeomFilter = this._installImportedPictureMarkerGlyphLayer(
+                dataset, sourceId, dataset.id, layerIds, pointGeomFilter, useCluster
+            );
 
             if (useCluster) {
                 const clusterId = `${dataset.id}-clusters`;
@@ -1245,7 +1255,8 @@ class MapManager {
             chunkSources: [{ sourceId, layerIds }],
             colorIndex,
             geojson: dataset._geometryExploded === true ? dataset.geojson : geojson,
-            scaleRange: normalizeScaleRange(dataset)
+            scaleRange: normalizeScaleRange(dataset),
+            pictureMarkers: dataset._arcgisPictureMarkers || null
         });
         this._storeLayerScaleRange(dataset);
         this._layerNames.set(dataset.id, dataset.name);
@@ -1704,7 +1715,8 @@ class MapManager {
                 workspace: true,
                 geojson,
                 truncated: !!viewportFc.truncated,
-                scaleRange: normalizeScaleRange(dataset)
+                scaleRange: normalizeScaleRange(dataset),
+                pictureMarkers: dataset._arcgisPictureMarkers || null
             });
             this._storeLayerScaleRange(dataset);
             this._layerNames.set(dataset.id, dataset.name);
@@ -1877,7 +1889,10 @@ class MapManager {
 
         if (hasPoints) {
             const fo = Math.min(1, (typeof styPoint.fillOpacity === 'number' ? styPoint.fillOpacity : 0.3) + 0.3);
-            const pointGeomFilter = excludeAnnotationsFilter(_geomTypesFilter(['Point', 'MultiPoint']));
+            let pointGeomFilter = excludeAnnotationsFilter(_geomTypesFilter(['Point', 'MultiPoint']));
+            pointGeomFilter = this._installImportedPictureMarkerGlyphLayer(
+                dataset, sourceId, idBase, layerIds, pointGeomFilter, false, TILE_SOURCE_LAYER
+            );
             const ptId = `${idBase}-point`;
             if (!this.map.getLayer(ptId)) {
                 this.map.addLayer({
@@ -2013,6 +2028,29 @@ class MapManager {
         entry.chunkSources.push({ sourceId, layerIds: chunkLayerIds });
     }
 
+    _collectRetainArcgisPictureMarkerImageIds(exceptLayerId) {
+        const retain = new Set();
+        for (const [lid, info] of this.dataLayers) {
+            if (lid === exceptLayerId) continue;
+            for (const id of arcgisPictureMarkerImageIds(info.pictureMarkers)) retain.add(id);
+        }
+        return retain;
+    }
+
+    _installImportedPictureMarkerGlyphLayer(dataset, sourceId, idBase, layerIds, pointGeomFilter, useCluster, sourceLayer) {
+        if (!dataset._arcgisPictureMarkers?.markers?.length) return pointGeomFilter;
+        void registerPictureMarkers(this.map, dataset._arcgisPictureMarkers);
+        const parts = arcgisPictureMarkerPointLayerParts({
+            idBase,
+            sourceId,
+            pointGeomFilter,
+            useCluster,
+            sourceLayer
+        });
+        addArcgisPictureMarkerGlyphLayer(this.map, parts.glyphLayerSpec, layerIds);
+        return parts.circleFilter;
+    }
+
     /**
      * Add a GeoJSON source + styled layers for one feature batch.
      * @returns {string[]} map layer ids
@@ -2097,7 +2135,10 @@ class MapManager {
 
         if (hasPoints) {
             const fo = Math.min(1, (typeof styPoint.fillOpacity === 'number' ? styPoint.fillOpacity : 0.3) + 0.3);
-            const pointGeomFilter = excludeAnnotationsFilter(_geomTypesFilter(['Point', 'MultiPoint']));
+            let pointGeomFilter = excludeAnnotationsFilter(_geomTypesFilter(['Point', 'MultiPoint']));
+            pointGeomFilter = this._installImportedPictureMarkerGlyphLayer(
+                dataset, sourceId, idBase, layerIds, pointGeomFilter, useCluster
+            );
             const ptId = `${idBase}-point`;
             if (!this.map.getLayer(ptId)) {
                 this.map.addLayer({
@@ -2485,6 +2526,13 @@ class MapManager {
             }
             removeAnnotationSources(this.map, id);
             this._annotationOverlay?.unregister(id);
+            if (info.pictureMarkers?.markers?.length) {
+                releaseArcgisPictureMarkerImages(
+                    this.map,
+                    info.pictureMarkers,
+                    this._collectRetainArcgisPictureMarkerImageIds(id)
+                );
+            }
             if (info.tiled) {
                 const wsId = this._workspaceDatasets?.get(id)?.workspaceLayerId || id;
                 void import('./tiles/tile-protocol.js')

@@ -426,3 +426,7 @@ export function createMapService({ mapAdapter = mapManager } = {}) {
 
 export const mapService = createMapService();
 export default mapService;
+
+if (import.meta.env.VITE_E2E === '1' && typeof globalThis !== 'undefined') {
+    globalThis.__gisE2eMapService = mapService;
+}

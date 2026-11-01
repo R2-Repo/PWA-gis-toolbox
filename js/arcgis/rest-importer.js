@@ -24,7 +24,11 @@ import {
 import { createSpatialChunkWriter } from '../workspace/spatial-chunk-writer.js';
 import { applyArcgisScaleRangeToLayer } from '../map/scale-range.js';
 import { requiredStyleFieldsFromDrawingInfo, styleFromArcgisMetadata } from './drawing-info.js';
-import { attachPictureMarkersToDataset } from './picture-markers.js';
+import {
+    attachPictureMarkersToDataset,
+    decorateFeaturesWithPictureMarkers,
+    pictureMarkersFromDrawingInfo
+} from './picture-markers.js';
 import { canonicalUdotFiberLayerUrl } from '../symbology/udot-fiber/constants.js';
 import {
     arcgisFetchJson,
@@ -106,7 +110,8 @@ export async function appendArcgisFeaturesToWorkspace(
     convertGeometry,
     startIndex,
     selectedFields = null,
-    displayFields = null
+    displayFields = null,
+    pictureMarkerPack = null
 ) {
     if (!esriFeatures?.length) return 0;
 
@@ -114,15 +119,21 @@ export async function appendArcgisFeaturesToWorkspace(
         chunkSize: WORKSPACE_CHUNK_SIZE,
         initialIndex: startIndex,
         onFlush: async (batch, index) => {
-            await appendWorkspaceBatch(layerId, batch, index, selectedFields, { displayFields });
+            const stamped = pictureMarkerPack?.markers?.length
+                ? decorateFeaturesWithPictureMarkers(batch, pictureMarkerPack)
+                : batch;
+            await appendWorkspaceBatch(layerId, stamped, index, selectedFields, { displayFields });
         }
     });
 
     for (let i = 0; i < esriFeatures.length; i++) {
-        const feature = filterFeatureProperties(
+        let feature = filterFeatureProperties(
             esriFeatureToGeoJSON(esriFeatures[i], convertGeometry),
             selectedFields
         );
+        if (pictureMarkerPack?.markers?.length) {
+            [feature] = decorateFeaturesWithPictureMarkers([feature], pictureMarkerPack);
+        }
         await writer.add(feature);
     }
     await writer.flush();
@@ -296,6 +307,7 @@ export class ArcGISRestImporter {
 
         const streamToWorkspace = returnGeometry && admission.useWorkspace;
         const convertGeom = (g) => this.convertGeometry(g);
+        const pictureMarkerPack = pictureMarkersFromDrawingInfo(this.metadata?.drawingInfo);
 
         /** @type {object[]} raw ESRI features — only when not streaming spatial to workspace */
         const allFeatures = [];
@@ -357,7 +369,8 @@ export class ArcGISRestImporter {
                             convertGeom,
                             featureOffset,
                             selectedFields,
-                            mapDisplayFields
+                            mapDisplayFields,
+                            pictureMarkerPack
                         );
                         featureOffset += added;
                     } else {

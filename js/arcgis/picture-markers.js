@@ -193,6 +193,114 @@ function stampFeatureGlyph(feature, marker) {
  * @param {{ field: string|null, matchMode?: string, markers: Array<{ value: string, imageId: string, esriWidth?: number, classMin?: number, classMax?: number }> }} pack
  * @returns {object[]}
  */
+/** @param {unknown} baseFilter */
+export function arcgisPictureMarkerCircleFilter(baseFilter) {
+    return ['all', baseFilter, ['!', ['has', '_udotGlyph']]];
+}
+
+/**
+ * @param {unknown} baseFilter
+ * @param {{ excludeCluster?: boolean }} [opts]
+ */
+export function arcgisPictureMarkerGlyphFilter(baseFilter, opts = {}) {
+    let filter = ['all', baseFilter, ['has', '_udotGlyph']];
+    if (opts.excludeCluster) {
+        filter = ['all', filter, ['!', ['has', 'point_count']]];
+    }
+    return filter;
+}
+
+/** MapLibre `icon-size` from Esri PMS width (pixels) at ~24px screen size. */
+export function buildArcgisPictureMarkerIconSizeExpression() {
+    const native = ['max', 10, ['to-number', ['coalesce', ['get', '_udotEsriWidth'], 24]]];
+    return ['/', 24, native];
+}
+
+/**
+ * @param {{ layerId: string, sourceId: string, filter: unknown, sourceLayer?: string }} spec
+ */
+export function buildArcgisPictureMarkerGlyphLayerSpec({ layerId, sourceId, filter, sourceLayer }) {
+    return {
+        id: layerId,
+        type: 'symbol',
+        source: sourceId,
+        ...(sourceLayer ? { 'source-layer': sourceLayer } : {}),
+        filter,
+        layout: {
+            'icon-image': ['get', '_udotGlyph'],
+            'icon-size': buildArcgisPictureMarkerIconSizeExpression(),
+            'icon-allow-overlap': true,
+            'icon-ignore-placement': true,
+            'icon-padding': 0,
+            'icon-pitch-alignment': 'viewport',
+            'icon-rotation-alignment': 'map'
+        }
+    };
+}
+
+/**
+ * @param {{ idBase: string, sourceId: string, pointGeomFilter: unknown, useCluster?: boolean, sourceLayer?: string }} opts
+ */
+export function arcgisPictureMarkerPointLayerParts(opts) {
+    const glyphLayerId = `${opts.idBase}-pms-glyph`;
+    let circleFilter = arcgisPictureMarkerCircleFilter(opts.pointGeomFilter);
+    if (opts.useCluster) {
+        circleFilter = ['all', circleFilter, ['!', ['has', 'point_count']]];
+    }
+    const glyphFilter = arcgisPictureMarkerGlyphFilter(opts.pointGeomFilter, {
+        excludeCluster: opts.useCluster
+    });
+    return {
+        circleFilter,
+        glyphLayerId,
+        glyphLayerSpec: buildArcgisPictureMarkerGlyphLayerSpec({
+            layerId: glyphLayerId,
+            sourceId: opts.sourceId,
+            filter: glyphFilter,
+            sourceLayer: opts.sourceLayer
+        })
+    };
+}
+
+/**
+ * @param {import('maplibre-gl').Map} map
+ * @param {{ markers?: Array<{ imageId: string }> }} pack
+ * @param {Set<string>|null|undefined} retainImageIds
+ */
+export function releaseArcgisPictureMarkerImages(map, pack, retainImageIds) {
+    if (!map || !pack?.markers?.length) return;
+    for (const marker of pack.markers) {
+        if (!marker?.imageId) continue;
+        if (retainImageIds?.has(marker.imageId)) continue;
+        try {
+            if (map.hasImage?.(marker.imageId)) map.removeImage(marker.imageId);
+        } catch {
+            /* ignore */
+        }
+    }
+}
+
+/**
+ * @param {{ markers?: Array<{ imageId: string }> }|null|undefined} pack
+ * @returns {Set<string>}
+ */
+export function arcgisPictureMarkerImageIds(pack) {
+    return new Set((pack?.markers || []).map((m) => m.imageId).filter(Boolean));
+}
+
+/**
+ * @param {import('maplibre-gl').Map} map
+ * @param {object} glyphLayerSpec
+ * @param {string[]} layerIds
+ */
+export function addArcgisPictureMarkerGlyphLayer(map, glyphLayerSpec, layerIds) {
+    if (!map || !glyphLayerSpec?.id) return;
+    if (!map.getLayer(glyphLayerSpec.id)) {
+        map.addLayer(glyphLayerSpec);
+    }
+    layerIds.push(glyphLayerSpec.id);
+}
+
 export function decorateFeaturesWithPictureMarkers(features, pack) {
     if (!pack?.markers?.length || !features?.length) return features;
 
@@ -233,5 +341,13 @@ export default {
     attachPictureMarkersToDataset,
     registerPictureMarkers,
     loadPictureMarker,
-    decorateFeaturesWithPictureMarkers
+    decorateFeaturesWithPictureMarkers,
+    arcgisPictureMarkerCircleFilter,
+    arcgisPictureMarkerGlyphFilter,
+    buildArcgisPictureMarkerIconSizeExpression,
+    buildArcgisPictureMarkerGlyphLayerSpec,
+    arcgisPictureMarkerPointLayerParts,
+    releaseArcgisPictureMarkerImages,
+    arcgisPictureMarkerImageIds,
+    addArcgisPictureMarkerGlyphLayer
 };

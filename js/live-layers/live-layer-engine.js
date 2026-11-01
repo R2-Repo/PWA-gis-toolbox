@@ -5,7 +5,10 @@ import { styleFromArcgisMetadata } from '../arcgis/drawing-info.js';
 import {
     pictureMarkersFromDrawingInfo,
     registerPictureMarkers,
-    decorateFeaturesWithPictureMarkers
+    decorateFeaturesWithPictureMarkers,
+    arcgisPictureMarkerPointLayerParts,
+    addArcgisPictureMarkerGlyphLayer,
+    releaseArcgisPictureMarkerImages
 } from '../arcgis/picture-markers.js';
 import { analyzeSchema, createSpatialDataset } from '../core/data-model.js';
 import { getLayers } from '../core/state.js';
@@ -382,12 +385,18 @@ function addVectorLayers(map, datasetId, sourceId, layerStyle, opacity, opts = {
             'line-opacity': scalePaintOpacity(styLine.strokeOpacity, opacity)
         }
     });
+    const pointGeomFilter = ['match', ['geometry-type'], ['Point', 'MultiPoint'], true, false];
+    const pmsParts = arcgisPictureMarkerPointLayerParts({
+        idBase: `svc-lyr-${datasetId}`,
+        sourceId,
+        pointGeomFilter
+    });
     map.addLayer({
         id: pointId,
         type: 'circle',
         source: sourceId,
         ...(minzoom != null ? { minzoom } : {}),
-        filter: ['match', ['geometry-type'], ['Point', 'MultiPoint'], true, false],
+        filter: pmsParts.circleFilter,
         paint: {
             'circle-radius': styPoint.circleRadius,
             'circle-color': styPoint.fillColor,
@@ -396,6 +405,7 @@ function addVectorLayers(map, datasetId, sourceId, layerStyle, opacity, opts = {
             'circle-opacity': scalePaintOpacity(styPoint.fillOpacity, opacity)
         }
     });
+    addArcgisPictureMarkerGlyphLayer(map, pmsParts.glyphLayerSpec, ids);
 
     ids.push(polygonId, lineId, pointId);
 
@@ -697,6 +707,16 @@ export function removeServiceLayer(mapManager, layerId) {
             mapManager._boundClickLayers?.delete(id);
         }
         if (map.getSource(runtime.sourceId)) map.removeSource(runtime.sourceId);
+        if (runtime.pictureMarkers?.markers?.length) {
+            const retain = new Set();
+            for (const [, other] of getRuntimeMap(mapManager)) {
+                if (other === runtime || !other.pictureMarkers?.markers?.length) continue;
+                for (const m of other.pictureMarkers.markers) {
+                    if (m.imageId) retain.add(m.imageId);
+                }
+            }
+            releaseArcgisPictureMarkerImages(map, runtime.pictureMarkers, retain);
+        }
     }
 
     mapManager.dataLayers?.delete(layerId);

@@ -83,6 +83,8 @@ export function buildDisplayIdentityProps({
         [LGID_PROP]: lgid,
         name: properties?.name ?? properties?.Name ?? null
     };
+    if (properties._udotGlyph != null) out._udotGlyph = properties._udotGlyph;
+    if (properties._udotEsriWidth != null) out._udotEsriWidth = properties._udotEsriWidth;
     if (!displayFields?.length) return out;
     for (const field of displayFields) {
         if (!field || isInternalFeatureProp(field)) continue;
