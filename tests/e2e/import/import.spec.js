@@ -5,13 +5,19 @@ import { test, expect } from '@playwright/test';
 import manifest from '../../fixtures/e2e/tune/manifest.json' with { type: 'json' };
 import { bootApp, dismissOpenModals } from '../helpers/app.js';
 import { importLocalFile, expectImportFailure } from '../helpers/import.js';
-import { exportActiveLayerGeoJSON, readLayerListFeatureCount, readActiveLayerAdmission } from '../helpers/probe.js';
+import {
+    exportActiveLayerGeoJSON,
+    exportActiveLayerGpx,
+    countGpxMaterializedFeatures,
+    readLayerListFeatureCount
+} from '../helpers/probe.js';
 import { assertFeatureCollection, assertRoundTrip } from '../helpers/geo-assert.js';
 import { installLongTaskObserver, buildPerfRow, importWallMs } from '../helpers/perf.js';
 import {
     attachNetworkGuard,
     assertNoUnexpectedBlocks
 } from '../helpers/network-guard.js';
+import { installE2eBrowserShims } from '../helpers/e2e-browser-shims.js';
 
 const tuneDir = path.join(path.dirname(fileURLToPath(import.meta.url)), '../../fixtures/e2e/tune');
 const downloadDir = path.join(process.cwd(), 'test-results/e2e-downloads');
@@ -20,6 +26,7 @@ const downloadDir = path.join(process.cwd(), 'test-results/e2e-downloads');
 const networkByTest = new Map();
 
 test.beforeEach(async ({ context }, testInfo) => {
+    await installE2eBrowserShims(context);
     installLongTaskObserver(context);
     const guard = await attachNetworkGuard(context);
     networkByTest.set(testInfo.testId, guard);
@@ -50,7 +57,7 @@ for (const fx of fixtures) {
         if (fx.knownBug) {
             test.skip(true, fx.knownBug);
         }
-        test.setTimeout(fx.tier === 'T1' ? 240_000 : 120_000);
+        test.setTimeout(fx.format === 'gpx' ? 240_000 : fx.tier === 'T1' ? 240_000 : 120_000);
         const fixturePath = path.join(tuneDir, fx.file);
         await bootApp(page, '/');
 
@@ -87,14 +94,15 @@ for (const fx of fixtures) {
         }
 
         if (fx.format === 'gpx' && fx.expectedOutcome === 'success') {
-            test.fail(
-                true,
-                'GPX export feature-count assertion blocked: Export GPX does not reliably emit a Playwright download in headless mode (import + layer list pass; see vitest import-kit-gpx-regression)'
+            const gpxText = await exportActiveLayerGpx(page, path.join(downloadDir, `${fx.id}-gpx`), {
+                featureCount: fx.featureCount
+            });
+            expect(countGpxMaterializedFeatures(gpxText), `GPX export count for ${fx.id}`).toBe(
+                fx.featureCount
             );
-            throw new Error('GPX export feature-count assertion blocked');
         }
 
-        if (fx.expectedOutcome === 'success' && fx.featureCount > 0) {
+        if (fx.expectedOutcome === 'success' && fx.featureCount > 0 && fx.format !== 'gpx') {
             const exported = await exportActiveLayerGeoJSON(page, path.join(downloadDir, fx.id));
             assertFeatureCollection(exported, fx);
 

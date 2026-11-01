@@ -8,70 +8,59 @@ import { LIMITS, preflightByteBands } from '../js/import/import-limits.js';
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const GEN_DIR = path.join(ROOT, 'tests/fixtures/e2e/generated');
 
-function baseRows(n = 40) {
+function makeRows(count, padLen = 48) {
     const rows = [];
-    for (let i = 0; i < n; i++) {
+    for (let i = 0; i < count; i++) {
         rows.push({
             latitude: 39 + i * 0.00001,
             longitude: -111 + i * 0.00001,
             id: i,
-            name: `pt-${i}`,
-            unicode: 'café'
+            name: `pt-${i}-${'n'.repeat(padLen)}`,
+            unicode: `u-${'u'.repeat(Math.min(padLen, 32))}`
         });
     }
     return rows;
 }
 
-async function writeXlsxNearBytes(filePath, targetBytes, over, maxBytes) {
-    let rows = baseRows();
-    let padLen = 64;
-    for (let guard = 0; guard < 200; guard++) {
-        const sheetRows = rows.map((r) => ({
-            latitude: r.latitude,
-            longitude: r.longitude,
-            id: r.id,
-            name: `pt-${r.id}-${'n'.repeat(padLen)}`,
-            unicode: `u-${'u'.repeat(Math.min(padLen, 4000))}`
-        }));
-        const wb = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(sheetRows), 'data');
-        XLSX.writeFile(wb, filePath);
-        const size = (await fs.stat(filePath)).size;
-        if (over) {
-            if (size > targetBytes) return size;
-            padLen = Math.min(8000, padLen + 128);
-            if (rows.length < 8000) {
-                const start = rows.length;
-                for (let i = 0; i < 300; i++) {
-                    rows.push({
-                        latitude: 39 + (start + i) * 0.00001,
-                        longitude: -111 + (start + i) * 0.00001,
-                        id: start + i
-                    });
-                }
+async function writeXlsx(filePath, rows) {
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), 'data');
+    XLSX.writeFile(wb, filePath);
+    return (await fs.stat(filePath)).size;
+}
+
+/** Grow row count until size in [target-512, cap) or size > target for over. */
+async function sizeToTarget(filePath, targetBytes, over, cap) {
+    if (over) {
+        let lo = 40;
+        let hi = 120_000;
+        let best = 0;
+        while (lo <= hi) {
+            const mid = Math.floor((lo + hi) / 2);
+            const size = await writeXlsx(filePath, makeRows(mid, 64));
+            if (size > targetBytes) {
+                best = size;
+                hi = mid - 1;
+            } else {
+                lo = mid + 1;
             }
-            continue;
         }
-        if (maxBytes != null && size >= maxBytes) {
-            padLen = Math.max(32, padLen - 64);
-            if (rows.length > 50) rows = rows.slice(0, -100);
-            continue;
-        }
-        if (size >= targetBytes - 512) return size;
-        padLen = Math.min(8000, padLen + (size < targetBytes * 0.5 ? 512 : 128));
-        if (rows.length < 15000) {
-            const start = rows.length;
-            const add = size < targetBytes * 0.7 ? 800 : 150;
-            for (let i = 0; i < add; i++) {
-                rows.push({
-                    latitude: 39 + (start + i) * 0.00001,
-                    longitude: -111 + (start + i) * 0.00001,
-                    id: start + i
-                });
-            }
+        return best;
+    }
+    let lo = 40;
+    let hi = 120_000;
+    while (lo <= hi) {
+        const mid = Math.floor((lo + hi) / 2);
+        const size = await writeXlsx(filePath, makeRows(mid, 64));
+        if (cap != null && size >= cap) {
+            hi = mid - 1;
+        } else if (size >= targetBytes - 512) {
+            return size;
+        } else {
+            lo = mid + 1;
         }
     }
-    return (await fs.stat(filePath)).size;
+    return writeXlsx(filePath, makeRows(lo, 64));
 }
 
 const binaryBands = preflightByteBands('zip', LIMITS);
@@ -91,14 +80,18 @@ const manifest = JSON.parse(await fs.readFile(manifestPath, 'utf8'));
 for (const [label, target, over] of labels) {
     const xlsxName = `xlsx-${label}.xlsx`;
     const xlsxPath = path.join(GEN_DIR, xlsxName);
-    const xlsxCap = over ? null : label.includes('hard-under') ? xlsxBands.hard : xlsxBands.strong;
-    const sizeBytes = await writeXlsxNearBytes(xlsxPath, target, over, xlsxCap);
+    const cap = over ? null : label.includes('hard-under') ? xlsxBands.hard : xlsxBands.strong;
+    const sizeBytes = await sizeToTarget(xlsxPath, target, over, cap);
     const fx = manifest.fixtures.find((f) => f.id === `byte-xlsx-${label}`);
     if (fx) {
         fx.featureCount = 0;
         fx.sizeBytes = sizeBytes;
+        fx.expectedOutcome =
+            label.includes('hard-under') || label.includes('strong-over') || label.includes('hard-over')
+                ? 'failure'
+                : 'success';
     }
-    console.log(`${xlsxName}: ${sizeBytes} bytes (target ${target}, cap ${xlsxCap ?? 'none'})`);
+    console.log(`${xlsxName}: ${sizeBytes} bytes (target ${target}, cap ${cap ?? 'none'})`);
 }
 
 const kml14999 = manifest.fixtures.find((f) => f.id === 'threshold-kml-14999');

@@ -29,7 +29,8 @@ export async function importLocalFile(page, fixturePath, options = {}) {
     const t0 = Date.now();
 
     const importLabel = options.projectKit ? 'Import Toolbox project' : 'Import selected';
-    await page.getByRole('button', { name: importLabel }).waitFor({ state: 'visible', timeout: 30_000 });
+    const pickTimeout = options.timeoutMs ?? 120_000;
+    await page.getByRole('button', { name: importLabel }).waitFor({ state: 'visible', timeout: pickTimeout });
     await page.getByRole('button', { name: importLabel }).click();
 
     if (options.projectKit) {

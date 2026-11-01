@@ -1,15 +1,17 @@
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { test, expect } from '@playwright/test';
-import generated from '../../fixtures/e2e/generated/manifest.json' with { type: 'json' };
 import { bootApp, dismissOpenModals, dismissToasts } from '../helpers/app.js';
 import { importLocalFile, cancelImportAtProgress } from '../helpers/import.js';
 import { readImportStorageSnapshot, storageLooksEmpty } from '../helpers/storage-probe.js';
 import { installLongTaskObserver } from '../helpers/perf.js';
 import { attachNetworkGuard, assertNoUnexpectedBlocks } from '../helpers/network-guard.js';
+import { ensureGeneratedFixture } from '../helpers/generated-fixtures.js';
 
-const genDir = path.join(path.dirname(fileURLToPath(import.meta.url)), '../../fixtures/e2e/generated');
-const t3 = generated.fixtures.find((f) => f.id === 'T3-stream-120k');
+/** @type {{ fixturePath: string } | null} */
+let t3Ready = null;
+
+test.beforeAll(async () => {
+    t3Ready = await ensureGeneratedFixture('T3-stream-120k');
+});
 
 /** @type {Map<string, { basemapBlocked: string[], unexpectedBlocked: string[] }>} */
 const networkByTest = new Map();
@@ -27,10 +29,10 @@ test.afterEach(async ({}, testInfo) => {
 
 test('@full cancel T3 stream import at ~30%', async ({ page }) => {
     test.setTimeout(600_000);
-    if (!t3) {
-        test.skip(true, 'T3-stream-120k fixture missing — run gen-e2e-fixtures');
+    const fixturePath = t3Ready?.fixturePath;
+    if (!fixturePath) {
+        throw new Error('T3-stream-120k fixture was not prepared in beforeAll');
     }
-    const fixturePath = path.join(genDir, t3.file);
     await bootApp(page, '/');
 
     await page.locator('#btn-import').click();

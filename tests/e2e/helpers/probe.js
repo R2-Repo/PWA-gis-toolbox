@@ -99,25 +99,80 @@ export async function exportActiveLayerGeoJSON(page, downloadDir) {
     return JSON.parse(text);
 }
 
+/** @param {import('@playwright/test').Page} page @param {number} timeoutMs */
+async function pollCapturedBlobText(page, timeoutMs) {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+        const text = await page.evaluate(() => {
+            const q = window.__gisE2eBlobTexts;
+            return q && q.length ? q.shift() : null;
+        });
+        if (text) return text;
+        await page.waitForTimeout(100);
+    }
+    return null;
+}
+
+/** @param {import('@playwright/test').Page} page @param {number} [targetFeatureCount] */
+async function selectLayerForExport(page, targetFeatureCount) {
+    const items = page.locator('.layer-list-items .layer-item');
+    const count = await items.count();
+    /** @type {{ item: import('@playwright/test').Locator, n: number } | null} */
+    let best = null;
+    for (let i = 0; i < count; i++) {
+        const item = items.nth(i);
+        const meta = await item.locator('.layer-meta-text').innerText().catch(() => '');
+        const m = meta.match(/([\d,]+)\s+features/i);
+        if (!m) continue;
+        const n = Number(m[1].replace(/,/g, ''));
+        if (targetFeatureCount != null && n === targetFeatureCount) {
+            await item.click();
+            return;
+        }
+        if (!best || n > best.n) best = { item, n };
+    }
+    if (best) {
+        await best.item.click();
+    } else if (count > 0) {
+        await items.last().click();
+    }
+}
+
 /**
  * @param {import('@playwright/test').Page} page
  * @param {string} downloadDir
+ * @param {{ featureCount?: number }} [options]
  */
-export async function exportActiveLayerGpx(page, downloadDir) {
+export async function exportActiveLayerGpx(page, downloadDir, options = {}) {
     await fs.mkdir(downloadDir, { recursive: true });
-    const layerItem = page.locator('.layer-list-items .layer-item').last();
-    if (await layerItem.isVisible().catch(() => false)) {
-        await layerItem.click();
-    }
+    await selectLayerForExport(page, options.featureCount);
     await openExportSection(page);
     const gpxBtn = page.getByRole('button', { name: 'GPX', exact: true });
+    if (!(await gpxBtn.isVisible().catch(() => false))) {
+        await page.getByRole('button', { name: /^Export/ }).first().click({ force: true });
+    }
     await gpxBtn.waitFor({ state: 'visible', timeout: 15_000 });
-    const downloadPromise = page.waitForEvent('download', { timeout: 90_000 });
+    const exportTimeout = 60_000;
+    const downloadPromise = page.waitForEvent('download', { timeout: exportTimeout }).catch(() => null);
     await gpxBtn.click();
     const download = await downloadPromise;
-    const outPath = path.join(downloadDir, download.suggestedFilename());
-    await download.saveAs(outPath);
-    return fs.readFile(outPath, 'utf8');
+    if (download) {
+        const outPath = path.join(downloadDir, download.suggestedFilename());
+        await download.saveAs(outPath);
+        return fs.readFile(outPath, 'utf8');
+    }
+    const captured = await pollCapturedBlobText(page, exportTimeout);
+    if (!captured) {
+        const toast = await page
+            .locator('.toast-container .toast')
+            .last()
+            .innerText()
+            .catch(() => '');
+        throw new Error(
+            `GPX export produced no download or blob capture${toast ? `: ${toast}` : ''}`
+        );
+    }
+    return captured;
 }
 
 /** Materialized map features represented in exported GPX (wpt + trk + rte). */
