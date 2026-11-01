@@ -1,0 +1,19 @@
+{
+  "description": "Hand-built uniqueValue polyline renderer (from unit tests; not fetched from the internet).",
+  "drawingInfo": {
+    "renderer": {
+      "type": "uniqueValue",
+      "field1": "CARTO_CODE",
+      "uniqueValueInfos": [
+        {
+          "value": "1",
+          "symbol": { "type": "esriSLS", "color": [115, 178, 255, 255], "width": 2 }
+        },
+        {
+          "value": "2",
+          "symbol": { "type": "esriSLS", "color": [255, 0, 0, 255], "width": 2 }
+        }
+      ]
+    }
+  }
+}

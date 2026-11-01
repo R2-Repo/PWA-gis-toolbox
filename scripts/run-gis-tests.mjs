@@ -236,16 +236,17 @@ async function main() {
             // holdout path appended via separate playwright invocation if needed
         }
 
-        console.log('Running Playwright import e2e…');
+        console.log('Running Playwright import + REST e2e…');
         const pwJson = path.join(REPORT_DIR, 'playwright.json');
         const grepPattern = flags.full ? '@full|@tune' : '@tune';
+        const pwTargets = 'tests/e2e/import tests/e2e/rest';
         let pwRun;
         if (process.platform === 'win32') {
             const workers = flags.full ? ' --workers=1' : '';
-            const cmd = `npx playwright test tests/e2e/import --grep "${grepPattern}"${workers}`;
+            const cmd = `npx playwright test ${pwTargets} --grep "${grepPattern}"${workers}`;
             pwRun = await run(cmd, [], { inherit: true, shell: true });
         } else {
-            const pwArgs = ['playwright', 'test', 'tests/e2e/import', '--grep', grepPattern];
+            const pwArgs = ['playwright', 'test', 'tests/e2e/import', 'tests/e2e/rest', '--grep', grepPattern];
             if (flags.full) pwArgs.push('--workers=1');
             pwRun = await run('npx', pwArgs, { inherit: true, shell: false });
         }
@@ -315,7 +316,7 @@ async function main() {
         `- PASS ${summary.vitest.passed} · FAIL ${summary.vitest.failed} · ${Math.round(summary.vitest.time)} ms`,
         ...summary.vitest.failures.map((f) => `- ${f}`),
         '',
-        `## Import e2e (@tune)`,
+        `## Import + REST e2e (@tune / @full)`,
         summary.import
             ? `- PASS ${summary.import.passed} · FAIL ${summary.import.failed} · ${Math.round(summary.import.time)} ms`
             : '- skipped',

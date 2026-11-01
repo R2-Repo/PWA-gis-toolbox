@@ -40,10 +40,23 @@ export default defineConfig({
                 : {})
         }
     }],
-    webServer: {
-        command: 'node scripts/e2e-web-server.mjs',
-        url: 'http://127.0.0.1:5175',
-        reuseExistingServer: true,
-        timeout: 360_000
-    }
+    webServer: [
+        {
+            command: 'node scripts/e2e-web-server.mjs',
+            url: 'http://127.0.0.1:5175',
+            reuseExistingServer: true,
+            timeout: 360_000
+        },
+        {
+            command: 'node tests/mocks/arcgis-mock-server.mjs',
+            url: 'http://127.0.0.1:18765/health',
+            reuseExistingServer: true,
+            timeout: 60_000,
+            env: {
+                ...process.env,
+                ARCGIS_MOCK_PORT: '18765',
+                ARCGIS_MOCK_HOST: '127.0.0.1'
+            }
+        }
+    ]
 });
