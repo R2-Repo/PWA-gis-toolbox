@@ -1,4 +1,5 @@
 import { dismissOpenModals, dismissToasts } from './app.js';
+import { markImportDone, markImportStart } from './perf.js';
 
 /**
  * Open ArcGIS REST importer and run a custom URL import through the field picker.
@@ -15,6 +16,7 @@ export async function importArcgisRestUrl(page, layerUrl, options = {}) {
     await page.getByRole('button', { name: 'ArcGIS REST' }).click();
     await page.locator('#arcgis-custom-url-react').fill(layerUrl);
     const t0 = Date.now();
+    await markImportStart(page);
     await page.locator('#arcgis-custom-import-react').click();
 
     const fieldModal = page.locator('.modal-header span').filter({ hasText: 'ArcGIS attributes' });
@@ -22,6 +24,7 @@ export async function importArcgisRestUrl(page, layerUrl, options = {}) {
     await page.getByRole('button', { name: 'Continue' }).click();
 
     await waitForArcgisImportSettled(page, timeoutMs);
+    await markImportDone(page);
     return { startedAtMs: t0, finishedAtMs: Date.now() };
 }
 

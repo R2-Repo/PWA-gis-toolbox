@@ -9,6 +9,11 @@ import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execSync } from 'node:child_process';
+import {
+    assertGisVerdictAgrees,
+    formatGisVerdict,
+    resolveGisTestVerdict
+} from './gis-test-verdict.mjs';
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const REPORT_DIR = path.join(ROOT, 'test-results/gis-report');
@@ -161,10 +166,10 @@ function checkPerfRegressions(rows, baseline, fullRun) {
 function perfTable(importResults) {
     if (!importResults.length) return '_No import perf rows._';
     const header =
-        '| fixture | import ms | TTI ms | TBT ms | longest task ms | heap used |';
-    const sep = '|---|---:|---:|---:|---:|---:|';
+        '| fixture | import ms | TTI ms | TBT ms | longest task ms | boot longest ms | heap used |';
+    const sep = '|---|---:|---:|---:|---:|---:|---:|';
     const rows = importResults.map((r) =>
-        `| ${r.id} | ${r.importMs ?? '—'} | ${r.ttiMs ?? '—'} | ${r.tbt ?? '—'} | ${r.longest ?? '—'} | ${r.heapUsed ?? '—'} |`
+        `| ${r.id} | ${r.importMs ?? '—'} | ${r.ttiMs ?? '—'} | ${r.tbt ?? '—'} | ${r.longest ?? '—'} | ${r.bootLongest ?? '—'} | ${r.heapUsed ?? '—'} |`
     );
     return [header, sep, ...rows].join('\n');
 }
@@ -206,20 +211,24 @@ async function main() {
     };
 
     let harnessError = false;
-    let testFailures = false;
+    /** @type {number | null} */
+    let vitestExitCode = null;
+    /** @type {number | null} */
+    let playwrightExitCode = null;
+    let playwrightMissing = false;
 
     if (!flags.onlyImport) {
         const vitestOut = path.join(REPORT_DIR, 'vitest.json');
         const vitestArgs = ['vitest', 'run', '--reporter=json', `--outputFile=${vitestOut}`];
         console.log('Running vitest…');
         const vitestRun = await run('npx', vitestArgs, { inherit: true });
+        vitestExitCode = vitestRun.code;
         if (vitestRun.code !== 0 && !existsSync(vitestOut)) {
             harnessError = true;
         }
         if (existsSync(vitestOut)) {
             const json = JSON.parse(await readFile(vitestOut, 'utf8'));
             summary.vitest = summarizeVitest(json);
-            if (summary.vitest.failed > 0) testFailures = true;
         } else {
             summary.vitest = { passed: 0, failed: 0, time: 0, failures: ['Vitest did not produce JSON output'] };
             harnessError = true;
@@ -250,20 +259,20 @@ async function main() {
             if (flags.full) pwArgs.push('--workers=1');
             pwRun = await run('npx', pwArgs, { inherit: true, shell: false });
         }
+        playwrightExitCode = pwRun.code;
 
         if (existsSync(pwJson)) {
             const json = JSON.parse(await readFile(pwJson, 'utf8'));
             summary.import = summarizePlaywright(json);
             summary.perf = collectPerfRows(json);
-            if (summary.import.failed > 0) testFailures = true;
         } else {
+            playwrightMissing = true;
             summary.import = {
                 passed: 0,
                 failed: 0,
                 time: 0,
                 failures: [pwRun.stderr || 'Playwright JSON report missing']
             };
-            if (pwRun.code !== 0) testFailures = true;
         }
     }
 
@@ -285,13 +294,21 @@ async function main() {
         summary.telemetryBlocked = [...new Set(summary.telemetryBlocked)];
         summary.blockedNetwork = [...new Set(summary.blockedNetwork)];
     }
-    const overall = harnessError ? 'HARNESS ERROR' : testFailures ? 'FAIL' : 'PASS';
-
     const baseline = loadPerfBaseline();
     const perfViolations = checkPerfRegressions(summary.perf, baseline, flags.full);
-    if (perfViolations.length) {
-        testFailures = true;
-    }
+    const verdict = resolveGisTestVerdict({
+        harnessError,
+        vitestSkipped: !!summary.vitest?.skipped,
+        vitestFailed: summary.vitest?.failed ?? 0,
+        vitestExitCode,
+        playwrightMissing,
+        playwrightFailed: summary.import?.failed ?? 0,
+        playwrightExitCode,
+        perfViolationCount: perfViolations.length,
+        unexpectedNetworkCount: summary.blockedNetwork.length
+    });
+    assertGisVerdictAgrees(verdict);
+    const overall = verdict.overall;
 
     if (flags.updateBaseline && summary.perf.length) {
         const next = { version: 1, updatedAt: new Date().toISOString(), fixtures: { ...baseline.fixtures } };
@@ -301,14 +318,16 @@ async function main() {
                 ttiMs: row.ttiMs,
                 tbt: row.tbt,
                 longest: row.longest,
+                bootLongest: row.bootLongest,
                 heapUsed: row.heapUsed
             };
         }
         await writeFile(PERF_BASELINE_PATH, `${JSON.stringify(next, null, 2)}\n`);
     }
 
+    const verdictLine = formatGisVerdict(verdict);
     const md = [
-        `# GIS test report — ${overall}`,
+        `# ${verdictLine}`,
         '',
         `SHA: ${summary.sha} · ${summary.startedAt} · wall ${wallSec}s`,
         '',
@@ -345,15 +364,38 @@ async function main() {
     await writeFile(path.join(REPORT_DIR, 'summary.md'), md);
     await writeFile(
         path.join(REPORT_DIR, 'summary.json'),
-        `${JSON.stringify({ ...summary, overall, wallSec, perfViolations }, null, 2)}\n`
+        `${JSON.stringify({ ...summary, overall, exitCode: verdict.exitCode, failingSteps: verdict.failingSteps, wallSec, perfViolations }, null, 2)}\n`
     );
 
-    if (harnessError) process.exit(2);
-    if (testFailures) process.exit(1);
-    process.exit(0);
+    console.log(verdictLine);
+    for (const violation of perfViolations) console.error(violation);
+    process.exit(verdict.exitCode);
 }
 
-main().catch((err) => {
+main().catch(async (err) => {
     console.error(err);
+    try {
+        const verdict = resolveGisTestVerdict({
+            harnessError: true,
+            vitestSkipped: true,
+            vitestFailed: 0,
+            vitestExitCode: 0,
+            playwrightMissing: false,
+            playwrightFailed: 0,
+            playwrightExitCode: 0,
+            perfViolationCount: 0,
+            unexpectedNetworkCount: 0
+        });
+        assertGisVerdictAgrees(verdict);
+        const verdictLine = formatGisVerdict(verdict);
+        await mkdir(REPORT_DIR, { recursive: true });
+        await writeFile(
+            path.join(REPORT_DIR, 'summary.md'),
+            `# ${verdictLine}\n\n${err?.stack || err}\n`
+        );
+        console.log(verdictLine);
+    } catch (writeErr) {
+        console.error(writeErr);
+    }
     process.exit(2);
 });

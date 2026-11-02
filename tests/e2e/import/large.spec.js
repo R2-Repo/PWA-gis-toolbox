@@ -6,7 +6,7 @@ import generated from '../../fixtures/e2e/generated/manifest.json' with { type: 
 import { bootApp, dismissOpenModals } from '../helpers/app.js';
 import { importLocalFile, expectImportFailure } from '../helpers/import.js';
 import { readLayerListFeatureCount, readActiveLayerAdmission } from '../helpers/probe.js';
-import { installLongTaskObserver, buildPerfRow, importWallMs } from '../helpers/perf.js';
+import { installLongTaskObserver, buildPerfRow, importWallMs, markImportDone, markImportStart } from '../helpers/perf.js';
 import {
     attachNetworkGuard,
     assertNoUnexpectedBlocks
@@ -42,12 +42,14 @@ for (const fx of fixtures) {
             await page.locator('#btn-import').click();
             await page.getByRole('button', { name: 'Local Files' }).click();
             await page.getByRole('button', { name: 'Add local file' }).click();
+            await markImportStart(page);
             await page.locator('.modal-body input[type="file"]').first().setInputFiles(fixturePath);
             const importBtn = page.getByRole('button', { name: 'Import selected' });
             if (await importBtn.isVisible({ timeout: 8000 }).catch(() => false)) {
                 await importBtn.click();
             }
             await expectImportFailure(page);
+            await markImportDone(page);
             const layers = await page.locator('.layer-list-items .layer-item').count();
             expect(layers, 'no partial layer on refusal').toBe(0);
         } else {
@@ -74,6 +76,11 @@ for (const fx of fixtures) {
             fixtureId: fx.id,
             importMs: importAnn ? Number(importAnn.description) : 0
         });
+        if (/15000|T3-stream|150k/i.test(fx.id)) {
+            console.log(
+                `[perf] ${perfRow.id} longest=${perfRow.longest} boot=${perfRow.bootLongest} tbt=${perfRow.tbt} importMs=${perfRow.importMs}`
+            );
+        }
         testInfo.annotations.push({ type: 'perf-row', description: JSON.stringify(perfRow) });
     });
 }

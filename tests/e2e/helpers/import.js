@@ -1,4 +1,5 @@
 import { dismissOpenModals, dismissToasts } from './app.js';
+import { markImportDone, markImportStart } from './perf.js';
 
 async function maybeConfirmProjectKit(page) {
     const header = page.locator('.modal-header span').filter({ hasText: /Import .*gis-toolbox/i });
@@ -24,6 +25,7 @@ export async function importLocalFile(page, fixturePath, options = {}) {
     await page.getByRole('button', { name: 'Add local file' }).click();
 
     const fileInput = page.locator('.modal-body input[type="file"]').first();
+    await markImportStart(page);
     await fileInput.setInputFiles(fixturePath);
 
     const t0 = Date.now();
@@ -44,6 +46,7 @@ export async function importLocalFile(page, fixturePath, options = {}) {
         throw new Error(`Import did not succeed (${settled.outcome})`);
     }
 
+    await markImportDone(page);
     return { startedAtMs: t0, finishedAtMs: Date.now() };
 }
 

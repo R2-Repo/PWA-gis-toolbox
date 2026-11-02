@@ -12,7 +12,7 @@ import {
     readLayerListFeatureCount
 } from '../helpers/probe.js';
 import { assertFeatureCollection, assertRoundTrip } from '../helpers/geo-assert.js';
-import { installLongTaskObserver, buildPerfRow, importWallMs } from '../helpers/perf.js';
+import { installLongTaskObserver, buildPerfRow, importWallMs, markImportDone, markImportStart } from '../helpers/perf.js';
 import {
     attachNetworkGuard,
     assertNoUnexpectedBlocks
@@ -67,6 +67,7 @@ for (const fx of fixtures) {
             await page.locator('#btn-import').click();
             await page.getByRole('button', { name: 'Local Files' }).click();
             await page.getByRole('button', { name: 'Add local file' }).click();
+            await markImportStart(page);
             await page.locator('.modal-body input[type="file"]').first().setInputFiles(fixturePath);
             const importBtn = page.getByRole('button', { name: 'Import selected' });
             if (await importBtn.isVisible({ timeout: 5000 }).catch(() => false)) {
@@ -74,6 +75,7 @@ for (const fx of fixtures) {
                 await maybeCrs(page, fx.crsPick);
             }
             await expectImportFailure(page);
+            await markImportDone(page);
             await dismissOpenModals(page);
             const perfRow = await buildPerfRow(page, { fixtureId: fx.id, importMs: 0 });
             testInfo.annotations.push({ type: 'perf-row', description: JSON.stringify(perfRow) });
