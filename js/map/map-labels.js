@@ -2,11 +2,18 @@
  * MapLibre text label layer config for GeoJSON sources.
  */
 
+import { parseArcgisLabelField } from '../arcgis/drawing-info.js';
 import { MAPLIBRE_MAX_ZOOM } from './scale-range.js';
 
 export const DEFAULT_LAYER_LABELS = {
     enabled: false,
     field: '',
+    field2: '',
+    decimals: null,
+    prefix: '',
+    suffix: '',
+    template: '',
+    expressionNote: '',
     placement: 'point',
     minZoom: 11,
     maxZoom: MAPLIBRE_MAX_ZOOM,
@@ -29,6 +36,11 @@ export const APP_MAP_TEXT_FONTS = ['Open Sans Regular', 'Noto Sans Regular'];
 
 const DEFAULT_LABELS = {
     field: 'station',
+    field2: '',
+    decimals: null,
+    prefix: '',
+    suffix: '',
+    template: '',
     placement: 'point',
     minZoom: 11,
     maxZoom: MAPLIBRE_MAX_ZOOM,
@@ -207,6 +219,190 @@ export function fieldEmptyRatio(features, field, sampleSize = 20) {
 }
 
 /**
+ * @param {unknown} value
+ * @returns {number|null} 0–8, or null when decimals are left as stored
+ */
+export function normalizeLabelDecimals(value) {
+    if (value == null || value === '') return null;
+    const n = typeof value === 'number' ? value : Number(value);
+    if (!Number.isInteger(n) || n < 0 || n > 8) return null;
+    return n;
+}
+
+/**
+ * @param {object|null|undefined} labels
+ * @returns {boolean}
+ */
+export function labelUsesFormat(labels) {
+    if (!labels) return false;
+    if (normalizeLabelDecimals(labels.decimals) != null) return true;
+    if (String(labels.prefix || '') !== '') return true;
+    if (String(labels.suffix || '') !== '') return true;
+    if (String(labels.template || '').trim() !== '') return true;
+    if (String(labels.field2 || '').trim() !== '') return true;
+    return false;
+}
+
+/**
+ * @param {unknown} raw
+ * @param {unknown} decimals
+ * @returns {string}
+ */
+export function formatLabelPart(raw, decimals) {
+    if (raw == null || raw === '') return '';
+    const places = normalizeLabelDecimals(decimals);
+    if (places == null) return String(raw);
+    const n = typeof raw === 'number' ? raw : Number(String(raw).trim());
+    if (!Number.isFinite(n)) return String(raw);
+    return n.toFixed(places);
+}
+
+/**
+ * Plain-text label for one feature. A template replaces prefix and suffix.
+ * @param {object|null|undefined} properties
+ * @param {object|null|undefined} labels
+ * @returns {string}
+ */
+export function formatLabelText(properties, labels) {
+    if (!labels?.field) return '';
+    const primary = formatLabelPart(properties?.[labels.field], labels.decimals);
+    const field2 = String(labels.field2 || '').trim();
+    const secondary = field2 ? formatLabelPart(properties?.[field2], labels.decimals) : '';
+    const template = String(labels.template || '');
+    if (template.trim()) {
+        return template.replaceAll('{value2}', secondary).replaceAll('{value}', primary);
+    }
+    const prefix = String(labels.prefix || '');
+    const suffix = String(labels.suffix || '');
+    let body = primary;
+    if (field2 && secondary !== '') {
+        body = primary === '' ? secondary : `${primary} ${secondary}`;
+    }
+    if (!prefix && !suffix && body === '') return '';
+    return `${prefix}${body}${suffix}`;
+}
+
+/**
+ * MapLibre text-field. Unformatted labels stay a plain to-string get.
+ * @param {object} cfg
+ * @returns {unknown}
+ */
+export function buildLabelTextField(cfg) {
+    if (!cfg?.field) return '';
+    if (!labelUsesFormat(cfg)) return ['to-string', ['get', cfg.field]];
+
+    const decimals = normalizeLabelDecimals(cfg.decimals);
+    const primary = formattedFieldExpression(cfg.field, decimals);
+    const field2 = String(cfg.field2 || '').trim();
+    const secondary = field2 ? formattedFieldExpression(field2, decimals) : '';
+    const template = String(cfg.template || '');
+    if (template.trim()) return compileLabelTemplate(template, primary, secondary);
+    const parts = [];
+    const prefix = String(cfg.prefix || '');
+    const suffix = String(cfg.suffix || '');
+    if (prefix) parts.push(prefix);
+    parts.push(primary);
+    if (secondary) {
+        parts.push(['case', ['==', secondary, ''], '', ['concat', ' ', secondary]]);
+    }
+    if (suffix) parts.push(suffix);
+    if (parts.length === 1) return parts[0];
+    return ['concat', ...parts];
+}
+
+function formattedFieldExpression(field, decimals) {
+    const asText = ['to-string', ['coalesce', ['get', field], '']];
+    if (decimals == null) return ['to-string', ['get', field]];
+    const formatOpts = {
+        'min-fraction-digits': decimals,
+        'max-fraction-digits': decimals
+    };
+    // to-number keeps the branch a number. MapLibre does not narrow typeof checks.
+    return ['case',
+        ['==', ['typeof', ['get', field]], 'number'],
+        ['number-format', ['to-number', ['get', field]], formatOpts],
+        asText
+    ];
+}
+
+function compileLabelTemplate(template, primary, secondary) {
+    const parts = [];
+    const re = /\{value2\}|\{value\}/g;
+    let last = 0;
+    let match;
+    while ((match = re.exec(template)) !== null) {
+        if (match.index > last) parts.push(template.slice(last, match.index));
+        parts.push(match[0] === '{value2}' ? (secondary || '') : primary);
+        last = match.index + match[0].length;
+    }
+    if (last < template.length) parts.push(template.slice(last));
+    const flat = parts.filter((part) => part !== '');
+    if (!flat.length) return '';
+    if (flat.length === 1) return flat[0];
+    return ['concat', ...flat];
+}
+
+/**
+ * @param {object|null|undefined} entry labelingInfo entry
+ * @returns {string}
+ */
+export function arcgisLabelExpressionText(entry) {
+    if (!entry) return '';
+    const classic = String(entry.labelExpression || '').trim();
+    if (classic) return classic;
+    return String(
+        entry.labelExpressionInfo?.expression
+        || entry.labelExpressionInfo?.value
+        || ''
+    ).trim();
+}
+
+/**
+ * @param {object|null|undefined} drawingInfo
+ * @returns {object|null}
+ */
+export function labelingEntryFromDrawingInfo(drawingInfo) {
+    const entries = drawingInfo?.labelingInfo;
+    if (!Array.isArray(entries)) return null;
+    return entries.find((entry) => entry && (entry.labelExpression || entry.labelExpressionInfo)) || null;
+}
+
+/**
+ * Plain sentence when a published expression is more than one field.
+ * A single `[FIELD]` or `$feature.FIELD` expression is not simplified.
+ * @param {object|null|undefined} entry
+ * @param {string} [appliedField]
+ * @returns {string}
+ */
+export function simplifiedArcgisLabelNote(entry, appliedField = '') {
+    const text = arcgisLabelExpressionText(entry);
+    if (!text) return '';
+    if (parseArcgisLabelField(entry)) return '';
+    const field = String(appliedField || '').trim();
+    if (field) return `The ArcGIS label expression was simplified to the field ${field}.`;
+    return 'The ArcGIS label expression was simplified and was not applied.';
+}
+
+/**
+ * Attach expressionNote on a style built from ArcGIS drawingInfo.
+ * @param {object|null|undefined} style
+ * @param {object|null|undefined} drawingInfo
+ * @returns {object|null|undefined}
+ */
+export function annotateSimplifiedArcgisLabels(style, drawingInfo) {
+    if (!style || typeof style !== 'object') return style;
+    const entry = labelingEntryFromDrawingInfo(drawingInfo);
+    const note = simplifiedArcgisLabelNote(entry, style.labels?.field || '');
+    if (!note) return style;
+    const labels = style.labels && typeof style.labels === 'object'
+        ? { ...style.labels }
+        : { enabled: false, field: '' };
+    labels.expressionNote = note;
+    style.labels = labels;
+    return style;
+}
+
+/**
  * Resolve active label config from layer style or legacy dataset._mapLabels.
  * @param {object|null} style
  * @param {object|null} dataset
@@ -255,11 +451,17 @@ export function mergeDatasetLabelsIntoStyle(style, dataset) {
  * @returns {object}
  */
 export function normalizeLayerLabels(labels) {
-    if (!labels) return { ...DEFAULT_LAYER_LABELS };
+    if (!labels) return { ...DEFAULT_LAYER_LABELS, offset: [...DEFAULT_LAYER_LABELS.offset] };
     return {
         ...DEFAULT_LAYER_LABELS,
         ...labels,
-        offset: Array.isArray(labels.offset) ? [...labels.offset] : DEFAULT_LAYER_LABELS.offset
+        field2: typeof labels.field2 === 'string' ? labels.field2 : '',
+        decimals: normalizeLabelDecimals(labels.decimals),
+        prefix: typeof labels.prefix === 'string' ? labels.prefix : '',
+        suffix: typeof labels.suffix === 'string' ? labels.suffix : '',
+        template: typeof labels.template === 'string' ? labels.template : '',
+        expressionNote: typeof labels.expressionNote === 'string' ? labels.expressionNote : '',
+        offset: Array.isArray(labels.offset) ? [...labels.offset] : [...DEFAULT_LAYER_LABELS.offset]
     };
 }
 
@@ -276,8 +478,8 @@ export function resolvePlacemarkLabel(feature, idx, style) {
     }
     const labels = style?.labels;
     if (labels?.enabled && labels.field) {
-        const val = feature?.properties?.[labels.field];
-        if (val != null && val !== '') return String(val);
+        const text = formatLabelText(feature?.properties, labels);
+        if (text !== '') return text;
     }
     const props = feature?.properties || {};
     return props.name || props.Name || props.NAME || `Feature ${idx + 1}`;
@@ -315,7 +517,7 @@ export function buildMapLabelLayerSpec(datasetId, sourceId, mapLabels, useCluste
 
     const layout = {
         'symbol-placement': 'point',
-        'text-field': ['to-string', ['get', cfg.field]],
+        'text-field': buildLabelTextField(cfg),
         'text-font': APP_MAP_TEXT_FONTS,
         'text-size': cfg.size,
         'text-offset': cfg.offset,
@@ -365,7 +567,7 @@ export function buildMapLineLabelLayerSpec(datasetId, sourceId, cfg) {
 
     const layout = {
         'symbol-placement': 'line',
-        'text-field': ['to-string', ['get', cfg.field]],
+        'text-field': buildLabelTextField(cfg),
         'text-font': APP_MAP_TEXT_FONTS,
         'text-size': cfg.size,
         'text-rotation-alignment': 'map',

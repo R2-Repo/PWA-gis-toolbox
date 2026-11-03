@@ -74,6 +74,7 @@ import { saveSnapshot, undo as undoHistory, redo as redoHistory, getHistoryState
 import { photoMapper } from '../photo/photo-mapper.js';
 import { arcgisImporter, ARCGIS_MAX_FEATURES, arcgisNeedsLargeDownloadConfirm } from '../arcgis/rest-importer.js';
 import { mergeArcgisStyleFields, requiredStyleFieldsFromDrawingInfo } from '../arcgis/drawing-info.js';
+import { annotateSimplifiedArcgisLabels } from '../map/map-labels.js';
 import { arcgisOutFieldsParam } from '../import/import-field-filter.js';
 import {
     markDatasetForUdotFiberStyle,
@@ -4949,6 +4950,9 @@ export async function openArcGISImporter() {
                                     progressUi?.onProgress?.({ percent: 0, step: 'Starting download...' });
 
                                     const dataset = await arcgisImporter.downloadFeatures(queryOpts, arcgisTask);
+                                    if (dataset?._arcgisStyle) {
+                                        annotateSimplifiedArcgisLabels(dataset._arcgisStyle, meta.drawingInfo);
+                                    }
                                     if (!dataset || arcgisTask.cancelled) {
                                         throw Object.assign(new Error('Cancelled'), { cancelled: true });
                                     }

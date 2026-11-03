@@ -5,7 +5,9 @@ import {
     pickLabelField,
     sampleFieldValues,
     fieldEmptyRatio,
-    labelPlacementHint
+    labelPlacementHint,
+    formatLabelText,
+    labelUsesFormat
 } from '../../js/map/map-labels.js';
 import { CollapsibleSection } from '../ui/CollapsibleSection.jsx';
 
@@ -79,9 +81,24 @@ export function LabelsSection({ layer, style: externalStyle, defaultColor = '#25
         hasPolygons
     });
 
+    const templateOn = String(labels.template || '').trim() !== '';
+    const preview = useMemo(() => {
+        if (!labels.field || !labelUsesFormat(labels)) return '';
+        const feature = (layer?.geojson?.features || []).find((item) => item?.properties);
+        if (!feature) return '';
+        return formatLabelText(feature.properties, labels);
+    }, [layer?.geojson?.features, labels]);
+
+    const expressionNote = labels.expressionNote
+        ? (
+            <p className="labels-expression-note text-xs mb-8">{labels.expressionNote}</p>
+        )
+        : null;
+
     if (!fields.length) {
         return (
             <CollapsibleSection title="Labels" defaultOpen={false} className="labels-panel">
+                {expressionNote}
                 <p className="text-muted text-xs">No attribute fields available for labeling.</p>
             </CollapsibleSection>
         );
@@ -89,6 +106,7 @@ export function LabelsSection({ layer, style: externalStyle, defaultColor = '#25
 
     return (
         <CollapsibleSection title="Labels" defaultOpen={false} className="labels-panel">
+            {expressionNote}
             <label className="toggle mb-8">
                 <input
                     type="checkbox"
@@ -105,8 +123,14 @@ export function LabelsSection({ layer, style: externalStyle, defaultColor = '#25
                         <label>Label field</label>
                         <select
                             className="style-select"
+                            aria-label="Label field"
                             value={labels.field || ''}
-                            onChange={(e) => setLabels({ field: e.target.value })}
+                            onChange={(e) => {
+                                const field = e.target.value;
+                                const patch = { field };
+                                if (labels.field2 === field) patch.field2 = '';
+                                setLabels(patch);
+                            }}
                         >
                             <option value="">— select field —</option>
                             {fields.map((f) => (
@@ -114,6 +138,82 @@ export function LabelsSection({ layer, style: externalStyle, defaultColor = '#25
                             ))}
                         </select>
                     </div>
+
+                    <div className="style-row">
+                        <label>Field 2</label>
+                        <select
+                            className="style-select"
+                            aria-label="Second field"
+                            value={labels.field2 || ''}
+                            onChange={(e) => setLabels({ field2: e.target.value })}
+                        >
+                            <option value="">— none —</option>
+                            {fields.filter((f) => f.name !== labels.field).map((f) => (
+                                <option key={f.name} value={f.name}>{f.outputName || f.name}</option>
+                            ))}
+                        </select>
+                    </div>
+
+                    <div className="style-row">
+                        <label>Decimals</label>
+                        <select
+                            className="style-select"
+                            aria-label="Decimals"
+                            value={labels.decimals == null ? '' : String(labels.decimals)}
+                            onChange={(e) => {
+                                const value = e.target.value;
+                                setLabels({ decimals: value === '' ? null : Number(value) });
+                            }}
+                        >
+                            <option value="">As stored</option>
+                            {[0, 1, 2, 3, 4, 5, 6].map((n) => (
+                                <option key={n} value={String(n)}>{n}</option>
+                            ))}
+                        </select>
+                    </div>
+
+                    <div className="style-row">
+                        <label>Prefix</label>
+                        <input
+                            type="text"
+                            className="labels-text-input"
+                            aria-label="Prefix"
+                            value={labels.prefix || ''}
+                            disabled={templateOn}
+                            onChange={(e) => setLabels({ prefix: e.target.value })}
+                        />
+                    </div>
+
+                    <div className="style-row">
+                        <label>Suffix</label>
+                        <input
+                            type="text"
+                            className="labels-text-input"
+                            aria-label="Suffix"
+                            value={labels.suffix || ''}
+                            disabled={templateOn}
+                            onChange={(e) => setLabels({ suffix: e.target.value })}
+                        />
+                    </div>
+
+                    <div className="style-row">
+                        <label>Template</label>
+                        <input
+                            type="text"
+                            className="labels-text-input"
+                            aria-label="Template"
+                            placeholder="{value}"
+                            value={labels.template || ''}
+                            onChange={(e) => setLabels({ template: e.target.value })}
+                        />
+                    </div>
+                    <p className="text-muted text-xs mb-8">
+                        A template replaces the prefix and suffix. Use {'{value}'} for the label field and {'{value2}'} for the second field.
+                    </p>
+
+                    {preview ? (
+                        <p className="text-muted text-xs mb-8">Preview: {preview}</p>
+                    ) : null}
 
                     {labels.field ? (
                         <>
@@ -153,8 +253,34 @@ export function LabelsSection({ layer, style: externalStyle, defaultColor = '#25
                         <input
                             type="color"
                             className="style-color-input"
+                            aria-label="Label color"
                             value={labels.color || '#111111'}
                             onChange={(e) => setLabels({ color: e.target.value })}
+                        />
+                    </div>
+
+                    <div className="style-row">
+                        <label>Halo</label>
+                        <input
+                            type="color"
+                            className="style-color-input"
+                            aria-label="Halo color"
+                            value={labels.haloColor || '#ffffff'}
+                            onChange={(e) => setLabels({ haloColor: e.target.value })}
+                        />
+                        <input
+                            type="number"
+                            className="smart-style-num-input"
+                            aria-label="Halo width"
+                            min="0"
+                            max="4"
+                            step="0.5"
+                            title="Halo width"
+                            value={labels.haloWidth ?? 1.5}
+                            onChange={(e) => {
+                                const width = parseFloat(e.target.value);
+                                setLabels({ haloWidth: Number.isFinite(width) ? width : 0 });
+                            }}
                         />
                     </div>
 
@@ -191,25 +317,6 @@ export function LabelsSection({ layer, style: externalStyle, defaultColor = '#25
                     <details className="smart-style-advanced">
                         <summary className="smart-style-advanced-title">Advanced</summary>
                         <div className="smart-style-advanced-body">
-                            <div className="style-row">
-                                <label>Halo</label>
-                                <input
-                                    type="color"
-                                    className="style-color-input"
-                                    value={labels.haloColor || '#ffffff'}
-                                    onChange={(e) => setLabels({ haloColor: e.target.value })}
-                                />
-                                <input
-                                    type="number"
-                                    className="smart-style-num-input"
-                                    min="0"
-                                    max="4"
-                                    step="0.5"
-                                    title="Halo width"
-                                    value={labels.haloWidth ?? 1.5}
-                                    onChange={(e) => setLabels({ haloWidth: parseFloat(e.target.value) })}
-                                />
-                            </div>
                             <div className="style-row">
                                 <label>Offset X</label>
                                 <input

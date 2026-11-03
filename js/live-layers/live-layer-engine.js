@@ -15,7 +15,7 @@ import { getLayers } from '../core/state.js';
 import bus from '../core/event-bus.js';
 import { compilePaint, getBaseFlatStyle } from '../map/style-engine.js';
 import { RENDER_LIMITS } from '../map/render-limits.js';
-import { buildMapLabelLayerSpec, resolveLayerLabels } from '../map/map-labels.js';
+import { annotateSimplifiedArcgisLabels, buildMapLabelLayerSpec, resolveLayerLabels } from '../map/map-labels.js';
 import { inferServiceKind } from './catalog-schema.js';
 import { resolveServiceLayerStyle, scalePaintOpacity } from './live-layer-styles.js';
 import {
@@ -307,7 +307,10 @@ async function ensureFeatureServerMetadata(dataset, runtime, map = null) {
             dataset.service.maxRecordCount = metadata.maxRecordCount || 1000;
             if (!dataset.service.style) {
                 const style = styleFromArcgisMetadata(metadata);
-                if (style) dataset.service.style = style;
+                if (style) {
+                    annotateSimplifiedArcgisLabels(style, metadata.drawingInfo);
+                    dataset.service.style = style;
+                }
             }
         }
         if (!dataset.schema?.fields?.length) {

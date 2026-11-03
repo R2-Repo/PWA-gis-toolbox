@@ -1,0 +1,10 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": { "name": "Station", "length": 12.3456, "code": "A1" },
+      "geometry": { "type": "Point", "coordinates": [-111.9, 40.7] }
+    }
+  ]
+}
