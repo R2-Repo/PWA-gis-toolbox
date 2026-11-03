@@ -10,10 +10,12 @@ import {
     applySelectionPayload,
     shouldApplySelection
 } from './selection-sync.js';
+import { attachPopupSelectionBridges } from './map-bridge.js';
 
 const ROLE = 'secondary';
 let _selectionSyncInbound = false;
 let _selectionUnsub = null;
+let _popupBridgeUnsub = null;
 
 /**
  * @param {object} opts
@@ -25,6 +27,7 @@ export function initSecondaryClient({ post, getChannel }) {
     setupPopupBridge(post);
     setupCoordSearchBridge(post);
     setupSelectionBridge(post);
+    setupPopupMapBridges(post);
     setupFileDrop(post);
     setupContextMenu(post);
     setupDrawCmdHandler();
@@ -32,7 +35,13 @@ export function initSecondaryClient({ post, getChannel }) {
     setupToastHandler();
     enhanceViewportBroadcast(post);
 
-    return { teardown: () => { teardownDrawRelay(); teardownSelectionBridge(); } };
+    return {
+        teardown: () => {
+            teardownDrawRelay();
+            teardownSelectionBridge();
+            teardownPopupMapBridges();
+        }
+    };
 }
 
 let _drawUnsubs = [];
@@ -92,6 +101,24 @@ function setupSelectionBridge(post) {
 function teardownSelectionBridge() {
     _selectionUnsub?.();
     _selectionUnsub = null;
+}
+
+function setupPopupMapBridges(post) {
+    teardownPopupMapBridges();
+    _popupBridgeUnsub = attachPopupSelectionBridges({
+        post,
+        getSelectionCount: () => {
+            const id = mapService.getActiveLayerId?.();
+            if (id) return mapService.getSelectionCount?.(id) ?? 0;
+            return mapService.getTotalSelectionCount?.() ?? 0;
+        },
+        isDrawToolActive: () => !!drawManager.activeTool
+    });
+}
+
+function teardownPopupMapBridges() {
+    _popupBridgeUnsub?.();
+    _popupBridgeUnsub = null;
 }
 
 export function applyRemoteSelection(payload) {

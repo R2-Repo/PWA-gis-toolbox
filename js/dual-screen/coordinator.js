@@ -25,7 +25,8 @@ import { scheduleMapResizeAfterLayout, syncDualScreenPrimaryUi } from './layout.
 import {
     applySelectionPayload,
     installPrimarySelectionSync,
-    shouldApplySelection
+    shouldApplySelection,
+    emitRemoteSelectionUi
 } from './selection-sync.js';
 import {
     isSecondaryMapWindowOpen,
@@ -487,6 +488,7 @@ class DualScreenCoordinator {
             case MessageType.SELECTION:
                 if (shouldApplySelection(msg, 'primary')) {
                     this._applyRemoteSelection(msg.payload);
+                    emitRemoteSelectionUi(msg.payload);
                 }
                 break;
             case MessageType.MAP_RPC_RESULT:
@@ -692,6 +694,42 @@ class DualScreenCoordinator {
     }
 
     /**
+     * Continuous pick: the callback stays here. Each click comes back as a point event.
+     * @param {string} prompt
+     * @param {(coord: number[]) => void | Promise<void>} onPoint
+     * @returns {Promise<void>}
+     */
+    forwardContinuousPointPick(prompt, onPoint) {
+        if (!this.isActive || !this._channel || !this._sessionId) {
+            return Promise.reject(new Error('Dual screen map is not active'));
+        }
+        return new Promise((resolve, reject) => {
+            const requestId = `rpc-${Date.now()}-${++this._rpcSeq}`;
+            this._rpcPending.set(requestId, {
+                resolve,
+                reject,
+                timeout: null,
+                onPoint: typeof onPoint === 'function' ? onPoint : null,
+                stream: true
+            });
+            this.focusMapWindow();
+            this._post(MessageType.MAP_RPC, {
+                requestId,
+                method: 'startContinuousPointPick',
+                args: [typeof prompt === 'string' ? prompt : '']
+            });
+        });
+    }
+
+    _abortStreamPick(requestId) {
+        const pending = this._rpcPending.get(requestId);
+        if (!pending) return;
+        this._rpcPending.delete(requestId);
+        this.broadcastMapCmd('cancelInteraction', { method: 'cancelInteraction', args: [] }, { focusMap: false });
+        pending.resolve();
+    }
+
+    /**
      * Run an async mapService method on the secondary map window.
      * @param {string} method
      * @param {unknown[]} [args]
@@ -736,7 +774,16 @@ class DualScreenCoordinator {
     _resolveMapRpcResult(payload) {
         const pending = payload?.requestId ? this._rpcPending.get(payload.requestId) : null;
         if (!pending) return;
-        clearTimeout(pending.timeout);
+        if (payload.event === 'point' && pending.stream) {
+            try {
+                const ret = pending.onPoint?.(payload.result);
+                Promise.resolve(ret).catch(() => this._abortStreamPick(payload.requestId));
+            } catch {
+                this._abortStreamPick(payload.requestId);
+            }
+            return;
+        }
+        if (pending.timeout) clearTimeout(pending.timeout);
         this._rpcPending.delete(payload.requestId);
         if (payload.error) pending.reject(new Error(payload.error));
         else pending.resolve(payload.result);
@@ -744,8 +791,9 @@ class DualScreenCoordinator {
 
     _rejectAllMapRpc(reason) {
         for (const [requestId, pending] of this._rpcPending.entries()) {
-            clearTimeout(pending.timeout);
-            pending.reject(new Error(reason));
+            if (pending.timeout) clearTimeout(pending.timeout);
+            if (pending.stream) pending.resolve();
+            else pending.reject(new Error(reason));
             this._rpcPending.delete(requestId);
         }
     }

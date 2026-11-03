@@ -81,6 +81,10 @@ function handleFenceClear(deps) {
 
 function handleCtxCmd(payload, deps) {
     const { action, layerId } = payload || {};
+    if (action === 'selectionShortcut') {
+        deps.onSelectionShortcut?.(payload?.shortcut);
+        return;
+    }
     if (!layerId) return;
 
     switch (action) {

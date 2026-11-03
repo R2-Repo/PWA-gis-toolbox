@@ -4,6 +4,9 @@
  * Every public method is either forwarded or listed as local-only.
  */
 import bus from '../core/event-bus.js';
+import { blobToDataUrl } from '../core/coverage-raster-layer.js';
+import { initSelectionShortcuts } from '../map/selection-shortcuts.js';
+import { MessageType } from './protocol.js';
 
 /** @param {string} message */
 export function warnDualScreenDev(message) {
@@ -94,7 +97,9 @@ export const FORWARDED_MAP_METHODS = new Set([
     'enablePresentationMultiSelect',
     'disablePresentationMultiSelect',
     'addCoverageHeatmapLayer',
-    'addGeoreferencedImageLayer'
+    'addGeoreferencedImageLayer',
+    'setPopupMode',
+    'startContinuousPointPick'
 ]);
 
 /** Caller awaits a value from the popup map. */
@@ -208,7 +213,6 @@ export const LOCAL_ONLY_MAP_METHODS = {
     getSelectionCount: 'Reads selection state already mirrored by the selection channel',
     getLastSelectionBbox: 'Reads selection state already mirrored by the selection channel',
     isSelectionBlocked: 'Reads selection state on this window',
-    startContinuousPointPick: 'The point callback cannot cross the bridge',
     showInteractionBanner: 'The cancel callback cannot cross the bridge',
     getHighlightedFeature: 'Reads highlight state on this window',
     getPresentationAnchor: 'Reads presentation state on this window',
@@ -218,7 +222,6 @@ export const LOCAL_ONLY_MAP_METHODS = {
     hasPopupHits: 'Popups belong to the window that owns the map',
     cyclePopup: 'Popups belong to the window that owns the map',
     getPopupMode: 'Popups belong to the window that owns the map',
-    setPopupMode: 'Popups belong to the window that owns the map',
     closePopup: 'Popups belong to the window that owns the map',
     findFeaturesNearClick: 'Hit testing needs this window\'s map pixels',
     queryFeaturesAtPoint: 'Hit testing needs this window\'s map pixels',
@@ -230,11 +233,19 @@ export const LOCAL_ONLY_MAP_METHODS = {
 
 const UNFORWARDABLE_LOCAL = new Set([
     'getMap',
-    'startContinuousPointPick',
     'showInteractionBanner',
     'compositeAnnotationOverlay',
     'queryElevationAt'
 ]);
+
+/** Preview and commit carry blob: URLs that only the main window can read. */
+const GEOREFERENCE_IMAGE_METHODS = new Set([
+    'showGeoreferencePreview',
+    'updateGeoreferencePreview',
+    'addGeoreferencedImageLayer'
+]);
+
+const blobDataUrlCache = new Map();
 
 /**
  * @param {string} name
@@ -476,6 +487,8 @@ function mirrorLocal(name, args, originals) {
             return undefined;
         case 'setLayerStylesRecord':
             return originals.setLayerStylesRecord?.(...args);
+        case 'setPopupMode':
+            return originals.setPopupMode?.(...args);
         case 'addLayer':
         case 'addLayerIncremental':
         case 'addWorkspaceLayer':
@@ -494,9 +507,6 @@ function runLocal(name, args, originals, coordinator) {
         const reason = LOCAL_ONLY_MAP_METHODS[name] || 'cannot cross the bridge';
         warnDualScreenDev(`[DualScreen] cannot forward ${name}: ${reason}`);
         if (name === 'getMap') return null;
-        if (name === 'startContinuousPointPick') {
-            return Promise.reject(new Error(`Cannot forward ${name}`));
-        }
         if (name === 'queryElevationAt') return null;
         return undefined;
     }
@@ -530,6 +540,185 @@ export function applyForwardedMapCall(mapApi, payload) {
     }
 }
 
+function containsBlobUrl(value, seen = new WeakSet()) {
+    if (typeof value === 'string') return value.startsWith('blob:');
+    if (!value || typeof value !== 'object') return false;
+    if (seen.has(value)) return false;
+    seen.add(value);
+    const list = Array.isArray(value) ? value : Object.values(value);
+    return list.some((item) => containsBlobUrl(item, seen));
+}
+
+async function blobUrlToDataUrl(url) {
+    if (blobDataUrlCache.has(url)) return blobDataUrlCache.get(url);
+    const res = await fetch(url);
+    if (res && res.ok === false) throw new Error(`image fetch failed (${res.status})`);
+    const blob = await res.blob();
+    const dataUrl = await blobToDataUrl(blob);
+    blobDataUrlCache.set(url, dataUrl);
+    return dataUrl;
+}
+
+async function rewriteBlobUrls(value, seen = new WeakMap()) {
+    if (typeof value === 'string') {
+        return value.startsWith('blob:') ? blobUrlToDataUrl(value) : value;
+    }
+    if (!value || typeof value !== 'object') return value;
+    if (seen.has(value)) return seen.get(value);
+    if (Array.isArray(value)) {
+        const copy = [];
+        seen.set(value, copy);
+        for (const item of value) copy.push(await rewriteBlobUrls(item, seen));
+        return copy;
+    }
+    const copy = {};
+    seen.set(value, copy);
+    for (const [key, child] of Object.entries(value)) {
+        copy[key] = await rewriteBlobUrls(child, seen);
+    }
+    return copy;
+}
+
+/**
+ * Shift popup client pixels into the main window's coordinate space.
+ * @param {{ clientX?: number, clientY?: number, screenBbox?: object | null }} detail
+ * @param {number} dx
+ * @param {number} dy
+ */
+export function shiftClientPoint(detail, dx, dy) {
+    const box = detail?.screenBbox;
+    return {
+        clientX: (detail?.clientX ?? 0) + dx,
+        clientY: (detail?.clientY ?? 0) + dy,
+        screenBbox: box ? {
+            left: box.left + dx,
+            top: box.top + dy,
+            right: box.right + dx,
+            bottom: box.bottom + dy
+        } : null
+    };
+}
+
+function openerClientShift() {
+    try {
+        const opener = window.opener;
+        if (!opener || opener.closed) return { dx: 0, dy: 0 };
+        return {
+            dx: (window.screenX || 0) - (opener.screenX || 0),
+            dy: (window.screenY || 0) - (opener.screenY || 0)
+        };
+    } catch {
+        return { dx: 0, dy: 0 };
+    }
+}
+
+/**
+ * Box-select finished on the popup. Selection itself already went out on selection:changed.
+ * @param {object} detail
+ */
+export function boxSelectRelayPayload(detail) {
+    const { dx, dy } = openerClientShift();
+    const point = shiftClientPoint(detail, dx, dy);
+    return {
+        source: 'secondary',
+        event: 'boxComplete',
+        layerId: detail?.layerId ?? null,
+        count: detail?.count ?? 0,
+        bbox: detail?.bbox ?? null,
+        screenBbox: point.screenBbox,
+        clientX: point.clientX,
+        clientY: point.clientY,
+        syncSelection: false
+    };
+}
+
+export function boxClearedRelayPayload() {
+    return { source: 'secondary', event: 'boxCleared', syncSelection: false };
+}
+
+/**
+ * Popup keyboard shortcuts. The main window runs the same actions it would if it had focus.
+ * @param {(type: string, payload: object) => void} post
+ */
+export function popupSelectionShortcutActions(post) {
+    const send = (shortcut) => post(MessageType.CTX_CMD, { action: 'selectionShortcut', shortcut });
+    return {
+        clearSelection: () => send('clearSelection'),
+        selectAllFeatures: () => send('selectAll'),
+        invertSelection: () => send('invertSelection'),
+        deleteSelectedFeatures: () => send('deleteSelected')
+    };
+}
+
+/**
+ * Box-select events and selection shortcuts from the popup window.
+ * @param {object} opts
+ * @param {(type: string, payload: object) => void} opts.post
+ * @param {() => number} [opts.getSelectionCount]
+ * @param {() => boolean} [opts.isDrawToolActive]
+ * @returns {() => void}
+ */
+export function attachPopupSelectionBridges(opts) {
+    const post = opts?.post;
+    const unsubs = [
+        bus.on('selection:boxComplete', (detail) => {
+            post?.(MessageType.SELECTION, boxSelectRelayPayload(detail));
+        }),
+        bus.on('selection:boxCleared', () => {
+            post?.(MessageType.SELECTION, boxClearedRelayPayload());
+        }),
+        initSelectionShortcuts({
+            ...popupSelectionShortcutActions(post || (() => {})),
+            getSelectionCount: opts?.getSelectionCount,
+            isDrawToolActive: opts?.isDrawToolActive
+        })
+    ];
+    return () => {
+        unsubs.forEach((fn) => fn?.());
+    };
+}
+
+/**
+ * Dual-mode zoom. The popup owns the camera, so this is fitToLayers on the bridge.
+ * @returns {boolean} true when the call was forwarded
+ */
+export function zoomToLayerInDualMode(mapApi, layerId, active) {
+    if (!active) return false;
+    mapApi?.fitToLayers?.([layerId]);
+    return true;
+}
+
+/**
+ * Apply one map RPC on the popup, including continuous pick points sent back one at a time.
+ * @param {object} mapApi
+ * @param {{ requestId?: string, method?: string, args?: unknown[] }} payload
+ * @param {(type: string, body: object) => void} postFn
+ */
+export async function runForwardedMapRpc(mapApi, payload, postFn) {
+    const { requestId, method, args = [] } = payload || {};
+    try {
+        if (method === 'startContinuousPointPick') {
+            await mapApi?.startContinuousPointPick?.(args[0], (coord) => {
+                postFn(MessageType.MAP_RPC_RESULT, { requestId, event: 'point', result: coord });
+            });
+            postFn(MessageType.MAP_RPC_RESULT, { requestId, event: 'done', result: null });
+            return;
+        }
+        const fn = method ? mapApi?.[method] : null;
+        if (typeof fn !== 'function') {
+            warnDualScreenDev(`[DualScreen] cannot forward map method ${method || '(missing)'}: not on the map`);
+            throw new Error(`Unknown map method: ${method}`);
+        }
+        const result = await fn.apply(mapApi, args);
+        postFn(MessageType.MAP_RPC_RESULT, { requestId, result });
+    } catch (err) {
+        postFn(MessageType.MAP_RPC_RESULT, {
+            requestId,
+            error: err?.message || String(err)
+        });
+    }
+}
+
 /**
  * @param {object} mapApi
  * @param {object} coordinator
@@ -543,6 +732,7 @@ export function installDualScreenMapServiceDecorator(mapApi, coordinator) {
         throw new Error('installDualScreenMapServiceDecorator requires a coordinator object');
     }
 
+    let georefChain = Promise.resolve();
     const originals = {};
     for (const name of listPublicMapMethods(mapApi)) {
         originals[name] = mapApi[name].bind(mapApi);
@@ -565,9 +755,28 @@ export function installDualScreenMapServiceDecorator(mapApi, coordinator) {
                 rpc: RPC_MAP_METHODS.has(name),
                 focusMap: RPC_MAP_METHODS.has(name) || FOCUS_COMMANDS.has(name)
             };
+            if (name === 'startContinuousPointPick') {
+                return coordinator.forwardContinuousPointPick?.(args[0], args[1]);
+            }
+            if (GEOREFERENCE_IMAGE_METHODS.has(name) && containsBlobUrl(args)) {
+                georefChain = georefChain.then(async () => {
+                    try {
+                        const nextArgs = await rewriteBlobUrls(args);
+                        coordinator.forwardMapCall?.(name, nextArgs, options);
+                    } catch (err) {
+                        warnDualScreenDev(
+                            `[DualScreen] georeference image could not cross the bridge: ${err?.message || err}`
+                        );
+                        coordinator.forwardMapCall?.(name, args, options);
+                    }
+                }).then(() => {}, () => {});
+                return undefined;
+            }
             const forwarded = coordinator.forwardMapCall?.(name, args, options);
             if (REMOTE_PREVIEW.has(name)) return { dualScreenRemote: true };
-            if (name === 'setBasemapTone' || name === 'setLayerStylesRecord') return mirrored;
+            if (name === 'setBasemapTone' || name === 'setLayerStylesRecord' || name === 'setPopupMode') {
+                return mirrored;
+            }
             return forwarded;
         };
     }

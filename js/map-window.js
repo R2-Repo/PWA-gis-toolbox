@@ -19,7 +19,7 @@ import {
     applyRemoteSelection
 } from './dual-screen/secondary-client.js';
 import { setupMapPrintMenu } from './map/map-export.js';
-import { applyForwardedMapCall, warnDualScreenDev } from './dual-screen/map-bridge.js';
+import { applyForwardedMapCall, runForwardedMapRpc, warnDualScreenDev } from './dual-screen/map-bridge.js';
 import { mountBasemapToggle, syncBasemapToggleActive } from './map/basemap-catalog.js';
 
 const ROLE = 'secondary';
@@ -235,21 +235,7 @@ function applyMapCmd(payload) {
 }
 
 async function handleMapRpc(payload, postFn) {
-    const { requestId, method, args = [] } = payload || {};
-    try {
-        const fn = mapService[method];
-        if (typeof fn !== 'function') {
-            warnDualScreenDev(`[DualScreen] cannot forward map method ${method || '(missing)'}: not on the map`);
-            throw new Error(`Unknown map method: ${method}`);
-        }
-        const result = await fn.apply(mapService, args);
-        postFn(MessageType.MAP_RPC_RESULT, { requestId, result });
-    } catch (err) {
-        postFn(MessageType.MAP_RPC_RESULT, {
-            requestId,
-            error: err?.message || String(err)
-        });
-    }
+    await runForwardedMapRpc(mapService, payload, postFn);
 }
 
 function dispatchMessage(msg) {

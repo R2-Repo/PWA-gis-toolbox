@@ -53,6 +53,7 @@ import { resolveLayerDisplayMode } from '../map/layer-display-mode.js';
 import { syncBasemapToggleActive } from '../map/basemap-catalog.js';
 import { isSmartStyleActive } from '../map/style-engine.js';
 import dualScreenCoordinator from '../dual-screen/coordinator.js';
+import { zoomToLayerInDualMode } from '../dual-screen/map-bridge.js';
 import { isPresentationMode } from '../presentation/presentation-mode-detector.js';
 import { installDualScreenPrimaryHandlers } from '../dual-screen/primary-handlers.js';
 import {
@@ -1825,17 +1826,13 @@ function setupDualScreenMode() {
             refreshUI();
         },
         zoomToLayer: (layerId) => {
-            if (dualScreenCoordinator.isActive) {
-                mapService.fitToLayers([layerId]);
-                return;
-            }
-            const layer = mapService.getLayerRecord(layerId);
-            if (layer?.geojson) {
-                try {
-                    const bb = turf.bbox(layer.geojson);
-                    mapService.getMap()?.fitBounds([[bb[0], bb[1]], [bb[2], bb[3]]], { padding: 30 });
-                } catch (_) { /* ignore */ }
-            }
+            zoomToLayer(layerId);
+        },
+        onSelectionShortcut: (shortcut) => {
+            if (shortcut === 'clearSelection') clearSelection();
+            else if (shortcut === 'selectAll') selectAllFeatures();
+            else if (shortcut === 'invertSelection') invertSelection();
+            else if (shortcut === 'deleteSelected') { void deleteSelectedFeatures(); }
         },
         setActiveLayer: (id) => { setActiveLayer(id); refreshUI(); },
         onCoordSearchAddNew: _coordSearchAddNew,
@@ -2108,6 +2105,7 @@ export function toggleLayerLockAndRender(id) {
 }
 
 export function zoomToLayer(id) {
+    if (zoomToLayerInDualMode(mapService, id, dualScreenCoordinator.isActive)) return;
     const layer = mapService.getLayerRecord(id);
     if (layer && layer.geojson) {
         try {

@@ -60,6 +60,28 @@ export function shouldApplySelection(incoming, localRole) {
 }
 
 /**
+ * Popup box-select UI events. Selection indices are applied separately.
+ * @param {object} payload
+ */
+export function emitRemoteSelectionUi(payload) {
+    if (!payload?.event) return;
+    if (payload.event === 'boxComplete') {
+        bus.emit('selection:boxComplete', {
+            layerId: payload.layerId ?? null,
+            count: payload.count ?? 0,
+            bbox: Array.isArray(payload.bbox) ? payload.bbox : null,
+            screenBbox: payload.screenBbox ?? null,
+            clientX: payload.clientX ?? 0,
+            clientY: payload.clientY ?? 0
+        });
+        return;
+    }
+    if (payload.event === 'boxCleared') {
+        bus.emit('selection:boxCleared');
+    }
+}
+
+/**
  * Relay primary-window selection / active-layer changes to the map window.
  * @param {object} mapApi
  * @param {(payload: object) => void} broadcastSelection

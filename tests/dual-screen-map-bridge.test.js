@@ -187,9 +187,6 @@ describe('dual-screen map bridge', () => {
         expect(rpc[0].payload.method).toBe('startSketchPolygon');
         expect(rpc[0].payload.args[0].bannerText).toBe('Draw');
         expect(rpc[0].payload.args[0].onInsufficientVertices).toBeUndefined();
-
-        await expect(api.startContinuousPointPick('click', () => {})).rejects.toThrow(/Cannot forward/);
-        expect(warn.mock.calls.some((args) => String(args[0]).includes('startContinuousPointPick'))).toBe(true);
         pending.catch(() => {});
     });
 
