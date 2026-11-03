@@ -117,7 +117,8 @@ import {
     shouldSkipClickBinding
 } from './interaction-hit.js';
 import { buildSymbolLayerLayout } from './style-symbols.js';
-import { buildMapLabelLayerSpec, resolveLayerLabels, isMapLabelLayerId, resolveEffectiveLabelZoomRange, mergeDatasetLabelsIntoStyle, shouldInstallLabelLayer, labelGeometryPresence } from './map-labels.js';
+import { buildMapLabelLayerSpec, buildPolygonAnchorLabelLayerSpec, resolveLayerLabels, isMapLabelLayerId, resolveEffectiveLabelZoomRange, mergeDatasetLabelsIntoStyle, shouldInstallLabelLayer, labelGeometryPresence } from './map-labels.js';
+import { POLYGON_LABEL_ANCHOR_LAYER, polygonAnchorSourceId, polygonLabelAnchorFeatures } from './polygon-label-anchors.js';
 import { DEFAULT_STATIONING_LABEL_MIN_ZOOM } from '../widgets/project-stationing/engine.js';
 import {
     buildAnnotationLayerSpecs,
@@ -1213,7 +1214,8 @@ class MapManager {
             hasPoints,
             hasLines,
             hasPolygons,
-            useCluster
+            useCluster,
+            features: taggedFeatures
         });
 
         this._addAnnotationLayers(dataset.id, sourceId, taggedFeatures, layerIds);
@@ -2021,6 +2023,7 @@ class MapManager {
             this._applyDatasetLock(dataset);
         } else if (source) {
             source.setData(geojson);
+            this._syncPolygonLabelAnchors(entry.sourceId, tagged);
             this._ensureViewportLabelLayer(dataset, entry, tagged);
         }
         entry.geojson = geojson;
@@ -2051,7 +2054,8 @@ class MapManager {
         );
         this._addLabelLayers(layerStyle, dataset, idBase, entry.sourceId, entry.layerIds, {
             ...presence,
-            useCluster: false
+            useCluster: false,
+            features: taggedFeatures
         });
         const added = entry.layerIds.slice(before);
         if (!added.length) return;
@@ -2244,7 +2248,8 @@ class MapManager {
         );
         this._addLabelLayers(layerStyle, dataset, idBase, sourceId, layerIds, {
             ...labelPresence,
-            useCluster
+            useCluster,
+            features: taggedFeatures
         });
 
         this._bindLayerClickHandlers(dataset, layerIds, flat);
@@ -2307,24 +2312,81 @@ class MapManager {
         }
     }
 
+    _ensurePolygonAnchorSource(sourceId, features) {
+        const anchorSourceId = polygonAnchorSourceId(sourceId);
+        const data = {
+            type: 'FeatureCollection',
+            features: polygonLabelAnchorFeatures(features || [])
+        };
+        const existing = this.map.getSource(anchorSourceId);
+        if (existing?.setData) {
+            existing.setData(data);
+            return anchorSourceId;
+        }
+        this.map.addSource(anchorSourceId, { type: 'geojson', data });
+        return anchorSourceId;
+    }
+
+    _syncPolygonLabelAnchors(sourceId, features) {
+        const existing = this.map?.getSource(polygonAnchorSourceId(sourceId));
+        if (!existing?.setData) return;
+        existing.setData({
+            type: 'FeatureCollection',
+            features: polygonLabelAnchorFeatures(features || [])
+        });
+    }
+
+    _installLabelSpec(labelSpec, sourceLayer, layerIds) {
+        if (!labelSpec) return;
+        if (this.map.getLayer(labelSpec.id)) this.map.removeLayer(labelSpec.id);
+        this.map.addLayer(sourceLayer ? { ...labelSpec, 'source-layer': sourceLayer } : labelSpec);
+        layerIds.push(labelSpec.id);
+    }
+
     _addLabelLayers(layerStyle, dataset, idBase, sourceId, layerIds, {
         hasPoints = false,
         hasLines = false,
         hasPolygons = false,
         useCluster = false,
-        sourceLayer = null
+        sourceLayer = null,
+        features = null
     } = {}) {
         const mapLabels = resolveLayerLabels(layerStyle, dataset);
         if (!shouldInstallLabelLayer(mapLabels, { hasPoints, hasLines, hasPolygons })) return;
 
-        const labelSpec = buildMapLabelLayerSpec(idBase, sourceId, mapLabels, useCluster);
-        if (!labelSpec) return;
-
-        if (this.map.getLayer(labelSpec.id)) {
-            this.map.removeLayer(labelSpec.id);
+        if (mapLabels.placement === 'line') {
+            this._installLabelSpec(
+                buildMapLabelLayerSpec(idBase, sourceId, mapLabels, useCluster),
+                sourceLayer,
+                layerIds
+            );
+            return;
         }
-        this.map.addLayer(sourceLayer ? { ...labelSpec, 'source-layer': sourceLayer } : labelSpec);
-        layerIds.push(labelSpec.id);
+
+        if (hasPoints) {
+            this._installLabelSpec(
+                buildMapLabelLayerSpec(idBase, sourceId, mapLabels, useCluster),
+                sourceLayer,
+                layerIds
+            );
+        }
+
+        if (!hasPolygons) return;
+        const layerId = hasPoints ? `${idBase}-polygon-labels` : `${idBase}-labels`;
+        if (sourceLayer) {
+            this._installLabelSpec(
+                buildPolygonAnchorLabelLayerSpec(idBase, sourceId, mapLabels, { layerId }),
+                POLYGON_LABEL_ANCHOR_LAYER,
+                layerIds
+            );
+            return;
+        }
+        const anchorSourceId = this._ensurePolygonAnchorSource(sourceId, features);
+        this._installLabelSpec(
+            buildPolygonAnchorLabelLayerSpec(idBase, anchorSourceId, mapLabels, { layerId }),
+            null,
+            layerIds
+        );
     }
 
     _ensureLineHitLayer(sourceId, visibleLayerId, filter, strokeWidthPaint, { sourceLayer = null } = {}) {
@@ -2613,6 +2675,8 @@ class MapManager {
                     this._boundClickLayers?.delete(lid);
                 }
                 if (this.map.getSource(chunk.sourceId)) this.map.removeSource(chunk.sourceId);
+                const anchorId = polygonAnchorSourceId(chunk.sourceId);
+                if (this.map.getSource(anchorId)) this.map.removeSource(anchorId);
             }
             removeAnnotationSources(this.map, id);
             this._annotationOverlay?.unregister(id);
@@ -2734,6 +2798,7 @@ class MapManager {
             : taggedFeatures;
         const geojson = { type: 'FeatureCollection', features: mapFeatures };
         source.setData(geojson);
+        this._syncPolygonLabelAnchors(entry.sourceId, mapFeatures);
         entry.geojson = geojson;
     }
 

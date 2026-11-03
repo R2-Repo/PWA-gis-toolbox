@@ -141,20 +141,28 @@ test('@tune rest polygon labelingInfo labels the polygon', async ({ page }) => {
             const id = String(layer.id);
             return id.endsWith('-labels') && !id.endsWith('-line-labels');
         });
+        const sourceId = label?.source || null;
+        const data = sourceId ? map.getSource(sourceId)?._data : null;
+        const features = data?.features || [];
         return {
             ok: true,
             id: label?.id || null,
+            source: sourceId,
             placement: label?.layout?.['symbol-placement'] || null,
+            avoidEdges: label?.layout?.['symbol-avoid-edges'] || false,
             filter: label?.filter || null,
-            field: label?.layout?.['text-field'] || null
+            field: label?.layout?.['text-field'] || null,
+            anchorPoints: features.filter((feature) => feature?.geometry?.type === 'Point').length
         };
     });
 
     expect(mapState.ok).toBe(true);
     expect(mapState.id).toMatch(/-labels$/);
     expect(mapState.placement).toBe('point');
-    expect(JSON.stringify(mapState.filter)).toContain('Polygon');
-    expect(JSON.stringify(mapState.filter)).toContain('MultiPolygon');
+    expect(mapState.avoidEdges).toBe(true);
+    expect(String(mapState.source || '')).toContain('-poly-anchors');
+    expect(JSON.stringify(mapState.filter)).not.toContain('Polygon');
+    expect(mapState.anchorPoints).toBe(1);
     expect(JSON.stringify(mapState.field)).toContain('NAME');
 });
 

@@ -23,13 +23,14 @@ import {
 } from '../js/map/tiles/tile-feature-select.js';
 import {
     buildTileFromFeatures,
+    POLYGON_LABEL_ANCHOR_LAYER,
     TILE_SOURCE_LAYER,
     simplifyToleranceForZoom
 } from '../js/map/tiles/tile-builder.js';
 
-function decodeTile(bytes) {
+function decodeTile(bytes, layerName = TILE_SOURCE_LAYER) {
     const tile = new VectorTile(new Protobuf(bytes));
-    const layer = tile.layers[TILE_SOURCE_LAYER];
+    const layer = tile.layers[layerName];
     if (!layer) return [];
     const out = [];
     for (let i = 0; i < layer.length; i++) out.push(layer.feature(i));
@@ -500,6 +501,9 @@ describe('buildTileFromFeatures', () => {
         expect(b).toBeInstanceOf(Uint8Array);
         expect(decodeTile(a)[0].properties.id).toBe('p');
         expect(decodeTile(b)[0].properties.id).toBe('p');
+        const anchors = decodeTile(a, POLYGON_LABEL_ANCHOR_LAYER).length
+            + decodeTile(b, POLYGON_LABEL_ANCHOR_LAYER).length;
+        expect(anchors).toBe(1);
     });
 
     it('handles many features quickly', () => {

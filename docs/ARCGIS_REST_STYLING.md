@@ -36,7 +36,7 @@ Worked example: [UDOT Fiber Network layer 4](https://central.udot.utah.gov/serve
 
 | Model | What the app draws | Looks like | Restyle locally? |
 |-------|-------------------|------------|------------------|
-| **Vector + `drawingInfo`** | Queried features + Smart style | ArcGIS Online feature layer / Google Earth KML | Yes — Layer Style panel |
+| **Vector + `drawingInfo`** | Queried features + Smart style | ArcGIS Online feature layer / Google Earth KML | Yes — Symbology panel |
 | **Server-drawn image** | MapServer / WMS tiles | ArcGIS Online map view | No — it is a picture |
 
 This document is about the **vector** model.
@@ -91,7 +91,7 @@ If the query returns geometry but empty/missing class values, every feature pain
 2. Choose **Custom URL** and paste the layer URL.
 3. In the attribute picker, leave the renderer and label fields selected (the importer re-adds them if they were unchecked).
 4. Use an **Import Fence** for a corridor/area, or download the published extent.
-5. After import, Layer Style shows **Smart** with the published classes; Labels uses the published field.
+5. After import, Symbology shows the published classes; Labels uses the published field.
 
 Re-import after a styling-code change. An already-downloaded workspace layer does not pick up new map display fields until it is imported again.
 

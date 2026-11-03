@@ -6,6 +6,8 @@
  * load the same paint. The panel maps them to a symbology dropdown.
  */
 import { getCategoricalColors, getRampColors, sampleRamp } from './color-ramps.js';
+import { equalIntervalUpperBreaks, formatClassRangeLabel, jenksUpperBreaks } from './class-breaks.js';
+import { detectGeometryKinds as detectGeometryKindsCached } from './geometry-kind.js';
 import { evaluateFilterGroup, applyFilterRuleCases } from './style-filters.js';
 
 /** @typedef {'point'|'line'|'polygon'} GeometryKind */
@@ -39,6 +41,14 @@ export const SYMBOLOGY_TYPES = [
     { id: 'unique', label: 'Unique values' },
     { id: 'graduated-colors', label: 'Graduated colors' },
     { id: 'graduated-size', label: 'Graduated size' }
+];
+
+/** Classification methods stored on a range visual variable. */
+export const CLASSIFY_METHODS = [
+    { id: 'equal', label: 'Equal interval' },
+    { id: 'quantile', label: 'Quantile' },
+    { id: 'natural', label: 'Natural breaks' },
+    { id: 'manual', label: 'Manual' }
 ];
 
 export function createDefaultStyle(defaultColor = DEFAULT_FLAT_STYLE.strokeColor) {
@@ -89,14 +99,7 @@ export function normalizeStyle(stored, defaultColor = DEFAULT_FLAT_STYLE.strokeC
 }
 
 export function detectGeometryKinds(layer) {
-    const types = new Set();
-    for (const f of layer.geojson?.features || []) {
-        const t = f.geometry?.type;
-        if (t === 'Point' || t === 'MultiPoint') types.add('point');
-        else if (t === 'LineString' || t === 'MultiLineString') types.add('line');
-        else if (t === 'Polygon' || t === 'MultiPolygon') types.add('polygon');
-    }
-    return types;
+    return detectGeometryKindsCached(layer);
 }
 
 export function getBaseFlatStyle(style, geometryKind) {
@@ -179,11 +182,21 @@ function buildStepColor(vv, fallback) {
     return steps;
 }
 
+function rampColorList(rampName, reverse = false) {
+    const colors = getRampColors(rampName || 'ylOrRd').slice();
+    return reverse ? colors.reverse() : colors;
+}
+
+function sampledRampColors(rampName, count, reverse = false) {
+    const colors = sampleRamp(rampName || 'ylOrRd', count);
+    return reverse ? colors.slice().reverse() : colors;
+}
+
 function buildRampColor(vv, fallback) {
     const min = Number(vv.min);
     const max = Number(vv.max);
     if (!Number.isFinite(min) || !Number.isFinite(max) || min === max) return fallback;
-    const colors = getRampColors(vv.ramp || 'ylOrRd');
+    const colors = rampColorList(vv.ramp, !!vv.rampReverse);
     const stops = [];
     for (let i = 0; i < colors.length; i++) {
         const t = colors.length === 1 ? 0 : i / (colors.length - 1);
@@ -318,8 +331,8 @@ function propString(props, field, extra = null) {
     return String(raw);
 }
 
-function colorAtRamp(value, min, max, rampName) {
-    const colors = getRampColors(rampName);
+function colorAtRamp(value, min, max, rampName, reverse = false) {
+    const colors = rampColorList(rampName, reverse);
     if (!Number.isFinite(value)) return colors[0];
     if (max === min) return colors[colors.length - 1];
     const t = Math.max(0, Math.min(1, (value - min) / (max - min)));
@@ -350,7 +363,7 @@ function applyVisualVariable(out, vv, props, geometryKind) {
         mergeStylePatch(out, match?.style);
     } else if (vv.type === 'ramp') {
         const val = propNumber(props, vv.field, Number(vv.min));
-        const color = colorAtRamp(val, Number(vv.min), Number(vv.max), vv.ramp || 'ylOrRd');
+        const color = colorAtRamp(val, Number(vv.min), Number(vv.max), vv.ramp || 'ylOrRd', !!vv.rampReverse);
         if (ch === 'fill' || ch === 'both') out.fillColor = color;
         if (ch === 'stroke' || ch === 'both') out.strokeColor = color;
     } else if (vv.type === 'opacity') {
@@ -428,47 +441,75 @@ export function numericFieldExtent(field, features, schemaField = null) {
     return { min, max };
 }
 
-export function autoClassifyRange(field, features, classCount = 5, rampName = 'ylOrRd', schemaField = null, method = 'equal') {
-    if (method === 'quantile') {
-        return autoClassifyQuantile(field, features, classCount, rampName, schemaField);
-    }
-    const { min, max } = numericFieldExtent(field, features, schemaField);
-    const colors = sampleRamp(rampName, classCount);
-    const step = (max - min) / classCount;
+function classesFromUpperBreaks(min, upper, colors) {
     const classes = [];
-    for (let i = 0; i < classCount; i++) {
-        const lo = min + step * i;
-        const hi = i === classCount - 1 ? max : min + step * (i + 1);
+    let lo = min;
+    for (let i = 0; i < upper.length; i++) {
+        const hi = upper[i];
         classes.push({
-            value: `${lo.toFixed(2)}–${hi.toFixed(2)}`,
-            label: `${lo.toFixed(1)} – ${hi.toFixed(1)}`,
+            value: `${Number(lo).toFixed(2)}\u2013${Number(hi).toFixed(2)}`,
+            label: formatClassRangeLabel(lo, hi),
             color: colors[i],
             min: lo,
             max: hi,
             style: {}
         });
+        lo = hi;
     }
-    return { classes, min, max, breaks: classes.map((c) => c.max) };
+    return {
+        classes,
+        min,
+        max: upper.length ? upper[upper.length - 1] : min,
+        breaks: upper.slice()
+    };
 }
 
-export function autoClassifyQuantile(field, features, classCount = 5, rampName = 'ylOrRd', schemaField = null) {
-    const values = features
-        .map((f) => Number(f.properties?.[field]))
-        .filter((n) => Number.isFinite(n))
-        .sort((a, b) => a - b);
-    if (!values.length) {
-        return autoClassifyRange(field, features, classCount, rampName, schemaField, 'equal');
+function finiteFieldValues(field, features) {
+    const values = [];
+    for (const feature of features || []) {
+        const n = Number(feature?.properties?.[field]);
+        if (Number.isFinite(n)) values.push(n);
     }
-    const colors = sampleRamp(rampName, classCount);
+    return values;
+}
+
+export function autoClassifyRange(field, features, classCount = 5, rampName = 'ylOrRd', schemaField = null, method = 'equal', rampReverse = false) {
+    const count = Math.max(2, Math.min(12, Number(classCount) || 5));
+    if (method === 'quantile') {
+        return autoClassifyQuantile(field, features, count, rampName, schemaField, rampReverse);
+    }
+    if (method === 'natural') {
+        const natural = autoClassifyNatural(field, features, count, rampName, rampReverse);
+        if (natural) return natural;
+    }
+    const { min, max } = numericFieldExtent(field, features, schemaField);
+    const colors = sampledRampColors(rampName, count, rampReverse);
+    return classesFromUpperBreaks(min, equalIntervalUpperBreaks(min, max, count), colors);
+}
+
+export function autoClassifyNatural(field, features, classCount = 5, rampName = 'ylOrRd', rampReverse = false) {
+    const jenks = jenksUpperBreaks(finiteFieldValues(field, features), classCount);
+    if (!jenks?.upper?.length) return null;
+    const colors = sampledRampColors(rampName, jenks.upper.length, rampReverse);
+    return classesFromUpperBreaks(jenks.min, jenks.upper, colors);
+}
+
+export function autoClassifyQuantile(field, features, classCount = 5, rampName = 'ylOrRd', schemaField = null, rampReverse = false) {
+    const values = finiteFieldValues(field, features).sort((a, b) => a - b);
+    if (!values.length) {
+        return autoClassifyRange(field, features, classCount, rampName, schemaField, 'equal', rampReverse);
+    }
+    const count = Math.max(2, Math.min(12, Number(classCount) || 5));
+    const colors = sampledRampColors(rampName, count, rampReverse);
     const classes = [];
-    for (let i = 0; i < classCount; i++) {
-        const loIdx = Math.floor((i / classCount) * values.length);
-        const hiIdx = Math.min(values.length - 1, Math.floor(((i + 1) / classCount) * values.length) - 1);
+    for (let i = 0; i < count; i++) {
+        const loIdx = Math.floor((i / count) * values.length);
+        const hiIdx = Math.min(values.length - 1, Math.floor(((i + 1) / count) * values.length) - 1);
         const lo = values[loIdx];
         const hi = values[Math.max(hiIdx, loIdx)];
         classes.push({
             value: `q${i + 1}`,
-            label: `Q${i + 1}: ${lo.toFixed(1)} – ${hi.toFixed(1)}`,
+            label: `Q${i + 1}: ${formatClassRangeLabel(lo, hi)}`,
             color: colors[i],
             min: lo,
             max: hi,
@@ -476,6 +517,47 @@ export function autoClassifyQuantile(field, features, classCount = 5, rampName =
         });
     }
     return { classes, min: values[0], max: values[values.length - 1], breaks: classes.map((c) => c.max) };
+}
+
+/**
+ * Edit one class bound and keep neighbors contiguous.
+ * The method becomes manual so a later reclassify keeps these breaks.
+ * @param {object} vv
+ * @param {number} index
+ * @param {{ min?: number, max?: number }} patch
+ */
+export function editClassBreak(vv, index, patch) {
+    const classes = (vv?.classes || []).map((cls) => ({ ...cls }));
+    const current = classes[index];
+    if (!current) return vv;
+    const previous = classes.map((cls) => ({ min: cls.min, max: cls.max }));
+    if (patch?.max != null) {
+        const max = Number(patch.max);
+        if (!Number.isFinite(max)) return vv;
+        current.max = max < Number(current.min) ? Number(current.min) : max;
+        if (classes[index + 1]) classes[index + 1].min = current.max;
+    }
+    if (patch?.min != null) {
+        const min = Number(patch.min);
+        if (!Number.isFinite(min)) return vv;
+        current.min = min > Number(current.max) ? Number(current.max) : min;
+        if (classes[index - 1]) classes[index - 1].max = current.min;
+    }
+    for (let i = 0; i < classes.length; i++) {
+        const cls = classes[i];
+        const before = previous[i];
+        const auto = formatClassRangeLabel(before.min, before.max);
+        if (!cls.label || cls.label === auto) cls.label = formatClassRangeLabel(cls.min, cls.max);
+        cls.value = `${Number(cls.min).toFixed(2)}\u2013${Number(cls.max).toFixed(2)}`;
+    }
+    return {
+        ...vv,
+        method: 'manual',
+        classes,
+        min: classes[0].min,
+        max: classes[classes.length - 1].max,
+        breaks: classes.map((cls) => cls.max)
+    };
 }
 
 export function createVisualVariable(type, field, features, schemaField = null, options = {}) {

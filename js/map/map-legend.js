@@ -2,7 +2,9 @@
  * Map legend model from saved layer styles.
  * Styles stay mode + visualVariables (including styles converted from ArcGIS renderers).
  */
-import { getRampColors } from './color-ramps.js';
+import { isServiceLayer, isSpatialLayer } from '../core/data-model.js';
+import { equalIntervalUpperBreaks, formatClassRangeLabel } from './class-breaks.js';
+import { sampleRamp } from './color-ramps.js';
 import { getBaseFlatStyle, normalizeStyle } from './style-engine.js';
 import { primaryVariable, symbologyTypeFromStyle } from './style-panel-helpers.js';
 
@@ -49,11 +51,21 @@ export function legendSwatchForKind(geometryKind) {
     return 'fill';
 }
 
-function formatStop(value) {
-    const n = Number(value);
-    if (!Number.isFinite(n)) return '';
-    if (Number.isInteger(n)) return String(n);
-    return String(Math.round(n * 10) / 10);
+function classifiedStops(minValue, maxValue, classCount) {
+    const min = Number(minValue);
+    const max = Number(maxValue);
+    if (!Number.isFinite(min) || !Number.isFinite(max)) return [];
+    const count = Math.max(2, Math.min(8, Number(classCount) || 5));
+    const lo = min;
+    const hi = min === max ? min + 1 : max;
+    const upper = equalIntervalUpperBreaks(lo, hi, count);
+    const stops = [];
+    let start = lo;
+    for (const end of upper) {
+        stops.push({ label: formatClassRangeLabel(start, end) });
+        start = end;
+    }
+    return stops;
 }
 
 function classLabel(cls) {
@@ -125,16 +137,19 @@ export function legendItemsFromStyle(style, geometryKind = 'polygon') {
     }
 
     if (symbology === 'graduated-colors' && variable.type === 'ramp') {
-        const colors = getRampColors(variable.ramp || 'ylOrRd');
-        const from = colors[0];
-        const to = colors[colors.length - 1];
+        const stops = classifiedStops(variable.min, variable.max, variable.classCount);
+        const colors = sampleRamp(variable.ramp || 'ylOrRd', stops.length || 2);
+        if (variable.rampReverse) colors.reverse();
         return {
             symbology,
-            ramp: { from, to },
-            items: [
-                { label: formatStop(variable.min), color: from, swatch, size: null, width: null },
-                { label: formatStop(variable.max), color: to, swatch, size: null, width: null }
-            ]
+            ramp: null,
+            items: stops.map((stop, index) => ({
+                label: stop.label,
+                color: colors[index] || colors[colors.length - 1],
+                swatch,
+                size: null,
+                width: null
+            }))
         };
     }
 
@@ -142,25 +157,24 @@ export function legendItemsFromStyle(style, geometryKind = 'polygon') {
         const useWidth = variable.type === 'width' || swatch === 'line';
         const sizeMin = useWidth ? (variable.widthMin ?? 1) : (variable.sizeMin ?? 4);
         const sizeMax = useWidth ? (variable.widthMax ?? 6) : (variable.sizeMax ?? 16);
+        const classStops = variable.classes?.length
+            ? variable.classes.map((cls) => ({ label: classLabel(cls) })).filter((stop) => stop.label)
+            : classifiedStops(variable.min, variable.max, variable.classCount);
+        const span = Math.max(classStops.length - 1, 1);
         return {
             symbology,
             ramp: null,
-            items: [
-                {
-                    label: formatStop(variable.min),
+            items: classStops.map((stop, index) => {
+                const t = classStops.length === 1 ? 1 : index / span;
+                const size = sizeMin + t * (sizeMax - sizeMin);
+                return {
+                    label: stop.label,
                     color,
                     swatch,
-                    size: useWidth ? null : sizeMin,
-                    width: useWidth ? sizeMin : null
-                },
-                {
-                    label: formatStop(variable.max),
-                    color,
-                    swatch,
-                    size: useWidth ? null : sizeMax,
-                    width: useWidth ? sizeMax : null
-                }
-            ]
+                    size: useWidth ? null : size,
+                    width: useWidth ? size : null
+                };
+            })
         };
     }
 
@@ -169,6 +183,28 @@ export function legendItemsFromStyle(style, geometryKind = 'polygon') {
         ramp: null,
         items: [{ label: '', color, swatch, size: null, width: null }]
     };
+}
+
+/**
+ * Spatial layers and imported service overlays, in the given order.
+ * Hidden layers stay in the list; buildMapLegend drops them.
+ * @param {object[]} layers
+ * @param {(layer: object) => object|null|undefined} [styleFor]
+ */
+export function legendLayerRecords(layers, styleFor) {
+    const records = [];
+    for (const layer of layers || []) {
+        if (!layer) continue;
+        if (!isSpatialLayer(layer) && !isServiceLayer(layer)) continue;
+        records.push({
+            id: layer.id,
+            name: layer.name,
+            visible: layer.visible,
+            geometryKind: layer.geometryKind || geometryKindFromLayer(layer),
+            style: typeof styleFor === 'function' ? styleFor(layer) : layer.style
+        });
+    }
+    return records;
 }
 
 /**

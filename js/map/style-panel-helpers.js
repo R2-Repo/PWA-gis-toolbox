@@ -261,6 +261,26 @@ export function reclassifyVariable(vv, features, schemaField = null) {
             }))
         };
     }
+    if (vv.type === 'range' && vv.method === 'manual') {
+        const count = (vv.classes || []).length;
+        const colored = autoClassifyRange(
+            vv.field,
+            features,
+            count || vv.classCount || 5,
+            vv.ramp || 'ylOrRd',
+            schemaField,
+            'equal',
+            !!vv.rampReverse
+        );
+        const colors = (colored.classes || []).map((cls) => cls.color);
+        return {
+            ...vv,
+            classes: (vv.classes || []).map((cls, i) => ({
+                ...cls,
+                color: colors[i] || cls.color
+            }))
+        };
+    }
     if (vv.type === 'range') {
         const result = autoClassifyRange(
             vv.field,
@@ -268,9 +288,10 @@ export function reclassifyVariable(vv, features, schemaField = null) {
             vv.classCount || 5,
             vv.ramp || 'ylOrRd',
             schemaField,
-            vv.method || 'equal'
+            vv.method || 'equal',
+            !!vv.rampReverse
         );
-        return { ...vv, ...result };
+        return { ...vv, ...result, rampReverse: !!vv.rampReverse };
     }
     return vv;
 }

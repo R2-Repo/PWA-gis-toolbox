@@ -4,6 +4,7 @@ import { resolve, join } from 'node:path';
 import { cpSync, existsSync, readFileSync } from 'node:fs';
 import { VitePWA } from 'vite-plugin-pwa';
 import { GTM_HTML_SNIPPET, shouldInjectGtmHtml } from './scripts/gtm-html-snippet.js';
+import { PWA_RUNTIME_CACHING } from './js/pwa/runtime-cache.js';
 
 /**
  * Build targets:
@@ -149,22 +150,7 @@ function createPwaPlugin() {
       cleanupOutdatedCaches: true,
       clientsClaim: true,
       skipWaiting: true,
-      runtimeCaching: [
-        {
-          urlPattern: /^https:\/\/(unpkg\.com|cdn\.sheetjs\.com|cdn\.jsdelivr\.net)\//i,
-          handler: 'CacheFirst',
-          options: {
-            cacheName: 'gis-toolbox-cdn-libs',
-            expiration: {
-              maxEntries: 64,
-              maxAgeSeconds: 60 * 60 * 24 * 30
-            },
-            cacheableResponse: {
-              statuses: [0, 200]
-            }
-          }
-        }
-      ]
+      runtimeCaching: PWA_RUNTIME_CACHING
     }
   });
 }

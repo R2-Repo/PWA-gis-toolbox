@@ -1,11 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
     DEFAULT_FLAT_STYLE,
+    CLASSIFY_METHODS,
     autoClassifyRange,
+    editClassBreak,
     normalizeStyle,
     createVisualVariable,
     SYMBOLOGY_TYPES
 } from '../../js/map/style-engine.js';
+import { layerGeometryKinds } from '../../js/map/geometry-kind.js';
 import { RAMP_OPTIONS } from '../../js/map/color-ramps.js';
 import { FILTER_OPERATORS } from '../../js/dataprep/transforms.js';
 import { loadPaletteFavorites, addPaletteFavorite, removePaletteFavorite } from '../../js/map/palette-store.js';
@@ -40,23 +43,6 @@ const EXTRA_LABELS = {
     opacity: 'Opacity'
 };
 
-function detectGeomTypes(layer) {
-    const types = new Set();
-    for (const f of layer?.geojson?.features || []) {
-        const t = f.geometry?.type;
-        if (t === 'Point' || t === 'MultiPoint') types.add('point');
-        else if (t === 'LineString' || t === 'MultiLineString') types.add('line');
-        else if (t === 'Polygon' || t === 'MultiPolygon') types.add('polygon');
-    }
-    if (!types.size && layer?.schema?.geometryType) {
-        const gt = String(layer.schema.geometryType);
-        if (gt === 'Point' || gt === 'MultiPoint') types.add('point');
-        else if (gt.includes('Line')) types.add('line');
-        else if (gt.includes('Polygon')) types.add('polygon');
-    }
-    return types;
-}
-
 function SimpleStyleSection({ style, geomTypes, onChange }) {
     const isMixed = geomTypes.size > 1;
     const hasPoints = geomTypes.has('point');
@@ -73,7 +59,8 @@ function SimpleStyleSection({ style, geomTypes, onChange }) {
     };
 
     const renderSection = (prefix, s, opts) => {
-        const { showStroke = true, showFill = true, showWidth = true, showStrokeOp = true, showFillOp = true, showPoint = false } = opts;
+        const { showStroke = true, showFill = true, showWidth = true, showPoint = false } = opts;
+        const opacityValue = showFill ? (s.fillOpacity ?? 0.3) : (s.strokeOpacity ?? 0.8);
         return (
             <div className="smart-style-section">
                 {showStroke ? (
@@ -98,22 +85,16 @@ function SimpleStyleSection({ style, geomTypes, onChange }) {
                         <span className="style-value">{s.strokeWidth ?? 2}</span>
                     </div>
                 ) : null}
-                {showStrokeOp ? (
-                    <div className="style-row">
-                        <label>Stroke opacity</label>
-                        <input type="range" className="style-range" min="0" max="1" step="0.05" value={s.strokeOpacity ?? 0.8}
-                            onChange={(e) => onChangeSection(prefix, { strokeOpacity: parseFloat(e.target.value) })} />
-                        <span className="style-value">{Math.round((s.strokeOpacity ?? 0.8) * 100)}%</span>
-                    </div>
-                ) : null}
-                {showFillOp ? (
-                    <div className="style-row">
-                        <label>Fill opacity</label>
-                        <input type="range" className="style-range" min="0" max="1" step="0.05" value={s.fillOpacity ?? 0.3}
-                            onChange={(e) => onChangeSection(prefix, { fillOpacity: parseFloat(e.target.value) })} />
-                        <span className="style-value">{Math.round((s.fillOpacity ?? 0.3) * 100)}%</span>
-                    </div>
-                ) : null}
+                <div className="style-row">
+                    <label>Opacity</label>
+                    <input type="range" className="style-range" min="0" max="1" step="0.05" aria-label="Opacity"
+                        value={opacityValue}
+                        onChange={(e) => {
+                            const opacity = parseFloat(e.target.value);
+                            onChangeSection(prefix, { strokeOpacity: opacity, fillOpacity: opacity });
+                        }} />
+                    <span className="style-value">{Math.round(opacityValue * 100)}%</span>
+                </div>
                 {showPoint ? (
                     <>
                         <div className="style-row">
@@ -143,21 +124,24 @@ function SimpleStyleSection({ style, geomTypes, onChange }) {
         return (
             <>
                 {hasPoints ? <div className="style-type-section"><h4 className="style-type-header">Points</h4>
-                    {renderSection('sty-pt', { ...flat, ...(style.point || {}) }, { showFill: true, showWidth: true, showStrokeOp: true, showFillOp: true, showPoint: true })}</div> : null}
+                    {renderSection('sty-pt', { ...flat, ...(style.point || {}) }, { showFill: true, showWidth: true, showPoint: true })}</div> : null}
                 {hasLines ? <div className="style-type-section"><h4 className="style-type-header">Lines</h4>
-                    {renderSection('sty-ln', { ...flat, ...(style.line || {}) }, { showFill: false, showWidth: true, showStrokeOp: true, showFillOp: false, showPoint: false })}</div> : null}
+                    {renderSection('sty-ln', { ...flat, ...(style.line || {}) }, { showFill: false, showWidth: true, showPoint: false })}</div> : null}
                 {geomTypes.has('polygon') ? <div className="style-type-section"><h4 className="style-type-header">Polygons</h4>
-                    {renderSection('sty-pg', { ...flat, ...(style.polygon || {}) }, { showFill: true, showWidth: true, showStrokeOp: true, showFillOp: true, showPoint: false })}</div> : null}
+                    {renderSection('sty-pg', { ...flat, ...(style.polygon || {}) }, { showFill: true, showWidth: true, showPoint: false })}</div> : null}
             </>
         );
     }
+    const pointOnly = geomTypes.size === 1 && geomTypes.has('point');
     return renderSection('sty', flat, {
-        showStroke: true, showFill: hasFills, showWidth: hasLines || hasFills,
-        showStrokeOp: true, showFillOp: hasFills, showPoint: hasPoints
+        showStroke: true,
+        showFill: hasFills,
+        showWidth: !pointOnly && (geomTypes.has('line') || geomTypes.has('polygon')),
+        showPoint: hasPoints
     });
 }
 
-function ClassList({ classes, onLabel, onColor, onStylePatch }) {
+function ClassList({ classes, onLabel, onColor, onStylePatch, onBreak, showBreaks = false, showWidth = true }) {
     return (
         <div className="smart-style-legend">
             {(classes || []).map((cls, i) => (
@@ -172,14 +156,34 @@ function ClassList({ classes, onLabel, onColor, onStylePatch }) {
                         value={cls.label ?? ''}
                         onChange={(e) => onLabel(i, e.target.value)}
                     />
+                    {showBreaks ? (
+                        <div className="style-row">
+                            <label>From</label>
+                            <input type="number" className="smart-style-num-input" aria-label={`Break minimum for ${cls.label || cls.value}`}
+                                value={cls.min ?? ''}
+                                onChange={(e) => {
+                                    const min = parseFloat(e.target.value);
+                                    if (Number.isFinite(min)) onBreak?.(i, { min });
+                                }} />
+                            <label>To</label>
+                            <input type="number" className="smart-style-num-input" aria-label={`Break maximum for ${cls.label || cls.value}`}
+                                value={cls.max ?? ''}
+                                onChange={(e) => {
+                                    const max = parseFloat(e.target.value);
+                                    if (Number.isFinite(max)) onBreak?.(i, { max });
+                                }} />
+                        </div>
+                    ) : null}
                     <details className="smart-style-class-details">
                         <summary>More</summary>
+                        {showWidth ? (
                         <div className="style-row">
                             <label>Width</label>
                             <input type="number" className="smart-style-num-input" step="0.5" min="0.5" max="12"
                                 value={cls.style?.strokeWidth ?? ''} placeholder="inherit"
                                 onChange={(e) => onStylePatch(i, { strokeWidth: e.target.value ? parseFloat(e.target.value) : undefined })} />
                         </div>
+                        ) : null}
                         <div className="style-row">
                             <label>Size</label>
                             <input type="number" className="smart-style-num-input" min="2" max="30"
@@ -282,7 +286,8 @@ function FilterRulesEditor({ rules, fields, onChange }) {
 }
 
 export function SmartStylePanel({ layer, style: externalStyle, defaultColor = '#2563eb', onStyleChange }) {
-    const geomTypes = useMemo(() => detectGeomTypes(layer), [layer]);
+    const geomTypes = useMemo(() => layerGeometryKinds(layer), [layer]);
+    const pointOnly = geomTypes.size === 1 && geomTypes.has('point');
     const style = useMemo(
         () => normalizeStyle(externalStyle, defaultColor),
         [externalStyle, defaultColor]
@@ -438,18 +443,37 @@ export function SmartStylePanel({ layer, style: externalStyle, defaultColor = '#
                             <label htmlFor="symbology-method">Method</label>
                             <select id="symbology-method" aria-label="Method" value={primary.method || 'equal'} onChange={(e) => {
                                 const method = e.target.value;
-                                const result = autoClassifyRange(primary.field, features, primary.classCount || 5, primary.ramp || 'ylOrRd', fieldDef, method);
-                                patchPrimary((vv) => ({ ...vv, method, ...result }));
+                                if (method === 'manual') {
+                                    patchPrimary((vv) => ({ ...vv, method: 'manual' }));
+                                    return;
+                                }
+                                const result = autoClassifyRange(
+                                    primary.field, features, primary.classCount || 5, primary.ramp || 'ylOrRd',
+                                    fieldDef, method, !!primary.rampReverse
+                                );
+                                patchPrimary((vv) => ({ ...vv, ...result, method, rampReverse: !!vv.rampReverse }));
                             }}>
-                                <option value="equal">Equal interval</option>
-                                <option value="quantile">Quantile</option>
+                                {CLASSIFY_METHODS.map((method) => (
+                                    <option key={method.id} value={method.id}>{method.label}</option>
+                                ))}
                             </select>
                             <input type="number" className="smart-style-num-input" min="2" max="12" aria-label="Classes"
-                                value={primary.classCount || 5}
+                                value={primary.classCount || primary.classes?.length || 5}
                                 onChange={(e) => {
                                     const classCount = parseInt(e.target.value, 10);
-                                    const result = autoClassifyRange(primary.field, features, classCount, primary.ramp || 'ylOrRd', fieldDef, primary.method || 'equal');
-                                    patchPrimary((vv) => ({ ...vv, classCount, ...result }));
+                                    if (!Number.isFinite(classCount)) return;
+                                    const classifyAs = primary.method === 'manual' ? 'equal' : (primary.method || 'equal');
+                                    const result = autoClassifyRange(
+                                        primary.field, features, classCount, primary.ramp || 'ylOrRd',
+                                        fieldDef, classifyAs, !!primary.rampReverse
+                                    );
+                                    patchPrimary((vv) => ({
+                                        ...vv,
+                                        ...result,
+                                        classCount,
+                                        method: vv.method === 'manual' ? 'manual' : classifyAs,
+                                        rampReverse: !!vv.rampReverse
+                                    }));
                                 }} />
                         </div>
                     ) : null}
@@ -460,6 +484,9 @@ export function SmartStylePanel({ layer, style: externalStyle, defaultColor = '#
                     </button>
                     <ClassList
                         classes={primary.classes}
+                        showBreaks={primary.type === 'range'}
+                        showWidth={!pointOnly}
+                        onBreak={(i, breakPatch) => patchPrimary((vv) => editClassBreak(vv, i, breakPatch))}
                         onColor={(i, color) => updateClass(i, { color })}
                         onLabel={(i, label) => updateClass(i, { label })}
                         onStylePatch={(i, stylePatch) => updateClass(i, { style: { ...(primary.classes?.[i]?.style || {}), ...stylePatch } })}
@@ -484,14 +511,46 @@ export function SmartStylePanel({ layer, style: externalStyle, defaultColor = '#
                     <select id="symbology-palette" aria-label="Palette" value={primary.ramp || 'ylOrRd'} onChange={(e) => {
                         const ramp = e.target.value;
                         if (primary.type === 'range') {
-                            const result = autoClassifyRange(primary.field, features, primary.classCount || 5, ramp, fieldDef, primary.method || 'equal');
-                            patchPrimary((vv) => ({ ...vv, ramp, ...result }));
+                            const classifyAs = primary.method === 'manual' ? 'equal' : (primary.method || 'equal');
+                            const result = autoClassifyRange(
+                                primary.field, features, primary.classCount || primary.classes?.length || 5, ramp,
+                                fieldDef, classifyAs, !!primary.rampReverse
+                            );
+                            if (primary.method === 'manual') {
+                                const colors = (result.classes || []).map((cls) => cls.color);
+                                patchPrimary((vv) => ({
+                                    ...vv,
+                                    ramp,
+                                    classes: (vv.classes || []).map((cls, i) => ({ ...cls, color: colors[i] || cls.color }))
+                                }));
+                            } else {
+                                patchPrimary((vv) => ({ ...vv, ramp, ...result, method: classifyAs, rampReverse: !!vv.rampReverse }));
+                            }
                         } else {
                             patchPrimary((vv) => ({ ...vv, ramp }));
                         }
                     }}>
                         {RAMP_OPTIONS.map((r) => <option key={r.id} value={r.id}>{r.label}</option>)}
                     </select>
+                    <button
+                        type="button"
+                        className="btn btn-sm btn-secondary"
+                        aria-label="Reverse ramp"
+                        onClick={() => {
+                            if (primary.type === 'range') {
+                                const colors = (primary.classes || []).map((cls) => cls.color).reverse();
+                                patchPrimary((vv) => ({
+                                    ...vv,
+                                    rampReverse: !vv.rampReverse,
+                                    classes: (vv.classes || []).map((cls, i) => ({ ...cls, color: colors[i] }))
+                                }));
+                                return;
+                            }
+                            patchPrimary((vv) => ({ ...vv, rampReverse: !vv.rampReverse }));
+                        }}
+                    >
+                        Reverse ramp
+                    </button>
                 </div>
             ) : null}
 

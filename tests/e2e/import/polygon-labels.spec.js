@@ -59,8 +59,10 @@ async function readLabelLayers(page) {
             })
             .map((layer) => ({
                 id: layer.id,
+                source: layer.source,
                 filter: layer.filter,
-                placement: layer.layout?.['symbol-placement'] || null
+                placement: layer.layout?.['symbol-placement'] || null,
+                avoidEdges: layer.layout?.['symbol-avoid-edges'] || false
             }));
     });
 }
@@ -119,9 +121,17 @@ test('@tune polygon and multipart labels', async ({ page }) => {
     const polygonLabels = await readLabelLayers(page);
     const polygonLayer = polygonLabels.find((layer) => layer.id.endsWith('-labels') && !layer.id.endsWith('-line-labels'));
     expect(polygonLayer?.placement).toBe('point');
+    expect(polygonLayer?.avoidEdges).toBe(true);
+    expect(String(polygonLayer?.source || '')).toContain('-poly-anchors');
     const polygonFilter = JSON.stringify(polygonLayer?.filter);
-    expect(polygonFilter).toContain('Polygon');
-    expect(polygonFilter).toContain('MultiPolygon');
+    expect(polygonFilter).not.toContain('Polygon');
+    const anchorCount = await page.evaluate((sourceId) => {
+        const map = globalThis.__gisE2eMapService?.getMap?.();
+        const data = map?.getSource?.(sourceId)?._data;
+        const features = data?.features || data?.geojson?.features || [];
+        return features.filter((feature) => feature?.geometry?.type === 'Point').length;
+    }, polygonLayer?.source);
+    expect(anchorCount).toBe(2);
 
     await page.locator('.layer-item').filter({ hasText: 'Lines' }).click();
     await enableLabels(page);

@@ -394,4 +394,79 @@ describe('symbology panel', () => {
         expect(compilePaint(style, 'point').circleRadius[0]).toBe('interpolate');
         await view.unmount();
     });
+
+    it('offers natural and manual breaks, editable bounds, and a reverse ramp', async () => {
+        const breaks = styleFromDrawingInfo(
+            { renderer: CLASS_BREAKS },
+            { geometryType: 'line' }
+        );
+        const onStyleChange = vi.fn();
+        const view = await renderPanel({ layer, style: breaks, onStyleChange });
+        const method = view.container.querySelector('[aria-label="Method"]');
+        expect([...method.options].map((option) => option.textContent)).toEqual([
+            'Equal interval',
+            'Quantile',
+            'Natural breaks',
+            'Manual'
+        ]);
+        expect(view.container.querySelector('[aria-label="Break maximum for Low"]')).toBeTruthy();
+        expect(view.container.querySelector('[aria-label="Reverse ramp"]')).toBeTruthy();
+
+        const before = breaks.smart.visualVariables[0].classes.map((cls) => cls.color);
+        await act(async () => {
+            view.container.querySelector('[aria-label="Reverse ramp"]').click();
+        });
+        const reversed = onStyleChange.mock.calls.at(-1)[0];
+        expect(reversed.smart.visualVariables[0].rampReverse).toBe(true);
+        expect(reversed.smart.visualVariables[0].classes.map((cls) => cls.color)).toEqual([...before].reverse());
+
+        onStyleChange.mockClear();
+        const maxInput = view.container.querySelector('[aria-label="Break maximum for Low"]');
+        const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+        await act(async () => {
+            setter.call(maxInput, '2500');
+            maxInput.dispatchEvent(new Event('input', { bubbles: true }));
+            maxInput.dispatchEvent(new Event('change', { bubbles: true }));
+        });
+        const edited = onStyleChange.mock.calls.at(-1)[0].smart.visualVariables[0];
+        expect(edited.method).toBe('manual');
+        expect(edited.classes[0].max).toBe(2500);
+        expect(edited.classes[1].min).toBe(2500);
+        expect(edited.classes[0].label).toBe('Low');
+        await view.unmount();
+    });
+
+    it('uses one opacity slider and hides width on point-only layers', async () => {
+        const points = {
+            id: 'pts',
+            schema: { geometryType: 'Point', fields: [] },
+            geojson: {
+                type: 'FeatureCollection',
+                features: [{
+                    type: 'Feature',
+                    properties: {},
+                    geometry: { type: 'Point', coordinates: [0, 0] }
+                }]
+            }
+        };
+        const view = await renderPanel({
+            layer: points,
+            style: { mode: 'simple', strokeColor: '#112233', fillColor: '#112233', strokeOpacity: 0.8, fillOpacity: 0.4, pointSize: 6 }
+        });
+        const symbol = view.container.querySelector('.symbology-symbol');
+        expect(symbol.querySelectorAll('[aria-label="Opacity"]')).toHaveLength(1);
+        expect(symbol.textContent).not.toContain('Stroke opacity');
+        expect(symbol.textContent).not.toContain('Fill opacity');
+        expect([...symbol.querySelectorAll('label')].map((el) => el.textContent)).not.toContain('Width');
+        await view.unmount();
+
+        const lineView = await renderPanel({
+            layer,
+            style: { mode: 'simple', strokeColor: '#112233', fillColor: '#112233', strokeWidth: 2, strokeOpacity: 0.8 }
+        });
+        const lineSymbol = lineView.container.querySelector('.symbology-symbol');
+        expect(lineSymbol.querySelectorAll('[aria-label="Opacity"]')).toHaveLength(1);
+        expect([...lineSymbol.querySelectorAll('label')].map((el) => el.textContent)).toContain('Width');
+        await lineView.unmount();
+    });
 });

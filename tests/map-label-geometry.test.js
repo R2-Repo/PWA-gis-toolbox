@@ -4,10 +4,12 @@ import {
     LINE_LABEL_GEOMETRY_TYPES,
     POINT_LABEL_GEOMETRY_TYPES,
     buildMapLabelLayerSpec,
+    buildPolygonAnchorLabelLayerSpec,
     labelGeometryPresence,
     labelPlacementHint,
     shouldInstallLabelLayer
 } from '../js/map/map-labels.js';
+import { polygonLabelAnchorFeatures } from '../js/map/polygon-label-anchors.js';
 import { styleFromDrawingInfo } from '../js/arcgis/drawing-info.js';
 
 const POINT_LABELS = { field: 'name', placement: 'point' };
@@ -20,11 +22,41 @@ function filterTypes(filter) {
 }
 
 describe('map label geometry filters', () => {
-    it('places point labels on points, multi-points, and polygons', () => {
+    it('places point labels on points and multi-points', () => {
         const spec = buildMapLabelLayerSpec('parcels', 'src-parcels', POINT_LABELS, false);
         expect(spec.id).toBe('parcels-labels');
         expect(spec.layout['symbol-placement']).toBe('point');
         expect(filterTypes(spec.filter)).toEqual(POINT_LABEL_GEOMETRY_TYPES);
+        expect(filterTypes(spec.filter)).not.toContain('Polygon');
+    });
+
+    it('labels each polygon once from an anchor point', () => {
+        const polygon = {
+            type: 'Feature',
+            properties: { NAME: 'Wide' },
+            geometry: {
+                type: 'Polygon',
+                coordinates: [[
+                    [-112, 40], [-111, 40], [-111, 41], [-112, 41], [-112, 40]
+                ]]
+            }
+        };
+        const anchors = polygonLabelAnchorFeatures([polygon, polygon, {
+            type: 'Feature',
+            properties: { NAME: 'Line' },
+            geometry: { type: 'LineString', coordinates: [[0, 0], [1, 1]] }
+        }]);
+        expect(anchors).toHaveLength(2);
+        expect(anchors.every((feature) => feature.geometry.type === 'Point')).toBe(true);
+        expect(anchors[0].properties.NAME).toBe('Wide');
+
+        const spec = buildPolygonAnchorLabelLayerSpec('parcels', 'src-parcels-poly-anchors', POINT_LABELS);
+        expect(spec.id).toBe('parcels-labels');
+        expect(spec.source).toBe('src-parcels-poly-anchors');
+        expect(spec.layout['symbol-placement']).toBe('point');
+        expect(spec.layout['symbol-avoid-edges']).toBe(true);
+        expect(JSON.stringify(spec.filter)).toContain('_gisPolyAnchor');
+        expect(JSON.stringify(spec.filter)).not.toContain('Polygon');
     });
 
     it('keeps clustered labels on point geometries only', () => {
@@ -91,11 +123,12 @@ describe('map label geometry filters', () => {
         expect(style.labels.field).toBe('NAME');
         expect(style.labels.placement).toBe('point');
 
-        const spec = buildMapLabelLayerSpec('poly', 'src-poly', style.labels, false);
+        const spec = buildPolygonAnchorLabelLayerSpec('poly', 'src-poly-poly-anchors', style.labels);
         expect(spec.layout['symbol-placement']).toBe('point');
+        expect(spec.layout['symbol-avoid-edges']).toBe(true);
         expect(spec.layout['text-field']).toEqual(['to-string', ['get', 'NAME']]);
         expect(spec.layout['text-offset']).toEqual([0, 1.1]);
-        expect(filterTypes(spec.filter)).toEqual(expect.arrayContaining(['Polygon', 'MultiPolygon']));
+        expect(JSON.stringify(spec.filter)).not.toContain('Polygon');
         expect(shouldInstallLabelLayer(style.labels, { hasPolygons: true, hasPoints: false, hasLines: false })).toBe(true);
     });
 });

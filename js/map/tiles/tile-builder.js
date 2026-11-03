@@ -4,6 +4,7 @@
  */
 import geojsonvt from 'geojson-vt';
 import vtpbf from 'vt-pbf';
+import { polygonLabelAnchorFeatures, POLYGON_LABEL_ANCHOR_LAYER } from '../polygon-label-anchors.js';
 import {
     TILE_EXTENT,
     TILE_BUFFER,
@@ -12,7 +13,7 @@ import {
     HIGH_DETAIL_SIMPLIFY_ZOOM
 } from './tile-constants.js';
 
-export { TILE_SOURCE_LAYER };
+export { TILE_SOURCE_LAYER, POLYGON_LABEL_ANCHOR_LAYER };
 
 /**
  * @param {number} z
@@ -48,7 +49,25 @@ export function buildTileFromFeatures(features, z, x, y, opts = {}) {
     const tile = index.getTile(z, x, y);
     if (!tile || !tile.features?.length) return null;
 
-    return vtpbf.fromGeojsonVt({ [TILE_SOURCE_LAYER]: tile }, { version: 2 });
+    const layers = { [TILE_SOURCE_LAYER]: tile };
+    const anchors = polygonLabelAnchorFeatures(features);
+    if (anchors.length) {
+        const anchorIndex = geojsonvt(
+            { type: 'FeatureCollection', features: anchors },
+            {
+                maxZoom: Math.min(Math.max(z, 0), 24),
+                indexMaxZoom: 0,
+                indexMaxPoints: 0,
+                tolerance: 0,
+                extent: TILE_EXTENT,
+                buffer: 0
+            }
+        );
+        const anchorTile = anchorIndex.getTile(z, x, y);
+        if (anchorTile?.features?.length) layers[POLYGON_LABEL_ANCHOR_LAYER] = anchorTile;
+    }
+
+    return vtpbf.fromGeojsonVt(layers, { version: 2 });
 }
 
 export default { buildTileFromFeatures, TILE_SOURCE_LAYER, simplifyToleranceForZoom };

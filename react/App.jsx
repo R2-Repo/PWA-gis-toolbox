@@ -61,8 +61,9 @@ import {
 import { getAppUrlConfig } from '../js/url/app-url-detector.js';
 import { getActiveLayer } from '../js/core/state.js';
 import { isLayerVisibleAtScale } from '../js/map/scale-range.js';
-import { buildMapLegend, geometryKindFromLayer } from '../js/map/map-legend.js';
-import { isSpatialLayer } from '../js/core/data-model.js';
+import { buildMapLegend, legendLayerRecords } from '../js/map/map-legend.js';
+import { isServiceLayer } from '../js/core/data-model.js';
+import { resolveServiceLayerStyle } from '../js/live-layers/live-layer-styles.js';
 import { resolveLayerDisplayMode } from '../js/map/layer-display-mode.js';
 import { AppStoreProvider, createAppStore, useAppStore } from './providers/AppStore.jsx';
 import { MobileGate } from './shell/MobileGate.jsx';
@@ -208,15 +209,12 @@ function AppShell() {
     const rightSnapshot = useMemo(() => getRightPanelSnapshot(), [refreshTick, activeLayer?.id]);
     const fields = activeLayer?.schema?.fields || [];
 
-    const legendEntries = useMemo(() => buildMapLegend(
-        layers.filter((layer) => isSpatialLayer(layer)).map((layer) => ({
-            id: layer.id,
-            name: layer.name,
-            visible: layer.visible,
-            geometryKind: geometryKindFromLayer(layer),
-            style: mapService.getLayerStyle(layer.id)
-        }))
-    ), [layers, refreshTick]);
+    const legendEntries = useMemo(() => buildMapLegend(legendLayerRecords(layers, (layer) => {
+        const saved = mapService.getLayerStyle(layer.id);
+        if (saved) return saved;
+        if (isServiceLayer(layer)) return resolveServiceLayerStyle(layer.service, 0);
+        return null;
+    })), [layers, refreshTick]);
 
     const layersForPanel = useMemo(() => {
         const map = mapService.getMap();

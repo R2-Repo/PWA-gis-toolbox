@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { styleFromDrawingInfo } from '../js/arcgis/drawing-info.js';
-import { buildMapLegend, geometryKindFromLayer, legendItemsFromStyle } from '../js/map/map-legend.js';
+import { buildMapLegend, geometryKindFromLayer, legendItemsFromStyle, legendLayerRecords } from '../js/map/map-legend.js';
 
 const SIMPLE = {
     mode: 'simple',
@@ -114,8 +114,16 @@ describe('map legend', () => {
             }
         }, 'line');
         expect(ramp.symbology).toBe('graduated-colors');
-        expect(ramp.ramp).toEqual({ from: '#ffffcc', to: '#800026' });
-        expect(ramp.items.map((item) => item.label)).toEqual(['0', '5000']);
+        expect(ramp.ramp).toBeNull();
+        expect(ramp.items.map((item) => item.label)).toEqual([
+            '0.0 \u2013 1000.0',
+            '1000.0 \u2013 2000.0',
+            '2000.0 \u2013 3000.0',
+            '3000.0 \u2013 4000.0',
+            '4000.0 \u2013 5000.0'
+        ]);
+        expect(ramp.items[0].label).not.toBe('0');
+        expect(ramp.items[ramp.items.length - 1].label).not.toBe('5000');
 
         const size = legendItemsFromStyle({
             mode: 'smart',
@@ -137,9 +145,41 @@ describe('map legend', () => {
             }
         }, 'point');
         expect(size.symbology).toBe('graduated-size');
-        expect(size.items.map((item) => item.label)).toEqual(['0', '100']);
-        expect(size.items.map((item) => item.size)).toEqual([4, 18]);
+        expect(size.items.map((item) => item.label)).toEqual([
+            '0.0 \u2013 20.0',
+            '20.0 \u2013 40.0',
+            '40.0 \u2013 60.0',
+            '60.0 \u2013 80.0',
+            '80.0 \u2013 100.0'
+        ]);
+        expect(size.items.map((item) => item.size)).toEqual([4, 7.5, 11, 14.5, 18]);
         expect(size.items[0].swatch).toBe('circle');
+
+        const sizedClasses = legendItemsFromStyle({
+            mode: 'smart',
+            fillColor: '#2255aa',
+            strokeColor: '#2255aa',
+            pointSize: 6,
+            smart: {
+                defaultStyle: { fillColor: '#2255aa', pointSize: 6 },
+                visualVariables: [{
+                    id: 'sz-cls',
+                    type: 'size',
+                    field: 'AADT',
+                    min: 0,
+                    max: 100,
+                    sizeMin: 4,
+                    sizeMax: 18,
+                    classes: [
+                        { value: 'low', label: 'Low traffic', min: 0, max: 40, style: {} },
+                        { value: 'high', label: 'High traffic', min: 40, max: 100, style: {} }
+                    ]
+                }],
+                filterRules: []
+            }
+        }, 'point');
+        expect(sizedClasses.items.map((item) => item.label)).toEqual(['Low traffic', 'High traffic']);
+        expect(sizedClasses.items.map((item) => item.size)).toEqual([4, 18]);
     });
 
     it('builds the same labels from imported ArcGIS renderers', () => {
@@ -212,5 +252,31 @@ describe('map legend', () => {
         expect(first[0].items[0].label).toBe('Interstate');
         expect(second[0].items[0].label).toBe('Interstate highway');
         expect(second[0].items[0].color).toBe(first[0].items[0].color);
+    });
+
+    it('gives imported service overlays a legend entry', () => {
+        const records = legendLayerRecords([
+            { id: 'table', type: 'table', name: 'Table', visible: true },
+            {
+                id: 'overlay',
+                type: 'service',
+                name: 'Imagery overlay',
+                visible: true,
+                service: { kind: 'arcgis-mapserver' },
+                style: SIMPLE
+            },
+            {
+                id: 'hidden-service',
+                type: 'service',
+                name: 'Hidden overlay',
+                visible: false,
+                style: SIMPLE
+            }
+        ], (layer) => layer.style);
+        expect(records.map((entry) => entry.id)).toEqual(['overlay', 'hidden-service']);
+        const legend = buildMapLegend(records);
+        expect(legend.map((entry) => entry.name)).toEqual(['Imagery overlay']);
+        expect(legend[0].symbology).toBe('single');
+        expect(legend[0].items[0].color).toBe('#abcdef');
     });
 });

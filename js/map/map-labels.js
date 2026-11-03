@@ -3,6 +3,8 @@
  */
 
 import { parseArcgisLabelField } from '../arcgis/drawing-info.js';
+import { geometryPresence } from './geometry-kind.js';
+import { POLYGON_ANCHOR_PROPERTY } from './polygon-label-anchors.js';
 import { MAPLIBRE_MAX_ZOOM } from './scale-range.js';
 
 export const DEFAULT_LAYER_LABELS = {
@@ -31,7 +33,11 @@ export const DEFAULT_LAYER_LABELS = {
     ignorePlacement: false
 };
 
-/** Fonts available on CARTO glyphs (and demotiles Open Sans). */
+/**
+ * Fonts available on CARTO glyphs (and demotiles Open Sans).
+ * The production service worker caches those PBFs as gis-toolbox-carto-glyphs
+ * so a later offline session can draw labels without a new network request.
+ */
 export const APP_MAP_TEXT_FONTS = ['Open Sans Regular', 'Noto Sans Regular'];
 
 const DEFAULT_LABELS = {
@@ -59,8 +65,8 @@ const DEFAULT_LABELS = {
 
 const NAME_LIKE_FIELD_RE = /^(name|label|title|station|route|road|street|description|desc)$/i;
 
-/** Point placement: points plus polygons (MapLibre anchors a polygon on an interior point). */
-export const POINT_LABEL_GEOMETRY_TYPES = ['Point', 'MultiPoint', 'Polygon', 'MultiPolygon'];
+/** Point placement on real point features. Polygons use a one-point anchor source. */
+export const POINT_LABEL_GEOMETRY_TYPES = ['Point', 'MultiPoint'];
 /** Clustered GeoJSON sources only contain point features. */
 export const CLUSTER_LABEL_GEOMETRY_TYPES = ['Point', 'MultiPoint'];
 export const LINE_LABEL_GEOMETRY_TYPES = ['LineString', 'MultiLineString'];
@@ -110,23 +116,7 @@ export function labelPlacementHint({ placement, hasPoints = false, hasPolygons =
  * @returns {{ hasPoints: boolean, hasLines: boolean, hasPolygons: boolean }}
  */
 export function labelGeometryPresence(features, schemaGeometryType, { includeSchema = false } = {}) {
-    const presence = { hasPoints: false, hasLines: false, hasPolygons: false };
-    for (const feature of features || []) {
-        const type = feature?.geometry?.type;
-        if (type === 'Point' || type === 'MultiPoint') presence.hasPoints = true;
-        else if (type === 'LineString' || type === 'MultiLineString') presence.hasLines = true;
-        else if (type === 'Polygon' || type === 'MultiPolygon') presence.hasPolygons = true;
-    }
-    if (!includeSchema) return presence;
-
-    const geometryType = String(schemaGeometryType || '');
-    if (geometryType === 'Mixed') {
-        return { hasPoints: true, hasLines: true, hasPolygons: true };
-    }
-    if (geometryType === 'Point' || geometryType === 'MultiPoint') presence.hasPoints = true;
-    else if (geometryType === 'LineString' || geometryType === 'MultiLineString') presence.hasLines = true;
-    else if (geometryType === 'Polygon' || geometryType === 'MultiPolygon') presence.hasPolygons = true;
-    return presence;
+    return geometryPresence(features, schemaGeometryType, { includeSchema });
 }
 
 /**
@@ -496,6 +486,43 @@ export function normalizeMapLabels(mapLabels) {
     return cfg;
 }
 
+function pointLabelLayout(cfg, extraLayout = {}) {
+    const layout = {
+        'symbol-placement': 'point',
+        'text-field': buildLabelTextField(cfg),
+        'text-font': APP_MAP_TEXT_FONTS,
+        'text-size': cfg.size,
+        'text-offset': cfg.offset,
+        'text-anchor': cfg.verticalStack ? (cfg.anchor || 'bottom') : (cfg.anchor || 'top'),
+        'text-allow-overlap': cfg.allowOverlap,
+        'text-ignore-placement': cfg.ignorePlacement,
+        ...extraLayout
+    };
+
+    if (cfg.verticalStack || cfg.writingMode === 'vertical') {
+        layout['text-line-height'] = cfg.lineHeight;
+        layout['text-rotation-alignment'] = 'map';
+        layout['text-pitch-alignment'] = 'map';
+        layout['text-anchor'] = cfg.anchor || 'center';
+        layout['text-offset'] = cfg.offset || [0, 0];
+        if (cfg.writingMode === 'vertical') {
+            layout['text-writing-mode'] = ['vertical'];
+        }
+        if (cfg.rotateField) {
+            layout['text-rotate'] = ['get', cfg.rotateField];
+        }
+    }
+    return layout;
+}
+
+function pointLabelPaint(cfg) {
+    return {
+        'text-color': cfg.color,
+        'text-halo-color': cfg.haloColor,
+        'text-halo-width': cfg.haloWidth
+    };
+}
+
 /**
  * @param {string} datasetId
  * @param {string} sourceId
@@ -515,31 +542,6 @@ export function buildMapLabelLayerSpec(datasetId, sourceId, mapLabels, useCluste
         ? ['all', geometryTypeMatchFilter(CLUSTER_LABEL_GEOMETRY_TYPES), ['!', ['has', 'point_count']]]
         : geometryTypeMatchFilter(POINT_LABEL_GEOMETRY_TYPES);
 
-    const layout = {
-        'symbol-placement': 'point',
-        'text-field': buildLabelTextField(cfg),
-        'text-font': APP_MAP_TEXT_FONTS,
-        'text-size': cfg.size,
-        'text-offset': cfg.offset,
-        'text-anchor': cfg.verticalStack ? (cfg.anchor || 'bottom') : (cfg.anchor || 'top'),
-        'text-allow-overlap': cfg.allowOverlap,
-        'text-ignore-placement': cfg.ignorePlacement
-    };
-
-    if (cfg.verticalStack || cfg.writingMode === 'vertical') {
-        layout['text-line-height'] = cfg.lineHeight;
-        layout['text-rotation-alignment'] = 'map';
-        layout['text-pitch-alignment'] = 'map';
-        layout['text-anchor'] = cfg.anchor || 'center';
-        layout['text-offset'] = cfg.offset || [0, 0];
-        if (cfg.writingMode === 'vertical') {
-            layout['text-writing-mode'] = ['vertical'];
-        }
-        if (cfg.rotateField) {
-            layout['text-rotate'] = ['get', cfg.rotateField];
-        }
-    }
-
     return {
         id: labelId,
         type: 'symbol',
@@ -547,12 +549,32 @@ export function buildMapLabelLayerSpec(datasetId, sourceId, mapLabels, useCluste
         filter,
         minzoom: cfg.minZoom,
         maxzoom: cfg.maxZoom,
-        layout,
-        paint: {
-            'text-color': cfg.color,
-            'text-halo-color': cfg.haloColor,
-            'text-halo-width': cfg.haloWidth
-        }
+        layout: pointLabelLayout(cfg),
+        paint: pointLabelPaint(cfg)
+    };
+}
+
+/**
+ * Label layer for polygon anchor points. One feature per polygon, so a
+ * polygon that spans several tiles is not labeled again in each tile.
+ * @param {string} datasetId
+ * @param {string} sourceId anchor GeoJSON source, or the vector-tile source
+ * @param {object} mapLabels
+ * @param {{ layerId?: string }} [opts]
+ */
+export function buildPolygonAnchorLabelLayerSpec(datasetId, sourceId, mapLabels, { layerId = null } = {}) {
+    const cfg = normalizeMapLabels(mapLabels);
+    if (!cfg || cfg.placement === 'line') return null;
+
+    return {
+        id: layerId || `${datasetId}-labels`,
+        type: 'symbol',
+        source: sourceId,
+        filter: ['==', ['to-number', ['get', POLYGON_ANCHOR_PROPERTY], 0], 1],
+        minzoom: cfg.minZoom,
+        maxzoom: cfg.maxZoom,
+        layout: pointLabelLayout(cfg, { 'symbol-avoid-edges': true }),
+        paint: pointLabelPaint(cfg)
     };
 }
 
