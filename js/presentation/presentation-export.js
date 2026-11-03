@@ -7,10 +7,15 @@ import {
 } from './presentation-export-profiles.js';
 import {
     capturePresentationFrames,
-    recordPresentationVideo,
-    capturePresentationPoster
+    recordPresentationVideo
 } from './presentation-capture.js';
-import { buildGifBlob } from '../map/map-export.js';
+import { buildGifBlob, captureLiveFrame, ensureMapCaptureReady } from '../map/map-export.js';
+import {
+    EXPORT_CANVAS_MAX_PIXELS,
+    didTileReadinessTimeOut,
+    reportTileReadinessTimeout,
+    scaleCanvasToExportLimit
+} from '../map/export-canvas-guard.js';
 
 export {
     EXPORT_PROFILES,
@@ -122,9 +127,27 @@ export async function exportPresentationPoster(options) {
         throw new Error(validation.errors[0]);
     }
 
-    const canvas = await capturePresentationPoster({
-        ...options,
-        maxWidth: EXPORT_PROFILES.poster.maxWidth ?? 4096
+    const { map, mapService, engine } = options;
+
+    if (scene?.animations?.length) {
+        await engine.playSequence(scene.animations);
+    }
+
+    await ensureMapCaptureReady(map, options.captureReadyOptions);
+    const tileReadinessTimedOut = didTileReadinessTimeOut(map);
+    if (tileReadinessTimedOut) {
+        reportTileReadinessTimeout(options.onWarning);
+    }
+
+    const requestedWidth = Number(options.maxWidth);
+    const maxWidth = Number.isFinite(requestedWidth) && requestedWidth > 0
+        ? requestedWidth
+        : (EXPORT_PROFILES.poster.maxWidth ?? 4096);
+
+    const captured = captureLiveFrame(map, mapService);
+    const { canvas } = scaleCanvasToExportLimit(captured, {
+        maxWidth,
+        maxPixels: options.maxPixels ?? EXPORT_CANVAS_MAX_PIXELS
     });
 
     const blob = await new Promise((resolve, reject) => {
@@ -140,6 +163,7 @@ export async function exportPresentationPoster(options) {
     return {
         filename,
         width: canvas.width,
-        height: canvas.height
+        height: canvas.height,
+        tileReadinessTimedOut
     };
 }

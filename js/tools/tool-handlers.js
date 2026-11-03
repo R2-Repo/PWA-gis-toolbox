@@ -517,11 +517,11 @@ export async function exportProjectKit(options = {}) {
 
 export async function exportMapView(format) {
     try {
-        const mod = await import('../map/map-export.js');
+        const mod = await import('../map/header-export.js');
         if (mod.willUseHighResExport(mapService)) {
             showToast('Exporting high-resolution map…', 'info');
         }
-        const result = await mod.exportMapView(mapService, format, {
+        const result = await mod.exportHeaderMapView(mapService, format, {
             blockWhenDualScreen: true,
             dualScreenCoordinator
         });
