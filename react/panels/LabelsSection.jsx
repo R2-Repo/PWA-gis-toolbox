@@ -5,7 +5,8 @@ import {
     normalizeLayerLabels,
     pickLabelField,
     sampleFieldValues,
-    fieldEmptyRatio
+    fieldEmptyRatio,
+    labelPlacementHint
 } from '../../js/map/map-labels.js';
 import { CollapsibleSection } from '../ui/CollapsibleSection.jsx';
 
@@ -30,6 +31,7 @@ export function LabelsSection({ layer, style: externalStyle, defaultColor = '#25
     const geomTypes = useMemo(() => detectGeomTypes(layer), [layer]);
     const hasPoints = geomTypes.has('point');
     const hasLines = geomTypes.has('line');
+    const hasPolygons = geomTypes.has('polygon');
 
     const fields = useMemo(
         () => (layer?.schema?.fields || []).filter((f) => f.selected !== false && f.name),
@@ -56,7 +58,7 @@ export function LabelsSection({ layer, style: externalStyle, defaultColor = '#25
             const suggested = pickLabelField(fields);
             if (suggested) patch.field = suggested.name;
         }
-        if (enabled && hasLines && !hasPoints) {
+        if (enabled && hasLines && !hasPoints && !hasPolygons) {
             patch.placement = 'line';
         }
         setLabels(patch);
@@ -72,11 +74,11 @@ export function LabelsSection({ layer, style: externalStyle, defaultColor = '#25
         [layer?.geojson?.features, labels.field]
     );
 
-    const placementHint = labels.placement === 'line'
-        ? 'Labels follow line geometry'
-        : hasPoints
-            ? 'Labels at point locations'
-            : 'Point placement requires point features';
+    const placementHint = labelPlacementHint({
+        placement: labels.placement,
+        hasPoints,
+        hasPolygons
+    });
 
     if (!fields.length) {
         return (
@@ -157,11 +159,11 @@ export function LabelsSection({ layer, style: externalStyle, defaultColor = '#25
                         />
                     </div>
 
-                    {(hasPoints && hasLines) || hasLines ? (
+                    {hasLines && (hasPoints || hasPolygons) ? (
                         <div className="style-row">
                             <label>Placement</label>
                             <div className="labels-placement-options">
-                                {hasPoints ? (
+                                {(hasPoints || hasPolygons) ? (
                                     <label className="labels-placement-option">
                                         <input
                                             type="radio"
@@ -169,7 +171,7 @@ export function LabelsSection({ layer, style: externalStyle, defaultColor = '#25
                                             checked={labels.placement !== 'line'}
                                             onChange={() => setLabels({ placement: 'point' })}
                                         />
-                                        <span>At point</span>
+                                        <span>{hasPolygons && !hasPoints ? 'At center' : 'At point'}</span>
                                     </label>
                                 ) : null}
                                 {hasLines ? (

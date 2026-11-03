@@ -118,6 +118,46 @@ test('@tune rest mock polygon import', async ({ page }) => {
     assertLonLat4326(exported);
 });
 
+test('@tune rest polygon labelingInfo labels the polygon', async ({ page }) => {
+    test.setTimeout(120_000);
+    await bootApp(page, '/');
+    await page.evaluate(() => {
+        const map = globalThis.__gisE2eMapService?.getMap?.();
+        if (map && !map.getStyle()?.glyphs) {
+            map.setGlyphs(`${location.origin}/glyphs/{fontstack}/{range}.pbf`);
+        }
+    });
+    await importArcgisRestUrl(page, mockLayerUrl('mock/FeatureServer/2'));
+    await dismissOpenModals(page);
+
+    const mapState = await page.evaluate(async () => {
+        const map = globalThis.__gisE2eMapService?.getMap?.();
+        if (!map) return { ok: false, reason: 'no-map' };
+        await new Promise((resolve) => {
+            if (map.loaded()) resolve();
+            else map.once('idle', () => resolve());
+        });
+        const label = (map.getStyle()?.layers || []).find((layer) => {
+            const id = String(layer.id);
+            return id.endsWith('-labels') && !id.endsWith('-line-labels');
+        });
+        return {
+            ok: true,
+            id: label?.id || null,
+            placement: label?.layout?.['symbol-placement'] || null,
+            filter: label?.filter || null,
+            field: label?.layout?.['text-field'] || null
+        };
+    });
+
+    expect(mapState.ok).toBe(true);
+    expect(mapState.id).toMatch(/-labels$/);
+    expect(mapState.placement).toBe('point');
+    expect(JSON.stringify(mapState.filter)).toContain('Polygon');
+    expect(JSON.stringify(mapState.filter)).toContain('MultiPolygon');
+    expect(JSON.stringify(mapState.field)).toContain('NAME');
+});
+
 test('@tune rest map server layer import', async ({ page }) => {
     test.setTimeout(120_000);
     await bootApp(page, '/');

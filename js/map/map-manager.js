@@ -117,7 +117,7 @@ import {
     shouldSkipClickBinding
 } from './interaction-hit.js';
 import { buildSymbolLayerLayout } from './style-symbols.js';
-import { buildMapLabelLayerSpec, resolveLayerLabels, isMapLabelLayerId, resolveEffectiveLabelZoomRange, mergeDatasetLabelsIntoStyle } from './map-labels.js';
+import { buildMapLabelLayerSpec, resolveLayerLabels, isMapLabelLayerId, resolveEffectiveLabelZoomRange, mergeDatasetLabelsIntoStyle, shouldInstallLabelLayer, labelGeometryPresence } from './map-labels.js';
 import { DEFAULT_STATIONING_LABEL_MIN_ZOOM } from '../widgets/project-stationing/engine.js';
 import {
     buildAnnotationLayerSpecs,
@@ -1212,6 +1212,7 @@ class MapManager {
         this._addLabelLayers(layerStyle, dataset, dataset.id, sourceId, layerIds, {
             hasPoints,
             hasLines,
+            hasPolygons,
             useCluster
         });
 
@@ -1888,16 +1889,12 @@ class MapManager {
             layerIds.push(ptId);
         }
 
-        const mapLabels = resolveLayerLabels(layerStyle, dataset);
-        if (mapLabels?.field) {
-            const labelSpec = buildMapLabelLayerSpec(idBase, sourceId, mapLabels, false);
-            const isLineLabels = mapLabels.placement === 'line';
-            if (labelSpec && ((isLineLabels && hasLines) || (!isLineLabels && hasPoints))) {
-                if (this.map.getLayer(labelSpec.id)) this.map.removeLayer(labelSpec.id);
-                this.map.addLayer({ ...labelSpec, 'source-layer': TILE_SOURCE_LAYER });
-                layerIds.push(labelSpec.id);
-            }
-        }
+        this._addLabelLayers(layerStyle, dataset, idBase, sourceId, layerIds, {
+            hasPoints,
+            hasLines,
+            hasPolygons,
+            sourceLayer: TILE_SOURCE_LAYER
+        });
 
         this._bindLayerClickHandlers(dataset, layerIds, flat);
         const zoomRange = this._getLayerZoomRange(dataset);
@@ -2179,9 +2176,13 @@ class MapManager {
             layerIds.push(ptId);
         }
 
+        const labelPresence = labelGeometryPresence(
+            taggedFeatures,
+            dataset?.schema?.geometryType,
+            { includeSchema: isWorkspaceLayer(dataset) }
+        );
         this._addLabelLayers(layerStyle, dataset, idBase, sourceId, layerIds, {
-            hasPoints,
-            hasLines,
+            ...labelPresence,
             useCluster
         });
 
@@ -2245,19 +2246,23 @@ class MapManager {
         }
     }
 
-    _addLabelLayers(layerStyle, dataset, idBase, sourceId, layerIds, { hasPoints, hasLines, useCluster = false } = {}) {
+    _addLabelLayers(layerStyle, dataset, idBase, sourceId, layerIds, {
+        hasPoints = false,
+        hasLines = false,
+        hasPolygons = false,
+        useCluster = false,
+        sourceLayer = null
+    } = {}) {
         const mapLabels = resolveLayerLabels(layerStyle, dataset);
-        if (!mapLabels?.field) return;
+        if (!shouldInstallLabelLayer(mapLabels, { hasPoints, hasLines, hasPolygons })) return;
 
         const labelSpec = buildMapLabelLayerSpec(idBase, sourceId, mapLabels, useCluster);
-        const isLineLabels = mapLabels.placement === 'line';
-        const shouldAdd = labelSpec && ((isLineLabels && hasLines) || (!isLineLabels && hasPoints));
-        if (!shouldAdd) return;
+        if (!labelSpec) return;
 
         if (this.map.getLayer(labelSpec.id)) {
             this.map.removeLayer(labelSpec.id);
         }
-        this.map.addLayer(labelSpec);
+        this.map.addLayer(sourceLayer ? { ...labelSpec, 'source-layer': sourceLayer } : labelSpec);
         layerIds.push(labelSpec.id);
     }
 

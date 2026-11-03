@@ -130,6 +130,33 @@ export const LAYER_REGISTRY = {
         serviceType: 'FeatureServer',
         geometryType: 'esriGeometryPolygon',
         featureCount: 1,
+        drawingInfo: {
+            renderer: {
+                type: 'simple',
+                symbol: {
+                    type: 'esriSFS',
+                    style: 'esriSFSSolid',
+                    color: [252, 229, 204, 180],
+                    outline: {
+                        type: 'esriSLS',
+                        style: 'esriSLSSolid',
+                        color: [110, 110, 110, 255],
+                        width: 0.7
+                    }
+                }
+            },
+            labelingInfo: [{
+                labelPlacement: 'esriServerPolygonPlacementAlwaysHorizontal',
+                labelExpression: '[NAME]',
+                symbol: {
+                    type: 'esriTS',
+                    color: [17, 17, 17, 255],
+                    haloColor: [255, 255, 255, 255],
+                    haloSize: 1.25,
+                    font: { size: 12, family: 'Arial' }
+                }
+            }]
+        },
         buildFeature: (id) => esriPolygonFeature(id)
     },
     'mock/FeatureServer/3': {

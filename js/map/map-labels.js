@@ -47,6 +47,76 @@ const DEFAULT_LABELS = {
 
 const NAME_LIKE_FIELD_RE = /^(name|label|title|station|route|road|street|description|desc)$/i;
 
+/** Point placement: points plus polygons (MapLibre anchors a polygon on an interior point). */
+export const POINT_LABEL_GEOMETRY_TYPES = ['Point', 'MultiPoint', 'Polygon', 'MultiPolygon'];
+/** Clustered GeoJSON sources only contain point features. */
+export const CLUSTER_LABEL_GEOMETRY_TYPES = ['Point', 'MultiPoint'];
+export const LINE_LABEL_GEOMETRY_TYPES = ['LineString', 'MultiLineString'];
+
+/**
+ * @param {string[]} types
+ * @returns {unknown[]}
+ */
+export function geometryTypeMatchFilter(types) {
+    return ['match', ['geometry-type'], [...types], true, false];
+}
+
+/**
+ * Whether a label layer should be added for this geometry mix.
+ * Point placement covers points and polygons (including polygon-only and
+ * workspace viewport packets). Line placement covers line geometries only.
+ * @param {object|null|undefined} mapLabels
+ * @param {{ hasPoints?: boolean, hasLines?: boolean, hasPolygons?: boolean }} [presence]
+ * @returns {boolean}
+ */
+export function shouldInstallLabelLayer(mapLabels, { hasPoints = false, hasLines = false, hasPolygons = false } = {}) {
+    if (!mapLabels?.field || mapLabels.enabled === false) return false;
+    if (mapLabels.placement === 'line') return !!hasLines;
+    return !!(hasPoints || hasPolygons);
+}
+
+/**
+ * Labels panel hint for the active placement.
+ * @param {{ placement?: string, hasPoints?: boolean, hasPolygons?: boolean }} [opts]
+ * @returns {string}
+ */
+export function labelPlacementHint({ placement, hasPoints = false, hasPolygons = false } = {}) {
+    if (placement === 'line') return 'Labels follow line geometry';
+    if (hasPolygons) return 'Labels at an interior point';
+    if (hasPoints) return 'Labels at point locations';
+    return 'Labels at an interior point';
+}
+
+/**
+ * Geometry mix for label installation.
+ * Workspace viewport packets are a partial view, so the stored schema is
+ * included when `includeSchema` is set — a later setData of the same source
+ * can then label polygons that were outside the first packet.
+ * @param {object[]|null|undefined} features
+ * @param {string|null|undefined} schemaGeometryType
+ * @param {{ includeSchema?: boolean }} [opts]
+ * @returns {{ hasPoints: boolean, hasLines: boolean, hasPolygons: boolean }}
+ */
+export function labelGeometryPresence(features, schemaGeometryType, { includeSchema = false } = {}) {
+    const presence = { hasPoints: false, hasLines: false, hasPolygons: false };
+    for (const feature of features || []) {
+        const type = feature?.geometry?.type;
+        if (type === 'Point' || type === 'MultiPoint') presence.hasPoints = true;
+        else if (type === 'LineString' || type === 'MultiLineString') presence.hasLines = true;
+        else if (type === 'Polygon' || type === 'MultiPolygon') presence.hasPolygons = true;
+    }
+    if (!includeSchema) return presence;
+
+    const geometryType = String(schemaGeometryType || '');
+    if (geometryType === 'Mixed') {
+        return { hasPoints: true, hasLines: true, hasPolygons: true };
+    }
+    if (geometryType === 'Point' || geometryType === 'MultiPoint') presence.hasPoints = true;
+    else if (geometryType === 'LineString' || geometryType === 'MultiLineString') presence.hasLines = true;
+    else if (geometryType === 'Polygon' || geometryType === 'MultiPolygon') presence.hasPolygons = true;
+    return presence;
+}
+
 /**
  * @param {string} layerId
  * @returns {boolean}
@@ -218,7 +288,10 @@ export function resolvePlacemarkLabel(feature, idx, style) {
  */
 export function normalizeMapLabels(mapLabels) {
     if (!mapLabels?.field) return null;
-    return { ...DEFAULT_LABELS, ...mapLabels };
+    const cfg = { ...DEFAULT_LABELS, ...mapLabels };
+    // Style normalize can store a missing offset as undefined, which MapLibre rejects.
+    if (!Array.isArray(cfg.offset)) cfg.offset = [...DEFAULT_LABELS.offset];
+    return cfg;
 }
 
 /**
@@ -237,10 +310,11 @@ export function buildMapLabelLayerSpec(datasetId, sourceId, mapLabels, useCluste
 
     const labelId = `${datasetId}-labels`;
     const filter = useCluster
-        ? ['all', ['==', ['geometry-type'], 'Point'], ['!', ['has', 'point_count']]]
-        : ['==', ['geometry-type'], 'Point'];
+        ? ['all', geometryTypeMatchFilter(CLUSTER_LABEL_GEOMETRY_TYPES), ['!', ['has', 'point_count']]]
+        : geometryTypeMatchFilter(POINT_LABEL_GEOMETRY_TYPES);
 
     const layout = {
+        'symbol-placement': 'point',
         'text-field': ['to-string', ['get', cfg.field]],
         'text-font': APP_MAP_TEXT_FONTS,
         'text-size': cfg.size,
@@ -309,7 +383,7 @@ export function buildMapLineLabelLayerSpec(datasetId, sourceId, cfg) {
         id: labelId,
         type: 'symbol',
         source: sourceId,
-        filter: ['==', ['geometry-type'], 'LineString'],
+        filter: geometryTypeMatchFilter(LINE_LABEL_GEOMETRY_TYPES),
         minzoom: cfg.minZoom,
         maxzoom: cfg.maxZoom,
         layout,

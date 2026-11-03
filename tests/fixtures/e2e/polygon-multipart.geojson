@@ -1,0 +1,37 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": { "name": "Multi point" },
+      "geometry": {
+        "type": "MultiPoint",
+        "coordinates": [[-111.9, 40.7], [-111.89, 40.71]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": { "name": "Multi line" },
+      "geometry": {
+        "type": "MultiLineString",
+        "coordinates": [[[-111.9, 40.7], [-111.88, 40.72]]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": { "name": "Multi poly" },
+      "geometry": {
+        "type": "MultiPolygon",
+        "coordinates": [[[[-111.91, 40.69], [-111.88, 40.69], [-111.88, 40.72], [-111.91, 40.72], [-111.91, 40.69]]]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": { "name": "Poly" },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[[-111.87, 40.69], [-111.85, 40.69], [-111.85, 40.71], [-111.87, 40.71], [-111.87, 40.69]]]
+      }
+    }
+  ]
+}
