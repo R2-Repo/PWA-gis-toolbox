@@ -5,9 +5,11 @@ import mapService from './map/map-service.js';
 import { DualScreenChannel } from './dual-screen/channel.js';
 import {
     MessageType,
-    createMessage,
+    readDualSessionId,
     shouldApplyViewport
 } from './dual-screen/protocol.js';
+import { PROTOCOL_MISMATCH_NOTICE } from './dual-screen/storage-hint.js';
+import { createSecondaryProtocol } from './dual-screen/secondary-protocol.js';
 import { createSpatialDataset } from './core/data-model.js';
 import {
     initSecondaryClient,
@@ -20,30 +22,28 @@ import { setupMapPrintMenu } from './map/map-export.js';
 import { mountBasemapToggle, syncBasemapToggleActive } from './map/basemap-catalog.js';
 
 const ROLE = 'secondary';
-const QUEUED_MESSAGE_TYPES = new Set([
-    MessageType.SNAPSHOT,
-    MessageType.LAYER_ADD,
-    MessageType.LAYER_STYLE,
-    MessageType.MAP_CMD
-]);
 
 let channel = null;
+/** @type {ReturnType<typeof createSecondaryProtocol> | null} */
+let protocol = null;
 let suppressViewportBroadcast = false;
 let lastAppliedViewportId = null;
 let viewportDebounce = null;
-let byeSent = false;
 let mapReady = false;
-/** @type {object[]} */
-const pendingMessages = [];
+let versionNoticeShown = false;
 
 function post(type, payload) {
-    channel?.post(createMessage(ROLE, type, payload));
+    protocol?.enqueueOutbound(type, payload);
 }
 
 function sendBye() {
-    if (byeSent) return;
-    byeSent = true;
-    post(MessageType.BYE, {});
+    protocol?.sendGoodbye();
+}
+
+function showProtocolMismatch() {
+    if (versionNoticeShown) return;
+    versionNoticeShown = true;
+    applyMapToast({ message: PROTOCOL_MISMATCH_NOTICE, type: 'error' });
 }
 
 /** Close this secondary map window. */
@@ -213,23 +213,15 @@ function broadcastViewport() {
     post(MessageType.VIEWPORT, broadcastViewportFromMap(map));
 }
 
-function flushPendingMessages() {
-    const queue = pendingMessages.splice(0, pendingMessages.length);
-    for (const msg of queue) {
-        dispatchMessage(msg);
-    }
-}
-
 function onMapReady() {
     const map = mapService.getMap();
-    if (!map) return;
+    if (!map || mapReady) return;
     map.on('moveend', () => {
         clearTimeout(viewportDebounce);
         viewportDebounce = setTimeout(broadcastViewport, 80);
     });
     mapReady = true;
-    flushPendingMessages();
-    post(MessageType.HELLO, {});
+    protocol?.markHandshakeReady();
 }
 
 function applyMapCmd(payload) {
@@ -338,14 +330,6 @@ function dispatchMessage(msg) {
     }
 }
 
-function handleMessage(msg) {
-    if (!mapReady && QUEUED_MESSAGE_TYPES.has(msg.type)) {
-        pendingMessages.push(msg);
-        return;
-    }
-    dispatchMessage(msg);
-}
-
 function showMapWindowToast(message, type = 'info') {
     applyMapToast({ message, type });
 }
@@ -402,7 +386,16 @@ function boot() {
         return;
     }
 
-    channel = new DualScreenChannel(ROLE, handleMessage);
+    const sessionId = readDualSessionId(window.location.search);
+    protocol = createSecondaryProtocol({
+        sessionId,
+        post: (message) => channel?.post(message),
+        onApply: dispatchMessage
+    });
+    channel = new DualScreenChannel(ROLE, (msg) => protocol.receive(msg), {
+        sessionId,
+        onProtocolMismatch: showProtocolMismatch
+    });
     mapService.init('map-container');
     setupHeaderControls();
     void setupModalHost();
@@ -412,17 +405,13 @@ function boot() {
     if (map?.loaded()) onMapReady();
     else map?.once('load', onMapReady);
 
-    post(MessageType.HELLO, {});
-
-    const teardownSecondary = () => {
-        sendBye();
+    window.addEventListener('pagehide', () => {
+        protocol?.handlePageHide();
         channel?.close();
         channel = null;
-    };
-
-    window.addEventListener('beforeunload', teardownSecondary);
-    window.addEventListener('pagehide', (e) => {
-        if (!e.persisted) teardownSecondary();
+    });
+    window.addEventListener('beforeunload', () => {
+        protocol?.handlePageHide();
     });
 }
 

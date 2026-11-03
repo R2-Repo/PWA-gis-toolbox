@@ -8,12 +8,19 @@ import { DualScreenChannel } from './channel.js';
 import {
     MessageType,
     createMessage,
+    createDualSessionId,
+    HELLO_TIMEOUT_MS,
     buildSnapshotPayload,
     boundsFromViewportPayload,
     serializeMapRpcArgs,
     serializeLayerMetaForRestyle
 } from './protocol.js';
-import { setDualScreenActiveHint } from './storage-hint.js';
+import {
+    setDualScreenActiveHint,
+    HELLO_TIMEOUT_NOTICE,
+    PROTOCOL_MISMATCH_NOTICE
+} from './storage-hint.js';
+import { showToast } from '../ui/toast.js';
 import { scheduleMapResizeAfterLayout, syncDualScreenPrimaryUi } from './layout.js';
 import {
     applySelectionPayload,
@@ -28,7 +35,6 @@ import { syncBasemapToggleActive } from '../map/basemap-catalog.js';
 import bus from '../core/event-bus.js';
 
 const POLL_MS = 500;
-const ACTIVATE_HANDSHAKE_MS = 5000;
 
 class DualScreenCoordinator {
     constructor() {
@@ -50,6 +56,11 @@ class DualScreenCoordinator {
         this._activateTimeout = null;
         /** @type {((ok: boolean) => void) | null} */
         this._activateResolve = null;
+        /** @type {string | null} */
+        this._sessionId = null;
+        /** @type {'timeout' | 'version' | 'bye' | null} */
+        this._activationNotice = null;
+        this._versionNoticeShown = false;
         this._selectionSyncInbound = false;
         /** @type {(() => void) | null} */
         this._selectionSyncTeardown = null;
@@ -98,18 +109,60 @@ class DualScreenCoordinator {
         }
     }
 
-    _abortPendingActivation() {
-        this._clearActivateTimeout();
+    /**
+     * Why the last activate() returned false, if a notice was already shown
+     * or the popup left on its own. Cleared when read.
+     * @returns {'timeout' | 'version' | 'bye' | null}
+     */
+    consumeActivationNotice() {
+        const notice = this._activationNotice;
+        this._activationNotice = null;
+        return notice;
+    }
+
+    _post(type, payload = {}) {
+        if (!this._channel || !this._sessionId) return;
+        this._channel.post(createMessage('primary', type, payload, this._sessionId));
+    }
+
+    /**
+     * Drop the pending popup attempt. The main map was never removed.
+     * @param {'timeout' | 'version' | 'bye'} reason
+     */
+    _failActivation(reason) {
+        if (!this._pendingActivation) return;
         this._pendingActivation = false;
+        this._clearActivateTimeout();
+        this._stopPoll();
+        this._activationNotice = reason;
+
+        if (reason === 'timeout') {
+            showToast(HELLO_TIMEOUT_NOTICE, 'warning', { duration: 8000 });
+        }
+
+        this._post(MessageType.BYE, {});
         if (this._channel) {
-            this._channel.post(createMessage('primary', MessageType.BYE, {}));
             this._channel.close();
             this._channel = null;
         }
+        if (isSecondaryMapWindowOpen(this._mapWindow)) {
+            try { void this._mapWindow.close(); } catch (_) { /* ignore */ }
+        }
         this._mapWindow = null;
+        this._sessionId = null;
+        this._secondaryReady = false;
+        setDualScreenActiveHint(typeof sessionStorage !== 'undefined' ? sessionStorage : null, false);
         const resolve = this._activateResolve;
         this._activateResolve = null;
         resolve?.(false);
+    }
+
+    _noticeProtocolMismatch() {
+        if (!this._versionNoticeShown) {
+            this._versionNoticeShown = true;
+            showToast(PROTOCOL_MISMATCH_NOTICE, 'error', { duration: 8000 });
+        }
+        if (this._pendingActivation) this._failActivation('version');
     }
 
     /**
@@ -127,22 +180,39 @@ class DualScreenCoordinator {
         }
         if (this._pendingActivation) return false;
 
-        this._mapWindow = await openSecondaryMapWindow();
-
-        if (isSecondaryMapWindowOpen(this._mapWindow)) {
-            this._completeActivation();
-            return true;
-        }
-
-        // Popup may have opened without a Window ref (e.g. cached script used noreferrer).
-        this._pendingActivation = true;
-        this._channel = new DualScreenChannel('primary', (msg) => this._handleMessage(msg));
-
+        // Keep this window's map until the popup says hello for this session.
         return new Promise((resolve) => {
             this._activateResolve = resolve;
+            this._activationNotice = null;
+            this._versionNoticeShown = false;
+            this._sessionId = createDualSessionId();
+            this._pendingActivation = true;
+            this._secondaryReady = false;
+            this._channel = new DualScreenChannel('primary', (msg) => this._handleMessage(msg), {
+                sessionId: this._sessionId,
+                onProtocolMismatch: () => this._noticeProtocolMismatch()
+            });
             this._activateTimeout = setTimeout(() => {
-                if (this._pendingActivation) this._abortPendingActivation();
-            }, ACTIVATE_HANDSHAKE_MS);
+                if (this._pendingActivation) this._failActivation('timeout');
+            }, HELLO_TIMEOUT_MS);
+
+            openSecondaryMapWindow(this._sessionId).then((handle) => {
+                if (this.isActive) {
+                    this._mapWindow = handle;
+                    this._startPoll();
+                    return;
+                }
+                if (!this._pendingActivation) {
+                    if (isSecondaryMapWindowOpen(handle)) {
+                        try { void handle.close(); } catch (_) { /* ignore */ }
+                    }
+                    return;
+                }
+                this._mapWindow = handle;
+                this._startPoll();
+            }).catch((err) => {
+                console.warn('[DualScreen] open map window failed', err);
+            });
         });
     }
 
@@ -163,7 +233,10 @@ class DualScreenCoordinator {
         this._secondaryReady = false;
 
         if (!this._channel) {
-            this._channel = new DualScreenChannel('primary', (msg) => this._handleMessage(msg));
+            this._channel = new DualScreenChannel('primary', (msg) => this._handleMessage(msg), {
+                sessionId: this._sessionId,
+                onProtocolMismatch: () => this._noticeProtocolMismatch()
+            });
         }
 
         this._startPoll();
@@ -181,7 +254,7 @@ class DualScreenCoordinator {
      */
     deactivate(options = {}) {
         if (this._pendingActivation) {
-            this._abortPendingActivation();
+            this._failActivation('bye');
             return;
         }
         if (!this.isActive || this._deactivating) return;
@@ -193,9 +266,7 @@ class DualScreenCoordinator {
             this._selectionSyncTeardown = null;
 
             if (!options.fromSecondaryBye) {
-                if (this._channel) {
-                    this._channel.post(createMessage('primary', MessageType.BYE, {}));
-                }
+                this._post(MessageType.BYE, {});
                 if (isSecondaryMapWindowOpen(this._mapWindow)) {
                     try { void this._mapWindow.close(); } catch (_) { /* ignore */ }
                 }
@@ -207,6 +278,7 @@ class DualScreenCoordinator {
             }
 
             this._mapWindow = null;
+            this._sessionId = null;
             this.isActive = false;
             this._secondaryReady = false;
             this._lastBounds = null;
@@ -224,9 +296,9 @@ class DualScreenCoordinator {
     _startPoll() {
         this._stopPoll();
         this._pollTimer = setInterval(() => {
-            if (this._mapWindow?.closed) {
-                this.deactivate({ fromSecondaryBye: true });
-            }
+            if (!this._mapWindow?.closed) return;
+            if (this._pendingActivation) this._failActivation('bye');
+            else if (this.isActive) this.deactivate({ fromSecondaryBye: true });
         }, POLL_MS);
     }
 
@@ -354,12 +426,12 @@ class DualScreenCoordinator {
     _handleMessage(msg) {
         switch (msg.type) {
             case MessageType.HELLO:
+                if (!this._pendingActivation && !this.isActive) return;
                 if (this._pendingActivation) {
                     this._completeActivation();
                     const resolve = this._activateResolve;
                     this._activateResolve = null;
                     resolve?.(true);
-                    // Secondary is live; mirror the GIS snapshot.
                     this._secondaryReady = true;
                     this.sendSnapshot();
                     bus.emit('dual-screen:secondary-ready');
@@ -405,6 +477,11 @@ class DualScreenCoordinator {
                 this._resolveMapRpcResult(msg.payload);
                 break;
             case MessageType.BYE:
+                if (this._pendingActivation) {
+                    this._failActivation('bye');
+                    return;
+                }
+                if (!this.isActive) return;
                 this.deactivate({ fromSecondaryBye: true });
                 break;
             default:
@@ -427,7 +504,7 @@ class DualScreenCoordinator {
             activeLayerId: getActiveLayer()?.id ?? null,
             preserveViewport
         });
-        this._channel.post(createMessage('primary', MessageType.SNAPSHOT, payload));
+        this._post(MessageType.SNAPSHOT, payload);
     }
 
     syncLayersChanged() {
@@ -440,7 +517,7 @@ class DualScreenCoordinator {
         const style = options.style
             ?? mapService.getLayerStyles()?.get?.(dataset.id)
             ?? null;
-        this._channel.post(createMessage('primary', MessageType.LAYER_ADD, {
+        this._post(MessageType.LAYER_ADD, {
             dataset: {
                 id: dataset.id,
                 name: dataset.name,
@@ -459,51 +536,51 @@ class DualScreenCoordinator {
             colorIndex,
             fit: !!options.fit,
             style: style ? JSON.parse(JSON.stringify(style)) : null
-        }));
+        });
     }
 
     broadcastLayerRemove(id) {
         if (!this._channel) return;
-        this._channel.post(createMessage('primary', MessageType.LAYER_REMOVE, { id }));
+        this._post(MessageType.LAYER_REMOVE, { id });
     }
 
     broadcastLayerOrder(orderedIds) {
         if (!this._channel) return;
-        this._channel.post(createMessage('primary', MessageType.LAYER_ORDER, { orderedIds }));
+        this._post(MessageType.LAYER_ORDER, { orderedIds });
     }
 
     broadcastLayerStyle(layerId, style, layerMeta = null) {
         if (!this._channel || !layerId || !style) return;
         const meta = layerMeta ?? getLayers().find((l) => l.id === layerId) ?? null;
-        this._channel.post(createMessage('primary', MessageType.LAYER_STYLE, {
+        this._post(MessageType.LAYER_STYLE, {
             layerId,
             style: JSON.parse(JSON.stringify(style)),
             layerMeta: meta ? serializeLayerMetaForRestyle(meta) : null
-        }));
+        });
     }
 
     broadcastFit(command, payload = {}) {
         if (!this._channel) return;
-        this._channel.post(createMessage('primary', MessageType.VIEWPORT, {
+        this._post(MessageType.VIEWPORT, {
             source: 'primary',
             command,
             ...payload
-        }));
+        });
     }
 
     broadcastDrawCmd(payload) {
         if (!this._channel) return;
-        this._channel.post(createMessage('primary', MessageType.DRAW_CMD, payload));
+        this._post(MessageType.DRAW_CMD, payload);
     }
 
     broadcastToast(message, type = 'info') {
         if (!this._channel) return;
-        this._channel.post(createMessage('primary', MessageType.TOAST, { message, type }));
+        this._post(MessageType.TOAST, { message, type });
     }
 
     broadcastSelection(payload) {
         if (!this._channel) return;
-        this._channel.post(createMessage('primary', MessageType.SELECTION, payload));
+        this._post(MessageType.SELECTION, payload);
     }
 
     /**
@@ -526,11 +603,11 @@ class DualScreenCoordinator {
 
             this._rpcPending.set(requestId, { resolve, reject, timeout });
             if (options.focusMap !== false) this.focusMapWindow();
-            this._channel.post(createMessage('primary', MessageType.MAP_RPC, {
+            this._post(MessageType.MAP_RPC, {
                 requestId,
                 method,
                 args: serializeMapRpcArgs(args)
-            }));
+            });
         });
     }
 
@@ -542,7 +619,7 @@ class DualScreenCoordinator {
     broadcastMapCmd(action, data = {}, options = {}) {
         if (!this._channel) return;
         if (this.isActive && options.focusMap !== false) this.focusMapWindow();
-        this._channel.post(createMessage('primary', MessageType.MAP_CMD, { action, ...data }));
+        this._post(MessageType.MAP_CMD, { action, ...data });
     }
 
     _resolveMapRpcResult(payload) {

@@ -6,6 +6,15 @@ export const MAP_WINDOW_NAME = 'gis-toolbox-map';
 export const MAP_WINDOW_PATH = 'map-window.html';
 
 /**
+ * @param {string | null | undefined} sessionId
+ * @returns {string}
+ */
+export function buildMapWindowUrl(sessionId) {
+    if (!sessionId) return MAP_WINDOW_PATH;
+    return `${MAP_WINDOW_PATH}?session=${encodeURIComponent(sessionId)}`;
+}
+
+/**
  * @param {Pick<Screen, 'availWidth' | 'availHeight' | 'availLeft' | 'availTop'>} [screenLike]
  * @returns {{ width: number, height: number, x: number, y: number }}
  */
@@ -82,12 +91,14 @@ function wrapBrowserWindow(win) {
 
 /**
  * Open (or reuse) the secondary map window for the active platform.
+ * @param {string | null} [sessionId]
  * @returns {Promise<import('../platform/contracts.js').MapWindowHandle | null>}
  */
-export async function openSecondaryMapWindow() {
+export async function openSecondaryMapWindow(sessionId = null) {
     const features = buildMapWindowFeatures();
+    const url = buildMapWindowUrl(sessionId);
     try {
-        const win = window.open(MAP_WINDOW_PATH, MAP_WINDOW_NAME, features);
+        const win = window.open(url, MAP_WINDOW_NAME, features);
         return win ? wrapBrowserWindow(win) : null;
     } catch (err) {
         console.warn('[DualScreen] window.open failed', err);

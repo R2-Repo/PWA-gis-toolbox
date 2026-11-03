@@ -6,6 +6,9 @@
 export const CHANNEL_NAME = 'gis-toolbox-dual-screen';
 export const PROTOCOL_VERSION = 1;
 
+/** How long the main window waits for the popup to say hello before staying single-screen. */
+export const HELLO_TIMEOUT_MS = 8000;
+
 export const MessageType = {
     HELLO: 'HELLO',
     SNAPSHOT: 'SNAPSHOT',
@@ -36,11 +39,48 @@ export const MessageType = {
 
 let _msgCounter = 0;
 
-export function createMessage(role, type, payload = {}) {
+/**
+ * One id per Dual Screen attempt. Stale popups keep their old id and are ignored.
+ * @returns {string}
+ */
+export function createDualSessionId() {
+    const cryptoApi = globalThis.crypto;
+    if (cryptoApi && typeof cryptoApi.randomUUID === 'function') {
+        return `ds-${cryptoApi.randomUUID()}`;
+    }
+    _msgCounter += 1;
+    return `ds-${Date.now().toString(36)}-${_msgCounter}`;
+}
+
+/**
+ * @param {string} [search]
+ * @returns {string | null}
+ */
+export function readDualSessionId(search = '') {
+    const raw = String(search || '');
+    const q = raw.includes('?') ? raw.slice(raw.indexOf('?') + 1) : raw.replace(/^\?/, '');
+    if (!q) return null;
+    try {
+        const id = new URLSearchParams(q).get('session');
+        const trimmed = id?.trim();
+        return trimmed || null;
+    } catch {
+        return null;
+    }
+}
+
+/**
+ * @param {'primary'|'secondary'} role
+ * @param {string} type
+ * @param {object} [payload]
+ * @param {string | null} [sessionId]
+ */
+export function createMessage(role, type, payload = {}, sessionId = null) {
     _msgCounter += 1;
     return {
         v: PROTOCOL_VERSION,
         role,
+        sessionId: sessionId || null,
         msgId: `${role}-${Date.now()}-${_msgCounter}`,
         type,
         payload,
@@ -48,11 +88,26 @@ export function createMessage(role, type, payload = {}) {
     };
 }
 
+/**
+ * @param {unknown} data
+ * @param {string | null} [expectedSessionId]
+ * @returns {{ status: 'ok', message: object } | { status: 'version' } | { status: 'stale' } | { status: 'invalid' }}
+ */
+export function classifyIncoming(data, expectedSessionId = null) {
+    if (!data || typeof data !== 'object') return { status: 'invalid' };
+    const msg = /** @type {Record<string, unknown>} */ (data);
+    if (msg.v !== PROTOCOL_VERSION) {
+        if (msg.v != null && msg.type) return { status: 'version' };
+        return { status: 'invalid' };
+    }
+    if (!msg.type || !msg.msgId) return { status: 'invalid' };
+    if (expectedSessionId && msg.sessionId !== expectedSessionId) return { status: 'stale' };
+    return { status: 'ok', message: /** @type {object} */ (data) };
+}
+
 export function parseMessage(data) {
-    if (!data || typeof data !== 'object') return null;
-    if (data.v !== PROTOCOL_VERSION) return null;
-    if (!data.type || !data.msgId) return null;
-    return data;
+    const result = classifyIncoming(data, null);
+    return result.status === 'ok' ? result.message : null;
 }
 
 /**

@@ -1867,7 +1867,7 @@ function setupDualScreenMode() {
             return;
         }
         const ok = await dualScreenCoordinator.activate();
-        if (!ok) {
+        if (!ok && !dualScreenCoordinator.consumeActivationNotice()) {
             showToast(POPUP_BLOCKED_MESSAGE, 'error', { duration: 8000 });
         }
     };
