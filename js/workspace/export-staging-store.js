@@ -7,6 +7,9 @@ import { isSourceStoreSupported, hasStorageHeadroom } from './source-file-store.
 
 const STAGING_DIR = 'export-staging';
 
+/** Drop staged files left behind by a crash or a closed tab. */
+export const EXPORT_STAGING_STALE_MS = 60 * 60 * 1000;
+
 /**
  * @returns {boolean}
  */
@@ -80,11 +83,28 @@ export async function createExportStagingSession(fileName) {
                 const dir2 = await _getStagingDir(false);
                 const fileHandle = await dir2.getFileHandle(entryName);
                 const file = await fileHandle.getFile();
-                const blob = file.slice(0, file.size, file.type || 'application/octet-stream');
+                const type = file.type || 'application/octet-stream';
+                // file.slice() stays bound to the OPFS file. Deleting the entry
+                // before the browser reads it makes GeoJSON/CSV downloads empty.
+                // Copy into a memory Blob first so the file can be removed.
+                let blob;
+                let copied = false;
                 try {
-                    await dir2.removeEntry(entryName);
-                } catch {
-                    /* best-effort cleanup */
+                    const bytes = await file.arrayBuffer();
+                    blob = new Blob([bytes], { type });
+                    copied = true;
+                } catch (copyErr) {
+                    logger.warn('ExportStaging', 'Could not copy staged export into memory; keeping the file until sweep', {
+                        error: copyErr?.message
+                    });
+                    blob = file.slice(0, file.size, type);
+                }
+                if (copied) {
+                    try {
+                        await dir2.removeEntry(entryName);
+                    } catch {
+                        /* best-effort cleanup */
+                    }
                 }
                 return { blob, fileName: safeName };
             },
@@ -123,7 +143,43 @@ export async function createExportStagingSession(fileName) {
     }
 }
 
+/**
+ * Remove staged export files older than maxAgeMs.
+ * Called at startup so a crashed export cannot fill OPFS.
+ * @param {number} [maxAgeMs]
+ * @returns {Promise<number>} removed count
+ */
+export async function sweepExportStagingFiles(maxAgeMs = EXPORT_STAGING_STALE_MS) {
+    if (!isExportStagingSupported()) return 0;
+    let removed = 0;
+    try {
+        const dir = await _getStagingDir(false);
+        if (typeof dir.entries !== 'function') return 0;
+        const now = Date.now();
+        for await (const [name, handle] of dir.entries()) {
+            if (handle?.kind && handle.kind !== 'file') continue;
+            try {
+                const file = await handle.getFile();
+                if (now - (file.lastModified || 0) <= maxAgeMs) continue;
+                await dir.removeEntry(name);
+                removed++;
+            } catch {
+                /* ignore one entry */
+            }
+        }
+    } catch {
+        /* staging directory does not exist yet */
+    }
+    return removed;
+}
+
+queueMicrotask(() => {
+    void sweepExportStagingFiles();
+});
+
 export default {
     isExportStagingSupported,
-    createExportStagingSession
+    createExportStagingSession,
+    sweepExportStagingFiles,
+    EXPORT_STAGING_STALE_MS
 };

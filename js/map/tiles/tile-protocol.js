@@ -11,7 +11,7 @@ import logger from '../../core/logger.js';
 import { GIS_TILE_PROTOCOL } from './tile-constants.js';
 import { tileToBBox } from './tile-math.js';
 
-const URL_RE = /^gis-tiles:\/\/([^/]+)\/(\d+)\/(\d+)\/(\d+)\.pbf$/;
+const URL_RE = /^gis-tiles:\/\/([^/]+)\/(\d+)\/(\d+)\/(\d+)\.pbf(?:\?.*)?$/;
 const EMPTY_TILE = new ArrayBuffer(0);
 
 /** How many tile builds may be in flight on the worker at once. */
@@ -29,6 +29,34 @@ const pending = new Map();
 
 /** @type {{ lon: number, lat: number }|null} */
 let focusCenter = null;
+
+/** layerId → storage indices that may be drawn. Missing entry = no filter. */
+const workspaceIndexFilters = new Map();
+
+/**
+ * Tell the tile worker which storage indices a workspace layer may draw.
+ * Pass null to clear. Safe to call before the worker exists.
+ * @param {string} layerId
+ * @param {number[]|null} indices
+ */
+export function setWorkspaceTileIndexFilter(layerId, indices) {
+    if (!layerId) return;
+    if (!Array.isArray(indices)) workspaceIndexFilters.delete(layerId);
+    else workspaceIndexFilters.set(layerId, indices);
+    if (!worker) return;
+    worker.postMessage({
+        type: 'set-index-filter',
+        layerId,
+        indices: Array.isArray(indices) ? indices : null
+    });
+}
+
+function _pushIndexFiltersToWorker(target) {
+    if (!target) return;
+    for (const [layerId, indices] of workspaceIndexFilters) {
+        target.postMessage({ type: 'set-index-filter', layerId, indices });
+    }
+}
 
 /**
  * @typedef {{
@@ -149,6 +177,7 @@ function _ensureWorker() {
         } catch { /* ignore */ }
         worker = null;
     };
+    _pushIndexFiltersToWorker(worker);
     return worker;
 }
 
@@ -316,6 +345,7 @@ export default {
     ensureGisTileProtocol,
     gisTileUrlTemplate,
     invalidateGisTiles,
+    setWorkspaceTileIndexFilter,
     disposeGisTileWorker,
     setGisTileFocus,
     getGisTileFocus,

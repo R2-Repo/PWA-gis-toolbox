@@ -11,6 +11,7 @@
  * area the user is looking at fills first.
  */
 import { queryWorkspaceChunks, loadWorkspaceChunks } from './workspace-store.js';
+import { featurePassesIndexAllowlist } from './feature-identity.js';
 import { RENDER_LIMITS } from '../map/render-limits.js';
 import { bboxIntersects, featureBBox, geometryIntersectsBBox } from '../map/tiles/tile-math.js';
 import { TILE_BUFFER, TILE_EXTENT } from '../map/tiles/tile-constants.js';
@@ -144,7 +145,8 @@ export function selectViewportFeaturesCenterFirst(centerFeatures, edgeFeatures, 
  *   maxVertices?: number,
  *   padFraction?: number,
  *   centerFocusFraction?: number,
- *   prioritizeCenter?: boolean
+ *   prioritizeCenter?: boolean,
+ *   indexAllowlist?: Set<number>|null
  * }} [options]
  * @returns {Promise<{ type: 'FeatureCollection', features: object[], truncated: boolean, candidateCount: number }>}
  */
@@ -178,6 +180,7 @@ export async function buildViewportGeoJSON(layerId, bounds, options = {}) {
         }
         for (const f of fc.features || []) {
             if (!featureIntersectsViewport(f, queryBounds)) continue;
+            if (!featurePassesIndexAllowlist(f, options.indexAllowlist ?? null)) continue;
 
             const key = f.properties?._featureIndex ?? f.id;
             if (key != null) {

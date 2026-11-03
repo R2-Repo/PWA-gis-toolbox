@@ -9,6 +9,7 @@
  * whose bbox covers a tile but miss it do not crowd out real hits.
  */
 import { bboxIntersects, featureBBox, degreesPerPixel, geometryIntersectsBBox } from './tile-math.js';
+import { featurePassesIndexAllowlist } from '../../workspace/feature-identity.js';
 import {
     MAX_TILE_FEATURES,
     MIN_FEATURE_PIXELS,
@@ -356,7 +357,7 @@ export function preferCrossingThenLocalFeatures(features, tileBbox, maxFeatures)
  * @param {Array<{ features: object[] }>} chunks parsed workspace chunks
  * @param {[number,number,number,number]} tileBbox padded tile bounds (lon/lat)
  * @param {number} z tile zoom
- * @param {{ maxFeatures?: number, minFeaturePixels?: number, preferLocal?: boolean, preferCrossing?: boolean }} [opts]
+ * @param {{ maxFeatures?: number, minFeaturePixels?: number, preferLocal?: boolean, preferCrossing?: boolean, indexAllowlist?: Set<number>|null }} [opts]
  * @returns {{ features: object[], candidateCount: number, sampled: boolean }}
  */
 export function selectTileFeatures(chunks, tileBbox, z, opts = {}) {
@@ -371,6 +372,7 @@ export function selectTileFeatures(chunks, tileBbox, z, opts = {}) {
     for (const chunk of chunks) {
         for (const feature of chunk.features || []) {
             if (!featureBelongsInTile(feature, tileBbox, z, minSpanDeg)) continue;
+            if (!featurePassesIndexAllowlist(feature, opts.indexAllowlist ?? null)) continue;
             // Multi-cell imports store the same logical feature in several
             // chunks — keep one copy per tile.
             const key = feature.properties?._featureIndex ?? feature.id ?? feature.__featureIndex;

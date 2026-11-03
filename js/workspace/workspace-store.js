@@ -24,6 +24,7 @@ import {
     rowMatchesAttributeQuery,
     sortAttributeRows
 } from './attribute-table.js';
+import { rowMatchesWorkspaceFilter } from './workspace-attribute-filter.js';
 import { LIMITS } from '../import/import-limits.js';
 
 const DB_NAME = 'gis-toolbox-workspace';
@@ -552,7 +553,7 @@ export async function iterateWorkspaceFeatures(layerId, offset = 0, limit = 1000
             features.push({
                 type: 'Feature',
                 geometry: f.geometry,
-                properties: props
+                properties: options.stampIndex ? { ...props, _featureIndex: idx } : props
             });
             if (features.length >= limit) break;
         }
@@ -1186,6 +1187,61 @@ export async function scanWorkspaceAttributeMatches(layerId, query = {}, options
 }
 
 /**
+ * Full-layer attribute filter. Matches are storage indices, not viewport positions.
+ * No match cap — a definition query has to hide every non-matching feature.
+ * @param {string} layerId
+ * @param {{ rules?: object[], logic?: string }} filter
+ * @param {{
+ *   includeCold?: boolean,
+ *   signal?: AbortSignal,
+ *   onProgress?: (p: { scanned: number, total: number, matches: number }) => void
+ * }} [options]
+ */
+export async function scanWorkspaceFilterIndices(layerId, filter = {}, options = {}) {
+    const includeCold = options.includeCold !== false;
+    const rules = Array.isArray(filter.rules) ? filter.rules : [];
+    const logic = filter.logic || 'AND';
+    const layer = await getWorkspaceLayer(layerId);
+    const totalCount = layer?.featureCount ?? 0;
+    const matchIndices = [];
+    let scanned = 0;
+
+    if (!rules.length || !totalCount) {
+        return { matchIndices, scanned: 0, totalCount, truncated: false };
+    }
+
+    for (let start = 0; start < totalCount; start += ATTRIBUTE_SCAN_BATCH_SIZE) {
+        if (options.signal?.aborted) {
+            const err = new Error('Scan cancelled');
+            err.name = 'AbortError';
+            throw err;
+        }
+        const count = Math.min(ATTRIBUTE_SCAN_BATCH_SIZE, totalCount - start);
+        const attrByIndex = await _loadAttributeRecordsRange(layerId, start, count);
+        let coldByLgid = null;
+        if (includeCold) {
+            const lgids = [...attrByIndex.values()].map((r) => r.lgid).filter(Boolean);
+            coldByLgid = await _loadColdPropertiesByLgids(layerId, lgids);
+        }
+        const rows = recordsToAttributeRows(attrByIndex, coldByLgid, {
+            includeCold,
+            startIndex: start,
+            count
+        });
+        for (const row of rows) {
+            scanned++;
+            if (rowMatchesWorkspaceFilter(row, rules, logic)) {
+                matchIndices.push(row._featureIndex);
+            }
+        }
+        options.onProgress?.({ scanned, total: totalCount, matches: matchIndices.length });
+        await _yieldScanTick();
+    }
+
+    return { matchIndices, scanned, totalCount, truncated: false };
+}
+
+/**
  * Resolve a workspace feature (geometry + attributes) by feature index.
  * @param {string} layerId
  * @param {number} featureIndex
@@ -1629,6 +1685,7 @@ export default {
     loadWorkspaceAttributePage,
     loadWorkspaceAttributeRowsByIndices,
     scanWorkspaceAttributeMatches,
+    scanWorkspaceFilterIndices,
     getWorkspaceFeatureByIndex,
     getWorkspaceFeaturesByIndices,
     loadWorkspaceAttributeTablePage,

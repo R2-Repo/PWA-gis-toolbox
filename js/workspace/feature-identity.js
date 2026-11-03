@@ -59,6 +59,70 @@ export function isInternalFeatureProp(key) {
 }
 
 /**
+ * Identity index assigned once at storage time.
+ * Rendering must not replace this with a batch or array position.
+ * @param {object|null|undefined} feature
+ * @returns {number|null}
+ */
+export function readStoredFeatureIndex(feature) {
+    const raw = feature?.properties?._featureIndex ?? feature?.__featureIndex;
+    if (typeof raw === 'number' && Number.isFinite(raw)) return raw;
+    if (typeof raw === 'string' && raw.trim() !== '') {
+        const n = Number(raw);
+        if (Number.isFinite(n)) return n;
+    }
+    return null;
+}
+
+/**
+ * Index to stamp while rendering. Keeps a stored identity; otherwise the
+ * position in the collection being drawn.
+ * @param {object|null|undefined} feature
+ * @param {number} fallbackIndex
+ * @returns {number}
+ */
+export function renderFeatureIndex(feature, fallbackIndex) {
+    const stored = readStoredFeatureIndex(feature);
+    return stored == null ? fallbackIndex : stored;
+}
+
+/**
+ * @param {object|null|undefined} feature
+ * @param {Set<number>|null|undefined} allowlist null = no filter
+ * @returns {boolean}
+ */
+export function featurePassesIndexAllowlist(feature, allowlist) {
+    if (allowlist == null) return true;
+    const idx = readStoredFeatureIndex(feature);
+    return idx != null && allowlist.has(idx);
+}
+
+/**
+ * Find a rendered feature by its identity index.
+ * Positional fallback is only safe when that slot has no different stored index
+ * (in-memory layers). Workspace batches are not indexed by storage identity.
+ * @param {object[]|null|undefined} features
+ * @param {number} featureIndex
+ * @param {{ allowPositionalFallback?: boolean }} [options]
+ * @returns {object|null}
+ */
+export function lookupRenderedFeature(features, featureIndex, { allowPositionalFallback = true } = {}) {
+    if (!Array.isArray(features)) return null;
+    const idx = typeof featureIndex === 'number' ? featureIndex : Number(featureIndex);
+    if (!Number.isFinite(idx)) return null;
+    const found = features.find((f) => readStoredFeatureIndex(f) === idx);
+    if (found) return found;
+    if (!allowPositionalFallback || !Number.isInteger(idx) || idx < 0 || idx >= features.length) {
+        return null;
+    }
+    const positional = features[idx];
+    if (!positional) return null;
+    const stored = readStoredFeatureIndex(positional);
+    if (stored != null && stored !== idx) return null;
+    return positional;
+}
+
+/**
  * Stamp display identity props used by map/tiles.
  * Copies only `displayFields` (style/label) plus a name hint — not all attrs.
  * @param {object} params
@@ -100,5 +164,9 @@ export default {
     isLgid,
     ensureFeatureLgid,
     isInternalFeatureProp,
+    readStoredFeatureIndex,
+    renderFeatureIndex,
+    featurePassesIndexAllowlist,
+    lookupRenderedFeature,
     buildDisplayIdentityProps
 };

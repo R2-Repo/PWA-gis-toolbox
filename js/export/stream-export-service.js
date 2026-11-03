@@ -3,9 +3,9 @@
  * write GeoJSON/CSV incrementally via OPFS staging (Blob fallback).
  */
 import { isWorkspaceLayer, getLayerFeatureCount, getSelectedFields } from '../core/data-model.js';
-import { iterateWorkspaceFeatures } from '../workspace/workspace-store.js';
+import { iterateWorkspaceFeatures, scanWorkspaceFilterIndices } from '../workspace/workspace-store.js';
 import { createExportStagingSession } from '../workspace/export-staging-store.js';
-import { LGID_PROP, isInternalFeatureProp } from '../workspace/feature-identity.js';
+import { LGID_PROP, isInternalFeatureProp, featurePassesIndexAllowlist } from '../workspace/feature-identity.js';
 import { withBakedSimpleStyle } from './style-baker.js';
 import { loadPapaParse } from '../core/libs.js';
 
@@ -35,6 +35,31 @@ function _cleanExportProperties(properties, { keepLgid = true, selectedNames = n
         out[k] = v;
     }
     return out;
+}
+
+/**
+ * Storage-index allowlist for a workspace attribute filter, or null when
+ * the layer is unfiltered. Indices are computed from full stored attributes.
+ * @param {object} dataset
+ * @returns {Promise<Set<number>|null>}
+ */
+async function resolveWorkspaceExportAllowlist(dataset) {
+    if (!dataset) return null;
+    if (Array.isArray(dataset._workspaceFilterIndices)) {
+        return new Set(dataset._workspaceFilterIndices);
+    }
+    const def = dataset.workspaceAttributeFilter;
+    if (!def?.rules?.length) return null;
+    const layerId = dataset.workspaceLayerId || dataset.id;
+    const { matchIndices } = await scanWorkspaceFilterIndices(layerId, def, { includeCold: true });
+    dataset._workspaceFilterIndices = matchIndices;
+    dataset._activeFilter = { rules: def.rules, logic: def.logic || 'AND' };
+    return new Set(matchIndices);
+}
+
+function _keepExportFeature(feature, allowlist) {
+    if (!allowlist) return true;
+    return featurePassesIndexAllowlist(feature, allowlist);
 }
 
 function _selectedNameSet(dataset) {
@@ -106,16 +131,19 @@ function _escapeCsv(value) {
  */
 export async function materializeWorkspaceGeoJSON(dataset, task) {
     const layerId = dataset.workspaceLayerId || dataset.id;
-    const total = getLayerFeatureCount(dataset) || 0;
+    const allowlist = await resolveWorkspaceExportAllowlist(dataset);
+    const total = allowlist ? allowlist.size : (getLayerFeatureCount(dataset) || 0);
     const selectedNames = _selectedNameSet(dataset);
     const features = [];
     let offset = 0;
     while (true) {
         const batch = await iterateWorkspaceFeatures(layerId, offset, STREAM_EXPORT_BATCH_SIZE, {
-            includeCold: true
+            includeCold: true,
+            stampIndex: !!allowlist
         });
         if (!batch.length) break;
         for (const feature of batch) {
+            if (!_keepExportFeature(feature, allowlist)) continue;
             features.push({
                 type: 'Feature',
                 geometry: feature.geometry,
@@ -158,28 +186,30 @@ export async function exportWorkspaceLayerStreamed(dataset, format, options = {}
         throw new Error(`Streamed export does not support format: ${format}`);
     }
     const layerId = dataset.workspaceLayerId || dataset.id;
-    const total = getLayerFeatureCount(dataset) || 0;
+    const allowlist = await resolveWorkspaceExportAllowlist(dataset);
+    const total = allowlist ? allowlist.size : (getLayerFeatureCount(dataset) || 0);
     const selectedNames = _selectedNameSet(dataset);
     const fileBase = options.filename || dataset.name || 'export';
     const ext = format === 'csv' ? '.csv' : '.geojson';
     const staging = await createExportStagingSession(`${fileBase}${ext}`);
 
     try {
+        let written = 0;
         if (format === 'geojson') {
-            await _writeGeoJSON(staging, layerId, dataset, options, selectedNames, total, task);
+            written = await _writeGeoJSON(staging, layerId, dataset, options, selectedNames, total, task, allowlist);
         } else {
-            await _writeCSV(staging, layerId, options, selectedNames, total, task);
+            written = await _writeCSV(staging, layerId, options, selectedNames, total, task, allowlist);
         }
         const { blob } = await staging.finalize();
         const mimeType = format === 'csv' ? 'text/csv' : 'application/geo+json';
-        return { blob, mimeType, featureCount: total, staged: staging.supported };
+        return { blob, mimeType, featureCount: written, staged: staging.supported };
     } catch (err) {
         await staging.abort().catch(() => {});
         throw err;
     }
 }
 
-async function _writeGeoJSON(staging, layerId, dataset, options, selectedNames, total, task) {
+async function _writeGeoJSON(staging, layerId, dataset, options, selectedNames, total, task, allowlist = null) {
     const layerStyle = options.style || null;
     const pretty = !options.minify;
     await staging.appendText(pretty
@@ -191,10 +221,12 @@ async function _writeGeoJSON(staging, layerId, dataset, options, selectedNames, 
     let first = true;
     while (true) {
         const batch = await iterateWorkspaceFeatures(layerId, offset, STREAM_EXPORT_BATCH_SIZE, {
-            includeCold: true
+            includeCold: true,
+            stampIndex: !!allowlist
         });
         if (!batch.length) break;
         for (const feature of batch) {
+            if (!_keepExportFeature(feature, allowlist)) continue;
             const out = _mapGeoJSONFeature(feature, layerStyle, selectedNames);
             const json = JSON.stringify(out);
             if (pretty) {
@@ -214,9 +246,10 @@ async function _writeGeoJSON(staging, layerId, dataset, options, selectedNames, 
 
     await staging.appendText(pretty ? '\n  ]\n}\n' : ']}');
     task?.updateProgress(90, 'Done');
+    return written;
 }
 
-async function _writeCSV(staging, layerId, options, selectedNames, total, task) {
+async function _writeCSV(staging, layerId, options, selectedNames, total, task, allowlist = null) {
     const papa = await loadPapaParse().catch(() => null);
     let headers = null;
     let offset = 0;
@@ -224,11 +257,12 @@ async function _writeCSV(staging, layerId, options, selectedNames, total, task) 
 
     while (true) {
         const batch = await iterateWorkspaceFeatures(layerId, offset, STREAM_EXPORT_BATCH_SIZE, {
-            includeCold: true
+            includeCold: true,
+            stampIndex: !!allowlist
         });
         if (!batch.length) break;
 
-        const rows = batch.map((f) => {
+        const rows = batch.filter((f) => _keepExportFeature(f, allowlist)).map((f) => {
             const row = _cleanExportProperties(f.properties, {
                 keepLgid: true,
                 selectedNames
@@ -242,6 +276,12 @@ async function _writeCSV(staging, layerId, options, selectedNames, total, task) 
             }
             return row;
         });
+
+        if (!rows.length) {
+            offset += batch.length;
+            if (batch.length < STREAM_EXPORT_BATCH_SIZE) break;
+            continue;
+        }
 
         if (!headers) {
             const keySet = new Set();
@@ -287,6 +327,7 @@ async function _writeCSV(staging, layerId, options, selectedNames, total, task) 
         await staging.appendText('');
     }
     task?.updateProgress(90, 'Done');
+    return written;
 }
 
 export default {

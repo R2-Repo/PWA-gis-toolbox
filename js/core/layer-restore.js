@@ -63,6 +63,9 @@ export async function buildDatasetFromSavedLayer(saved, payload = {}) {
             scaleRangeEnabled: saved.scaleRangeEnabled,
             minScale: saved.minScale,
             maxScale: saved.maxScale,
+            ...(saved.workspaceAttributeFilter?.rules?.length
+                ? { workspaceAttributeFilter: saved.workspaceAttributeFilter }
+                : {}),
             ...(saved.locked ? { locked: true } : {}),
             ...(saved.groupId ? { groupId: saved.groupId } : {})
         };
@@ -194,6 +197,9 @@ export function buildDatasetFromWorkspaceRef(saved, newLayerId = saved.id) {
         scaleRangeEnabled: saved.scaleRangeEnabled,
         minScale: saved.minScale,
         maxScale: saved.maxScale,
+        ...(saved.workspaceAttributeFilter?.rules?.length
+            ? { workspaceAttributeFilter: saved.workspaceAttributeFilter }
+            : {}),
         ...(saved.locked ? { locked: true } : {}),
         ...(saved.groupId ? { groupId: saved.groupId } : {})
     };

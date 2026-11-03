@@ -6,7 +6,6 @@ import logger from '../core/logger.js';
 import bus from '../core/event-bus.js';
 import { getActiveLayer, setActiveLayer, isLayerLocked, getMapLayerOrderIds, getLayers } from '../core/state.js';
 import {
-    flattenFeatureGeometryCollections,
     getLayerFeatureCount,
     isWorkspaceLayer,
     isServiceLayer,
@@ -22,7 +21,9 @@ import {
 } from '../widgets/georeference-raster/georef-layer.js';
 import { MAP_CHUNK_BATCH_SIZE, RENDER_LIMITS } from './render-limits.js';
 import { buildViewportGeoJSON } from '../workspace/viewport-loader.js';
-import { getWorkspaceFeatureAttributes, getWorkspaceLayerBounds, getWorkspaceFeaturesByIndices } from '../workspace/workspace-store.js';
+import { getWorkspaceFeatureAttributes, getWorkspaceLayerBounds, getWorkspaceFeaturesByIndices, scanWorkspaceFilterIndices } from '../workspace/workspace-store.js';
+import { lookupRenderedFeature } from '../workspace/feature-identity.js';
+import { tagFeaturesForMap as _tagFeaturesForMap, tagFeatureBatch } from './feature-tag.js';
 import {
     mapEntryNeedsStoreSelection,
     queryWorkspaceIndicesInBbox,
@@ -91,36 +92,6 @@ function prepareSnapshotMapFeatures(dataset, taggedFeatures, fiberKey, map) {
 }
 
 const POINT_CLUSTER_THRESHOLD = 10000;
-
-function _tagFeaturesForMap(dataset) {
-    const skipFlatten = dataset._geometryExploded === true;
-    const taggedFeatures = [];
-
-    for (let origIndex = 0; origIndex < dataset.geojson.features.length; origIndex++) {
-        const f = dataset.geojson.features[origIndex];
-        if (!f.geometry) continue;
-
-        if (skipFlatten) {
-            if (!f.properties) f.properties = {};
-            else if (!Object.prototype.hasOwnProperty.call(f.properties, '_featureIndex')) {
-                f.properties = { ...f.properties };
-            }
-            f.properties._featureIndex = origIndex;
-            f.properties._datasetId = dataset.id;
-            taggedFeatures.push(f);
-            continue;
-        }
-
-        const parts = flattenFeatureGeometryCollections(f);
-        for (const part of parts) {
-            taggedFeatures.push({
-                ...part,
-                properties: { ...(part.properties || {}), _featureIndex: origIndex, _datasetId: dataset.id }
-            });
-        }
-    }
-    return taggedFeatures;
-}
 import {
     bboxDiagonalMeetsMinDragPx,
     featureIntersectsGeographicBbox,
@@ -1675,6 +1646,7 @@ class MapManager {
             this.removeLayer(dataset.id);
             this._workspaceDatasets = this._workspaceDatasets || new Map();
             this._workspaceDatasets.set(dataset.id, dataset);
+            await this._hydrateWorkspaceFilterIndices(dataset);
 
             const defaultColor = LAYER_COLORS[colorIndex % LAYER_COLORS.length];
             const stored = this._layerStyles.get(dataset.id);
@@ -1696,7 +1668,9 @@ class MapManager {
             const south = bounds.getSouth();
             const east = bounds.getEast();
             const north = bounds.getNorth();
-            const viewportFc = await buildViewportGeoJSON(wsId, [west, south, east, north]);
+            const viewportFc = await buildViewportGeoJSON(wsId, [west, south, east, north], {
+                indexAllowlist: this._workspaceIndexAllowlist(dataset)
+            });
             dataset.geojson = viewportFc;
             dataset._viewportTruncated = !!viewportFc.truncated;
 
@@ -1763,6 +1737,10 @@ class MapManager {
             } catch { /* ignore */ }
 
             const wsId = dataset.workspaceLayerId || dataset.id;
+            const filterIndices = Array.isArray(dataset._workspaceFilterIndices)
+                ? dataset._workspaceFilterIndices
+                : null;
+            tiles.setWorkspaceTileIndexFilter(wsId, filterIndices);
             tiles.invalidateGisTiles(wsId);
             const layerBounds = await getWorkspaceLayerBounds(wsId);
 
@@ -1940,6 +1918,75 @@ class MapManager {
         await Promise.all(ids.map((id) => this.refreshWorkspaceLayerViewport(id)));
     }
 
+    _workspaceIndexAllowlist(dataset) {
+        if (!Array.isArray(dataset?._workspaceFilterIndices)) return null;
+        return new Set(dataset._workspaceFilterIndices);
+    }
+
+    /**
+     * Recompute matching storage indices from a persisted filter definition
+     * (session reload). Rendering never assigns these indices.
+     */
+    async _hydrateWorkspaceFilterIndices(dataset) {
+        const def = dataset?.workspaceAttributeFilter;
+        if (!def?.rules?.length) return;
+        if (Array.isArray(dataset._workspaceFilterIndices)) return;
+        const { matchIndices } = await scanWorkspaceFilterIndices(
+            dataset.workspaceLayerId || dataset.id,
+            { rules: def.rules, logic: def.logic || 'AND' },
+            { includeCold: true }
+        );
+        dataset._workspaceFilterIndices = matchIndices;
+        dataset._activeFilter = { rules: def.rules, logic: def.logic || 'AND' };
+    }
+
+    /**
+     * Apply or clear a workspace attribute filter on the map.
+     * Viewport packets and vector tiles both honor the stored index set.
+     * @param {object} dataset
+     */
+    async syncWorkspaceAttributeFilter(dataset) {
+        if (!dataset || !isWorkspaceLayer(dataset)) return;
+        const stored = this._workspaceDatasets?.get(dataset.id);
+        const target = stored || dataset;
+        if (stored && stored !== dataset) {
+            if (dataset.workspaceAttributeFilter) {
+                stored.workspaceAttributeFilter = dataset.workspaceAttributeFilter;
+                stored._activeFilter = dataset._activeFilter;
+                stored._workspaceFilterIndices = dataset._workspaceFilterIndices;
+            } else {
+                delete stored.workspaceAttributeFilter;
+                delete stored._activeFilter;
+                delete stored._workspaceFilterIndices;
+            }
+        }
+
+        const entry = this.dataLayers.get(dataset.id);
+        if (!entry || !this.map) return;
+        const wsId = target.workspaceLayerId || dataset.id;
+        const indices = Array.isArray(target._workspaceFilterIndices)
+            ? target._workspaceFilterIndices
+            : null;
+
+        if (entry.tiled) {
+            const tiles = this._gisTilesMod || await import('./tiles/tile-protocol.js');
+            this._gisTilesMod = tiles;
+            tiles.setWorkspaceTileIndexFilter(wsId, indices);
+            if (!this._workspaceFilterGen) this._workspaceFilterGen = new Map();
+            const gen = (this._workspaceFilterGen.get(dataset.id) || 0) + 1;
+            this._workspaceFilterGen.set(dataset.id, gen);
+            tiles.invalidateGisTiles(wsId);
+            const source = this.map.getSource(entry.sourceId);
+            if (source && typeof source.setTiles === 'function') {
+                const base = tiles.gisTileUrlTemplate(wsId);
+                source.setTiles([`${base}?vf=${gen}`]);
+            }
+            return;
+        }
+
+        await this.refreshWorkspaceLayerViewport(dataset.id);
+    }
+
     async refreshWorkspaceLayerViewport(layerId) {
         const dataset = this._workspaceDatasets?.get(layerId);
         const entry = this.dataLayers.get(layerId);
@@ -1953,7 +2000,8 @@ class MapManager {
         const bounds = this.map.getBounds();
         const viewportFc = await buildViewportGeoJSON(
             dataset.workspaceLayerId || layerId,
-            [bounds.getWest(), bounds.getSouth(), bounds.getEast(), bounds.getNorth()]
+            [bounds.getWest(), bounds.getSouth(), bounds.getEast(), bounds.getNorth()],
+            { indexAllowlist: this._workspaceIndexAllowlist(dataset) }
         );
         // A newer pan/zoom refresh started — drop this stale packet.
         if (this._viewportRefreshGen.get(layerId) !== token) return;
@@ -1977,32 +2025,7 @@ class MapManager {
         const entry = this.dataLayers.get(layerId);
         if (!entry || !this.map || !rawFeatures?.length) return;
 
-        const skipFlatten = dataset._geometryExploded === true;
-        const tagged = [];
-        for (let i = 0; i < rawFeatures.length; i++) {
-            const origIndex = startIndex + i;
-            const f = rawFeatures[i];
-            if (!f?.geometry) continue;
-
-            if (skipFlatten) {
-                if (!f.properties) f.properties = {};
-                else if (!Object.prototype.hasOwnProperty.call(f.properties, '_featureIndex')) {
-                    f.properties = { ...f.properties };
-                }
-                f.properties._featureIndex = origIndex;
-                f.properties._datasetId = dataset.id;
-                tagged.push(f);
-                continue;
-            }
-
-            const parts = flattenFeatureGeometryCollections(f);
-            for (const part of parts) {
-                tagged.push({
-                    ...part,
-                    properties: { ...(part.properties || {}), _featureIndex: origIndex, _datasetId: dataset.id }
-                });
-            }
-        }
+        const tagged = tagFeatureBatch(dataset, rawFeatures, startIndex);
         if (tagged.length === 0) return;
 
         if (!entry.chunkSources) {
@@ -2275,9 +2298,9 @@ class MapManager {
                 const clickedGeometry = e.features?.[0]?.geometry ?? null;
                 const resolveFeature = async () => {
                     const features = dataset.geojson?.features || [];
-                    let feature = features.find(
-                        (f) => Number(f.properties?._featureIndex) === featureIndex
-                    ) || (Number.isInteger(featureIndex) ? features[featureIndex] : null);
+                    let feature = lookupRenderedFeature(features, featureIndex, {
+                        allowPositionalFallback: !isWorkspaceLayer(dataset)
+                    });
                     if (isWorkspaceLayer(dataset)) {
                         const wsId = dataset.workspaceLayerId || dataset.id;
                         const attrs = await getWorkspaceFeatureAttributes(wsId, featureIndex);
@@ -2426,9 +2449,10 @@ class MapManager {
 
         const idx = Number(featureIndex);
         const wsDataset = this._workspaceDatasets?.get(layerId);
-        let feature = info.geojson?.features?.find(
-            (f) => Number(f.properties?._featureIndex) === idx
-        ) || (Number.isInteger(idx) ? info.geojson?.features?.[idx] : null);
+        const workspaceHit = !!(wsDataset || info.workspace);
+        let feature = lookupRenderedFeature(info.geojson?.features, idx, {
+            allowPositionalFallback: !workspaceHit
+        });
 
         if (wsDataset || info.workspace) {
             const wsId = wsDataset?.workspaceLayerId || layerId;
@@ -2535,6 +2559,7 @@ class MapManager {
             }
             if (info.tiled) {
                 const wsId = this._workspaceDatasets?.get(id)?.workspaceLayerId || id;
+                this._gisTilesMod?.setWorkspaceTileIndexFilter?.(wsId, null);
                 void import('./tiles/tile-protocol.js')
                     .then((tiles) => tiles.invalidateGisTiles(wsId))
                     .catch(() => { /* worker not started */ });

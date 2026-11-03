@@ -24,6 +24,13 @@ import {
     MAX_TILE_FEATURES
 } from '../map/tiles/tile-constants.js';
 
+/** layerId → Set of storage indices. Missing key = draw every feature. */
+const indexFilters = new Map();
+
+function indexAllowlistFor(layerId) {
+    return indexFilters.has(layerId) ? indexFilters.get(layerId) : null;
+}
+
 const DB_NAME = 'gis-toolbox-workspace';
 /** Keep in sync with js/workspace/workspace-store.js (worker never upgrades). */
 const DB_VERSION = 3;
@@ -137,7 +144,8 @@ async function buildTile(layerId, z, x, y) {
         const features = selectTileFeatures(loaded, tileBbox, z, {
             maxFeatures: MAX_TILE_FEATURES,
             preferCrossing: false,
-            preferLocal: false
+            preferLocal: false,
+            indexAllowlist: indexAllowlistFor(layerId)
         }).features;
         return buildTileFromFeatures(features, z, x, y, {
             tolerance: simplifyToleranceForZoom(z)
@@ -188,7 +196,8 @@ async function buildTile(layerId, z, x, y) {
     const features = selectTileFeatures(loaded, tileBbox, z, {
         maxFeatures: MAX_TILE_FEATURES,
         preferCrossing: true,
-        preferLocal: false
+        preferLocal: false,
+        indexAllowlist: indexAllowlistFor(layerId)
     }).features;
 
     return buildTileFromFeatures(features, z, x, y, {
@@ -201,6 +210,13 @@ self.onmessage = (event) => {
 
     if (msg.type === 'invalidate') {
         invalidate(msg.layerId || null);
+        return;
+    }
+
+    if (msg.type === 'set-index-filter') {
+        if (!msg.layerId) return;
+        if (!Array.isArray(msg.indices)) indexFilters.delete(msg.layerId);
+        else indexFilters.set(msg.layerId, new Set(msg.indices));
         return;
     }
 

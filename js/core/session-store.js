@@ -132,6 +132,12 @@ function _serializeLayer(layer) {
         out.workspaceLayerId = layer.workspaceLayerId || layer.id;
         out.schema = layer.schema;
         if (layer.datasetProfile) out.datasetProfile = layer.datasetProfile;
+        if (layer.workspaceAttributeFilter?.rules?.length) {
+            out.workspaceAttributeFilter = {
+                rules: layer.workspaceAttributeFilter.rules,
+                logic: layer.workspaceAttributeFilter.logic === 'OR' ? 'OR' : 'AND'
+            };
+        }
     } else if (layer.type === 'spatial' && layer.geojson) {
         out.geojson = layer.geojson;
     }

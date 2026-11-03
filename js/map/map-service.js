@@ -55,6 +55,9 @@ export function createMapService({ mapAdapter = mapManager } = {}) {
         refreshWorkspaceLayerViewport(layerId) {
             return mapAdapter.refreshWorkspaceLayerViewport(layerId);
         },
+        syncWorkspaceAttributeFilter(dataset) {
+            return mapAdapter.syncWorkspaceAttributeFilter(dataset);
+        },
         appendFeaturesToLayer(layerId, dataset, rawFeatures, startIndex) {
             return mapAdapter.appendFeaturesToLayer(layerId, dataset, rawFeatures, startIndex);
         },

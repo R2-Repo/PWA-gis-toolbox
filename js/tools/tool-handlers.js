@@ -2506,7 +2506,17 @@ export async function openFilterBuilder(targetLayerId) {
                 operators: transforms.FILTER_OPERATORS,
                 existing,
                 onCancel: () => close(),
-                onRemoveFilter: () => {
+                onRemoveFilter: async () => {
+                    if (isWorkspaceLayer(layer)) {
+                        const { clearWorkspaceAttributeFilter } = await import('../workspace/workspace-attribute-filter.js');
+                        clearWorkspaceAttributeFilter(layer);
+                        bus.emit('layer:updated', layer);
+                        bus.emit('layers:changed', getLayers());
+                        await mapService.syncWorkspaceAttributeFilter(layer);
+                        refreshUI();
+                        close();
+                        return;
+                    }
                     if (layer._preFilterSnapshot) {
                         saveSnapshot(layer.id, 'Remove Filter', layer.geojson);
                         layer.geojson = JSON.parse(JSON.stringify(layer._preFilterSnapshot));
@@ -2523,6 +2533,21 @@ export async function openFilterBuilder(targetLayerId) {
                     close();
                 },
                 onApply: async ({ rules, logic }) => {
+                    if (isWorkspaceLayer(layer)) {
+                        close();
+                        try {
+                            const { commitWorkspaceAttributeFilter } = await import('../workspace/workspace-attribute-filter.js');
+                            const { matchIndices } = await commitWorkspaceAttributeFilter(layer, { rules, logic });
+                            bus.emit('layer:updated', layer);
+                            bus.emit('layers:changed', getLayers());
+                            await mapService.syncWorkspaceAttributeFilter(layer);
+                            refreshUI();
+                            showToast(`Filter (${matchIndices.length} results)`, 'success');
+                        } catch (err) {
+                            showToast(err?.message || 'Filter failed', 'error');
+                        }
+                        return;
+                    }
                     const sourceFeatures = layer._preFilterSnapshot
                         ? JSON.parse(JSON.stringify(layer._preFilterSnapshot)).features
                         : getFeatures();

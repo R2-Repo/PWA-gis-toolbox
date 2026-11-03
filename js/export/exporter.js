@@ -293,6 +293,9 @@ export async function exportMultiLayerKMLFile(layers, options = {}) {
     });
 }
 
+/** Object URL must stay alive until the browser has started reading the blob. */
+export const DOWNLOAD_BLOB_REVOKE_MS = 60_000;
+
 export function downloadBlob(blob, filename) {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -301,9 +304,9 @@ export function downloadBlob(blob, filename) {
     document.body.appendChild(a);
     a.click();
     setTimeout(() => {
-        document.body.removeChild(a);
+        try { document.body.removeChild(a); } catch { /* already gone */ }
         URL.revokeObjectURL(url);
-    }, 100);
+    }, DOWNLOAD_BLOB_REVOKE_MS);
 }
 
 export default { getAvailableFormats, exportDataset, exportMultiLayerKMZFile, exportMultiLayerKMLFile, downloadBlob };
