@@ -5149,7 +5149,7 @@ export async function doExport(format) {
     try {
         const layerStyle = mapService.getLayerStyle(layer.id);
         if (layerStyle && isSmartStyleActive(layerStyle) && ['shapefile', 'csv', 'xlsx', 'gpx'].includes(format)) {
-            showToast('Smart styling is not included in this format. Use KML, KMZ, or GeoJSON for styled output.', 'info');
+            showToast('Feature colors are not included in this format. Use KML, KMZ, or GeoJSON for styled output.', 'info');
         }
 
         let exportOptions = {};

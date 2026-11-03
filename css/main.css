@@ -3919,6 +3919,35 @@ textarea { resize: vertical; min-height: 60px; }
     white-space: nowrap;
     flex: 1;
 }
+.smart-style-legend-label-input {
+    flex: 1;
+    min-width: 0;
+    font-size: 12px;
+    padding: 2px 6px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: var(--bg-surface);
+    color: var(--text);
+}
+.symbology-swatch {
+    width: 14px;
+    height: 14px;
+    border-radius: 2px;
+    border: 1px solid var(--border);
+    flex-shrink: 0;
+}
+.symbology-preview {
+    border: 1px dashed var(--border);
+    border-radius: 8px;
+    padding: 8px;
+    margin-bottom: 8px;
+}
+.symbology-symbol {
+    margin-top: 12px;
+}
+.symbology-highlight {
+    margin-top: 12px;
+}
 .smart-style-smart-tab .style-row select {
     flex: 1;
 }

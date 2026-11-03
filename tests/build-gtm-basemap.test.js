@@ -1,11 +1,29 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { execSync } from 'node:child_process';
+import { exec } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { shouldInjectGtmHtml, GTM_HTML_SNIPPET } from '../scripts/gtm-html-snippet.js';
 
 const ROOT = join(fileURLToPath(new URL('.', import.meta.url)), '..');
+
+/** Async so the Vitest worker can answer RPC during the build (execSync blocks past the 60s RPC timeout). */
+function runBuild(command) {
+    return new Promise((resolve, reject) => {
+        exec(command, {
+            cwd: ROOT,
+            env: { ...process.env, CI: '1' },
+            maxBuffer: 20 * 1024 * 1024
+        }, (error, stdout, stderr) => {
+            if (error) {
+                error.message = `${error.message}\n${stdout || ''}\n${stderr || ''}`;
+                reject(error);
+                return;
+            }
+            resolve();
+        });
+    });
+}
 
 function readDistJsBundle(outDir) {
     const assets = join(ROOT, outDir, 'assets');
@@ -31,8 +49,8 @@ describe('gtm build policy', () => {
 });
 
 describe('release vs e2e HTML bundles', () => {
-    it('production dist includes GTM and CARTO default basemap URL', () => {
-        execSync('npx vite build', { cwd: ROOT, stdio: 'pipe', env: { ...process.env, CI: '1' } });
+    it('production dist includes GTM and CARTO default basemap URL', async () => {
+        await runBuild('npx vite build');
         const html = readFileSync(join(ROOT, 'dist/index.html'), 'utf8');
         expect(html).toMatch(/googletagmanager\.com\/gtag\/js/);
         expect(html).toContain('G-ZTHRF9QMPV');
@@ -40,8 +58,8 @@ describe('release vs e2e HTML bundles', () => {
         expect(js).toContain('basemaps.cartocdn.com/gl/voyager-gl-style/style.json');
     }, 240_000);
 
-    it('web/e2e dist-web excludes GTM', () => {
-        execSync('npx vite build --mode web', { cwd: ROOT, stdio: 'pipe', env: { ...process.env, CI: '1' } });
+    it('web/e2e dist-web excludes GTM', async () => {
+        await runBuild('npx vite build --mode web');
         const html = readFileSync(join(ROOT, 'dist-web/index.html'), 'utf8');
         expect(html).not.toMatch(/googletagmanager\.com/);
         expect(html).not.toContain('G-ZTHRF9QMPV');

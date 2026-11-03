@@ -1,11 +1,10 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
     DEFAULT_FLAT_STYLE,
-    autoClassifyUnique,
     autoClassifyRange,
     normalizeStyle,
     createVisualVariable,
-    VISUAL_VARIABLE_TYPES
+    SYMBOLOGY_TYPES
 } from '../../js/map/style-engine.js';
 import { RAMP_OPTIONS } from '../../js/map/color-ramps.js';
 import { FILTER_OPERATORS } from '../../js/dataprep/transforms.js';
@@ -13,16 +12,33 @@ import { loadPaletteFavorites, addPaletteFavorite, removePaletteFavorite } from 
 import { detectEmbeddedSimpleStyle } from '../../js/map/style-import.js';
 import {
     pickSmartField,
-    suggestVariableType,
     suggestStyleChannel,
-    extractDefaultStyle,
     mergeDefaultStyleForDisplay,
-    applyPaletteToVariables
+    applyPaletteToVariables,
+    symbologyTypeFromStyle,
+    primaryVariable,
+    extraVariables,
+    variableTypeForSymbology,
+    styleForSymbologyType,
+    styleForSymbologyField,
+    mapPrimaryVariable,
+    reclassifyVariable,
+    styleForHighlightRules,
+    styleForBaseSymbol
 } from '../../js/map/style-panel-helpers.js';
 import { CollapsibleSection } from '../ui/CollapsibleSection.jsx';
 
 const SYMBOL_OPTIONS = ['circle', 'square', 'triangle', 'diamond', 'star', 'pin'];
 const SYMBOL_LABELS = { circle: '●', square: '■', triangle: '▲', diamond: '◆', star: '★', pin: '📍' };
+
+const EXTRA_LABELS = {
+    unique: 'Categories',
+    range: 'Color classes',
+    ramp: 'Colors',
+    size: 'Size',
+    width: 'Width',
+    opacity: 'Opacity'
+};
 
 function detectGeomTypes(layer) {
     const types = new Set();
@@ -141,182 +157,67 @@ function SimpleStyleSection({ style, geomTypes, onChange }) {
     });
 }
 
-function VisualVariableEditor({ vv, index, fields, features, onChange, onRemove }) {
-    const fieldDef = fields.find((f) => f.name === vv.field);
-    const isColorType = vv.type === 'unique' || vv.type === 'range' || vv.type === 'ramp';
-    const hasClassLegend = vv.type === 'unique' || vv.type === 'range';
-    const cardTitle = vv.field
-        ? `Color by: ${vv.field}`
-        : `Styling rule ${index + 1}`;
-
-    const update = (patch) => onChange({ ...vv, ...patch });
-
-    const refreshClasses = () => {
-        if (vv.type === 'unique') {
-            update({ classes: autoClassifyUnique(vv.field, features) });
-        } else if (vv.type === 'range') {
-            const result = autoClassifyRange(vv.field, features, vv.classCount || 5, vv.ramp || 'ylOrRd', fieldDef, vv.method || 'equal');
-            update(result);
-        }
-    };
-
-    const updateClass = (i, patch) => {
-        const classes = (vv.classes || []).map((c, idx) => (idx === i ? { ...c, ...patch } : c));
-        update({ classes });
-    };
-
-    const handleFieldChange = (fieldName) => {
-        const fd = fields.find((f) => f.name === fieldName);
-        onChange(createVisualVariable(vv.type, fieldName, features, fd, { channel: vv.channel }));
-    };
-
+function ClassList({ classes, onLabel, onColor, onStylePatch }) {
     return (
-        <div className="smart-style-vv-card">
-            <div className="smart-style-vv-header">
-                <span className="smart-style-vv-title">{cardTitle}</span>
-                <button type="button" className="btn-icon" title="Remove" onClick={onRemove}>✕</button>
-            </div>
-
-            <div className="style-row">
-                <label>Field</label>
-                <select value={vv.field || ''} onChange={(e) => handleFieldChange(e.target.value)}>
-                    <option value="">Select…</option>
-                    {fields.filter((f) => f.selected !== false).map((f) => (
-                        <option key={f.name} value={f.name}>{f.name} ({f.type})</option>
-                    ))}
-                </select>
-            </div>
-
-            {hasClassLegend ? (
-                <>
-                    <button type="button" className="btn btn-sm btn-secondary w-full mb-8" onClick={refreshClasses}>
-                        Update from data
-                    </button>
-                    <div className="smart-style-legend">
-                        {(vv.classes || []).map((cls, i) => (
-                            <div className="smart-style-legend-row" key={`${cls.value}-${i}`}>
-                                <input type="color" className="style-color-input" value={cls.color || '#2563eb'}
-                                    onChange={(e) => updateClass(i, { color: e.target.value })} />
-                                <span className="smart-style-legend-label">{cls.label || cls.value}</span>
-                                <details className="smart-style-class-details">
-                                    <summary>Style overrides</summary>
-                                    <div className="style-row">
-                                        <label>Width</label>
-                                        <input type="number" className="smart-style-num-input" step="0.5" min="0.5" max="12"
-                                            value={cls.style?.strokeWidth ?? ''} placeholder="inherit"
-                                            onChange={(e) => updateClass(i, { style: { ...(cls.style || {}), strokeWidth: e.target.value ? parseFloat(e.target.value) : undefined } })} />
-                                    </div>
-                                    <div className="style-row">
-                                        <label>Size</label>
-                                        <input type="number" className="smart-style-num-input" min="2" max="30"
-                                            value={cls.style?.pointSize ?? ''} placeholder="inherit"
-                                            onChange={(e) => updateClass(i, { style: { ...(cls.style || {}), pointSize: e.target.value ? parseInt(e.target.value, 10) : undefined } })} />
-                                    </div>
-                                </details>
-                            </div>
-                        ))}
-                    </div>
-                    {vv.type === 'unique' ? (
-                        <div className="style-row mt-8">
-                            <label>Other</label>
-                            <input type="color" className="style-color-input" value={vv.defaultColor || '#94a3b8'}
-                                onChange={(e) => update({ defaultColor: e.target.value })} />
+        <div className="smart-style-legend">
+            {(classes || []).map((cls, i) => (
+                <div className="smart-style-legend-row" key={`${cls.value}-${i}`}>
+                    <input type="color" className="style-color-input" value={cls.color || '#2563eb'}
+                        aria-label={`Color for ${cls.value}`}
+                        onChange={(e) => onColor(i, e.target.value)} />
+                    <input
+                        type="text"
+                        className="smart-style-legend-label-input"
+                        aria-label={`Label for ${cls.value}`}
+                        value={cls.label ?? ''}
+                        onChange={(e) => onLabel(i, e.target.value)}
+                    />
+                    <details className="smart-style-class-details">
+                        <summary>More</summary>
+                        <div className="style-row">
+                            <label>Width</label>
+                            <input type="number" className="smart-style-num-input" step="0.5" min="0.5" max="12"
+                                value={cls.style?.strokeWidth ?? ''} placeholder="inherit"
+                                onChange={(e) => onStylePatch(i, { strokeWidth: e.target.value ? parseFloat(e.target.value) : undefined })} />
                         </div>
-                    ) : null}
-                </>
-            ) : null}
-
-            <details className="smart-style-vv-advanced">
-                <summary className="smart-style-vv-advanced-title">More options</summary>
-
-                <div className="style-row">
-                    <label>Type</label>
-                    <select value={vv.type} onChange={(e) => {
-                        const fd = fields.find((f) => f.name === vv.field);
-                        onChange(createVisualVariable(e.target.value, vv.field || fields[0]?.name, features, fd, { channel: vv.channel }));
-                    }}>
-                        {VISUAL_VARIABLE_TYPES.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
-                    </select>
+                        <div className="style-row">
+                            <label>Size</label>
+                            <input type="number" className="smart-style-num-input" min="2" max="30"
+                                value={cls.style?.pointSize ?? ''} placeholder="inherit"
+                                onChange={(e) => onStylePatch(i, { pointSize: e.target.value ? parseInt(e.target.value, 10) : undefined })} />
+                        </div>
+                    </details>
                 </div>
+            ))}
+        </div>
+    );
+}
 
-                {isColorType ? (
-                    <div className="style-row">
-                        <label>Color by</label>
-                        <select value={vv.channel || 'fill'} onChange={(e) => update({ channel: e.target.value })}>
-                            <option value="fill">Fill</option>
-                            <option value="stroke">Stroke</option>
-                            <option value="both">Both</option>
-                        </select>
-                    </div>
-                ) : null}
-
-                {vv.type === 'range' ? (
-                    <div className="style-row">
-                        <label>Method</label>
-                        <select value={vv.method || 'equal'} onChange={(e) => {
-                            const result = autoClassifyRange(vv.field, features, vv.classCount || 5, vv.ramp || 'ylOrRd', fieldDef, e.target.value);
-                            update({ method: e.target.value, ...result });
-                        }}>
-                            <option value="equal">Equal interval</option>
-                            <option value="quantile">Quantile</option>
-                        </select>
-                        <input type="number" className="smart-style-num-input" min="2" max="12" value={vv.classCount || 5}
-                            onChange={(e) => {
-                                const result = autoClassifyRange(vv.field, features, parseInt(e.target.value, 10), vv.ramp || 'ylOrRd', fieldDef, vv.method || 'equal');
-                                update({ classCount: parseInt(e.target.value, 10), ...result });
-                            }} title="Classes" />
-                    </div>
-                ) : null}
-
-                {(vv.type === 'ramp' || vv.type === 'range') ? (
-                    <div className="style-row">
-                        <label>Palette</label>
-                        <select value={vv.ramp || 'ylOrRd'} onChange={(e) => {
-                            if (vv.type === 'range') {
-                                const result = autoClassifyRange(vv.field, features, vv.classCount || 5, e.target.value, fieldDef, vv.method || 'equal');
-                                update({ ramp: e.target.value, ...result });
-                            } else {
-                                update({ ramp: e.target.value });
-                            }
-                        }}>
-                            {RAMP_OPTIONS.map((r) => <option key={r.id} value={r.id}>{r.label}</option>)}
-                        </select>
-                    </div>
-                ) : null}
-
-                {(vv.type === 'ramp' || vv.type === 'size' || vv.type === 'width' || vv.type === 'opacity') ? (
-                    <div className="style-row">
-                        <label>Min</label>
-                        <input type="number" className="smart-style-num-input" value={vv.min ?? 0}
-                            onChange={(e) => update({ min: parseFloat(e.target.value) })} />
-                        <label>Max</label>
-                        <input type="number" className="smart-style-num-input" value={vv.max ?? 100}
-                            onChange={(e) => update({ max: parseFloat(e.target.value) })} />
-                    </div>
-                ) : null}
-
-                {vv.type === 'size' ? (
-                    <div className="style-row">
-                        <label>Size</label>
-                        <input type="number" className="smart-style-num-input" value={vv.sizeMin ?? 4} min="2" max="30"
-                            onChange={(e) => update({ sizeMin: parseFloat(e.target.value) })} />
-                        <span>–</span>
-                        <input type="number" className="smart-style-num-input" value={vv.sizeMax ?? 16} min="2" max="30"
-                            onChange={(e) => update({ sizeMax: parseFloat(e.target.value) })} />
-                    </div>
-                ) : null}
-
-                {vv.type === 'width' ? (
-                    <div className="style-row">
-                        <label>Width</label>
-                        <input type="number" className="smart-style-num-input" value={vv.widthMin ?? 1} min="0.5" max="20" step="0.5"
-                            onChange={(e) => update({ widthMin: parseFloat(e.target.value) })} />
-                        <span>–</span>
-                        <input type="number" className="smart-style-num-input" value={vv.widthMax ?? 6} min="0.5" max="20" step="0.5"
-                            onChange={(e) => update({ widthMax: parseFloat(e.target.value) })} />
-                    </div>
-                ) : null}
-            </details>
+function PreviewSwatches({ variable }) {
+    if (!variable) return null;
+    if (variable.type === 'size' || variable.type === 'width') {
+        const noun = variable.type === 'width' ? 'Width' : 'Size';
+        const from = variable.type === 'width' ? variable.widthMin : variable.sizeMin;
+        const to = variable.type === 'width' ? variable.widthMax : variable.sizeMax;
+        return (
+            <p className="text-muted text-xs">
+                {noun} {from} to {to}, across values {variable.min}–{variable.max}.
+            </p>
+        );
+    }
+    if (variable.type === 'ramp') {
+        return <p className="text-muted text-xs">Colors follow the field from low to high.</p>;
+    }
+    const classes = variable.classes || [];
+    if (!classes.length) return <p className="text-muted text-xs">No values in this field yet.</p>;
+    return (
+        <div className="smart-style-legend">
+            {classes.map((cls, i) => (
+                <div className="smart-style-legend-row" key={`${cls.value}-${i}`}>
+                    <span className="symbology-swatch" style={{ background: cls.color || '#2563eb' }} />
+                    <span className="smart-style-legend-label">{cls.label || cls.value}</span>
+                </div>
+            ))}
         </div>
     );
 }
@@ -336,26 +237,27 @@ function FilterRulesEditor({ rules, fields, onChange }) {
     };
 
     return (
-        <div className="smart-style-filter-section">
-            <h4 className="style-type-header">Highlight matching features</h4>
-            <p className="text-muted text-xs mb-8">Style matching features without hiding them.</p>
+        <div className="smart-style-filter-section symbology-highlight">
+            <h4 className="style-type-header">Highlight</h4>
+            <p className="text-muted text-xs mb-8">Changes how matching features look. This does not hide features.</p>
             {rules.map((rule, ri) => (
                 <div className="smart-style-vv-card" key={rule.id || ri}>
                     {(rule.filter?.rules || []).map((r, ridx) => (
                         <div className="style-row" key={ridx}>
-                            <select value={r.field} onChange={(e) => {
+                            <select aria-label="Highlight field" value={r.field} onChange={(e) => {
                                 const fr = { ...rule.filter, rules: rule.filter.rules.map((x, j) => j === ridx ? { ...x, field: e.target.value } : x) };
                                 updateRule(ri, { filter: fr });
                             }}>
                                 {fields.map((f) => <option key={f.name} value={f.name}>{f.name}</option>)}
                             </select>
-                            <select value={r.operator} onChange={(e) => {
+                            <select aria-label="Highlight comparison" value={r.operator} onChange={(e) => {
                                 const fr = { ...rule.filter, rules: rule.filter.rules.map((x, j) => j === ridx ? { ...x, operator: e.target.value } : x) };
                                 updateRule(ri, { filter: fr });
                             }}>
                                 {FILTER_OPERATORS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                             </select>
                             <input type="text" className="smart-style-num-input" value={r.value ?? ''} placeholder="value"
+                                aria-label="Highlight value"
                                 onChange={(e) => {
                                     const fr = { ...rule.filter, rules: rule.filter.rules.map((x, j) => j === ridx ? { ...x, value: e.target.value } : x) };
                                     updateRule(ri, { filter: fr });
@@ -363,126 +265,18 @@ function FilterRulesEditor({ rules, fields, onChange }) {
                         </div>
                     ))}
                     <div className="style-row">
-                        <label>Override</label>
+                        <label>Color</label>
                         <input type="color" className="style-color-input" value={rule.style?.fillColor || '#fbbf24'}
+                            aria-label="Highlight color"
                             onChange={(e) => updateRule(ri, { style: { ...rule.style, fillColor: e.target.value } })} />
                         <input type="number" className="smart-style-num-input" step="0.5" min="0.5" max="12"
-                            value={rule.style?.strokeWidth ?? 3} title="Stroke width"
+                            value={rule.style?.strokeWidth ?? 3} title="Stroke width" aria-label="Highlight width"
                             onChange={(e) => updateRule(ri, { style: { ...rule.style, strokeWidth: parseFloat(e.target.value) } })} />
-                        <button type="button" className="btn-icon" onClick={() => onChange(rules.filter((_, i) => i !== ri))}>✕</button>
+                        <button type="button" className="btn-icon" aria-label="Remove highlight" onClick={() => onChange(rules.filter((_, i) => i !== ri))}>✕</button>
                     </div>
                 </div>
             ))}
-            <button type="button" className="btn btn-sm btn-secondary w-full" onClick={addRule}>+ Add highlight rule</button>
-        </div>
-    );
-}
-
-function SmartStyleSection({ layer, style, onChange, onConvertEmbedded }) {
-    const fields = layer?.schema?.fields || [];
-    const features = layer?.geojson?.features || [];
-    const geomTypes = detectGeomTypes(layer);
-    const channel = suggestStyleChannel(geomTypes);
-    const smart = style.smart || { defaultStyle: {}, visualVariables: [], filterRules: [] };
-    const embedded = detectEmbeddedSimpleStyle(features);
-    const variables = smart.visualVariables || [];
-    const hasColorVariable = variables.some((v) => v.type === 'unique' || v.type === 'range');
-
-    const setSmart = (patch) => onChange({ ...style, mode: 'smart', smart: { ...smart, ...patch } });
-
-    const setVariables = (visualVariables) => setSmart({ visualVariables });
-
-    const addVariable = () => {
-        const field = pickSmartField(fields);
-        if (!field) return;
-        const type = suggestVariableType(field);
-        setVariables([...variables, createVisualVariable(type, field.name, features, field, { channel })]);
-    };
-
-    const applyPalette = (palette) => {
-        const next = applyPaletteToVariables(variables, palette.colors);
-        if (next) setVariables(next);
-    };
-
-    const [palettes, setPalettes] = useState(() => loadPaletteFavorites());
-
-    return (
-        <div className="smart-style-smart-tab">
-            {embedded?.hasSimpleStyle ? (
-                <div className="warning-box text-xs mb-8">
-                    Layer has per-feature colors ({embedded.distinctCount} values in <code>{embedded.varyingProperty}</code>).
-                    <button type="button" className="btn btn-sm btn-primary mt-8 w-full" onClick={onConvertEmbedded}>
-                        Convert to smart style
-                    </button>
-                </div>
-            ) : null}
-
-            <p className="text-muted text-xs mb-8">Choose a field to color features. Add more rules for size or width if needed.</p>
-
-            {variables.map((vv, i) => (
-                <VisualVariableEditor
-                    key={vv.id || i}
-                    vv={vv}
-                    index={i}
-                    fields={fields}
-                    features={features}
-                    onChange={(next) => setVariables(variables.map((v, j) => (j === i ? next : v)))}
-                    onRemove={() => setVariables(variables.filter((_, j) => j !== i))}
-                />
-            ))}
-
-            <button type="button" className="btn btn-sm btn-secondary w-full mb-8" onClick={addVariable}>+ Add styling rule</button>
-
-            <details className="smart-style-advanced">
-                <summary className="smart-style-advanced-title">Advanced</summary>
-                <div className="smart-style-advanced-body">
-                    <FilterRulesEditor
-                        rules={smart.filterRules || []}
-                        fields={fields}
-                        onChange={(filterRules) => setSmart({ filterRules })}
-                    />
-
-                    <div className="style-type-section mt-8">
-                        <h4 className="style-type-header">Saved palettes</h4>
-                        {palettes.length === 0 ? <div className="text-muted text-xs mb-8">No saved palettes yet.</div> : null}
-                        {palettes.map((p) => (
-                            <div className="smart-style-legend-row" key={p.id}>
-                                <span className="smart-style-legend-label">{p.name}</span>
-                                <div style={{ display: 'flex', gap: 2 }}>
-                                    {p.colors.slice(0, 8).map((c, i) => (
-                                        <span key={i} style={{ width: 14, height: 14, background: c, borderRadius: 2, border: '1px solid var(--border)' }} />
-                                    ))}
-                                </div>
-                                <div className="smart-style-palette-actions">
-                                    <button
-                                        type="button"
-                                        className="btn btn-sm btn-secondary"
-                                        disabled={!hasColorVariable}
-                                        title={hasColorVariable ? 'Apply to color classes' : 'Add a unique or class-break rule first'}
-                                        onClick={() => applyPalette(p)}
-                                    >
-                                        Apply
-                                    </button>
-                                    <button type="button" className="btn-icon" onClick={() => setPalettes(removePaletteFavorite(p.id))}>✕</button>
-                                </div>
-                            </div>
-                        ))}
-                        <button type="button" className="btn btn-sm btn-secondary w-full mt-8" onClick={() => {
-                            const colors = (variables[0]?.classes || []).map((c) => c.color).filter(Boolean);
-                            if (colors.length) setPalettes(addPaletteFavorite(`Palette ${palettes.length + 1}`, colors));
-                        }}>Save current class colors</button>
-                    </div>
-
-                    <div className="style-type-section mt-8">
-                        <h4 className="style-type-header">Default style</h4>
-                        <SimpleStyleSection
-                            style={mergeDefaultStyleForDisplay(style, smart.defaultStyle)}
-                            geomTypes={detectGeomTypes(layer)}
-                            onChange={(next) => setSmart({ defaultStyle: extractDefaultStyle(next) })}
-                        />
-                    </div>
-                </div>
-            </details>
+            <button type="button" className="btn btn-sm btn-secondary w-full" onClick={addRule}>+ Add highlight</button>
         </div>
     );
 }
@@ -493,67 +287,325 @@ export function SmartStylePanel({ layer, style: externalStyle, defaultColor = '#
         () => normalizeStyle(externalStyle, defaultColor),
         [externalStyle, defaultColor]
     );
-    const [tab, setTab] = useState(() => (style?.mode === 'smart' ? 'smart' : 'simple'));
-    const layerIdRef = useRef(layer?.id);
+    const fields = layer?.schema?.fields || [];
+    const features = layer?.geojson?.features || [];
+    const channel = suggestStyleChannel(geomTypes);
+    const derivedType = symbologyTypeFromStyle(style);
+    const [pendingType, setPendingType] = useState(null);
+    const activeType = pendingType || derivedType;
+    const primary = primaryVariable(style);
+    const extras = style.mode === 'smart' ? extraVariables(style) : [];
+    const suggested = useMemo(() => pickSmartField(fields), [fields]);
+    const needsField = activeType !== 'single';
+    const fieldReady = needsField && !!primary?.field;
+    const showPreview = needsField && !primary?.field && !!suggested;
+
+    const ctx = useMemo(() => ({
+        geomTypes, fields, features, channel
+    }), [geomTypes, fields, features, channel]);
 
     useEffect(() => {
-        if (layer?.id !== layerIdRef.current) {
-            layerIdRef.current = layer?.id;
-            setTab(style?.mode === 'smart' ? 'smart' : 'simple');
-        }
-    }, [layer?.id, style?.mode]);
+        setPendingType(null);
+    }, [layer?.id]);
+
+    useEffect(() => {
+        if (pendingType && pendingType === derivedType) setPendingType(null);
+    }, [pendingType, derivedType]);
 
     const pushStyle = useCallback((next) => {
         onStyleChange?.(next);
     }, [onStyleChange]);
 
-    const handleTab = (nextTab) => {
-        setTab(nextTab);
-        if (nextTab === 'simple') {
-            pushStyle({ ...style, mode: 'simple' });
-        } else if (!style.smart?.visualVariables?.length) {
-            const fields = layer?.schema?.fields || [];
-            const field = pickSmartField(fields);
-            const features = layer?.geojson?.features || [];
-            const type = suggestVariableType(field);
-            const channel = suggestStyleChannel(geomTypes);
-            pushStyle({
-                ...style,
-                mode: 'smart',
-                smart: {
-                    defaultStyle: extractDefaultStyle(style),
-                    visualVariables: field ? [createVisualVariable(type, field.name, features, field, { channel })] : [],
-                    filterRules: []
-                }
-            });
-        } else {
-            pushStyle({ ...style, mode: 'smart' });
+    const preview = useMemo(() => {
+        if (!showPreview || !suggested) return null;
+        const engineType = variableTypeForSymbology(activeType, geomTypes, null);
+        if (!engineType) return null;
+        return createVisualVariable(engineType, suggested.name, features, suggested, { channel });
+    }, [showPreview, suggested, activeType, geomTypes, features, channel]);
+
+    const fieldOptions = fields.filter((f) => f.selected !== false || f.name === primary?.field);
+    const fieldDef = fields.find((f) => f.name === primary?.field) || null;
+    const isColorType = primary && (primary.type === 'unique' || primary.type === 'range' || primary.type === 'ramp');
+    const hasClasses = primary && (primary.type === 'unique' || primary.type === 'range');
+    const embedded = activeType === 'single' ? detectEmbeddedSimpleStyle(features) : null;
+    const smart = style.smart || { defaultStyle: {}, visualVariables: [], filterRules: [] };
+    const hasColorVariable = style.mode === 'smart'
+        && (smart.visualVariables || []).some((v) => v.type === 'unique' || v.type === 'range');
+    const [palettes, setPalettes] = useState(() => loadPaletteFavorites());
+
+    const handleType = (nextType) => {
+        const next = styleForSymbologyType(style, nextType, ctx);
+        if (next == null) {
+            setPendingType(nextType);
+            return;
         }
+        setPendingType(null);
+        if (next !== style) pushStyle(next);
+    };
+
+    const applyField = (fieldName) => {
+        if (!fieldName) return;
+        const next = styleForSymbologyField(style, fieldName, activeType, ctx);
+        setPendingType(null);
+        if (next !== style) pushStyle(next);
+    };
+
+    const patchPrimary = (updater) => {
+        pushStyle(mapPrimaryVariable(style, updater));
+    };
+
+    const updateClass = (index, patch) => {
+        patchPrimary((vv) => ({
+            ...vv,
+            classes: (vv.classes || []).map((c, i) => (i === index ? { ...c, ...patch } : c))
+        }));
     };
 
     const handleConvertEmbedded = () => {
         import('../../js/map/style-import.js').then(({ convertLayerSimpleStyleToSmart }) => {
             const converted = convertLayerSimpleStyleToSmart(layer, defaultColor, style);
             if (converted) {
-                setTab('smart');
+                setPendingType(null);
                 pushStyle(converted);
             }
         });
     };
 
+    const symbolStyle = style.mode === 'smart'
+        ? mergeDefaultStyleForDisplay(style, smart.defaultStyle)
+        : style;
+
     return (
         <CollapsibleSection title="Symbology" defaultOpen={true} className="style-panel smart-style-panel">
-            <div className="smart-style-tabs">
-                <button type="button" className={`btn btn-sm ${tab === 'simple' ? 'btn-primary' : 'btn-secondary'}`}
-                    onClick={() => handleTab('simple')}>Simple</button>
-                <button type="button" className={`btn btn-sm ${tab === 'smart' ? 'btn-primary' : 'btn-secondary'}`}
-                    onClick={() => handleTab('smart')}>Smart</button>
+            {embedded?.hasSimpleStyle ? (
+                <div className="warning-box text-xs mb-8">
+                    This layer already has colors on each feature ({embedded.distinctCount} values in {embedded.varyingProperty}).
+                    <button type="button" className="btn btn-sm btn-primary mt-8 w-full" onClick={handleConvertEmbedded}>
+                        Use these colors
+                    </button>
+                </div>
+            ) : null}
+
+            <div className="style-row">
+                <label htmlFor="symbology-type">Symbology</label>
+                <select
+                    id="symbology-type"
+                    aria-label="Symbology"
+                    value={activeType}
+                    onChange={(e) => handleType(e.target.value)}
+                >
+                    {SYMBOLOGY_TYPES.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
+                </select>
             </div>
-            {tab === 'simple' ? (
-                <SimpleStyleSection style={style} geomTypes={geomTypes} onChange={pushStyle} />
-            ) : (
-                <SmartStyleSection layer={layer} style={style} onChange={pushStyle} onConvertEmbedded={handleConvertEmbedded} />
-            )}
+
+            {needsField ? (
+                <div className="style-row">
+                    <label htmlFor="symbology-field">Field</label>
+                    <select
+                        id="symbology-field"
+                        aria-label="Field"
+                        value={primary?.field || ''}
+                        onChange={(e) => applyField(e.target.value)}
+                    >
+                        {!fieldReady ? <option value="">Select a field</option> : null}
+                        {fieldOptions.map((f) => (
+                            <option key={f.name} value={f.name}>{f.name}</option>
+                        ))}
+                    </select>
+                </div>
+            ) : null}
+
+            {showPreview ? (
+                <div className="symbology-preview" data-symbology-preview="true">
+                    <p className="text-xs mb-8">
+                        Preview for {suggested.name}. These colors stay off the map until you choose a field.
+                    </p>
+                    <PreviewSwatches variable={preview} />
+                    <button
+                        type="button"
+                        className="btn btn-sm btn-secondary w-full mt-8"
+                        onClick={() => applyField(suggested.name)}
+                    >
+                        Use {suggested.name}
+                    </button>
+                </div>
+            ) : null}
+
+            {fieldReady && hasClasses ? (
+                <>
+                    {primary.type === 'range' ? (
+                        <div className="style-row">
+                            <label htmlFor="symbology-method">Method</label>
+                            <select id="symbology-method" aria-label="Method" value={primary.method || 'equal'} onChange={(e) => {
+                                const method = e.target.value;
+                                const result = autoClassifyRange(primary.field, features, primary.classCount || 5, primary.ramp || 'ylOrRd', fieldDef, method);
+                                patchPrimary((vv) => ({ ...vv, method, ...result }));
+                            }}>
+                                <option value="equal">Equal interval</option>
+                                <option value="quantile">Quantile</option>
+                            </select>
+                            <input type="number" className="smart-style-num-input" min="2" max="12" aria-label="Classes"
+                                value={primary.classCount || 5}
+                                onChange={(e) => {
+                                    const classCount = parseInt(e.target.value, 10);
+                                    const result = autoClassifyRange(primary.field, features, classCount, primary.ramp || 'ylOrRd', fieldDef, primary.method || 'equal');
+                                    patchPrimary((vv) => ({ ...vv, classCount, ...result }));
+                                }} />
+                        </div>
+                    ) : null}
+                    <button type="button" className="btn btn-sm btn-secondary w-full mb-8" onClick={() => {
+                        patchPrimary((vv) => reclassifyVariable(vv, features, fieldDef));
+                    }}>
+                        Reclassify
+                    </button>
+                    <ClassList
+                        classes={primary.classes}
+                        onColor={(i, color) => updateClass(i, { color })}
+                        onLabel={(i, label) => updateClass(i, { label })}
+                        onStylePatch={(i, stylePatch) => updateClass(i, { style: { ...(primary.classes?.[i]?.style || {}), ...stylePatch } })}
+                    />
+                    {primary.type === 'unique' ? (
+                        <div className="style-row mt-8">
+                            <label htmlFor="symbology-other">Other</label>
+                            <input id="symbology-other" type="color" className="style-color-input" value={primary.defaultColor || '#94a3b8'}
+                                onChange={(e) => patchPrimary((vv) => ({ ...vv, defaultColor: e.target.value }))} />
+                        </div>
+                    ) : null}
+                </>
+            ) : null}
+
+            {fieldReady && primary?.type === 'ramp' ? (
+                <p className="text-muted text-xs mb-8">Colors follow {primary.field} from low to high.</p>
+            ) : null}
+
+            {fieldReady && (primary?.type === 'ramp' || primary?.type === 'range') ? (
+                <div className="style-row">
+                    <label htmlFor="symbology-palette">Palette</label>
+                    <select id="symbology-palette" aria-label="Palette" value={primary.ramp || 'ylOrRd'} onChange={(e) => {
+                        const ramp = e.target.value;
+                        if (primary.type === 'range') {
+                            const result = autoClassifyRange(primary.field, features, primary.classCount || 5, ramp, fieldDef, primary.method || 'equal');
+                            patchPrimary((vv) => ({ ...vv, ramp, ...result }));
+                        } else {
+                            patchPrimary((vv) => ({ ...vv, ramp }));
+                        }
+                    }}>
+                        {RAMP_OPTIONS.map((r) => <option key={r.id} value={r.id}>{r.label}</option>)}
+                    </select>
+                </div>
+            ) : null}
+
+            {fieldReady && (primary?.type === 'ramp' || primary?.type === 'size' || primary?.type === 'width') ? (
+                <div className="style-row">
+                    <label>Min</label>
+                    <input type="number" className="smart-style-num-input" aria-label="Minimum value" value={primary.min ?? 0}
+                        onChange={(e) => patchPrimary((vv) => ({ ...vv, min: parseFloat(e.target.value) }))} />
+                    <label>Max</label>
+                    <input type="number" className="smart-style-num-input" aria-label="Maximum value" value={primary.max ?? 100}
+                        onChange={(e) => patchPrimary((vv) => ({ ...vv, max: parseFloat(e.target.value) }))} />
+                </div>
+            ) : null}
+
+            {fieldReady && primary?.type === 'size' ? (
+                <div className="style-row">
+                    <label>Size</label>
+                    <input type="number" className="smart-style-num-input" aria-label="Smallest size" value={primary.sizeMin ?? 4} min="2" max="30"
+                        onChange={(e) => patchPrimary((vv) => ({ ...vv, sizeMin: parseFloat(e.target.value) }))} />
+                    <span>–</span>
+                    <input type="number" className="smart-style-num-input" aria-label="Largest size" value={primary.sizeMax ?? 16} min="2" max="30"
+                        onChange={(e) => patchPrimary((vv) => ({ ...vv, sizeMax: parseFloat(e.target.value) }))} />
+                </div>
+            ) : null}
+
+            {fieldReady && primary?.type === 'width' ? (
+                <div className="style-row">
+                    <label>Width</label>
+                    <input type="number" className="smart-style-num-input" aria-label="Smallest width" value={primary.widthMin ?? 1} min="0.5" max="20" step="0.5"
+                        onChange={(e) => patchPrimary((vv) => ({ ...vv, widthMin: parseFloat(e.target.value) }))} />
+                    <span>–</span>
+                    <input type="number" className="smart-style-num-input" aria-label="Largest width" value={primary.widthMax ?? 6} min="0.5" max="20" step="0.5"
+                        onChange={(e) => patchPrimary((vv) => ({ ...vv, widthMax: parseFloat(e.target.value) }))} />
+                </div>
+            ) : null}
+
+            {fieldReady && isColorType ? (
+                <div className="style-row">
+                    <label htmlFor="symbology-color">Color</label>
+                    <select id="symbology-color" aria-label="Color" value={primary.channel || 'fill'}
+                        onChange={(e) => patchPrimary((vv) => ({ ...vv, channel: e.target.value }))}>
+                        <option value="fill">Fill</option>
+                        <option value="stroke">Outline</option>
+                        <option value="both">Fill and outline</option>
+                    </select>
+                </div>
+            ) : null}
+
+            {extras.length ? (
+                <div className="text-muted text-xs mb-8">
+                    {extras.map((v) => (
+                        <div key={v.id || `${v.type}-${v.field}`}>
+                            {EXTRA_LABELS[v.type] || 'Another drawing'} also follows {v.field}.
+                        </div>
+                    ))}
+                </div>
+            ) : null}
+
+            <div className="style-type-section symbology-symbol">
+                <h4 className="style-type-header">Symbol</h4>
+                <SimpleStyleSection
+                    style={symbolStyle}
+                    geomTypes={geomTypes}
+                    onChange={(next) => pushStyle(styleForBaseSymbol(style, next))}
+                />
+            </div>
+
+            <FilterRulesEditor
+                rules={smart.filterRules || []}
+                fields={fields}
+                onChange={(filterRules) => {
+                    const next = styleForHighlightRules(style, filterRules);
+                    if (next !== style) pushStyle(next);
+                }}
+            />
+
+            <details className="smart-style-advanced">
+                <summary className="smart-style-advanced-title">More options</summary>
+                <div className="smart-style-advanced-body">
+                    <div className="style-type-section">
+                        <h4 className="style-type-header">Saved palettes</h4>
+                        {palettes.length === 0 ? <div className="text-muted text-xs mb-8">No saved palettes yet.</div> : null}
+                        {palettes.map((p) => (
+                            <div className="smart-style-legend-row" key={p.id}>
+                                <span className="smart-style-legend-label">{p.name}</span>
+                                <div style={{ display: 'flex', gap: 2 }}>
+                                    {p.colors.slice(0, 8).map((c, i) => (
+                                        <span key={i} className="symbology-swatch" style={{ background: c }} />
+                                    ))}
+                                </div>
+                                <div className="smart-style-palette-actions">
+                                    <button
+                                        type="button"
+                                        className="btn btn-sm btn-secondary"
+                                        disabled={!hasColorVariable}
+                                        title={hasColorVariable ? 'Apply to classes' : 'Choose unique values or graduated colors first'}
+                                        onClick={() => {
+                                            const nextVars = applyPaletteToVariables(smart.visualVariables || [], p.colors);
+                                            if (nextVars) pushStyle({ ...style, mode: 'smart', smart: { ...smart, visualVariables: nextVars } });
+                                        }}
+                                    >
+                                        Apply
+                                    </button>
+                                    <button type="button" className="btn-icon" aria-label={`Remove palette ${p.name}`} onClick={() => setPalettes(removePaletteFavorite(p.id))}>✕</button>
+                                </div>
+                            </div>
+                        ))}
+                        <button type="button" className="btn btn-sm btn-secondary w-full mt-8" onClick={() => {
+                            const colors = (primary?.classes || []).map((c) => c.color).filter(Boolean);
+                            if (colors.length) setPalettes(addPaletteFavorite(`Palette ${palettes.length + 1}`, colors));
+                        }}>Save class colors</button>
+                    </div>
+                </div>
+            </details>
         </CollapsibleSection>
     );
 }

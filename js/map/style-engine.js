@@ -1,6 +1,9 @@
 /**
- * Smart styling engine — compile layer style rules to MapLibre expressions
+ * Layer styling engine — compile saved style rules to MapLibre expressions
  * and resolve per-feature styles for export baking.
+ *
+ * Saved ids below stay stable so existing projects and ArcGIS renderers
+ * load the same paint. The panel maps them to a symbology dropdown.
  */
 import { getCategoricalColors, getRampColors, sampleRamp } from './color-ramps.js';
 import { evaluateFilterGroup, applyFilterRuleCases } from './style-filters.js';
@@ -17,13 +20,25 @@ export const DEFAULT_FLAT_STYLE = {
     pointSymbol: 'circle'
 };
 
+/** Saved visual-variable ids. Do not rename ids — projects store them. */
 export const VISUAL_VARIABLE_TYPES = [
     { id: 'unique', label: 'Unique values' },
-    { id: 'range', label: 'Class breaks' },
-    { id: 'ramp', label: 'Color ramp' },
-    { id: 'size', label: 'Size (points)' },
-    { id: 'width', label: 'Width (lines)' },
+    { id: 'range', label: 'Graduated colors' },
+    { id: 'ramp', label: 'Graduated colors' },
+    { id: 'size', label: 'Graduated size' },
+    { id: 'width', label: 'Graduated size' },
     { id: 'opacity', label: 'Opacity' }
+];
+
+/**
+ * Symbology dropdown, in ArcGIS / QGIS order.
+ * Heatmap is omitted: the saved style model has no heatmap renderer.
+ */
+export const SYMBOLOGY_TYPES = [
+    { id: 'single', label: 'Single symbol' },
+    { id: 'unique', label: 'Unique values' },
+    { id: 'graduated-colors', label: 'Graduated colors' },
+    { id: 'graduated-size', label: 'Graduated size' }
 ];
 
 export function createDefaultStyle(defaultColor = DEFAULT_FLAT_STYLE.strokeColor) {
