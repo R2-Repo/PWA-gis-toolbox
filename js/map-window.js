@@ -19,6 +19,7 @@ import {
     applyRemoteSelection
 } from './dual-screen/secondary-client.js';
 import { setupMapPrintMenu } from './map/map-export.js';
+import { applyForwardedMapCall, warnDualScreenDev } from './dual-screen/map-bridge.js';
 import { mountBasemapToggle, syncBasemapToggleActive } from './map/basemap-catalog.js';
 
 const ROLE = 'secondary';
@@ -225,43 +226,11 @@ function onMapReady() {
 }
 
 function applyMapCmd(payload) {
-    const { action, geojson, duration, options, layerId, range, latitude, style, dataset } = payload || {};
-    switch (action) {
-        case 'showTempFeature':
-            mapService.showTempFeature(geojson, duration ?? 10000, options);
-            break;
-        case 'showRouteMilepostPreview':
-            mapService.showRouteMilepostPreview?.(geojson, duration ?? 0);
-            break;
-        case 'showWirelessPlanningPreview':
-            mapService.showWirelessPlanningPreview?.(geojson, duration ?? 0);
-            break;
-        case 'showProjectStationingPreview':
-            mapService.showProjectStationingPreview?.(geojson, duration ?? 0);
-            break;
-        case 'clearTempFeatures':
-            mapService.clearTempFeatures?.();
-            break;
-        case 'cancelInteraction':
-            mapService.cancelInteraction?.();
-            break;
-        case 'setLayerScaleRange': {
-            const map = mapService.getMap();
-            if (!layerId || !range || !map) break;
-            mapService.setLayerScaleRange(
-                layerId,
-                range,
-                latitude ?? map.getCenter().lat
-            );
-            break;
-        }
-        case 'restyleLayer':
-            if (layerId && style) {
-                applyLayerStyle(layerId, dataset, style);
-            }
-            break;
-        default:
-            break;
+    const result = applyForwardedMapCall(mapService, payload);
+    if (result && typeof result.then === 'function') {
+        result.catch((err) => {
+            warnDualScreenDev(`[DualScreen] map call failed: ${err?.message || err}`);
+        });
     }
 }
 
@@ -270,6 +239,7 @@ async function handleMapRpc(payload, postFn) {
     try {
         const fn = mapService[method];
         if (typeof fn !== 'function') {
+            warnDualScreenDev(`[DualScreen] cannot forward map method ${method || '(missing)'}: not on the map`);
             throw new Error(`Unknown map method: ${method}`);
         }
         const result = await fn.apply(mapService, args);

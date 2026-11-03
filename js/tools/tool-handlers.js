@@ -1826,7 +1826,7 @@ function setupDualScreenMode() {
         },
         zoomToLayer: (layerId) => {
             if (dualScreenCoordinator.isActive) {
-                dualScreenCoordinator.broadcastFit('fitLayers', { layerIds: [layerId] });
+                mapService.fitToLayers([layerId]);
                 return;
             }
             const layer = mapService.getLayerRecord(layerId);

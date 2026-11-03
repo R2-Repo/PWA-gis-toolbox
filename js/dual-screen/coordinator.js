@@ -1,7 +1,7 @@
 /**
  * Dual Screen Mode — primary-window lifecycle & sync orchestration
  */
-import { getLayers, getActiveLayer } from '../core/state.js';
+import { getLayers, getActiveLayer, getMapLayerOrderIds } from '../core/state.js';
 import { isSpatialLayer, isWorkspaceLayer } from '../core/data-model.js';
 import mapService from '../map/map-service.js';
 import { DualScreenChannel } from './channel.js';
@@ -33,6 +33,14 @@ import {
 } from './window-open.js';
 import { syncBasemapToggleActive } from '../map/basemap-catalog.js';
 import bus from '../core/event-bus.js';
+import {
+    ADD_LAYER_METHODS,
+    LAYER_STAMP_METHODS,
+    serializeMapCallArgs,
+    stampSpatialLayers,
+    planLayerDelta,
+    warnDualScreenDev
+} from './map-bridge.js';
 
 const POLL_MS = 500;
 
@@ -67,6 +75,11 @@ class DualScreenCoordinator {
         this._rpcSeq = 0;
         /** @type {Map<string, { resolve: Function, reject: Function, timeout: ReturnType<typeof setTimeout> }>} */
         this._rpcPending = new Map();
+        /** @type {Map<string, object>} */
+        this._layerStamps = new Map();
+        /** @type {string[]} */
+        this._layerOrder = [];
+        this._deltaScheduled = false;
     }
 
     setFenceBbox(bbox) {
@@ -282,6 +295,9 @@ class DualScreenCoordinator {
             this.isActive = false;
             this._secondaryReady = false;
             this._lastBounds = null;
+            this._layerStamps = new Map();
+            this._layerOrder = [];
+            this._deltaScheduled = false;
             this._rejectAllMapRpc('Dual screen deactivated');
             setDualScreenActiveHint(typeof sessionStorage !== 'undefined' ? sessionStorage : null, false);
 
@@ -505,11 +521,103 @@ class DualScreenCoordinator {
             preserveViewport
         });
         this._post(MessageType.SNAPSHOT, payload);
+        this._captureLayerSyncBaseline();
     }
 
+    /**
+     * Layer-list changes after the popup is up. Sends only the layers that
+     * changed. The hello snapshot is still the one full copy.
+     */
     syncLayersChanged() {
         if (!this.isActive || !this._secondaryReady) return;
-        this.sendSnapshot({ preserveViewport: true });
+        if (this._deltaScheduled) return;
+        this._deltaScheduled = true;
+        queueMicrotask(() => {
+            this._deltaScheduled = false;
+            this._sendLayerDelta();
+        });
+    }
+
+    _spatialLayersInMapOrder() {
+        const spatial = getLayers().filter(isSpatialLayer);
+        const rank = new Map(getMapLayerOrderIds().map((id, index) => [id, index]));
+        return spatial.slice().sort((a, b) => (rank.get(a.id) ?? 0) - (rank.get(b.id) ?? 0));
+    }
+
+    _captureLayerSyncBaseline() {
+        const stamped = stampSpatialLayers(this._spatialLayersInMapOrder());
+        this._layerStamps = stamped.stamps;
+        this._layerOrder = stamped.order;
+    }
+
+    _sendLayerDelta() {
+        if (!this.isActive || !this._secondaryReady || !this._channel || !this._sessionId) return;
+        const spatial = this._spatialLayersInMapOrder();
+        const plan = planLayerDelta(this._layerStamps, this._layerOrder, spatial);
+        for (const call of plan.calls) {
+            this.forwardMapCall(call.method, call.args, { focusMap: false, fromDelta: true });
+        }
+        this._layerStamps = plan.stamps;
+        this._layerOrder = plan.order;
+    }
+
+    /**
+     * One sender for every dual-mode map-service call.
+     * @param {string} method
+     * @param {unknown[]} [args]
+     * @param {{ rpc?: boolean, focusMap?: boolean, fromDelta?: boolean }} [options]
+     */
+    forwardMapCall(method, args = [], options = {}) {
+        let callMethod = method;
+        let callArgs = args;
+        if (method === 'removeTempFeature') {
+            callMethod = 'clearTempFeatures';
+            callArgs = [];
+        }
+        if (ADD_LAYER_METHODS.has(method)) {
+            const dataset = args?.[0];
+            const style = args?.[2]?.style || mapService.getLayerStyle?.(dataset?.id);
+            if (dataset?.id && style) {
+                this._dispatchMapCall('setLayerStyle', [dataset.id, style], {
+                    rpc: false,
+                    focusMap: false,
+                    fromDelta: true
+                });
+            }
+        }
+        return this._dispatchMapCall(callMethod, callArgs, options);
+    }
+
+    /**
+     * @param {string} method
+     * @param {unknown[]} args
+     * @param {{ rpc?: boolean, focusMap?: boolean, fromDelta?: boolean }} options
+     */
+    _dispatchMapCall(method, args, options) {
+        const packed = serializeMapCallArgs(args);
+        if (packed.dropped.length) {
+            warnDualScreenDev(
+                `[DualScreen] map call ${method} dropped non-serializable values (${packed.dropped.join(', ')})`
+            );
+        }
+        if (!packed.ok) {
+            warnDualScreenDev(`[DualScreen] cannot forward ${method}: ${packed.error?.message || 'not serializable'}`);
+            if (options.rpc) return Promise.reject(new Error(`Cannot forward ${method}`));
+            return undefined;
+        }
+        if (!this._channel || !this._sessionId) {
+            warnDualScreenDev(`[DualScreen] cannot forward ${method}: bridge is not open`);
+            if (options.rpc) return Promise.reject(new Error('Dual screen map is not active'));
+            return undefined;
+        }
+        const focusMap = options.focusMap === true;
+        const result = options.rpc
+            ? this.invokeMapRpc(method, packed.args, { focusMap })
+            : this.broadcastMapCmd(method, { method, args: packed.args }, { focusMap });
+        if (!options.fromDelta && LAYER_STAMP_METHODS.has(method)) {
+            this._captureLayerSyncBaseline();
+        }
+        return result;
     }
 
     broadcastLayerAdd(dataset, colorIndex, options = {}) {
@@ -617,9 +725,12 @@ class DualScreenCoordinator {
      * @param {{ focusMap?: boolean }} [options]
      */
     broadcastMapCmd(action, data = {}, options = {}) {
-        if (!this._channel) return;
-        if (this.isActive && options.focusMap !== false) this.focusMapWindow();
-        this._post(MessageType.MAP_CMD, { action, ...data });
+        if (!this._channel || !this._sessionId) return;
+        if (this.isActive && options.focusMap === true) this.focusMapWindow();
+        const payload = data && data.method
+            ? { method: data.method, args: Array.isArray(data.args) ? data.args : [] }
+            : { action, ...data };
+        this._post(MessageType.MAP_CMD, payload);
     }
 
     _resolveMapRpcResult(payload) {
@@ -645,11 +756,17 @@ class DualScreenCoordinator {
         });
     }
 
+    isSelectionSyncInbound() {
+        return !!this._selectionSyncInbound;
+    }
+
     getBounds() {
         if (this._lastBounds) return this._lastBounds;
         if (!this._lastViewport) return null;
-        const map = mapService.getMap();
-        if (map) return mapService.getBounds();
+        if (!this.isActive) {
+            const map = mapService.getMap();
+            if (map) return mapService.getBounds();
+        }
         return boundsFromViewportPayload(this._lastViewport);
     }
 
