@@ -61,12 +61,15 @@ import {
 import { getAppUrlConfig } from '../js/url/app-url-detector.js';
 import { getActiveLayer } from '../js/core/state.js';
 import { isLayerVisibleAtScale } from '../js/map/scale-range.js';
+import { buildMapLegend, geometryKindFromLayer } from '../js/map/map-legend.js';
+import { isSpatialLayer } from '../js/core/data-model.js';
 import { resolveLayerDisplayMode } from '../js/map/layer-display-mode.js';
 import { AppStoreProvider, createAppStore, useAppStore } from './providers/AppStore.jsx';
 import { MobileGate } from './shell/MobileGate.jsx';
 import { HeaderBar } from './header/HeaderBar.jsx';
 import { ActivityIndicator } from './header/ActivityIndicator.jsx';
 import { MapView } from './map/MapView.jsx';
+import { MapLegend } from './map/MapLegend.jsx';
 import { MapContextMenu } from './map/MapContextMenu.jsx';
 import { SelectionActionsMenu } from './map/SelectionActionsMenu.jsx';
 import { LayerListPanel, FieldListPanel, DataPrepToolsPanel } from './panels/LeftPanel.jsx';
@@ -204,6 +207,16 @@ function AppShell() {
 
     const rightSnapshot = useMemo(() => getRightPanelSnapshot(), [refreshTick, activeLayer?.id]);
     const fields = activeLayer?.schema?.fields || [];
+
+    const legendEntries = useMemo(() => buildMapLegend(
+        layers.filter((layer) => isSpatialLayer(layer)).map((layer) => ({
+            id: layer.id,
+            name: layer.name,
+            visible: layer.visible,
+            geometryKind: geometryKindFromLayer(layer),
+            style: mapService.getLayerStyle(layer.id)
+        }))
+    ), [layers, refreshTick]);
 
     const layersForPanel = useMemo(() => {
         const map = mapService.getMap();
@@ -365,6 +378,7 @@ function AppShell() {
                                 setTimeout(() => mapService.resize(), 100);
                             }}
                         />
+                        <MapLegend entries={legendEntries} />
                         <div className="map-overlay" id="map-drop-overlay">
                             <div>
                                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" style={{ width: 48, height: 48 }}>

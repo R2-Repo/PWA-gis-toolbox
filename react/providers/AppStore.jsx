@@ -61,7 +61,8 @@ export function AppStoreProvider({ store, children }) {
             'layer:updated',
             'agol:toggled',
             'ui:refresh',
-            'history:changed'
+            'history:changed',
+            'map:styleChanged'
         ];
         for (const event of events) {
             bus.on(event, refresh);
