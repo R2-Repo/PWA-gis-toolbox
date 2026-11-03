@@ -1,9 +1,22 @@
 import { useEffect, useRef, useState } from 'react';
+import {
+    headerPdfDownloadOptions,
+    readWidgetProjectName,
+    defaultHeaderPdfTitle
+} from '../../js/map/header-print-pdf.js';
+import { serializeWidgetStore } from '../../js/widgets/widget-state-store.js';
+
+function projectTitleDefault() {
+    return defaultHeaderPdfTitle(readWidgetProjectName(serializeWidgetStore().activeWidgets));
+}
 
 export function MapPrintMenu({ onExportMapView, onPresentationLink, disabled = false }) {
     const [open, setOpen] = useState(false);
     const [busy, setBusy] = useState(false);
+    const [pageSize, setPageSize] = useState('letter');
+    const [title, setTitle] = useState('Map');
     const wrapperRef = useRef(null);
+    const titleTouched = useRef(false);
 
     useEffect(() => {
         if (!open) return undefined;
@@ -16,15 +29,26 @@ export function MapPrintMenu({ onExportMapView, onPresentationLink, disabled = f
         return () => document.removeEventListener('click', closeDropdown);
     }, [open]);
 
-    const handleExport = async (format) => {
+    useEffect(() => {
+        if (!open || titleTouched.current) return;
+        setTitle(projectTitleDefault());
+    }, [open]);
+
+    const handleExport = async (format, options) => {
         setOpen(false);
         if (busy || !onExportMapView) return;
         setBusy(true);
         try {
-            await onExportMapView(format);
+            await onExportMapView(format, options);
         } finally {
             setBusy(false);
         }
+    };
+
+    const handlePdf = () => {
+        const projectName = readWidgetProjectName(serializeWidgetStore().activeWidgets);
+        const options = headerPdfDownloadOptions({ pageSize, title, projectName });
+        return handleExport('pdf', options);
     };
 
     return (
@@ -50,10 +74,43 @@ export function MapPrintMenu({ onExportMapView, onPresentationLink, disabled = f
                 >
                     Download PNG
                 </button>
+                <div className="header-print-pdf">
+                    <div className="header-print-pdf-label">Page size</div>
+                    <div className="header-print-size" role="group" aria-label="Page size">
+                        <button
+                            type="button"
+                            className={`header-print-size-btn${pageSize === 'letter' ? ' active' : ''}`}
+                            aria-pressed={pageSize === 'letter'}
+                            onClick={() => setPageSize('letter')}
+                        >
+                            Letter
+                        </button>
+                        <button
+                            type="button"
+                            className={`header-print-size-btn${pageSize === 'tabloid' ? ' active' : ''}`}
+                            aria-pressed={pageSize === 'tabloid'}
+                            onClick={() => setPageSize('tabloid')}
+                        >
+                            Tabloid
+                        </button>
+                    </div>
+                    <label className="header-print-pdf-label" htmlFor="header-pdf-title">
+                        Title
+                        <input
+                            id="header-pdf-title"
+                            type="text"
+                            value={title}
+                            onChange={(e) => {
+                                titleTouched.current = true;
+                                setTitle(e.target.value);
+                            }}
+                        />
+                    </label>
+                </div>
                 <button
                     type="button"
                     className="header-print-item"
-                    onClick={() => { void handleExport('pdf'); }}
+                    onClick={() => { void handlePdf(); }}
                 >
                     Download PDF
                 </button>

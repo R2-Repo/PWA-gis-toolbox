@@ -104,6 +104,7 @@ import {
     PROJECT_KIT_SECTIONS
 } from '../core/project-kit.js';
 import { loadJSZip } from '../core/libs.js';
+import { headerPdfDownloadOptions, readWidgetProjectName } from '../map/header-print-pdf.js';
 import { loadPaletteFavorites, savePaletteFavorites } from '../map/palette-store.js';
 import {
     getWorkspaceLayer,
@@ -515,15 +516,24 @@ export async function exportProjectKit(options = {}) {
     });
 }
 
-export async function exportMapView(format) {
+export async function exportMapView(format, options = {}) {
     try {
         const mod = await import('../map/header-export.js');
         if (mod.willUseHighResExport(mapService)) {
             showToast('Exporting high-resolution map…', 'info');
         }
+        const pdf = format === 'pdf'
+            ? headerPdfDownloadOptions({
+                pageSize: options.pageSize,
+                title: options.title,
+                projectName: options.projectName
+                    ?? readWidgetProjectName(serializeWidgetStore().activeWidgets)
+            })
+            : null;
         const result = await mod.exportHeaderMapView(mapService, format, {
             blockWhenDualScreen: true,
-            dualScreenCoordinator
+            dualScreenCoordinator,
+            ...(pdf || {})
         });
         showToast(`${format.toUpperCase()} saved.`, 'success');
         return result;

@@ -266,7 +266,7 @@ html, body {
     top: 100%;
     right: 0;
     margin-top: 4px;
-    min-width: 160px;
+    min-width: 220px;
     background: var(--bg-surface);
     border: 1px solid var(--border);
     border-radius: var(--radius-sm);
@@ -274,6 +274,49 @@ html, body {
     z-index: 1200;
     overflow: hidden;
     padding: 4px 0;
+}
+
+.header-print-pdf {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 6px 12px 2px;
+}
+
+.header-print-pdf-label {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-muted);
+}
+
+.header-print-size {
+    display: flex;
+    gap: 4px;
+}
+
+.header-print-size-btn {
+    flex: 1;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--text);
+    border-radius: var(--radius-sm);
+    padding: 4px 8px;
+    font-size: 12px;
+    cursor: pointer;
+}
+
+.header-print-size-btn.active {
+    border-color: var(--gold, #d4a017);
+    color: var(--gold, #d4a017);
+}
+
+.header-print-pdf input[type="text"] {
+    width: 100%;
+    padding: 6px 8px;
+    font-size: 13px;
 }
 
 .header-print-dropdown.open {
