@@ -39,6 +39,8 @@ describe('LabelsSection polygon hint', () => {
         });
         expect(container.textContent).toContain('Labels at an interior point');
         expect(container.textContent).not.toContain('Point placement requires point features');
+        expect(container.textContent).not.toContain('Min zoom');
+        expect(container.textContent).not.toContain('Max zoom');
         await act(async () => {
             root.unmount();
         });

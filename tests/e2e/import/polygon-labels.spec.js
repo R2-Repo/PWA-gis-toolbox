@@ -65,6 +65,25 @@ async function readLabelLayers(page) {
     });
 }
 
+async function assertStylingPanel(page) {
+    const headers = page.locator('#output-panel-content > .panel-section > .panel-section-header');
+    await expect(headers.nth(0)).toContainText('Symbology');
+    await expect(headers.nth(0)).not.toHaveClass(/collapsed/);
+    await expect(headers.nth(1)).toContainText('Labels');
+    await expect(headers.nth(2)).toContainText('Visibility');
+    await expect(headers.nth(3)).toContainText('Data Preview');
+    await expect(headers.nth(4)).toContainText('Output Schema');
+    await expect(headers.nth(5)).toContainText('Export');
+
+    const visibilityHeader = page.locator('.visibility-panel .panel-section-header');
+    if (await visibilityHeader.evaluate((el) => el.classList.contains('collapsed'))) {
+        await visibilityHeader.click();
+    }
+    const visibility = page.locator('.visibility-panel');
+    await expect(visibility).toContainText('Layer visible at...');
+    await expect(visibility).toContainText('Labels visible at...');
+}
+
 async function enableLabels(page) {
     const header = page.locator('.labels-panel .panel-section-header');
     await header.waitFor({ state: 'visible', timeout: 30_000 });
@@ -85,7 +104,10 @@ test('@tune polygon and multipart labels', async ({ page }) => {
     await dismissOpenModals(page);
 
     await page.locator('.layer-item').filter({ hasText: 'Polygons' }).click();
+    await assertStylingPanel(page);
     await enableLabels(page);
+    await expect(page.locator('.labels-panel')).not.toContainText('Min zoom');
+    await expect(page.locator('.labels-panel')).not.toContainText('Max zoom');
     await expect(page.locator('.labels-panel')).toContainText('Labels at an interior point');
     await page.waitForFunction(() => {
         const map = globalThis.__gisE2eMapService?.getMap?.();

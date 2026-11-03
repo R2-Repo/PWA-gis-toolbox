@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { isSpatialLayer } from '../../js/core/data-model.js';
 import { normalizeStyle } from '../../js/map/style-engine.js';
+import { normalizeLayerLabels } from '../../js/map/map-labels.js';
 import { SmartStylePanel } from './SmartStylePanel.jsx';
 import { LabelsSection } from './LabelsSection.jsx';
 import { VisibilityRangeSection } from './VisibilityRangeSection.jsx';
@@ -79,7 +80,7 @@ export function RightPanel({
     const mapZoom = snapshot?.mapZoom ?? 7;
     const mapLatitude = snapshot?.mapLatitude ?? 0;
 
-    // Shared draft style so Layer Style + Labels never overwrite each other with stale copies.
+    // Shared draft style so Symbology, Labels, and label zoom never overwrite each other.
     const [draftStyle, setDraftStyle] = useState(() => (
         layer ? normalizeStyle(layerStyle, styleDefaultColor) : null
     ));
@@ -116,8 +117,46 @@ export function RightPanel({
 
     const sharedStyle = draftStyle || normalizeStyle(layerStyle, styleDefaultColor);
 
+    const labels = normalizeLayerLabels(sharedStyle.labels);
+
     return (
         <>
+            {isSpatialLayer(layer) ? (
+                <>
+                    <SmartStylePanel
+                        key={layer.id}
+                        layer={layer}
+                        style={sharedStyle}
+                        defaultColor={styleDefaultColor}
+                        onStyleChange={handleSharedStyleChange}
+                    />
+                    <LabelsSection
+                        key={`${layer.id}-labels`}
+                        layer={layer}
+                        style={sharedStyle}
+                        defaultColor={styleDefaultColor}
+                        onStyleChange={handleSharedStyleChange}
+                    />
+                    <VisibilityRangeSection
+                        key={`${layer.id}-visibility`}
+                        layer={layer}
+                        mapZoom={mapZoom}
+                        mapLatitude={mapLatitude}
+                        onChange={onScaleRangeChange}
+                        labelMinZoom={labels.minZoom}
+                        labelMaxZoom={labels.maxZoom}
+                        onLabelZoomChange={(patch) => {
+                            handleSharedStyleChange({
+                                ...sharedStyle,
+                                labels: { ...labels, ...patch }
+                            });
+                        }}
+                    />
+                </>
+            ) : null}
+
+            <DataPreviewSection layer={layer} onShowDataTable={onShowDataTable} />
+
             <CollapsibleSection title={`Output Schema (${selectedFields.length} fields)`} defaultOpen={false}>
                 {selectedFields.map((field) => (
                     <div className="field-item" key={field.name}>
@@ -137,25 +176,6 @@ export function RightPanel({
                 onExportProjectKit={onExportProjectKit}
             />
 
-            {isSpatialLayer(layer) ? (
-                <>
-                    <SmartStylePanel
-                        key={layer.id}
-                        layer={layer}
-                        style={sharedStyle}
-                        defaultColor={styleDefaultColor}
-                        onStyleChange={handleSharedStyleChange}
-                    />
-                    <LabelsSection
-                        key={`${layer.id}-labels`}
-                        layer={layer}
-                        style={sharedStyle}
-                        defaultColor={styleDefaultColor}
-                        onStyleChange={handleSharedStyleChange}
-                    />
-                </>
-            ) : null}
-
             {agolMode ? (
                 <CollapsibleSection title="AGOL Readiness" defaultOpen={false}>
                     {agolCheck?.issues?.length
@@ -172,17 +192,6 @@ export function RightPanel({
                     ) : null}
                 </CollapsibleSection>
             ) : null}
-
-            {isSpatialLayer(layer) ? (
-                <VisibilityRangeSection
-                    layer={layer}
-                    mapZoom={mapZoom}
-                    mapLatitude={mapLatitude}
-                    onChange={onScaleRangeChange}
-                />
-            ) : null}
-
-            <DataPreviewSection layer={layer} onShowDataTable={onShowDataTable} />
         </>
     );
 }

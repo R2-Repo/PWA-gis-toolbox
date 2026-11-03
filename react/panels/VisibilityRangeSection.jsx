@@ -5,6 +5,7 @@ import {
     getCurrentMapScale,
     normalizeScaleRange
 } from '../../js/map/scale-range.js';
+import { DEFAULT_LAYER_LABELS } from '../../js/map/map-labels.js';
 import { CollapsibleSection } from '../ui/CollapsibleSection.jsx';
 
 function formatScale(scale) {
@@ -30,7 +31,10 @@ export function VisibilityRangeSection({
     layer,
     mapZoom = 7,
     mapLatitude = 0,
-    onChange
+    onChange,
+    labelMinZoom = DEFAULT_LAYER_LABELS.minZoom,
+    labelMaxZoom = DEFAULT_LAYER_LABELS.maxZoom,
+    onLabelZoomChange
 }) {
     const normalized = normalizeScaleRange(layer || {});
     const [enabled, setEnabled] = useState(normalized.scaleRangeEnabled);
@@ -135,8 +139,17 @@ export function VisibilityRangeSection({
 
     const currentScale = formatScale(getCurrentMapScale(mapZoom, mapLatitude));
 
+    const onLabelMinZoomChange = (value) => {
+        onLabelZoomChange?.({ minZoom: parseInt(value, 10) || 0 });
+    };
+
+    const onLabelMaxZoomChange = (value) => {
+        onLabelZoomChange?.({ maxZoom: parseInt(value, 10) || 0 });
+    };
+
     return (
-        <CollapsibleSection title="Visibility Range" defaultOpen={false}>
+        <CollapsibleSection title="Visibility" defaultOpen={false} className="visibility-panel">
+            <p className="text-sm mb-8"><strong>Layer visible at...</strong></p>
             <label className="toggle mb-8">
                 <input type="checkbox" checked={enabled} onChange={(e) => onToggle(e.target.checked)} />
                 <span className="toggle-track"></span>
@@ -201,6 +214,39 @@ export function VisibilityRangeSection({
                     Clear
                 </button>
             </div>
+
+            <p className="text-sm mb-8 mt-8"><strong>Labels visible at...</strong></p>
+            <div className="style-row">
+                <label htmlFor={`labels-min-zoom-${layerId || 'layer'}`}>Min zoom</label>
+                <input
+                    id={`labels-min-zoom-${layerId || 'layer'}`}
+                    type="number"
+                    className="smart-style-num-input"
+                    aria-label="Labels minimum zoom"
+                    min="0"
+                    max="22"
+                    step="1"
+                    value={labelMinZoom ?? DEFAULT_LAYER_LABELS.minZoom}
+                    onChange={(e) => onLabelMinZoomChange(e.target.value)}
+                />
+            </div>
+            <div className="style-row">
+                <label htmlFor={`labels-max-zoom-${layerId || 'layer'}`}>Max zoom</label>
+                <input
+                    id={`labels-max-zoom-${layerId || 'layer'}`}
+                    type="number"
+                    className="smart-style-num-input"
+                    aria-label="Labels maximum zoom"
+                    min="0"
+                    max="22"
+                    step="1"
+                    value={labelMaxZoom ?? DEFAULT_LAYER_LABELS.maxZoom}
+                    onChange={(e) => onLabelMaxZoomChange(e.target.value)}
+                />
+            </div>
+            <p className="text-muted text-xs mb-8">
+                Labels show within this zoom window. Layer visibility can further restrict when labels appear.
+            </p>
         </CollapsibleSection>
     );
 }

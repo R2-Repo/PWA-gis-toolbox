@@ -2008,13 +2008,58 @@ class MapManager {
         const tagged = _tagFeaturesForMap(dataset);
         const geojson = { type: 'FeatureCollection', features: tagged };
         const source = this.map.getSource(entry.sourceId);
-        if (source) source.setData(geojson);
+        if (!source && tagged.length) {
+            // First packet was empty, so no source or label layer was created.
+            const defaultColor = LAYER_COLORS[(entry.colorIndex ?? 0) % LAYER_COLORS.length];
+            const layerStyle = normalizeStyle(this._layerStyles.get(layerId), defaultColor);
+            const layerIds = this._installGeoJsonChunk(
+                dataset, tagged, 0, layerStyle, { styFlat: getBaseFlatStyle(layerStyle, 'polygon') }
+            );
+            entry.layerIds = layerIds;
+            entry.chunkSources = [{ sourceId: entry.sourceId, layerIds: [...layerIds] }];
+            this._applyDatasetVisibility(dataset);
+            this._applyDatasetLock(dataset);
+        } else if (source) {
+            source.setData(geojson);
+            this._ensureViewportLabelLayer(dataset, entry, tagged);
+        }
         entry.geojson = geojson;
         entry.truncated = !!viewportFc.truncated;
 
         if (this.getSelectionCount(layerId) > 0) {
             void this._renderSelectionHighlights(layerId);
         }
+    }
+
+    /**
+     * Attach a label layer when a later viewport packet arrives and the
+     * empty first batch never created one.
+     */
+    _ensureViewportLabelLayer(dataset, entry, taggedFeatures) {
+        if (!this.map || !entry || !taggedFeatures?.length) return;
+        const idBase = dataset.id;
+        if (this.map.getLayer(`${idBase}-labels`) || this.map.getLayer(`${idBase}-line-labels`)) return;
+
+        const defaultColor = LAYER_COLORS[(entry.colorIndex ?? 0) % LAYER_COLORS.length];
+        const layerStyle = normalizeStyle(this._layerStyles.get(dataset.id), defaultColor);
+        if (!entry.layerIds) entry.layerIds = [];
+        const before = entry.layerIds.length;
+        const presence = labelGeometryPresence(
+            taggedFeatures,
+            dataset?.schema?.geometryType,
+            { includeSchema: isWorkspaceLayer(dataset) }
+        );
+        this._addLabelLayers(layerStyle, dataset, idBase, entry.sourceId, entry.layerIds, {
+            ...presence,
+            useCluster: false
+        });
+        const added = entry.layerIds.slice(before);
+        if (!added.length) return;
+        this._bindLayerClickHandlers(dataset, added, getBaseFlatStyle(layerStyle, 'polygon'));
+        const zoomRange = this._getLayerZoomRange(dataset);
+        this._applyZoomRangeToLayerIds(added, zoomRange, this._resolveLabelsConfigForZoom(dataset));
+        this._applyDatasetVisibility(dataset);
+        this._applyDatasetLock(dataset);
     }
 
     /** Append a new GeoJSON source chunk (incremental import — no full setData). */
@@ -2076,15 +2121,31 @@ class MapManager {
      * @returns {string[]} map layer ids
      */
     _installGeoJsonChunk(dataset, taggedFeatures, chunkIndex, layerStyle, { useCluster = false, styFlat = null } = {}) {
-        if (!this.map || !taggedFeatures.length) return [];
+        if (!this.map) return [];
+        // Empty workspace packets still install from the stored schema so a
+        // later setData can draw and label features. No schema and no features
+        // stays a no-op so the next non-empty packet can install both.
+        const schemaPresence = !taggedFeatures.length && isWorkspaceLayer(dataset)
+            ? labelGeometryPresence([], dataset?.schema?.geometryType, { includeSchema: true })
+            : null;
+        if (!taggedFeatures.length && !schemaPresence) return [];
+        if (schemaPresence && !schemaPresence.hasPoints && !schemaPresence.hasLines && !schemaPresence.hasPolygons) {
+            return [];
+        }
 
         const suffix = chunkIndex === 0 ? '' : `-c${chunkIndex}`;
         const sourceId = `src-${dataset.id}${suffix}`;
         const geojson = { type: 'FeatureCollection', features: taggedFeatures };
 
-        const hasPoints = taggedFeatures.some(f => f.geometry?.type === 'Point' || f.geometry?.type === 'MultiPoint');
-        const hasLines = taggedFeatures.some(f => f.geometry?.type === 'LineString' || f.geometry?.type === 'MultiLineString');
-        const hasPolygons = taggedFeatures.some(f => f.geometry?.type === 'Polygon' || f.geometry?.type === 'MultiPolygon');
+        const hasPoints = schemaPresence
+            ? schemaPresence.hasPoints
+            : taggedFeatures.some(f => f.geometry?.type === 'Point' || f.geometry?.type === 'MultiPoint');
+        const hasLines = schemaPresence
+            ? schemaPresence.hasLines
+            : taggedFeatures.some(f => f.geometry?.type === 'LineString' || f.geometry?.type === 'MultiLineString');
+        const hasPolygons = schemaPresence
+            ? schemaPresence.hasPolygons
+            : taggedFeatures.some(f => f.geometry?.type === 'Polygon' || f.geometry?.type === 'MultiPolygon');
 
         const styPoly = compilePaint(layerStyle, 'polygon');
         const styLine = compilePaint(layerStyle, 'line');

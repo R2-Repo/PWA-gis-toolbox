@@ -542,7 +542,7 @@ export function SmartStylePanel({ layer, style: externalStyle, defaultColor = '#
     };
 
     return (
-        <CollapsibleSection title="Layer Style" defaultOpen={false} className="style-panel smart-style-panel">
+        <CollapsibleSection title="Symbology" defaultOpen={true} className="style-panel smart-style-panel">
             <div className="smart-style-tabs">
                 <button type="button" className={`btn btn-sm ${tab === 'simple' ? 'btn-primary' : 'btn-secondary'}`}
                     onClick={() => handleTab('simple')}>Simple</button>

@@ -1,7 +1,6 @@
 import { useMemo } from 'react';
 import { normalizeStyle } from '../../js/map/style-engine.js';
 import {
-    DEFAULT_LAYER_LABELS,
     normalizeLayerLabels,
     pickLabelField,
     sampleFieldValues,
@@ -192,33 +191,6 @@ export function LabelsSection({ layer, style: externalStyle, defaultColor = '#25
                     <details className="smart-style-advanced">
                         <summary className="smart-style-advanced-title">Advanced</summary>
                         <div className="smart-style-advanced-body">
-                            <div className="style-row">
-                                <label>Min zoom</label>
-                                <input
-                                    type="number"
-                                    className="smart-style-num-input"
-                                    min="0"
-                                    max="22"
-                                    step="1"
-                                    value={labels.minZoom ?? DEFAULT_LAYER_LABELS.minZoom}
-                                    onChange={(e) => setLabels({ minZoom: parseInt(e.target.value, 10) || 0 })}
-                                />
-                            </div>
-                            <div className="style-row">
-                                <label>Max zoom</label>
-                                <input
-                                    type="number"
-                                    className="smart-style-num-input"
-                                    min="0"
-                                    max="22"
-                                    step="1"
-                                    value={labels.maxZoom ?? DEFAULT_LAYER_LABELS.maxZoom}
-                                    onChange={(e) => setLabels({ maxZoom: parseInt(e.target.value, 10) || 0 })}
-                                />
-                            </div>
-                            <p className="text-muted text-xs mb-8">
-                                Labels show within this zoom window. Layer Visibility Range can further restrict when labels appear.
-                            </p>
                             <div className="style-row">
                                 <label>Halo</label>
                                 <input
