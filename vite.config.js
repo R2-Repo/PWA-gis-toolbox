@@ -76,8 +76,10 @@ function gtmHtmlPlugin(enable) {
     name: 'gtm-html-inject',
     transformIndexHtml: {
       order: 'pre',
-      handler(html) {
+      handler(html, ctx) {
         if (!enable) return html;
+        const page = `${ctx?.path || ''} ${ctx?.filename || ''}`.replace(/\\/g, '/');
+        if (page.includes('map-window.html')) return html;
         return html.replace('</head>', `${GTM_HTML_SNIPPET}\n</head>`);
       }
     }
@@ -150,6 +152,8 @@ function createPwaPlugin() {
       cleanupOutdatedCaches: true,
       clientsClaim: true,
       skipWaiting: true,
+      // index.html and map-window.html, plus the JS/CSS those entries emit.
+      globPatterns: ['**/*.{js,css,html}'],
       runtimeCaching: PWA_RUNTIME_CACHING
     }
   });
