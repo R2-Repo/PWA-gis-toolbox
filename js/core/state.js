@@ -156,6 +156,10 @@ function checkMobile() {
 }
 window.addEventListener('resize', checkMobile);
 
+if (import.meta.env.VITE_E2E === '1' && typeof globalThis !== 'undefined') {
+    globalThis.__gisE2eState = { getLayers, addLayer, removeLayer, getActiveLayer, updateLayer };
+}
+
 export default {
     getState, getLayers, getLayerGroupsState, getActiveLayer, addLayer, removeLayer, setActiveLayer,
     updateLayer, updateLayerData, toggleLayerVisibility, toggleLayerLock, isLayerLocked,

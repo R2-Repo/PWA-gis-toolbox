@@ -58,6 +58,19 @@ function isWorkspaceLayerMeta(entry) {
     return entry?.storage === 'workspace' || entry?.type === 'spatial-chunked';
 }
 
+function isPmtilesEntry(entry) {
+    return entry?.type === 'pmtiles' || entry?.source?.format === 'pmtiles' || !!entry?.pmtiles?.url;
+}
+
+function canApplyMapEntry(entry) {
+    if (!entry?.id) return false;
+    if (entry.geojson) return true;
+    if (isWorkspaceLayerMeta(entry)) return true;
+    if (entry.type === 'service' && entry.service?.url) return true;
+    if (isPmtilesEntry(entry)) return true;
+    return false;
+}
+
 function entryToDataset(entry) {
     if (!entry?.id) return null;
     const geojson = entry.geojson || { type: 'FeatureCollection', features: [] };
@@ -74,6 +87,16 @@ function entryToDataset(entry) {
     }
     if (entry.mapLabels) dataset._mapLabels = entry.mapLabels;
     if (entry.kmlExport) dataset._kmlExport = entry.kmlExport;
+    if (entry.service) dataset.service = entry.service;
+    if (entry.pmtiles) dataset.pmtiles = entry.pmtiles;
+    if (entry.schema) dataset.schema = entry.schema;
+    if (entry.datasetProfile) dataset.datasetProfile = entry.datasetProfile;
+    if (entry.workspaceAttributeFilter) dataset.workspaceAttributeFilter = entry.workspaceAttributeFilter;
+    if (Array.isArray(entry.workspaceFilterIndices)) {
+        dataset._workspaceFilterIndices = entry.workspaceFilterIndices;
+    }
+    if (entry.activeFilter) dataset._activeFilter = entry.activeFilter;
+    if (entry.pictureMarkers) dataset._arcgisPictureMarkers = entry.pictureMarkers;
     return dataset;
 }
 
@@ -107,7 +130,7 @@ function applySnapshot(payload) {
     }
 
     (layers || []).forEach((entry, i) => {
-        if (!entry.geojson && !isWorkspaceLayerMeta(entry)) return;
+        if (!canApplyMapEntry(entry)) return;
         const dataset = entryToDataset(entry);
         if (!dataset) return;
         if (entry.style) {
@@ -150,7 +173,7 @@ function applySnapshot(payload) {
 
 function applyLayerAdd(payload) {
     const { dataset: raw, colorIndex, fit, style } = payload || {};
-    if (!raw?.geojson && !isWorkspaceLayerMeta(raw)) return;
+    if (!canApplyMapEntry(raw)) return;
     const layer = entryToDataset(raw);
     if (!layer) return;
     mapService.removeLayer(layer.id);
@@ -225,13 +248,18 @@ function onMapReady() {
     protocol?.markHandshakeReady();
 }
 
+let mapCmdChain = Promise.resolve();
+
 function applyMapCmd(payload) {
-    const result = applyForwardedMapCall(mapService, payload);
-    if (result && typeof result.then === 'function') {
-        result.catch((err) => {
-            warnDualScreenDev(`[DualScreen] map call failed: ${err?.message || err}`);
-        });
-    }
+    // Async adds (service refresh, PMTiles header) must finish before the next
+    // style, filter, or remove, or the pop-out applies them to a layer that
+    // is still being built.
+    mapCmdChain = mapCmdChain.then(async () => {
+        const result = applyForwardedMapCall(mapService, payload);
+        if (result && typeof result.then === 'function') await result;
+    }).catch((err) => {
+        warnDualScreenDev(`[DualScreen] map call failed: ${err?.message || err}`);
+    });
 }
 
 async function handleMapRpc(payload, postFn) {

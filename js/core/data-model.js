@@ -98,6 +98,14 @@ export function isSpatialLayer(layer) {
 }
 
 /**
+ * Layers the dual-screen map must show: spatial, workspace, PMTiles, and live services.
+ * @param {object} layer
+ */
+export function isDualScreenMapLayer(layer) {
+    return isSpatialLayer(layer) || isServiceLayer(layer);
+}
+
+/**
  * @param {object} options
  * @param {string} options.name
  * @param {string} options.url

@@ -189,7 +189,8 @@ export async function addServiceLayer(mapManager, dataset, colorIndex = 0, optio
         viewportCache: { type: 'FeatureCollection', features: [] },
         lastEnvelope: null,
         fetchGen: 0,
-        metadataReady: false
+        metadataReady: false,
+        dataset
     });
 
     const opacity = service.opacity ?? (kind === 'arcgis-mapserver' || kind === 'wms' ? 0.85 : 1);
@@ -290,6 +291,7 @@ export async function addServiceLayer(mapManager, dataset, colorIndex = 0, optio
  * @param {ServiceRuntime} runtime
  */
 async function ensureFeatureServerMetadata(dataset, runtime, map = null) {
+    let styleAssigned = false;
     try {
         const importer = new ArcGISRestImporter();
         const metadata = await importer.fetchMetadata(runtime.url);
@@ -302,7 +304,7 @@ async function ensureFeatureServerMetadata(dataset, runtime, map = null) {
         if (!fiberHit && map && runtime.pictureMarkers.markers.length) {
             await registerPictureMarkers(map, runtime.pictureMarkers);
         }
-        if (dataset.service) {
+        if (dataset?.service) {
             dataset.service.objectIdField = runtime.objectIdField;
             dataset.service.maxRecordCount = metadata.maxRecordCount || 1000;
             if (!dataset.service.style) {
@@ -310,10 +312,11 @@ async function ensureFeatureServerMetadata(dataset, runtime, map = null) {
                 if (style) {
                     annotateSimplifiedArcgisLabels(style, metadata.drawingInfo);
                     dataset.service.style = style;
+                    styleAssigned = true;
                 }
             }
         }
-        if (!dataset.schema?.fields?.length) {
+        if (dataset && !dataset.schema?.fields?.length) {
             dataset.schema = schemaFromArcgisMetadata(metadata);
         }
     } catch (error) {
@@ -321,6 +324,60 @@ async function ensureFeatureServerMetadata(dataset, runtime, map = null) {
             url: runtime.url,
             error: error?.message
         });
+    }
+    return styleAssigned;
+}
+
+/**
+ * Paint and labels are chosen before metadata arrives. Apply the published
+ * style on the layers that are already on the map.
+ * @param {object} mapManager
+ * @param {object} dataset
+ * @param {ServiceRuntime} runtime
+ */
+function repaintServiceVectorStyle(mapManager, dataset, runtime) {
+    const map = mapManager?.map;
+    if (!map || !dataset?.service || matchUdotFiberLayerUrl(runtime.url)) return;
+    const opacity = dataset.service.opacity ?? 1;
+    const layerStyle = resolveServiceLayerStyle(dataset.service, runtime.colorIndex);
+    const styPoly = compilePaint(layerStyle, 'polygon');
+    const styLine = compilePaint(layerStyle, 'line');
+    const styPoint = compilePaint(layerStyle, 'point');
+    const fillId = `svc-lyr-${dataset.id}-fill`;
+    const lineId = `svc-lyr-${dataset.id}-line`;
+    const pointId = `svc-lyr-${dataset.id}-circle`;
+    if (map.getLayer(fillId)) {
+        map.setPaintProperty(fillId, 'fill-color', styPoly.fillColor);
+        map.setPaintProperty(fillId, 'fill-opacity', scalePaintOpacity(styPoly.fillOpacity, opacity * 0.35));
+    }
+    if (map.getLayer(lineId)) {
+        map.setPaintProperty(lineId, 'line-color', styLine.strokeColor);
+        map.setPaintProperty(lineId, 'line-width', styLine.strokeWidth);
+        map.setPaintProperty(lineId, 'line-opacity', scalePaintOpacity(styLine.strokeOpacity, opacity));
+    }
+    if (map.getLayer(pointId)) {
+        map.setPaintProperty(pointId, 'circle-radius', styPoint.circleRadius);
+        map.setPaintProperty(pointId, 'circle-color', styPoint.fillColor);
+        map.setPaintProperty(pointId, 'circle-stroke-color', styPoint.strokeColor);
+        map.setPaintProperty(pointId, 'circle-stroke-width', styPoint.strokeWidth);
+        map.setPaintProperty(pointId, 'circle-opacity', scalePaintOpacity(styPoint.fillOpacity, opacity));
+    }
+    mapManager._layerStyles?.set(dataset.id, layerStyle);
+    const labelCfg = resolveLayerLabels(layerStyle, dataset);
+    if (!labelCfg) return;
+    const labelSpec = buildMapLabelLayerSpec(dataset.id, runtime.sourceId, labelCfg, false);
+    if (!labelSpec) return;
+    labelSpec.id = `svc-${labelSpec.id}`;
+    if (layerStyle?.labels?.color != null) {
+        labelSpec.paint = { ...labelSpec.paint, 'text-color': layerStyle.labels.color };
+    }
+    if (runtime.minZoom != null) {
+        labelSpec.minzoom = Math.max(Number(labelSpec.minzoom) || 0, runtime.minZoom);
+    }
+    if (!map.getLayer(labelSpec.id)) {
+        map.addLayer(labelSpec);
+        runtime.mapLayerIds = runtime.mapLayerIds || [];
+        runtime.mapLayerIds.push(labelSpec.id);
     }
 }
 
@@ -478,7 +535,9 @@ export async function refreshServiceLayer(mapManager, layerId) {
         return;
     }
 
-    const dataset = getLayers().find((layer) => layer.id === layerId) || null;
+    const listed = getLayers().find((layer) => layer.id === layerId) || null;
+    const dataset = listed || runtime.dataset || null;
+    if (dataset) runtime.dataset = dataset;
     if (dataset?.visible === false) {
         applyLiveLayerVisibility(map, runtime, false);
         return;
@@ -510,9 +569,10 @@ export async function refreshServiceLayer(mapManager, layerId) {
             (runtime.kind === 'arcgis-featureserver' || runtime.kind === 'arcgis-mapserver-vector')
             && !runtime.metadataReady
         ) {
-            await ensureFeatureServerMetadata(dataset, runtime, map);
+            const styleAssigned = await ensureFeatureServerMetadata(dataset, runtime, map);
             if (runtime.fetchGen !== fetchGen) return;
             runtime.metadataReady = true;
+            if (styleAssigned && dataset) repaintServiceVectorStyle(mapManager, dataset, runtime);
         }
         const raw = await fetchVectorData(map, runtime, { signal: fetchSignal });
         const limited = applyRenderLimits(raw.features || []);

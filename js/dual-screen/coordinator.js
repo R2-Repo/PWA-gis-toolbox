@@ -2,7 +2,7 @@
  * Dual Screen Mode — primary-window lifecycle & sync orchestration
  */
 import { getLayers, getActiveLayer, getMapLayerOrderIds } from '../core/state.js';
-import { isSpatialLayer, isWorkspaceLayer } from '../core/data-model.js';
+import { isDualScreenMapLayer, isPmTilesLayer, isServiceLayer, isWorkspaceLayer } from '../core/data-model.js';
 import mapService from '../map/map-service.js';
 import { DualScreenChannel } from './channel.js';
 import {
@@ -20,6 +20,7 @@ import {
     HELLO_TIMEOUT_NOTICE,
     PROTOCOL_MISMATCH_NOTICE
 } from './storage-hint.js';
+import { publishPmtilesDataset } from '../map/pmtiles-protocol.js';
 import { showToast } from '../ui/toast.js';
 import { scheduleMapResizeAfterLayout, syncDualScreenPrimaryUi } from './layout.js';
 import {
@@ -355,7 +356,7 @@ class DualScreenCoordinator {
 
         const applyRestoredLayers = () => {
             const allLayers = getLayers();
-            const mapLayers = allLayers.filter(isSpatialLayer);
+            const mapLayers = allLayers.filter(isDualScreenMapLayer);
             const restoredIds = [];
             for (const layer of mapLayers) {
                 const layerIdx = allLayers.indexOf(layer);
@@ -363,9 +364,9 @@ class DualScreenCoordinator {
                     if (isWorkspaceLayer(layer)) {
                         restoredIds.push(layer.id);
                         void mapService.addWorkspaceLayer(layer, layerIdx, { fit: false });
-                    } else if (layer.geojson) {
+                    } else if (isServiceLayer(layer) || isPmTilesLayer(layer) || layer.geojson) {
                         restoredIds.push(layer.id);
-                        mapService.addLayer(layer, layerIdx, { fit: false });
+                        void mapService.addLayer(layer, layerIdx, { fit: false });
                     }
                 } catch (err) {
                     console.warn('[DualScreen] restore layer failed', layer.id, err);
@@ -507,13 +508,21 @@ class DualScreenCoordinator {
         }
     }
 
-    sendSnapshot(options = {}) {
+    async sendSnapshot(options = {}) {
         if (!this._channel || !this._secondaryReady) return;
         const layers = getLayers();
-        const spatialLayers = layers.filter(isSpatialLayer);
+        const mapLayers = layers.filter(isDualScreenMapLayer);
+        for (const layer of mapLayers) {
+            if (!isPmTilesLayer(layer)) continue;
+            try {
+                await publishPmtilesDataset(layer);
+            } catch (err) {
+                console.warn('[DualScreen] PMTiles archive could not be shared', layer?.id, err);
+            }
+        }
         const preserveViewport = !!options.preserveViewport;
         const payload = buildSnapshotPayload({
-            layers: spatialLayers,
+            layers: mapLayers,
             viewport: preserveViewport ? null : this._lastViewport,
             basemap: mapService.getCurrentBasemap() || 'voyager',
             is3d: mapService.is3DEnabled(),
@@ -541,7 +550,7 @@ class DualScreenCoordinator {
     }
 
     _spatialLayersInMapOrder() {
-        const spatial = getLayers().filter(isSpatialLayer);
+        const spatial = getLayers().filter(isDualScreenMapLayer);
         const rank = new Map(getMapLayerOrderIds().map((id, index) => [id, index]));
         return spatial.slice().sort((a, b) => (rank.get(a.id) ?? 0) - (rank.get(b.id) ?? 0));
     }

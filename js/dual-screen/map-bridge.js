@@ -5,6 +5,8 @@
  */
 import bus from '../core/event-bus.js';
 import { blobToDataUrl } from '../core/coverage-raster-layer.js';
+import { isPmTilesLayer } from '../core/data-model.js';
+import { publishPmtilesDataset } from '../map/pmtiles-protocol.js';
 import { initSelectionShortcuts } from '../map/selection-shortcuts.js';
 import { MessageType } from './protocol.js';
 
@@ -302,6 +304,15 @@ function mixProperties(hash, properties) {
     return next;
 }
 
+function stableJson(value) {
+    if (value == null) return '';
+    try {
+        return JSON.stringify(value);
+    } catch {
+        return '';
+    }
+}
+
 /** Cheap content stamp so a later sync can send one changed layer, not the whole map. */
 export function layerContentStamp(layer) {
     const features = layer?.geojson?.features;
@@ -315,13 +326,32 @@ export function layerContentStamp(layer) {
             hash = mixProperties(hash, features[i]?.properties);
         }
     }
+    const markerIds = (layer?._arcgisPictureMarkers?.markers || layer?.pictureMarkers?.markers || [])
+        .map((marker) => marker?.imageId || '')
+        .join(',');
     return {
         hash,
         visible: layer?.visible !== false,
         name: layer?.name || '',
         storage: layer?.storage || '',
         workspaceLayerId: layer?.workspaceLayerId || '',
-        scale: `${layer?.scaleRangeEnabled ? 1 : 0}:${layer?.minScale ?? ''}:${layer?.maxScale ?? ''}`
+        scale: `${layer?.scaleRangeEnabled ? 1 : 0}:${layer?.minScale ?? ''}:${layer?.maxScale ?? ''}`,
+        filter: stableJson(layer?.workspaceAttributeFilter || layer?._activeFilter || null),
+        service: layer?.type === 'service'
+            ? stableJson({
+                url: layer.service?.url || '',
+                kind: layer.service?.kind || '',
+                style: layer.service?.style || null,
+                opacity: layer.service?.opacity ?? null
+            })
+            : '',
+        pmtiles: isPmTilesLayer(layer)
+            ? stableJson({
+                url: layer.pmtiles?.url || layer.source?.url || '',
+                sourceLayer: layer.pmtiles?.sourceLayer || ''
+            })
+            : '',
+        markers: markerIds
     };
 }
 
@@ -360,7 +390,21 @@ export function planLayerDelta(prevStamps, prevOrder, layers) {
             || old.storage !== stamp.storage
             || old.workspaceLayerId !== stamp.workspaceLayerId
             || old.scale !== stamp.scale;
-        if (geometryChanged) calls.push({ method: 'refreshLayerData', args: [layer] });
+        const identityChanged = old.service !== stamp.service
+            || old.pmtiles !== stamp.pmtiles
+            || old.markers !== stamp.markers;
+        // Style, archive location, or picture markers need a fresh add.
+        // A live service data change re-queries on the pop-out map instead of
+        // copying the main window's last viewport packet.
+        if (identityChanged) {
+            calls.push({ method: 'addLayer', args: [layer, index, { fit: false }] });
+        } else if (geometryChanged) {
+            if (layer.type === 'service') calls.push({ method: 'refreshServiceLayer', args: [layer.id] });
+            else calls.push({ method: 'refreshLayerData', args: [layer] });
+        }
+        if (!identityChanged && old.filter !== stamp.filter) {
+            calls.push({ method: 'syncWorkspaceAttributeFilter', args: [layer] });
+        }
         if (old.visible !== stamp.visible) calls.push({ method: 'toggleLayer', args: [layer.id, stamp.visible] });
     });
 
@@ -559,6 +603,21 @@ async function blobUrlToDataUrl(url) {
     return dataUrl;
 }
 
+function datasetHasBlobPmtiles(args) {
+    const dataset = args?.[0];
+    if (!dataset || typeof dataset !== 'object' || !isPmTilesLayer(dataset)) return false;
+    const url = String(dataset.pmtiles?.url || dataset.source?.url || '');
+    return url.startsWith('blob:');
+}
+
+async function rewritePmtilesArgs(args) {
+    const next = Array.isArray(args) ? args.slice() : [];
+    if (next[0] && typeof next[0] === 'object') {
+        await publishPmtilesDataset(next[0]);
+    }
+    return next;
+}
+
 async function rewriteBlobUrls(value, seen = new WeakMap()) {
     if (typeof value === 'string') {
         return value.startsWith('blob:') ? blobUrlToDataUrl(value) : value;
@@ -732,7 +791,7 @@ export function installDualScreenMapServiceDecorator(mapApi, coordinator) {
         throw new Error('installDualScreenMapServiceDecorator requires a coordinator object');
     }
 
-    let georefChain = Promise.resolve();
+    let asyncForwardChain = Promise.resolve();
     const originals = {};
     for (const name of listPublicMapMethods(mapApi)) {
         originals[name] = mapApi[name].bind(mapApi);
@@ -759,7 +818,7 @@ export function installDualScreenMapServiceDecorator(mapApi, coordinator) {
                 return coordinator.forwardContinuousPointPick?.(args[0], args[1]);
             }
             if (GEOREFERENCE_IMAGE_METHODS.has(name) && containsBlobUrl(args)) {
-                georefChain = georefChain.then(async () => {
+                asyncForwardChain = asyncForwardChain.then(async () => {
                     try {
                         const nextArgs = await rewriteBlobUrls(args);
                         coordinator.forwardMapCall?.(name, nextArgs, options);
@@ -768,6 +827,19 @@ export function installDualScreenMapServiceDecorator(mapApi, coordinator) {
                             `[DualScreen] georeference image could not cross the bridge: ${err?.message || err}`
                         );
                         coordinator.forwardMapCall?.(name, args, options);
+                    }
+                }).then(() => {}, () => {});
+                return undefined;
+            }
+            if (datasetHasBlobPmtiles(args)) {
+                asyncForwardChain = asyncForwardChain.then(async () => {
+                    try {
+                        const nextArgs = await rewritePmtilesArgs(args);
+                        coordinator.forwardMapCall?.(name, nextArgs, options);
+                    } catch (err) {
+                        warnDualScreenDev(
+                            `[DualScreen] PMTiles archive could not cross the bridge: ${err?.message || err}`
+                        );
                     }
                 }).then(() => {}, () => {});
                 return undefined;

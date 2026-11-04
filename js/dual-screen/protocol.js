@@ -121,6 +121,37 @@ export function shouldApplyViewport(incoming, localRole, lastAppliedMsgId) {
     return true;
 }
 
+function cloneJson(value) {
+    if (value == null) return null;
+    try {
+        return JSON.parse(JSON.stringify(value));
+    } catch {
+        return null;
+    }
+}
+
+/**
+ * Fields the pop-out map needs in addition to GeoJSON.
+ * Service URLs, PMTiles locations, workspace filters, and picture-marker packs
+ * are plain data. Blob PMTiles URLs are rewritten to idb: keys before this runs.
+ * @param {object} layer
+ */
+function layerTransportFields(layer) {
+    const pictureMarkers = layer._arcgisPictureMarkers || layer.pictureMarkers || null;
+    return {
+        service: cloneJson(layer.service),
+        pmtiles: cloneJson(layer.pmtiles),
+        schema: cloneJson(layer.schema),
+        datasetProfile: cloneJson(layer.datasetProfile),
+        workspaceAttributeFilter: cloneJson(layer.workspaceAttributeFilter),
+        workspaceFilterIndices: Array.isArray(layer._workspaceFilterIndices)
+            ? layer._workspaceFilterIndices.slice()
+            : null,
+        activeFilter: cloneJson(layer._activeFilter),
+        pictureMarkers: cloneJson(pictureMarkers)
+    };
+}
+
 export function serializeLayerForSync(layer, index) {
     return {
         id: layer.id,
@@ -134,10 +165,11 @@ export function serializeLayerForSync(layer, index) {
         mapLabels: layer._mapLabels ?? null,
         kmlExport: layer._kmlExport ?? null,
         colorIndex: index,
-        source: layer.source,
+        source: cloneJson(layer.source),
         scaleRangeEnabled: !!layer.scaleRangeEnabled,
         minScale: layer.minScale ?? null,
-        maxScale: layer.maxScale ?? null
+        maxScale: layer.maxScale ?? null,
+        ...layerTransportFields(layer)
     };
 }
 
@@ -157,7 +189,8 @@ export function serializeLayerMetaForRestyle(layer) {
         kmlExport: layer._kmlExport ?? layer.kmlExport ?? null,
         scaleRangeEnabled: !!layer.scaleRangeEnabled,
         minScale: layer.minScale ?? null,
-        maxScale: layer.maxScale ?? null
+        maxScale: layer.maxScale ?? null,
+        ...layerTransportFields(layer)
     };
 }
 

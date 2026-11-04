@@ -12,6 +12,14 @@ import {
     isPmTilesLayer
 } from '../core/data-model.js';
 import { TILED_RENDER_THRESHOLD, TILE_SOURCE_MAX_ZOOM, TILE_SOURCE_LAYER } from './tiles/tile-constants.js';
+import {
+    ensurePmtilesProtocol,
+    openPmtilesArchive,
+    pmtilesDatasetUrl,
+    pmtilesSourceUrl,
+    publishPmtilesDataset
+} from './pmtiles-protocol.js';
+import { attributeFilterDefinition, attributeRulesToMapFilter } from './attribute-map-filter.js';
 import { profileSuggestsTiledDisplay } from '../import/dataset-profile.js';
 import { beginActivity, endActivity } from '../ui/app-activity.js';
 import { getCoverageRasters, isCoverageRasterLayer } from '../core/coverage-raster-layer.js';
@@ -401,6 +409,8 @@ class MapManager {
             logger.error('Map', 'MapLibre GL JS not loaded');
             return;
         }
+
+        ensurePmtilesProtocol();
 
         const mapInit = isPresentationMode()
             ? resolvePresentationMapInit(getPresentationModeState().scene)
@@ -982,16 +992,127 @@ class MapManager {
     }
 
     /**
-     * PMTiles layers are not supported in this build.
+     * Vector (or raster) PMTiles archive. The pop-out registers pmtiles:// itself
+     * and loads the same http(s) URL or idb: key.
      * @param {object} dataset
      * @param {number} [colorIndex]
      * @param {{ fit?: boolean }} [options]
      */
     async addPmTilesLayer(dataset, colorIndex = 0, { fit = false } = {}) {
-        logger.warn('Map', 'PMTiles layers are unavailable', {
-            layer: dataset?.name,
+        if (!this.map || !dataset?.id) return;
+        try {
+            await publishPmtilesDataset(dataset);
+        } catch (err) {
+            logger.warn('Map', 'PMTiles archive could not be stored for the other map', {
+                layer: dataset?.name,
+                message: err?.message
+            });
+        }
+        const archiveUrl = pmtilesDatasetUrl(dataset);
+        if (!archiveUrl) {
+            logger.warn('Map', 'PMTiles layer has no archive URL', { layer: dataset?.name });
+            return;
+        }
+        ensurePmtilesProtocol();
+        this.removeLayer(dataset.id);
+
+        let archive = null;
+        try {
+            archive = await openPmtilesArchive(archiveUrl);
+        } catch (err) {
+            logger.warn('Map', 'PMTiles archive failed to open', {
+                layer: dataset?.name,
+                message: err?.message
+            });
+            return;
+        }
+        if (!archive) return;
+
+        let header = null;
+        let metadata = null;
+        try {
+            header = await archive.getHeader();
+            metadata = await archive.getMetadata();
+        } catch (err) {
+            logger.warn('Map', 'PMTiles header failed', { layer: dataset?.name, message: err?.message });
+            return;
+        }
+
+        const sourceLayer = dataset.pmtiles?.sourceLayer
+            || metadata?.vector_layers?.[0]?.id
+            || 'features';
+        if (dataset.pmtiles) dataset.pmtiles.sourceLayer = sourceLayer;
+        const tileType = header?.tileType;
+        const raster = tileType === 2 || tileType === 3 || tileType === 4 || tileType === 5;
+        const sourceId = `src-${dataset.id}`;
+        const sourceUrl = pmtilesSourceUrl(archiveUrl);
+
+        const defaultColor = LAYER_COLORS[colorIndex % LAYER_COLORS.length];
+        const stored = this._layerStyles.get(dataset.id);
+        let layerStyle = normalizeStyle(stored, defaultColor);
+        layerStyle = mergeDatasetLabelsIntoStyle(layerStyle, dataset);
+        if (!stored || (stored.labels == null && layerStyle.labels != null)) {
+            this._layerStyles.set(dataset.id, { ...layerStyle });
+        }
+
+        this.map.addSource(sourceId, raster
+            ? { type: 'raster', url: sourceUrl, tileSize: 256 }
+            : {
+                type: 'vector',
+                url: sourceUrl,
+                minzoom: dataset.pmtiles?.minZoom ?? header?.minZoom ?? 0,
+                maxzoom: dataset.pmtiles?.maxZoom ?? header?.maxZoom ?? 22
+            });
+
+        let layerIds = [];
+        if (raster) {
+            const rasterId = `${dataset.id}-raster`;
+            this.map.addLayer({
+                id: rasterId,
+                type: 'raster',
+                source: sourceId,
+                paint: { 'raster-opacity': dataset.pmtiles?.opacity ?? 1 }
+            });
+            layerIds = [rasterId];
+        } else {
+            layerIds = this._installVectorTileLayerSet(dataset, sourceId, layerStyle, sourceLayer);
+        }
+
+        const baseFilters = new Map();
+        for (const id of layerIds) {
+            const spec = this.map.getLayer(id);
+            if (spec?.filter) baseFilters.set(id, spec.filter);
+        }
+
+        this.dataLayers.set(dataset.id, {
+            sourceId,
+            layerIds,
+            chunkSources: [{ sourceId, layerIds }],
             colorIndex,
-            fit
+            pmtiles: true,
+            geojson: dataset.geojson || { type: 'FeatureCollection', features: [] },
+            scaleRange: normalizeScaleRange(dataset),
+            pictureMarkers: dataset._arcgisPictureMarkers || null,
+            baseFilters
+        });
+        this._storeLayerScaleRange(dataset);
+        this._layerNames.set(dataset.id, dataset.name);
+        this._applyDatasetVisibility(dataset);
+        this._applyDatasetLock(dataset);
+        this._applyAttributeFilter(dataset);
+
+        if (fit && header && Number.isFinite(header.minLon) && header.minLon < header.maxLon) {
+            this.scheduleMapFit({
+                bounds: [[header.minLon, header.minLat], [header.maxLon, header.maxLat]],
+                options: { allowZoomOut: false }
+            });
+        }
+
+        bus.emit('map:layerAdded', { id: dataset.id, name: dataset.name });
+        logger.info('Map', 'PMTiles layer added', {
+            layer: dataset.name,
+            url: archiveUrl,
+            sourceLayer
         });
     }
 
@@ -1803,7 +1924,8 @@ class MapManager {
     }
 
     /** Mirror of _installGeoJsonChunk's layer set for a vector-tile source. */
-    _installVectorTileLayerSet(dataset, sourceId, layerStyle) {
+    _installVectorTileLayerSet(dataset, sourceId, layerStyle, sourceLayer = TILE_SOURCE_LAYER) {
+        const tileLayer = sourceLayer || TILE_SOURCE_LAYER;
         const geomType = dataset.schema?.geometryType || 'Mixed';
         const hasPolygons = geomType === 'Mixed' || /Polygon/.test(geomType);
         const hasLines = geomType === 'Mixed' || /LineString/.test(geomType);
@@ -1821,7 +1943,7 @@ class MapManager {
             const fillId = `${idBase}-fill`;
             if (!this.map.getLayer(fillId)) {
                 this.map.addLayer({
-                    id: fillId, type: 'fill', source: sourceId, 'source-layer': TILE_SOURCE_LAYER,
+                    id: fillId, type: 'fill', source: sourceId, 'source-layer': tileLayer,
                     filter: _geomTypesFilter(['Polygon', 'MultiPolygon']),
                     paint: { 'fill-color': styPoly.fillColor, 'fill-opacity': styPoly.fillOpacity }
                 });
@@ -1831,7 +1953,7 @@ class MapManager {
             const outlineId = `${idBase}-outline`;
             if (!this.map.getLayer(outlineId)) {
                 this.map.addLayer({
-                    id: outlineId, type: 'line', source: sourceId, 'source-layer': TILE_SOURCE_LAYER,
+                    id: outlineId, type: 'line', source: sourceId, 'source-layer': tileLayer,
                     filter: _geomTypesFilter(['Polygon', 'MultiPolygon']),
                     paint: {
                         'line-color': styPoly.strokeColor,
@@ -1843,7 +1965,7 @@ class MapManager {
             layerIds.push(outlineId);
             layerIds.push(this._ensureLineHitLayer(
                 sourceId, outlineId, _geomTypesFilter(['Polygon', 'MultiPolygon']), styPoly.strokeWidth,
-                { sourceLayer: TILE_SOURCE_LAYER }
+                { sourceLayer: tileLayer }
             ));
         }
 
@@ -1852,7 +1974,7 @@ class MapManager {
             const lineId = `${idBase}-line`;
             if (!this.map.getLayer(lineId)) {
                 this.map.addLayer({
-                    id: lineId, type: 'line', source: sourceId, 'source-layer': TILE_SOURCE_LAYER,
+                    id: lineId, type: 'line', source: sourceId, 'source-layer': tileLayer,
                     filter: lineFilter,
                     paint: {
                         'line-color': styLine.strokeColor,
@@ -1864,7 +1986,7 @@ class MapManager {
             layerIds.push(lineId);
             layerIds.push(this._ensureLineHitLayer(
                 sourceId, lineId, lineFilter, styLine.strokeWidth,
-                { sourceLayer: TILE_SOURCE_LAYER }
+                { sourceLayer: tileLayer }
             ));
         }
 
@@ -1872,12 +1994,12 @@ class MapManager {
             const fo = Math.min(1, (typeof styPoint.fillOpacity === 'number' ? styPoint.fillOpacity : 0.3) + 0.3);
             let pointGeomFilter = excludeAnnotationsFilter(_geomTypesFilter(['Point', 'MultiPoint']));
             pointGeomFilter = this._installImportedPictureMarkerGlyphLayer(
-                dataset, sourceId, idBase, layerIds, pointGeomFilter, false, TILE_SOURCE_LAYER
+                dataset, sourceId, idBase, layerIds, pointGeomFilter, false, tileLayer
             );
             const ptId = `${idBase}-point`;
             if (!this.map.getLayer(ptId)) {
                 this.map.addLayer({
-                    id: ptId, type: 'circle', source: sourceId, 'source-layer': TILE_SOURCE_LAYER,
+                    id: ptId, type: 'circle', source: sourceId, 'source-layer': tileLayer,
                     filter: pointGeomFilter,
                     paint: {
                         'circle-radius': styPoint.circleRadius,
@@ -1895,7 +2017,7 @@ class MapManager {
             hasPoints,
             hasLines,
             hasPolygons,
-            sourceLayer: TILE_SOURCE_LAYER
+            sourceLayer: tileLayer
         });
 
         this._bindLayerClickHandlers(dataset, layerIds, flat);
@@ -1940,12 +2062,41 @@ class MapManager {
     }
 
     /**
+     * Attribute filter for PMTiles and live service layers, which have no
+     * in-memory feature list to rewrite. Workspace layers keep index filtering.
+     * @param {object} dataset
+     */
+    _applyAttributeFilter(dataset) {
+        const entry = this.dataLayers.get(dataset?.id);
+        if (!entry || !this.map) return;
+        const def = attributeFilterDefinition(dataset);
+        const extra = def ? attributeRulesToMapFilter(def.rules, def.logic) : null;
+        if (!entry.baseFilters) entry.baseFilters = new Map();
+        for (const id of entry.layerIds || []) {
+            if (!this.map.getLayer(id)) continue;
+            if (!entry.baseFilters.has(id)) {
+                const current = this.map.getLayer(id)?.filter;
+                if (current) entry.baseFilters.set(id, current);
+            }
+            const base = entry.baseFilters.get(id);
+            const next = extra && base ? ['all', base, extra] : (extra || base || null);
+            if (next) this.map.setFilter(id, next);
+        }
+    }
+
+    /**
      * Apply or clear a workspace attribute filter on the map.
      * Viewport packets and vector tiles both honor the stored index set.
+     * PMTiles and live service layers use the same call with a MapLibre filter.
      * @param {object} dataset
      */
     async syncWorkspaceAttributeFilter(dataset) {
-        if (!dataset || !isWorkspaceLayer(dataset)) return;
+        if (!dataset) return;
+        if (isPmTilesLayer(dataset) || isServiceLayer(dataset)) {
+            this._applyAttributeFilter(dataset);
+            return;
+        }
+        if (!isWorkspaceLayer(dataset)) return;
         const stored = this._workspaceDatasets?.get(dataset.id);
         const target = stored || dataset;
         if (stored && stored !== dataset) {
@@ -2419,11 +2570,33 @@ class MapManager {
                 if (e._drawHandled || isLayerLocked(dataset.id)) return;
                 e.preventDefault();
                 const props = e.features?.[0]?.properties;
-                if (!props || props._featureIndex === undefined) return;
-                const featureIndex = Number(props._featureIndex);
                 // e.features is only valid synchronously; MapLibre's lazy geometry
                 // getter must be materialized before any await.
                 const clickedGeometry = e.features?.[0]?.geometry ?? null;
+                if (isPmTilesLayer(dataset) && props && props._featureIndex === undefined) {
+                    const feature = {
+                        type: 'Feature',
+                        geometry: clickedGeometry,
+                        properties: { ...props }
+                    };
+                    const latlng = { lat: e.lngLat.lat, lng: e.lngLat.lng };
+                    const popupHits = this._excludeFiberLivePopupHits([{
+                        feature: this._stripInternalProps(feature),
+                        featureIndex: 0,
+                        layerId: dataset.id,
+                        layerName: dataset.name,
+                        layerColor: styFlat.strokeColor
+                    }]);
+                    this._popupHits = popupHits;
+                    this._popupIndex = 0;
+                    this._popupLatLng = latlng;
+                    this._popupRenderOptions = {};
+                    if (!popupHits.length) this._closePopup();
+                    else if (this._popupMode !== 'off') this._renderCyclePopup(this._popupRenderOptions);
+                    return;
+                }
+                if (!props || props._featureIndex === undefined) return;
+                const featureIndex = Number(props._featureIndex);
                 const resolveFeature = async () => {
                     const features = dataset.geojson?.features || [];
                     let feature = lookupRenderedFeature(features, featureIndex, {
@@ -2760,8 +2933,9 @@ class MapManager {
 
     restyleLayer(layerId, dataset, style) {
         this._layerStyles.set(layerId, { ...style });
-        this.addLayer(dataset, this._getLayerZIndex(layerId), { fit: false });
+        const added = this.addLayer(dataset, this._getLayerZIndex(layerId), { fit: false });
         bus.emit('map:styleChanged', { layerId });
+        return added;
     }
 
     /**
@@ -2783,6 +2957,10 @@ class MapManager {
                 }
             });
             return;
+        }
+
+        if (entry.pmtiles) {
+            return this.addPmTilesLayer(dataset, entry.colorIndex ?? 0, { fit: false });
         }
 
         const taggedFeatures = _tagFeaturesForMap(dataset);

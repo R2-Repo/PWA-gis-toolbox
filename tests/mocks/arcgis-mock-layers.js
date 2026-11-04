@@ -301,7 +301,7 @@ export function handleLayerQuery(layerKey, params) {
             .map((s) => Number(s.trim()))
             .filter((n) => Number.isFinite(n));
         const features = ids.map((id) => def.buildFeature?.(id)).filter(Boolean);
-        return { status: 200, body: { features } };
+        return featureQueryResult(def, params, features, false);
     }
 
     const offset = Number(params.get('resultOffset') || 0);
@@ -316,13 +316,56 @@ export function handleLayerQuery(layerKey, params) {
     }
     const fetched = offset + features.length;
     const exceeded = fetched < total;
+    return featureQueryResult(def, params, features, exceeded);
+}
+
+/**
+ * Live layers request `f=geojson`. Esri JSON stays the default for importers.
+ * @param {MockLayerDef} def
+ * @param {URLSearchParams} params
+ * @param {object[]} features
+ * @param {boolean} exceeded
+ */
+function featureQueryResult(def, params, features, exceeded) {
+    if (params.get('f') === 'geojson') {
+        return {
+            status: 200,
+            body: {
+                type: 'FeatureCollection',
+                features: features.map((feature) => ({
+                    type: 'Feature',
+                    properties: { ...(feature.attributes || {}) },
+                    geometry: esriGeometryToGeoJson(feature.geometry, def.geometryType)
+                })),
+                properties: { exceededTransferLimit: exceeded }
+            }
+        };
+    }
     return {
         status: 200,
-        body: {
-            features,
-            exceededTransferLimit: exceeded
-        }
+        body: { features, exceededTransferLimit: exceeded }
     };
+}
+
+/**
+ * @param {object|null|undefined} geometry
+ * @param {string} [geometryType]
+ */
+function esriGeometryToGeoJson(geometry, geometryType) {
+    if (!geometry) return null;
+    if (geometryType === 'esriGeometryPoint' || (geometry.x != null && geometry.y != null && !geometry.paths && !geometry.rings)) {
+        return { type: 'Point', coordinates: [geometry.x, geometry.y] };
+    }
+    if (geometry.paths) {
+        if (geometry.paths.length <= 1) {
+            return { type: 'LineString', coordinates: geometry.paths[0] || [] };
+        }
+        return { type: 'MultiLineString', coordinates: geometry.paths };
+    }
+    if (geometry.rings) {
+        return { type: 'Polygon', coordinates: geometry.rings };
+    }
+    return null;
 }
 
 /**
