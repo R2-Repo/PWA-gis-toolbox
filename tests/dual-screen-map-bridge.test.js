@@ -10,10 +10,15 @@ import {
     layerContentStamp,
     listPublicMapMethods,
     LOCAL_ONLY_MAP_METHODS,
-    planLayerDelta
+    planLayerDelta,
+    runForwardedMapRpc,
+    SAMPLE_ELEVATIONS_CLOSED_ERROR,
+    SAMPLE_ELEVATIONS_TIMEOUT_ERROR,
+    SAMPLE_ELEVATIONS_TIMEOUT_MS
 } from '../js/dual-screen/map-bridge.js';
 import { createMapService } from '../js/map/map-service.js';
 import { MessageType } from '../js/dual-screen/protocol.js';
+import { createSecondaryProtocol } from '../js/dual-screen/secondary-protocol.js';
 import { addLayer, getLayers, removeLayer } from '../js/core/state.js';
 import { createSpatialDataset } from '../js/core/data-model.js';
 
@@ -329,5 +334,181 @@ describe('dual-screen map bridge', () => {
         expect(warn.mock.calls.some((args) => String(args[0]).includes('missing'))).toBe(true);
         applyForwardedMapCall(api, { method: 'fitToAll', args: [] });
         expect(api.fitToAll).toHaveBeenCalledOnce();
+    });
+
+    it('samples elevations on the local map in a single window', async () => {
+        const queryElevationAt = vi.fn((lat, lng) => {
+            if (lat === 40.5 && lng === -111.8) return 2100.7;
+            if (lat === 40.2 && lng === -111.2) return null;
+            if (lat === 41 && lng === -112) return Infinity;
+            if (lat === 42 && lng === -113) throw new Error('tile missing');
+            if (lat === 0 && lng === 0) return 0;
+            return 12;
+        });
+        const queryTerrainElevation = vi.fn(() => 99);
+        const api = createMapService({
+            mapAdapter: {
+                queryElevationAt,
+                getMap: () => ({ queryTerrainElevation })
+            }
+        });
+
+        await expect(api.sampleElevations([
+            [-111.8, 40.5],
+            { lng: -111.2, lat: 40.2 },
+            [-112, 41, 999],
+            { lng: -113, lat: 42 },
+            [-114, 43],
+            [0, 0]
+        ])).resolves.toEqual([2100.7, null, null, null, 12, 0]);
+        expect(queryElevationAt.mock.calls).toEqual([
+            [40.5, -111.8],
+            [40.2, -111.2],
+            [41, -112],
+            [42, -113],
+            [43, -114],
+            [0, 0]
+        ]);
+        expect(queryTerrainElevation).not.toHaveBeenCalled();
+        await expect(api.sampleElevations([])).resolves.toEqual([]);
+        expect(MockBroadcastChannel.traffic).toEqual([]);
+    });
+
+    it('uses queryTerrainElevation when queryElevationAt is missing', async () => {
+        const queryTerrainElevation = vi.fn((lngLat) => (lngLat[0] === -111 ? 42 : null));
+        const api = createMapService({
+            mapAdapter: { getMap: () => ({ queryTerrainElevation }) }
+        });
+        await expect(api.sampleElevations([
+            [-111, 40],
+            { lng: -112, lat: 41 }
+        ])).resolves.toEqual([42, null]);
+        expect(queryTerrainElevation).toHaveBeenNthCalledWith(1, [-111, 40], { exaggerated: false });
+        expect(queryTerrainElevation).toHaveBeenNthCalledWith(2, [-112, 41], { exaggerated: false });
+    });
+
+    it('rejects sampleElevations input that is not a point list', async () => {
+        const queryElevationAt = vi.fn(() => 1);
+        const api = createMapService({ mapAdapter: { queryElevationAt } });
+        await expect(api.sampleElevations(null)).rejects.toThrow(
+            'sampleElevations expects an array of [lng, lat] or {lng, lat}'
+        );
+        await expect(api.sampleElevations({ lng: -111, lat: 40 })).rejects.toThrow(/expects an array/);
+        await expect(api.sampleElevations([[-111]])).rejects.toThrow(/point 0 must be \[lng, lat\] or \{lng, lat\}/);
+        await expect(api.sampleElevations([null])).rejects.toThrow(/point 0/);
+        await expect(api.sampleElevations([{ lng: -111 }])).rejects.toThrow(/point 0/);
+        await expect(api.sampleElevations([[Number.NaN, 40]])).rejects.toThrow(/point 0 must have finite lng and lat/);
+        await expect(api.sampleElevations([[-111, '40']])).rejects.toThrow(/finite/);
+        expect(queryElevationAt).not.toHaveBeenCalled();
+    });
+
+    it('forwards sampleElevations in order and keeps queryElevationAt local', async () => {
+        const localRead = vi.fn((lat, lng) => (lat === 40.5 && lng === -111.8 ? 2100.7 : 1));
+        const popupRead = vi.fn((lat, lng) => {
+            if (lat === 40.5 && lng === -111.8) return 2100.7;
+            if (lat === 40.2 && lng === -111.2) return null;
+            if (lat === 41 && lng === -112) return 9;
+            return 0;
+        });
+        const api = createMapService({ mapAdapter: { queryElevationAt: localRead } });
+        installDualScreenMapServiceDecorator(api, dualScreenCoordinator);
+
+        await expect(api.sampleElevations([[-111.8, 40.5]])).resolves.toEqual([2100.7]);
+        expect(localRead).toHaveBeenCalledWith(40.5, -111.8);
+        expect(MockBroadcastChannel.traffic).toEqual([]);
+
+        /** @type {DualScreenChannel | null} */
+        let popupChannel = null;
+        const popupApi = createMapService({ mapAdapter: { queryElevationAt: popupRead } });
+        const protocol = createSecondaryProtocol({
+            sessionId: 'sess-test',
+            post: (message) => popupChannel?.post(message),
+            onApply: (msg) => {
+                if (msg.type !== MessageType.MAP_RPC) return;
+                void runForwardedMapRpc(popupApi, msg.payload, (type, payload) => {
+                    protocol.enqueueOutbound(type, payload);
+                });
+            }
+        });
+        dualScreenCoordinator._channel.close();
+        dualScreenCoordinator._rpcPending.clear();
+        dualScreenCoordinator._channel = new DualScreenChannel('primary', (msg) => {
+            if (msg.type === MessageType.HELLO || msg.type === MessageType.SNAPSHOT || msg.type === MessageType.BYE) return;
+            dualScreenCoordinator._handleMessage(msg);
+        }, { sessionId: 'sess-test' });
+        popupChannel = new DualScreenChannel('secondary', (msg) => protocol.receive(msg), { sessionId: 'sess-test' });
+        protocol.markHandshakeReady();
+
+        try {
+            dualScreenCoordinator.isActive = true;
+            vi.spyOn(console, 'warn').mockImplementation(() => {});
+            localRead.mockClear();
+            MockBroadcastChannel.traffic = [];
+            const openCalls = window.open.mock.calls.length;
+
+            await expect(api.sampleElevations([
+                [-111.8, 40.5],
+                { lng: -111.2, lat: 40.2 },
+                [-112, 41]
+            ])).resolves.toEqual([2100.7, null, 9]);
+            expect(localRead).not.toHaveBeenCalled();
+            expect(popupRead.mock.calls).toEqual([
+                [40.5, -111.8],
+                [40.2, -111.2],
+                [41, -112]
+            ]);
+            expect(api.queryElevationAt(40.5, -111.8)).toBeNull();
+            expect(localRead).not.toHaveBeenCalled();
+            expect(window.open.mock.calls.length).toBe(openCalls);
+
+            const rpc = MockBroadcastChannel.traffic.filter((msg) => (
+                msg.type === MessageType.MAP_RPC && msg.payload?.method === 'sampleElevations'
+            ));
+            expect(rpc).toHaveLength(1);
+            expect(rpc[0].payload.args[0]).toEqual([
+                [-111.8, 40.5],
+                [-111.2, 40.2],
+                [-112, 41]
+            ]);
+
+            MockBroadcastChannel.traffic = [];
+            await expect(api.sampleElevations([])).resolves.toEqual([]);
+            await expect(api.sampleElevations({ lng: -111, lat: 40 })).rejects.toThrow(/expects an array/);
+            expect(MockBroadcastChannel.traffic.filter((msg) => msg.type === MessageType.MAP_RPC)).toEqual([]);
+            expect(classifyMapMethod('sampleElevations')).toBe('forward');
+            expect(classifyMapMethod('queryElevationAt')).toBe('local');
+        } finally {
+            popupChannel.close();
+        }
+    });
+
+    it('rejects sampleElevations when the pop-out times out or is closed', async () => {
+        const localRead = vi.fn(() => 50);
+        const api = createMapService({ mapAdapter: { queryElevationAt: localRead } });
+        installDualScreenMapServiceDecorator(api, dualScreenCoordinator);
+        dualScreenCoordinator.isActive = true;
+        vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+        const closed = api.sampleElevations([[-111.8, 40.5]]);
+        dualScreenCoordinator._rejectAllMapRpc('Dual screen deactivated');
+        await expect(closed).rejects.toThrow(SAMPLE_ELEVATIONS_CLOSED_ERROR);
+        expect(localRead).not.toHaveBeenCalled();
+
+        dualScreenCoordinator._channel.close();
+        dualScreenCoordinator._channel = null;
+        await expect(api.sampleElevations([[-111.8, 40.5]])).rejects.toThrow(SAMPLE_ELEVATIONS_CLOSED_ERROR);
+
+        dualScreenCoordinator._channel = new DualScreenChannel('primary', () => {}, { sessionId: 'sess-test' });
+        dualScreenCoordinator._sessionId = 'sess-test';
+        vi.useFakeTimers();
+        try {
+            const pending = api.sampleElevations([[-110, 40]]);
+            const assertion = expect(pending).rejects.toThrow(SAMPLE_ELEVATIONS_TIMEOUT_ERROR);
+            await vi.advanceTimersByTimeAsync(SAMPLE_ELEVATIONS_TIMEOUT_MS);
+            await assertion;
+        } finally {
+            vi.useRealTimers();
+        }
+        expect(localRead).not.toHaveBeenCalled();
     });
 });

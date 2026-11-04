@@ -493,6 +493,17 @@ export function createMapService({ mapAdapter = mapManager } = {}) {
         queryElevationAt(lat, lng) {
             return mapAdapter.queryElevationAt?.(lat, lng) ?? null;
         },
+        /**
+         * Terrain elevation in meters for each point, in order.
+         * Points are [lng, lat] or {lng, lat}. Null means the terrain has no value.
+         * Single-window mode reads this map. Dual-screen forwards the call.
+         * @param {Array<[number, number] | { lng: number, lat: number }>} points
+         * @returns {Promise<Array<number|null>>}
+         */
+        async sampleElevations(points) {
+            const { sampleElevationsFromAdapter } = await import('../dual-screen/map-bridge.js');
+            return sampleElevationsFromAdapter(mapAdapter, points);
+        },
         startMeasureFrom(latlng) {
             return mapAdapter.startMeasureFromLatLng?.(latlng);
         },

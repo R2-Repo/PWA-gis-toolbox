@@ -85,6 +85,7 @@ export const FORWARDED_MAP_METHODS = new Set([
     'startSketchCirclePolygon',
     'startPresentationFeaturePick',
     'getMapView',
+    'sampleElevations',
     'applyMapView',
     'playPresentationPreview',
     'cancelInteraction',
@@ -118,13 +119,22 @@ export const RPC_MAP_METHODS = new Set([
     'startSketchCirclePolygon',
     'startPresentationFeaturePick',
     'getMapView',
+    'sampleElevations',
     'playPresentationPreview'
 ]);
 
-/** View reads must not pull the pop-out window forward. */
+/** Quiet reads must not pull the pop-out window forward. */
 const QUIET_RPC_METHODS = new Set([
-    'getMapView'
+    'getMapView',
+    'sampleElevations'
 ]);
+
+/** Pop-out elevation samples wait this long, then reject. */
+export const SAMPLE_ELEVATIONS_TIMEOUT_MS = 5000;
+
+export const SAMPLE_ELEVATIONS_TIMEOUT_ERROR = 'sampleElevations timed out waiting for the map window';
+
+export const SAMPLE_ELEVATIONS_CLOSED_ERROR = 'sampleElevations failed: the map window is closed';
 
 const ADD_LAYER_METHODS = new Set([
     'addLayer',
@@ -789,6 +799,132 @@ export async function runForwardedMapRpc(mapApi, payload, postFn) {
 }
 
 /**
+ * @param {unknown} point
+ * @returns {[unknown, unknown] | null} [lng, lat], or null when the shape is wrong
+ */
+function elevationPointToPair(point) {
+    if (Array.isArray(point)) {
+        if (point.length < 2) return null;
+        return [point[0], point[1]];
+    }
+    if (point && typeof point === 'object' && 'lng' in point && 'lat' in point) {
+        return [point.lng, point.lat];
+    }
+    return null;
+}
+
+/**
+ * Accept [lng, lat] or {lng, lat}. Extra tuple values are ignored.
+ * @param {unknown} points
+ * @returns {Array<[number, number]>}
+ */
+export function normalizeElevationSamplePoints(points) {
+    if (!Array.isArray(points)) {
+        throw new Error('sampleElevations expects an array of [lng, lat] or {lng, lat}');
+    }
+    return points.map((point, index) => {
+        const pair = elevationPointToPair(point);
+        if (!pair) {
+            throw new Error(`sampleElevations point ${index} must be [lng, lat] or {lng, lat}`);
+        }
+        const [lng, lat] = pair;
+        if (!Number.isFinite(lng) || !Number.isFinite(lat)) {
+            throw new Error(`sampleElevations point ${index} must have finite lng and lat`);
+        }
+        return [lng, lat];
+    });
+}
+
+function readAdapterElevation(mapAdapter, lat, lng) {
+    if (typeof mapAdapter?.queryElevationAt === 'function') {
+        return mapAdapter.queryElevationAt(lat, lng);
+    }
+    const map = typeof mapAdapter?.getMap === 'function' ? mapAdapter.getMap() : mapAdapter?.map;
+    if (map && typeof map.queryTerrainElevation === 'function') {
+        return map.queryTerrainElevation([lng, lat], { exaggerated: false });
+    }
+    return null;
+}
+
+function readOneElevation(mapAdapter, lat, lng) {
+    try {
+        const value = readAdapterElevation(mapAdapter, lat, lng);
+        return typeof value === 'number' && Number.isFinite(value) ? value : null;
+    } catch {
+        return null;
+    }
+}
+
+/**
+ * Local elevation sample for the window that owns the map.
+ * Uses queryElevationAt(lat, lng). Falls back to map.queryTerrainElevation
+ * only when that read is missing. A thrown read is null so one point
+ * does not drop the rest. Same order as points.
+ * @param {object | null | undefined} mapAdapter
+ * @param {unknown} points
+ * @returns {Promise<Array<number|null>>}
+ */
+export async function sampleElevationsFromAdapter(mapAdapter, points) {
+    const coords = normalizeElevationSamplePoints(points);
+    const out = new Array(coords.length);
+    for (let i = 0; i < coords.length; i += 1) {
+        const [lng, lat] = coords[i];
+        out[i] = readOneElevation(mapAdapter, lat, lng);
+    }
+    return out;
+}
+
+function elevationSampleBridgeError(err) {
+    const message = err?.message || String(err || '');
+    if (/timed out/i.test(message)) return new Error(SAMPLE_ELEVATIONS_TIMEOUT_ERROR);
+    if (/deactivated|not active|not open|bridge is not open/i.test(message)) {
+        return new Error(SAMPLE_ELEVATIONS_CLOSED_ERROR);
+    }
+    return err instanceof Error ? err : new Error(message || SAMPLE_ELEVATIONS_CLOSED_ERROR);
+}
+
+function coerceElevationSampleResult(result, count) {
+    if (!Array.isArray(result) || result.length !== count) {
+        throw new Error('sampleElevations returned an unexpected result');
+    }
+    return result.map((value) => (
+        typeof value === 'number' && Number.isFinite(value) ? value : null
+    ));
+}
+
+/**
+ * Forward sampleElevations to the window that owns the map.
+ * Invalid input rejects before the bridge. An empty list resolves locally.
+ * Timeout and a closed pop-out reject with a clear error (they do not
+ * invent elevations). See docs/DUAL_SCREEN_MODE.md.
+ * @param {object} coordinator
+ * @param {unknown[]} args
+ * @param {{ fromDelta?: boolean }} [options]
+ * @returns {Promise<Array<number|null>>}
+ */
+function forwardSampleElevations(coordinator, args, options = {}) {
+    let coords;
+    try {
+        coords = normalizeElevationSamplePoints(args?.[0]);
+    } catch (err) {
+        return Promise.reject(err instanceof Error ? err : new Error(String(err)));
+    }
+    if (coords.length === 0) return Promise.resolve([]);
+    const pending = coordinator?.forwardMapCall?.('sampleElevations', [coords], {
+        rpc: true,
+        focusMap: false,
+        timeoutMs: SAMPLE_ELEVATIONS_TIMEOUT_MS,
+        fromDelta: options.fromDelta
+    });
+    return Promise.resolve(pending).then(
+        (result) => coerceElevationSampleResult(result, coords.length),
+        (err) => {
+            throw elevationSampleBridgeError(err);
+        }
+    );
+}
+
+/**
  * @param {object} mapApi
  * @param {object} coordinator
  * @returns {() => void}
@@ -828,6 +964,9 @@ export function installDualScreenMapServiceDecorator(mapApi, coordinator) {
             };
             if (name === 'startContinuousPointPick') {
                 return coordinator.forwardContinuousPointPick?.(args[0], args[1]);
+            }
+            if (name === 'sampleElevations') {
+                return forwardSampleElevations(coordinator, args, options);
             }
             if (GEOREFERENCE_IMAGE_METHODS.has(name) && containsBlobUrl(args)) {
                 asyncForwardChain = asyncForwardChain.then(async () => {
