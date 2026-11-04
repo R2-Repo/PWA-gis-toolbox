@@ -7,6 +7,7 @@ import sessionStore from '../js/core/session-store.js';
 import { getState, setUIState } from '../js/core/state.js';
 import { installDualScreenMapServiceDecorator } from '../js/dual-screen/dual-screen-map-service.js';
 import dualScreenCoordinator from '../js/dual-screen/coordinator.js';
+import { showStartupSplashIfEnabled } from '../js/app-startup-splash.js';
 import {
     restoreSessionIfAvailable,
     setupAppWiring,
@@ -488,9 +489,7 @@ export function App() {
             bootRanRef.current = true;
             void (async () => {
                 bootstrapAppFromUrl();
-                if (window.innerWidth >= 768) {
-                    await showToolInfo();
-                }
+                await showStartupSplashIfEnabled(showToolInfo);
                 await restoreSessionIfAvailable();
             })();
         }

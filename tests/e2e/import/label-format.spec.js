@@ -110,8 +110,9 @@ test('@tune label formatting survives a reload', async ({ page }) => {
     await page.waitForFunction(() => globalThis.__gisE2eMapService?.getMap?.(), null, { timeout: 60_000 });
     await allowLocalTextGlyphs(page);
     const closeGuide = page.locator('.modal-overlay--splash .close-modal');
-    await closeGuide.first().waitFor({ state: 'visible', timeout: 60_000 });
-    await closeGuide.first().click();
+    if (await closeGuide.first().isVisible({ timeout: 5000 }).catch(() => false)) {
+        await closeGuide.first().click();
+    }
     await page.getByText('Restore Previous Session?').waitFor({ state: 'visible', timeout: 30_000 });
     await page.locator('.modal-footer .confirm-btn').click();
 

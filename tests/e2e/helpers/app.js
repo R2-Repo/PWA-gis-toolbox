@@ -44,8 +44,9 @@ export async function bootApp(page, baseURL) {
     await page.reload({ waitUntil: 'domcontentloaded' });
 
     const closeGuide = page.locator('.modal-overlay--splash .close-modal');
-    await closeGuide.first().waitFor({ state: 'visible', timeout: 60_000 });
-    await closeGuide.first().click();
+    if (await closeGuide.first().isVisible({ timeout: 5000 }).catch(() => false)) {
+        await closeGuide.first().click();
+    }
 
     const restoreCancel = page.locator('.modal-footer .cancel-btn').filter({ hasText: 'Cancel' });
     if (await restoreCancel.isVisible({ timeout: 3000 }).catch(() => false)) {
