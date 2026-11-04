@@ -43,11 +43,13 @@ import {
     planLayerDelta,
     warnDualScreenDev
 } from './map-bridge.js';
+import { setPopoutOwnsMap } from './screen-mode.js';
 
 const POLL_MS = 500;
 
 class DualScreenCoordinator {
     constructor() {
+        this._mapIsRemote = false;
         this.isActive = false;
         this._mapWindow = null;
         this._channel = null;
@@ -82,6 +84,15 @@ class DualScreenCoordinator {
         /** @type {string[]} */
         this._layerOrder = [];
         this._deltaScheduled = false;
+    }
+
+    get isActive() {
+        return this._mapIsRemote;
+    }
+
+    set isActive(value) {
+        this._mapIsRemote = !!value;
+        setPopoutOwnsMap(this._mapIsRemote);
     }
 
     setFenceBbox(bbox) {
@@ -623,7 +634,7 @@ class DualScreenCoordinator {
         }
         const focusMap = options.focusMap === true;
         const result = options.rpc
-            ? this.invokeMapRpc(method, packed.args, { focusMap })
+            ? this.invokeMapRpc(method, packed.args, { focusMap, timeoutMs: options.timeoutMs })
             : this.broadcastMapCmd(method, { method, args: packed.args }, { focusMap });
         if (!options.fromDelta && LAYER_STAMP_METHODS.has(method)) {
             this._captureLayerSyncBaseline();
@@ -700,6 +711,15 @@ class DualScreenCoordinator {
     broadcastSelection(payload) {
         if (!this._channel) return;
         this._post(MessageType.SELECTION, payload);
+    }
+
+    /**
+     * Plan-set callout session for the pop-out context menu.
+     * @param {{ live?: boolean, bundle?: object, insetViews?: object[] }} payload
+     */
+    broadcastCalloutSession(payload) {
+        if (!this._channel || !this.isActive) return;
+        this._post(MessageType.CALLOUT_SESSION, payload || { live: false });
     }
 
     /**

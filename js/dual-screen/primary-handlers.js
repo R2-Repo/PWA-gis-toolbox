@@ -93,6 +93,10 @@ function handleCtxCmd(payload, deps) {
         deps.openPresentationLink?.();
         return;
     }
+    if (action === 'callout') {
+        deps.onCalloutCommand?.(payload);
+        return;
+    }
     if (action === 'gisTool') {
         deps.invokeAppAction?.(payload?.toolAction);
         return;

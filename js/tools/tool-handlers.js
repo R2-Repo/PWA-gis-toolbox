@@ -93,7 +93,7 @@ import { findFirstLineStringFeature, listLineStringFeatures } from './line-geojs
 import drawManager from '../map/draw-manager.js';
 import { initSelectionShortcuts } from '../map/selection-shortcuts.js';
 import { buildSelectionActionItems, createSelectionActionHandlers, attributeFieldsFromSelection, remainingFeaturesAfterSelection } from './selection-actions.js';
-import sessionStore from '../core/session-store.js';
+import sessionStore, { resolveSessionRestoreCamera } from '../core/session-store.js';
 import { buildDatasetFromSavedLayer, buildDatasetFromWorkspaceRef, prepareLayersFromKitSection } from '../core/layer-restore.js';
 import {
     buildProjectKitSnapshot,
@@ -245,9 +245,18 @@ export async function restoreSessionIfAvailable() {
             }
 
             // Fit map to all restored spatial layers unless the user already zoomed.
+            // Dual-screen applies the saved pop-out camera instead of fitting.
             if (restored > 0) {
                 mapService.syncLayerOrder(getMapLayerOrderIds());
-                if (mapService.userHasMovedCamera?.()) {
+                const cameraPlan = resolveSessionRestoreCamera({
+                    dualActive: dualScreenCoordinator.isActive,
+                    mapView: session.meta?.mapView || null,
+                    userMovedCamera: !!mapService.userHasMovedCamera?.()
+                });
+                if (cameraPlan.action === 'apply') {
+                    mapService.applyMapView(cameraPlan.mapView);
+                    logger.info('Session', 'Restored map view on the pop-out');
+                } else if (cameraPlan.action === 'skip') {
                     logger.info('Session', 'Skipped fit-to-all — user already moved the map');
                 } else {
                     mapService.fitToAll();
@@ -280,17 +289,25 @@ function _timeAgo(ts) {
 // Toolbox Kit — project export/import
 // ============================
 
-function _getMapChromeSnapshot() {
-    const map = mapService.getMap();
+async function _getMapChromeSnapshot() {
     let viewport = null;
-    if (map) {
-        const center = map.getCenter();
-        viewport = {
-            center: [center.lng, center.lat],
-            zoom: map.getZoom(),
-            bearing: map.getBearing?.() ?? 0,
-            pitch: map.getPitch?.() ?? 0
-        };
+    if (dualScreenCoordinator.isActive) {
+        try {
+            viewport = await mapService.getMapView();
+        } catch {
+            viewport = null;
+        }
+    } else {
+        const map = mapService.getMap();
+        if (map) {
+            const center = map.getCenter();
+            viewport = {
+                center: [center.lng, center.lat],
+                zoom: map.getZoom(),
+                bearing: map.getBearing?.() ?? 0,
+                pitch: map.getPitch?.() ?? 0
+            };
+        }
     }
     return {
         basemap: mapService.getCurrentBasemap(),
@@ -406,15 +423,18 @@ async function applyProjectKitSnapshot(snapshot, { sections, mode = 'replace' })
             mapService.set3DEnabled(!!snapshot.map.is3d);
             setDimensionToggleActive(snapshot.map.is3d ? '3d' : '2d');
             const vp = snapshot.map.viewport;
-            if (vp && mapService.getMap()) {
-                mapService.reconcile3DState({
-                    camera: {
-                        center: vp.center,
-                        zoom: vp.zoom,
-                        bearing: vp.bearing ?? 0,
-                        pitch: snapshot.map.is3d ? (vp.pitch ?? 30) : 0
-                    }
-                });
+            const camera = vp ? {
+                center: vp.center,
+                zoom: vp.zoom,
+                bearing: vp.bearing ?? 0,
+                pitch: snapshot.map.is3d ? (vp.pitch ?? 30) : 0
+            } : null;
+            if (dualScreenCoordinator.isActive) {
+                if (snapshot.map.is3d) mapService.enable3D({ skipCamera: true, animate: false });
+                else mapService.disable3D({ animate: false });
+                if (camera) mapService.applyMapView(camera);
+            } else if (camera && mapService.getMap()) {
+                mapService.reconcile3DState({ camera });
             } else if (snapshot.map.is3d) {
                 mapService.enable3D();
             } else {
@@ -489,7 +509,7 @@ export async function exportProjectKit(options = {}) {
                 activeLayerId: getState().activeLayerId,
                 layerStyles: mapService.getLayerStylesRecord(),
                 layerGroups: getLayerGroups(),
-                map: _getMapChromeSnapshot(),
+                map: await _getMapChromeSnapshot(),
                 workflow: wf?.engine ? {
                     pipeline: wf.engine.toJSON(),
                     nodeCache: _collectWorkflowNodeCache(wf.engine)
@@ -1574,6 +1594,17 @@ export function setupAppWiring() {
     // Listen for layer changes to update UI
     bus.on('layers:changed', refreshUI);
     bus.on('map:scaleRangeChanged', refreshUI);
+    sessionStore.setMapViewReader(async () => {
+        if (!dualScreenCoordinator.isActive) return null;
+        try {
+            return await mapService.getMapView();
+        } catch {
+            return null;
+        }
+    });
+    void import('../dual-screen/callout-menu-sync.js').then(({ bindCalloutMenuSync }) => {
+        bindCalloutMenuSync();
+    });
     bus.on('layers:changed', () => sessionStore.scheduleSave(getLayers(), mapService.getLayerStylesRecord(), getLayerGroups()));
     bus.on('map:styleChanged', () => sessionStore.scheduleSave(getLayers(), mapService.getLayerStylesRecord(), getLayerGroups()));
     bus.on('layer-groups:changed', () => sessionStore.scheduleSave(getLayers(), mapService.getLayerStylesRecord(), getLayerGroups()));
@@ -1698,6 +1729,11 @@ function setupDualScreenMode() {
             items[0]?.action?.();
         },
         openPresentationLink: () => openPresentationLinkBuilderWidget(),
+        onCalloutCommand: (payload) => {
+            void import('../dual-screen/callout-menu-sync.js').then(({ applyPopoutCalloutCommand }) =>
+                applyPopoutCalloutCommand(payload)
+            );
+        },
         onCoordSearchAddNew: _coordSearchAddNew,
         onCoordSearchAddToExisting: _coordSearchAddToExisting
     });

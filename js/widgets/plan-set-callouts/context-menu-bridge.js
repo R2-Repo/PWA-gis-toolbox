@@ -1,7 +1,7 @@
 /**
  * Plan Set Callouts items for the map right-click and Shift+drag menus.
  * Active while a callout session is on the map, including after Done.
- * Primary map only (not dual-screen).
+ * Each window keeps its own menu context. The pop-out installs one from the synced session.
  */
 
 import { fiberKeyOfLayer } from '../sheet-cutting/fiber-operational.js';

@@ -19,6 +19,65 @@ let _pendingLayers = null;
 let _pendingLayerStyles = null;
 let _pendingLayerGroups = null;
 let _savePaused = false;
+/** @type {(() => Promise<object | null>) | null} */
+let _mapViewReader = null;
+
+/**
+ * Dual-screen save reads the pop-out camera through this hook.
+ * A null result leaves the saved session without a map view.
+ * @param {(() => Promise<object | null>) | null} reader
+ */
+function setMapViewReader(reader) {
+    _mapViewReader = typeof reader === 'function' ? reader : null;
+}
+
+/**
+ * @param {object | null | undefined} mapView
+ */
+function normalizeStoredMapView(mapView) {
+    if (!mapView || !Array.isArray(mapView.center) || mapView.center.length < 2) return null;
+    const lng = Number(mapView.center[0]);
+    const lat = Number(mapView.center[1]);
+    const zoom = Number(mapView.zoom);
+    if (!Number.isFinite(lng) || !Number.isFinite(lat) || !Number.isFinite(zoom)) return null;
+    return {
+        center: [lng, lat],
+        zoom,
+        bearing: Number(mapView.bearing) || 0,
+        pitch: Number(mapView.pitch) || 0
+    };
+}
+
+/**
+ * Session meta written to IndexedDB. Map view is omitted when it is not a camera.
+ * @param {object[]} layers
+ * @param {object | null | undefined} mapView
+ * @param {number} [timestamp]
+ */
+export function sessionMetaRecord(layers, mapView, timestamp = Date.now()) {
+    const sessionMeta = {
+        key: 'session',
+        timestamp,
+        layerCount: layers.length,
+        activeLayerId: layers.find((layer) => layer.active)?.id || layers[0]?.id || null
+    };
+    const storedView = normalizeStoredMapView(mapView);
+    if (storedView) sessionMeta.mapView = storedView;
+    return sessionMeta;
+}
+
+/**
+ * Where a restored session should put the camera.
+ * Single-screen stays on the previous fit/skip path.
+ * @param {{ dualActive?: boolean, mapView?: object | null, userMovedCamera?: boolean }} input
+ * @returns {{ action: 'apply' | 'skip' | 'fit', mapView: object | null }}
+ */
+export function resolveSessionRestoreCamera({ dualActive = false, mapView = null, userMovedCamera = false } = {}) {
+    const stored = dualActive ? normalizeStoredMapView(mapView) : null;
+    if (stored) return { action: 'apply', mapView: stored };
+    if (userMovedCamera) return { action: 'skip', mapView: null };
+    return { action: 'fit', mapView: null };
+}
 
 // ——————— IndexedDB Setup ———————
 
@@ -48,7 +107,7 @@ function openDB() {
  * @param {Object|null} [layerStyles] - map of layerId -> style object
  * @param {Array} [layerGroups] - import/manual group metadata
  */
-async function saveSession(layers, layerStyles = null, layerGroups = null) {
+async function saveSession(layers, layerStyles = null, layerGroups = null, mapView = null) {
     if (_saving) {
         _rescheduleAfterSave = true;
         return;
@@ -68,13 +127,7 @@ async function saveSession(layers, layerStyles = null, layerGroups = null) {
             layerStore.put(serializable);
         }
 
-        // Save metadata
-        metaStore.put({
-            key: 'session',
-            timestamp: Date.now(),
-            layerCount: layers.length,
-            activeLayerId: layers.find(l => l.active)?.id || layers[0]?.id || null
-        });
+        metaStore.put(sessionMetaRecord(layers, mapView));
 
         if (layerStyles && typeof layerStyles === 'object') {
             metaStore.put({
@@ -239,7 +292,17 @@ function scheduleSave(layers, layerStyles = null, layerGroups = null) {
     if (_savePaused) return;
     if (_saveTimer) clearTimeout(_saveTimer);
     _saveTimer = setTimeout(() => {
-        saveSession(_pendingLayers, _pendingLayerStyles, _pendingLayerGroups);
+        void (async () => {
+            let mapView = null;
+            if (_mapViewReader) {
+                try {
+                    mapView = await _mapViewReader();
+                } catch {
+                    mapView = null;
+                }
+            }
+            saveSession(_pendingLayers, _pendingLayerStyles, _pendingLayerGroups, mapView);
+        })();
     }, DEBOUNCE_MS);
 }
 
@@ -300,5 +363,6 @@ export default {
     scheduleSave,
     pauseSessionSave,
     resumeSessionSave,
-    onSaveStatus
+    onSaveStatus,
+    setMapViewReader
 };

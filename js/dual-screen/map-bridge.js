@@ -84,6 +84,9 @@ export const FORWARDED_MAP_METHODS = new Set([
     'startSketchPolyline',
     'startSketchCirclePolygon',
     'startPresentationFeaturePick',
+    'getMapView',
+    'applyMapView',
+    'playPresentationPreview',
     'cancelInteraction',
     'startMeasureFrom',
     'selectFeatures',
@@ -113,7 +116,14 @@ export const RPC_MAP_METHODS = new Set([
     'startSketchPolygon',
     'startSketchPolyline',
     'startSketchCirclePolygon',
-    'startPresentationFeaturePick'
+    'startPresentationFeaturePick',
+    'getMapView',
+    'playPresentationPreview'
+]);
+
+/** View reads must not pull the pop-out window forward. */
+const QUIET_RPC_METHODS = new Set([
+    'getMapView'
 ]);
 
 const ADD_LAYER_METHODS = new Set([
@@ -810,9 +820,11 @@ export function installDualScreenMapServiceDecorator(mapApi, coordinator) {
             }
 
             const mirrored = mirrorLocal(name, args, originals);
+            const quietRpc = QUIET_RPC_METHODS.has(name);
             const options = {
                 rpc: RPC_MAP_METHODS.has(name),
-                focusMap: RPC_MAP_METHODS.has(name) || FOCUS_COMMANDS.has(name)
+                focusMap: (RPC_MAP_METHODS.has(name) && !quietRpc) || FOCUS_COMMANDS.has(name),
+                timeoutMs: quietRpc ? 5000 : undefined
             };
             if (name === 'startContinuousPointPick') {
                 return coordinator.forwardContinuousPointPick?.(args[0], args[1]);

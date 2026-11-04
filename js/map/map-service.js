@@ -28,6 +28,78 @@ export function createMapService({ mapAdapter = mapManager } = {}) {
         getMap() {
             return mapAdapter.getMap();
         },
+        /**
+         * Camera of the map in this window.
+         * In dual-screen mode the bridge runs this on the pop-out.
+         * @returns {{ center: number[], zoom: number, bearing: number, pitch: number } | null}
+         */
+        getMapView() {
+            const map = mapAdapter.getMap?.();
+            if (!map || typeof map.getCenter !== 'function') return null;
+            const center = map.getCenter();
+            if (!center || !Number.isFinite(center.lng) || !Number.isFinite(center.lat)) return null;
+            const zoom = Number(map.getZoom?.());
+            if (!Number.isFinite(zoom)) return null;
+            return {
+                center: [center.lng, center.lat],
+                zoom,
+                bearing: Number(map.getBearing?.()) || 0,
+                pitch: Number(map.getPitch?.()) || 0
+            };
+        },
+        /**
+         * Jump this window's map to a saved view.
+         * @param {{ center?: number[], zoom?: number, bearing?: number, pitch?: number }} view
+         * @returns {boolean}
+         */
+        applyMapView(view) {
+            const map = mapAdapter.getMap?.();
+            if (!map || typeof map.jumpTo !== 'function' || !Array.isArray(view?.center)) return false;
+            const zoom = Number(view.zoom);
+            if (!Number.isFinite(zoom)) return false;
+            map.jumpTo({
+                center: view.center,
+                zoom,
+                bearing: Number(view.bearing) || 0,
+                pitch: Number(view.pitch) || 0
+            });
+            return true;
+        },
+        /**
+         * Play a presentation-link scene on the map in this window.
+         * Dual-screen forwards this call to the pop-out.
+         * @param {object} scene
+         */
+        async playPresentationPreview(scene) {
+            const map = mapAdapter.getMap?.();
+            if (!map || !scene?.features) throw new Error('Map is not ready');
+            const pitch = Number(map.getPitch?.()) || 0;
+            if (!mapAdapter._3dEnabled || pitch < 10) {
+                mapAdapter.enable3D?.({
+                    pitch: Number(scene.camera?.pitch) || 30,
+                    bearing: scene.camera?.bearing,
+                    center: scene.camera?.center,
+                    zoom: scene.camera?.zoom,
+                    animate: false
+                });
+            }
+            const runtime = await import('../presentation/presentation-runtime.js');
+            const { PresentationAnimationEngine } = await import('../presentation/animation-engine.js');
+            runtime.addPresentationFeatureLayers(map, scene.features, scene.style);
+            const engine = new PresentationAnimationEngine({
+                map,
+                features: scene.features,
+                style: scene.style
+            });
+            try {
+                await engine.applyCamera(scene.camera);
+                if (scene.animations?.length) await engine.playSequence(scene.animations);
+            } finally {
+                engine.cleanup();
+                runtime.removePresentationFeatureLayers(map);
+            }
+            return { ok: true };
+        },
         resize() {
             return mapAdapter.resize();
         },

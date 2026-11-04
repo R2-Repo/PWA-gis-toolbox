@@ -23,6 +23,7 @@ import {
     updateFiberCalloutProject
 } from './fiber-callout-engine.js';
 import { setPlanSetCalloutMenuContext } from './context-menu-bridge.js';
+import { isPopoutMap } from '../../dual-screen/screen-mode.js';
 import {
     hideCalloutPreviewForCapture,
     installCalloutDrag,
@@ -52,8 +53,22 @@ function applySession(session, { persistOpen } = {}) {
     showCalloutPreview(runtime.ctx.mapService, session);
     wireMenu();
     wireDrag();
+    publishRuntimeSession(session);
     runtime.onSession?.(session);
     return session;
+}
+
+function publishRuntimeSession(session) {
+    if (!isPopoutMap()) return;
+    let insetViews = [];
+    try {
+        insetViews = getLinkedInsetViews();
+    } catch {
+        insetViews = [];
+    }
+    void import('../../dual-screen/callout-menu-sync.js').then(({ publishCalloutSession }) => {
+        publishCalloutSession(session, insetViews);
+    }).catch(() => {});
 }
 
 function wireMenu() {
@@ -109,7 +124,7 @@ function wireMenu() {
 }
 
 function wireDrag() {
-    if (!runtime) return;
+    if (!runtime || isPopoutMap()) return;
     installCalloutDrag(runtime.ctx.mapService, {
         isEnabled: () => Boolean(runtime),
         onDrag: (leaderKey, coord) => {
@@ -189,6 +204,7 @@ export function getLinkedInsetViews() {
 export function refreshCalloutRuntimePreview() {
     if (!runtime) return;
     showCalloutPreview(runtime.ctx.mapService, runtime.session);
+    publishRuntimeSession(runtime.session);
 }
 
 /**

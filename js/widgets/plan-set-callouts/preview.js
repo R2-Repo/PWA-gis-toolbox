@@ -6,6 +6,7 @@
 import { buildMapLabelLayerSpec } from '../../map/map-labels.js';
 import { getWidgetEntry } from '../widget-state-store.js';
 import { restoreSheetSession } from '../sheet-cutting/engine.js';
+import { isPopoutMap } from '../../dual-screen/screen-mode.js';
 import { buildCalloutPreviewGeoJson } from './leader-placement.js';
 import {
     CALLOUT_FILL_HEX,
@@ -41,6 +42,7 @@ export function getLinkedInsetViews() {
 const PREVIEW_ID_HINT = 'callout-preview-';
 
 function previewMap(mapService) {
+    if (isPopoutMap()) return null;
     return mapService?.getMap?.() || null;
 }
 
@@ -68,6 +70,7 @@ function collectPreviewSourceIds(map) {
  * @param {object} mapService
  */
 export function clearCalloutPreview(mapService) {
+    if (isPopoutMap()) return;
     const map = previewMap(mapService);
     const entries = [...activePreviewEntries];
 
@@ -356,6 +359,7 @@ function ensurePreviewLayers(map, collection) {
  * @param {object} [options]
  */
 export function showCalloutPreview(mapService, session, options = {}) {
+    if (isPopoutMap()) return;
     const insetViews = options.insetViews || getLinkedInsetViews();
     const collection = buildCalloutPreviewGeoJson(session, { insetViews });
     const map = previewMap(mapService);

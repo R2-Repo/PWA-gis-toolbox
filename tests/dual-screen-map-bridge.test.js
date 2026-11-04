@@ -293,6 +293,35 @@ describe('dual-screen map bridge', () => {
         }
     });
 
+    it('reads the pop-out camera through getMapView and applies a view without getMap', () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+        const getMap = vi.fn(() => ({ id: 'hidden' }));
+        const getMapView = vi.fn(() => ({ center: [-111, 40], zoom: 12, bearing: 10, pitch: 20 }));
+        const applyMapView = vi.fn(() => true);
+        const api = { getMap, getMapView, applyMapView };
+        installDualScreenMapServiceDecorator(api, dualScreenCoordinator);
+        dualScreenCoordinator.isActive = true;
+
+        const pending = api.getMapView();
+        pending.catch(() => {});
+        api.applyMapView({ center: [-111.2, 40.2], zoom: 13, bearing: 5, pitch: 30 });
+
+        expect(getMap).not.toHaveBeenCalled();
+        expect(getMapView).not.toHaveBeenCalled();
+        expect(applyMapView).not.toHaveBeenCalled();
+        const rpc = MockBroadcastChannel.traffic.filter((msg) => msg.type === MessageType.MAP_RPC);
+        const cmds = MockBroadcastChannel.traffic.filter((msg) => msg.type === MessageType.MAP_CMD);
+        expect(rpc.map((msg) => msg.payload.method)).toEqual(['getMapView']);
+        expect(cmds.map((msg) => msg.payload.method)).toContain('applyMapView');
+        expect(cmds.find((msg) => msg.payload.method === 'applyMapView').payload.args[0]).toEqual({
+            center: [-111.2, 40.2],
+            zoom: 13,
+            bearing: 5,
+            pitch: 30
+        });
+        expect(warn.mock.calls.some((args) => String(args[0]).includes('getMap'))).toBe(false);
+    });
+
     it('warns when the popup cannot apply a call', () => {
         const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
         const api = { fitToAll: vi.fn() };

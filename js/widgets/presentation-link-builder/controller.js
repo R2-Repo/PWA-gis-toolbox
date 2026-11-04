@@ -38,6 +38,7 @@ import {
     stopMapCamera,
     waitForMapIdle
 } from '../../map/map-interaction-utils.js';
+import { isPopoutMap } from '../../dual-screen/screen-mode.js';
 
 const PRESENTATION_LINK_SCENE_BUNDLE = 'presentation-link:scene-bundle';
 
@@ -59,7 +60,24 @@ function syncDimensionChrome(is3d) {
 
 const PRESENTATION_MIN_PITCH = 10;
 
+function localPresentationMap(mapService) {
+    if (isPopoutMap()) return null;
+    return mapService?.getMap?.() || null;
+}
+
 async function ensurePresentation3DView(mapService) {
+    if (isPopoutMap()) {
+        mapService?.stopMapCamera?.();
+        const view = await mapService.getMapView?.();
+        const pitch = view?.pitch ?? 0;
+        const enabled = mapService.is3DEnabled?.() ?? false;
+        if (!enabled || pitch < PRESENTATION_MIN_PITCH) {
+            mapService.enable3D({ pitch: 30, animate: false });
+        }
+        syncDimensionChrome(mapService.is3DEnabled?.() ?? true);
+        return;
+    }
+
     const map = mapService?.getMap?.();
     if (!map) return;
 
@@ -158,7 +176,7 @@ function stopPreview(ctx) {
     previewRuntime?.engine?.cleanup();
     previewRuntime = null;
 
-    const map = ctx.mapService?.getMap?.();
+    const map = localPresentationMap(ctx.mapService);
     if (map) removePresentationFeatureLayers(map);
     ctx.mapService?.clearTempFeatures?.();
 
@@ -169,12 +187,16 @@ function stopPreview(ctx) {
     }
     previewHiddenLayers = new Map();
 
-    try {
-        stopMapCamera(map);
-    } catch {
-        // ignore
+    if (map) {
+        try {
+            stopMapCamera(map);
+        } catch {
+            // ignore
+        }
+        ensureMapInteractionHandlers(map);
+    } else if (isPopoutMap()) {
+        ctx.mapService?.stopMapCamera?.();
     }
-    ensureMapInteractionHandlers(map);
 }
 
 function syncMapChrome(mapService) {
@@ -185,8 +207,14 @@ function syncMapChrome(mapService) {
 
 function restoreMapDimensionAfterWidget(ctx, { was3d }) {
     const mapService = ctx.mapService;
-    const map = mapService?.getMap?.();
-    if (!map || !mapService) return;
+    if (!mapService) return;
+    if (isPopoutMap()) {
+        if (!was3d) mapService.disable3D({ animate: false });
+        else mapService.reconcile3DState({ emitEvent: false });
+        return;
+    }
+    const map = mapService.getMap?.();
+    if (!map) return;
 
     stopMapCamera(map);
     ensureMapInteractionHandlers(map);
@@ -204,7 +232,7 @@ function teardownPresentationWidget(ctx, { was3d }) {
     ctx.mapService?.disablePresentationMultiSelect?.();
     ctx.mapService?.cancelInteraction?.();
 
-    const map = ctx.mapService?.getMap?.();
+    const map = localPresentationMap(ctx.mapService);
     const canvas = map?.getCanvas?.();
     if (canvas) canvas.style.cursor = '';
 
@@ -243,11 +271,21 @@ function buildDefaultFormState(sourceSummary, initialLayerId) {
     };
 }
 
+async function readPresentationMapView(ctx) {
+    if (!isPopoutMap()) {
+        return { map: ctx.mapService.getMap?.() || null, mapView: null };
+    }
+    const mapView = await ctx.mapService.getMapView?.();
+    return { map: null, mapView: mapView || null };
+}
+
 async function buildSceneBundle(ctx, formState) {
     const { features, sourceSummary, layerMeta } = await resolveSourceBundle(ctx, formState);
+    const { map, mapView } = await readPresentationMapView(ctx);
     const scene = buildSceneFromConfig({
         features,
-        map: ctx.mapService.getMap(),
+        map,
+        mapView,
         mapService: ctx.mapService,
         layerIds: layerMeta.layerIds,
         animation: formState.animation,
@@ -276,8 +314,12 @@ async function preparePresentationPlayback(ctx, formState) {
         throw new Error(validation.tooLargeMessage || validation.errors[0]);
     }
 
-    const map = ctx.mapService.getMap();
-    if (!map) throw new Error('Map is not ready');
+    const map = localPresentationMap(ctx.mapService);
+    if (!map) {
+        throw new Error(isPopoutMap()
+            ? 'Map is in the Dual Screen window.'
+            : 'Map is not ready');
+    }
 
     await ensurePresentation3DView(ctx.mapService);
 
@@ -297,6 +339,24 @@ async function preparePresentationPlayback(ctx, formState) {
     previewRuntime = { engine, scene, layerMeta };
     await engine.applyCamera(scene.camera);
     return { map, engine, scene, layerMeta, bundle };
+}
+
+async function previewPresentationOnPopout(ctx, formState) {
+    stopPreview(ctx);
+    const bundle = await buildSceneBundle(ctx, formState);
+    const { scene, validation, layerMeta } = bundle;
+    if (!validation.ok) {
+        throw new Error(validation.tooLargeMessage || validation.errors[0]);
+    }
+    await ensurePresentation3DView(ctx.mapService);
+    previewHiddenLayers = new Map();
+    for (const layerId of layerMeta.layerIds) {
+        const layer = (ctx.getLayers?.() || []).find((entry) => entry.id === layerId);
+        previewHiddenLayers.set(layerId, layer?.visible !== false);
+        ctx.mapService.toggleLayer(layerId, false);
+    }
+    await ctx.mapService.playPresentationPreview(scene);
+    return bundle;
 }
 
 export async function openPresentationLinkBuilder(ctx) {
@@ -431,6 +491,11 @@ export async function openPresentationLinkBuilder(ctx) {
             },
             onPreview: async (formState) => {
                 try {
+                    if (isPopoutMap()) {
+                        await previewPresentationOnPopout(ctx, formState);
+                        ctx.showToast('Preview finished', 'success');
+                        return;
+                    }
                     const { engine, scene } = await preparePresentationPlayback(ctx, formState);
                     if (scene.animations?.length) {
                         await engine.playSequence(scene.animations);

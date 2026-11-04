@@ -76,6 +76,25 @@ export function summarizeSourceFeatures(features) {
 }
 
 /**
+ * Camera snapshot from the window that owns the map.
+ * When present, scene building does not read the map object.
+ * @param {object | null | undefined} view
+ */
+function suppliedPresentationMapView(view) {
+    if (!view || !Array.isArray(view.center) || view.center.length < 2) return null;
+    const lng = Number(view.center[0]);
+    const lat = Number(view.center[1]);
+    const zoom = Number(view.zoom);
+    if (!Number.isFinite(lng) || !Number.isFinite(lat) || !Number.isFinite(zoom)) return null;
+    return {
+        center: [lng, lat],
+        zoom,
+        bearing: Number.isFinite(Number(view.bearing)) ? Number(view.bearing) : 0,
+        pitch: Number.isFinite(Number(view.pitch)) ? Number(view.pitch) : 45
+    };
+}
+
+/**
  * @param {object} config
  */
 export function buildSceneFromConfig(config) {
@@ -86,6 +105,7 @@ export function buildSceneFromConfig(config) {
         layerId,
         layerIds,
         animation = {},
+        mapView: cameraView = null,
         probeLiveCamera = false
     } = config;
 
@@ -101,14 +121,18 @@ export function buildSceneFromConfig(config) {
         : null;
     const presentationStyle = deriveSceneStyleFallback(primaryLayerStyle, styledFeatures);
 
-    const mapCenter = map?.getCenter?.();
+    const suppliedView = suppliedPresentationMapView(cameraView);
+    const liveMap = suppliedView ? null : map;
+    const mapCenter = suppliedView
+        ? { lng: suppliedView.center[0], lat: suppliedView.center[1] }
+        : liveMap?.getCenter?.();
     const cameraConfig = {
         useCurrent: false,
         fitToFeatures: false,
         center: mapCenter ? [mapCenter.lng, mapCenter.lat] : [0, 0],
-        zoom: map?.getZoom?.() ?? 14,
-        pitch: map?.getPitch?.() ?? 45,
-        bearing: map?.getBearing?.() ?? 0,
+        zoom: suppliedView ? suppliedView.zoom : (liveMap?.getZoom?.() ?? 14),
+        pitch: suppliedView ? suppliedView.pitch : (liveMap?.getPitch?.() ?? 45),
+        bearing: suppliedView ? suppliedView.bearing : (liveMap?.getBearing?.() ?? 0),
         padding: 80,
         resetNorth: false,
         startDelayMs: 0
@@ -121,14 +145,14 @@ export function buildSceneFromConfig(config) {
 
     const cameraCtx = {
         features: styledFeatures,
-        map: probeLiveCamera ? map : null,
+        map: probeLiveCamera ? liveMap : null,
         cameraConfig
     };
     const animations = [];
 
     const presetId = animation.presetId || 'none';
     applyLinkAnimationCameraStrategy(cameraConfig, presetId, cameraCtx);
-    const step = buildLinkAnimationStep(presetId, animation, { map, cameraConfig });
+    const step = buildLinkAnimationStep(presetId, animation, { map: liveMap, cameraConfig });
     if (step) animations.push(step);
 
     return createDefaultScene({

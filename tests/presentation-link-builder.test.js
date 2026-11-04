@@ -107,6 +107,30 @@ describe('buildSceneFromConfig camera strategy', () => {
         expect(scene.animations[0].durationMs).toBe(ORBIT_PACE_MS.slow);
     });
 
+    it('uses a supplied map view and does not read the map object', () => {
+        const map = {
+            getCenter: () => { throw new Error('getMap'); },
+            getZoom: () => { throw new Error('getMap'); },
+            getPitch: () => { throw new Error('getMap'); },
+            getBearing: () => { throw new Error('getMap'); }
+        };
+        const scene = buildSceneFromConfig({
+            features: sampleFeatures,
+            map,
+            mapView: { center: [-111.5, 40.5], zoom: 12, bearing: 20, pitch: 40 },
+            mapService: createMockMapService(),
+            animation: {
+                presetId: 'rotateAroundFeature',
+                durationMs: ORBIT_PACE_MS.normal
+            }
+        });
+        expect(scene.camera.center).toEqual([-111.5, 40.5]);
+        expect(scene.camera.zoom).toBe(12);
+        expect(scene.camera.bearing).toBe(20);
+        expect(scene.camera.pitch).toBe(40);
+        expect(scene.camera.fitToFeatures).toBe(false);
+    });
+
     it('uses a wider overview camera than the final fly-to fit', () => {
         const map = createMockMap({ overviewZoom: 10, finalZoom: 16 });
         const scene = buildSceneFromConfig({
