@@ -153,7 +153,7 @@ function createPwaPlugin() {
       clientsClaim: true,
       skipWaiting: true,
       // index.html and map-window.html, plus the JS/CSS those entries emit.
-      globPatterns: ['**/*.{js,css,html}'],
+      globPatterns: ['**/*.{js,css,html,pbf}'],
       runtimeCaching: PWA_RUNTIME_CACHING
     }
   });

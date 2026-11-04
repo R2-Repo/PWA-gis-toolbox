@@ -1,9 +1,8 @@
 import logger from '../core/logger.js';
 import { hasResolvedCartoApiKey, withCartoKey } from './carto-key.js';
+import { LOCAL_GLYPH_FONT_STACK, LOCAL_GLYPHS_URL } from './local-glyphs.js';
 
 export const CARTO_LAYER_PREFIX = 'basemap-v-';
-export const CARTO_GLYPHS_URL = 'https://tiles.basemaps.cartocdn.com/fonts/{fontstack}/{range}.pbf';
-export const DEMO_GLYPHS_URL = 'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf';
 export const CARTO_2D_BUILDING_LAYER_IDS = [
     `${CARTO_LAYER_PREFIX}building`,
     `${CARTO_LAYER_PREFIX}building-top`
@@ -104,6 +103,12 @@ export function prepareCartoStyle(style, options = {}) {
         if (next.source && sourceIdMap[next.source]) {
             next.source = sourceIdMap[next.source];
         }
+        if (next.type === 'symbol') {
+            next.layout = {
+                ...(next.layout || {}),
+                'text-font': [...LOCAL_GLYPH_FONT_STACK]
+            };
+        }
         layers.push(next);
     }
 
@@ -115,7 +120,7 @@ export function prepareCartoStyle(style, options = {}) {
     }
 
     return {
-        glyphs: style?.glyphs ? withCartoKey(style.glyphs) : null,
+        glyphs: LOCAL_GLYPHS_URL,
         sprite: style?.sprite ? withCartoKey(style.sprite) : null,
         backgroundColor,
         sources,

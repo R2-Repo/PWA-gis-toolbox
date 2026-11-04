@@ -1,6 +1,7 @@
 /**
  * MapLibre style expressions for Firewatch layers.
  */
+import { LOCAL_GLYPH_FONT_STACK } from '../../map/local-glyphs.js';
 import {
     COLORS,
     FIREFLY_PALETTES,
@@ -304,7 +305,7 @@ export function buildIncidentLayerSpecs(datasetId, sourceId, opacity = 1) {
             filter: ['==', ['get', 'hasName'], 1],
             layout: {
                 'text-field': ['get', 'incidentName'],
-                'text-font': ['Noto Sans Regular'],
+                'text-font': LOCAL_GLYPH_FONT_STACK,
                 'text-size': ['interpolate', ['linear'], ['zoom'], 8, 10, 12, 12, 15, 14],
                 'text-offset': [0, 0.3],
                 'text-anchor': 'top',

@@ -60,6 +60,11 @@ describe('carto-style', () => {
         ]);
         expect(prepared.layers[0].source).toBe(`${CARTO_LAYER_PREFIX}carto`);
         expect(prepared.layers.some((layer) => layer.type === 'background')).toBe(false);
+        expect(prepared.glyphs).toBe('./fonts/{fontstack}/{range}.pbf');
+        expect(prepared.layers.find((layer) => layer.type === 'symbol').layout['text-font']).toEqual([
+            'Open Sans Regular',
+            'Noto Sans Regular'
+        ]);
     });
 
     it('keeps symbol layers only when labelsOnly is set', () => {

@@ -151,11 +151,11 @@ import {
 import { withCartoKey } from './carto-key.js';
 import {
     CARTO_2D_BUILDING_LAYER_IDS,
-    CARTO_GLYPHS_URL,
     isBasemapOwnedLayerId,
     isCartoBasemapLayerId,
     loadCartoVectorStyle
 } from './carto-style.js';
+import { LOCAL_GLYPHS_URL } from './local-glyphs.js';
 
 const LAYER_COLORS = ['#2563eb', '#dc2626', '#16a34a', '#d97706', '#7c3aed', '#0891b2', '#be185d', '#65a30d'];
 
@@ -622,7 +622,7 @@ class MapManager {
         });
 
         if (isOfflineBasemap(bm)) {
-            return { version: 8, sources, layers };
+            return { version: 8, sources, layers, glyphs: LOCAL_GLYPHS_URL };
         }
 
         if (bm.tiles) {
@@ -634,7 +634,7 @@ class MapManager {
             version: 8,
             sources,
             layers,
-            glyphs: withCartoKey(CARTO_GLYPHS_URL)
+            glyphs: LOCAL_GLYPHS_URL
         };
         if (bm.sprite) {
             style.sprite = withCartoKey(bm.sprite);
@@ -729,7 +729,7 @@ class MapManager {
     }
 
     _applyCartoGlyphsAndSprite(prepared, bm) {
-        const glyphs = prepared?.glyphs || withCartoKey(CARTO_GLYPHS_URL);
+        const glyphs = LOCAL_GLYPHS_URL;
         const sprite = prepared?.sprite || (bm.sprite ? withCartoKey(bm.sprite) : null);
         if (glyphs && glyphs !== this._cartoGlyphsUrl && typeof this.map.setGlyphs === 'function') {
             this.map.setGlyphs(glyphs);

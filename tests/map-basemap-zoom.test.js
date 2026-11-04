@@ -55,7 +55,7 @@ describe('basemap zoom overscale', () => {
         expect(style.sources.basemap).toBeUndefined();
         expect(style.layers.find((entry) => entry.id === 'basemap-backdrop')).toBeTruthy();
         expect(style.layers.find((entry) => entry.id === 'basemap-layer')).toBeUndefined();
-        expect(style.glyphs).toContain('tiles.basemaps.cartocdn.com/fonts');
+        expect(style.glyphs).toBe('./fonts/{fontstack}/{range}.pbf');
         expect(MAP_CAMERA_MAX_ZOOM).toBe(24);
     });
 

@@ -4,6 +4,7 @@
 
 import { parseArcgisLabelField } from '../arcgis/drawing-info.js';
 import { geometryPresence } from './geometry-kind.js';
+import { LOCAL_GLYPH_FONT_STACK } from './local-glyphs.js';
 import { POLYGON_ANCHOR_PROPERTY } from './polygon-label-anchors.js';
 import { MAPLIBRE_MAX_ZOOM } from './scale-range.js';
 
@@ -33,12 +34,8 @@ export const DEFAULT_LAYER_LABELS = {
     ignorePlacement: false
 };
 
-/**
- * Fonts available on CARTO glyphs (and demotiles Open Sans).
- * The production service worker caches those PBFs as gis-toolbox-carto-glyphs
- * so a later offline session can draw labels without a new network request.
- */
-export const APP_MAP_TEXT_FONTS = ['Open Sans Regular', 'Noto Sans Regular'];
+/** Faces in the same-origin glyph bundle (public/fonts, range 0-255). */
+export const APP_MAP_TEXT_FONTS = LOCAL_GLYPH_FONT_STACK;
 
 const DEFAULT_LABELS = {
     field: 'station',

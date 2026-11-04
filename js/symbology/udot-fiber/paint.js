@@ -31,7 +31,7 @@ import {
     protectInPlaceOutlineKind
 } from './protect-in-place.js';
 
-/** Regular is on CARTO and demotiles glyph servers; Bold often fails silent and hides labels. */
+/** Regular faces in the local glyph bundle. Bold is not shipped and would hide labels. */
 export const UDOT_FIBER_LABEL_FONT = [
     'Open Sans Regular',
     'Noto Sans Regular'

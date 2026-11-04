@@ -91,6 +91,46 @@ function referencedBuiltAssets(jsText) {
     return refs;
 }
 
+const EXTERNAL_GLYPH = [
+    /cartocdn\.com\/fonts/gi,
+    /demotiles\.maplibre\.org\/font/gi,
+    /https?:\/\/[^\s"'`<>]*\{fontstack\}/gi,
+    /https?:\/\/[^\s"'`<>]*\/fonts\/[^\s"'`<>]*\.pbf/gi,
+    /https?:\/\/[^\s"'`<>]*glyph[^\s"'`<>]*\.pbf/gi
+];
+
+function externalGlyphHits(text) {
+    const normalized = String(text).replace(/\\+/g, '');
+    const hits = [];
+    for (const pattern of EXTERNAL_GLYPH) {
+        pattern.lastIndex = 0;
+        const match = pattern.exec(normalized);
+        if (match) hits.push(match[0]);
+    }
+    return hits;
+}
+
+function assertBuiltGlyphsAreLocal(outDir) {
+    const root = join(ROOT, outDir);
+    const files = ['sw.js', 'index.html', 'map-window.html']
+        .map((name) => join(root, name))
+        .filter((file) => existsSync(file));
+    const assets = join(root, 'assets');
+    if (existsSync(assets)) {
+        for (const name of readdirSync(assets)) {
+            if (name.endsWith('.js') || name.endsWith('.css')) files.push(join(assets, name));
+        }
+    }
+    const failures = [];
+    for (const file of files) {
+        const hits = externalGlyphHits(readFileSync(file, 'utf8'));
+        if (hits.length) failures.push(`${file}: ${hits.join(', ')}`);
+    }
+    expect(failures, `${outDir} external glyph URLs`).toEqual([]);
+    const sw = readFileSync(join(root, 'sw.js'), 'utf8');
+    expect(sw).toContain('0-255.pbf');
+}
+
 function precacheKey(url) {
     return String(url || '').replace(/^\.\//, '').split(/[?#]/)[0];
 }
@@ -141,6 +181,7 @@ describe('release vs e2e HTML bundles', () => {
         const js = readDistJsBundle('dist');
         expect(js).toContain('basemaps.cartocdn.com/gl/voyager-gl-style/style.json');
         assertMapWindowBundledLocally('dist');
+        assertBuiltGlyphsAreLocal('dist');
     }, 240_000);
 
     it('web/e2e dist-web excludes GTM', async () => {
@@ -149,6 +190,7 @@ describe('release vs e2e HTML bundles', () => {
         expect(html).not.toMatch(/googletagmanager\.com/);
         expect(html).not.toContain('G-ZTHRF9QMPV');
         assertMapWindowBundledLocally('dist-web');
+        assertBuiltGlyphsAreLocal('dist-web');
     }, 240_000);
 });
 
