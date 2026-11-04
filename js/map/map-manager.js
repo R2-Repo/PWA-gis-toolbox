@@ -1119,6 +1119,7 @@ class MapManager {
     async addServiceLayer(dataset, colorIndex = 0, { fit = false } = {}) {
         const result = await engineAddServiceLayer(this, dataset, colorIndex, { fit });
         this._applyDatasetLock(dataset);
+        this._applyAttributeFilter(dataset);
         return result;
     }
 

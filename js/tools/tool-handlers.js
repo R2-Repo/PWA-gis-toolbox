@@ -10,7 +10,7 @@ import {
     setActiveLayer, toggleLayerVisibility, toggleLayerLock, getMapLayerOrderIds,
     reorderLayer, reorderLayerToIndex, setUIState, toggleAGOLCompat
 } from '../core/state.js';
-import { mergeDatasets, getSelectedFields, tableToSpatial, createSpatialDataset, createTableDataset, analyzeSchema, analyzeTableSchema, isSpatialLayer, isServiceLayer, isWorkspaceLayer, isAnalyzableLayer, isLiveVectorLayer, getLayerFeatureCount } from '../core/data-model.js';
+import { mergeDatasets, getSelectedFields, tableToSpatial, createSpatialDataset, createTableDataset, analyzeSchema, analyzeTableSchema, isSpatialLayer, isServiceLayer, isPmTilesLayer, isWorkspaceLayer, isAnalyzableLayer, isLiveVectorLayer, getLayerFeatureCount } from '../core/data-model.js';
 import { isLayerDisplayReady, layerCrsWarning, getLayerCrs, resolveReprojectFromCrs } from '../crs/layer-crs.js';
 import { importFile, importFiles } from '../import/importer.js';
 import { cancelWorkerParse } from '../import/import-parse-service.js';
@@ -2516,9 +2516,13 @@ export async function openFilterBuilder(targetLayerId) {
                 existing,
                 onCancel: () => close(),
                 onRemoveFilter: async () => {
-                    if (isWorkspaceLayer(layer)) {
-                        const { clearWorkspaceAttributeFilter } = await import('../workspace/workspace-attribute-filter.js');
-                        clearWorkspaceAttributeFilter(layer);
+                    if (isWorkspaceLayer(layer) || isServiceLayer(layer) || isPmTilesLayer(layer)) {
+                        if (isWorkspaceLayer(layer)) {
+                            const { clearWorkspaceAttributeFilter } = await import('../workspace/workspace-attribute-filter.js');
+                            clearWorkspaceAttributeFilter(layer);
+                        } else {
+                            delete layer._activeFilter;
+                        }
                         bus.emit('layer:updated', layer);
                         bus.emit('layers:changed', getLayers());
                         await mapService.syncWorkspaceAttributeFilter(layer);
@@ -2542,6 +2546,16 @@ export async function openFilterBuilder(targetLayerId) {
                     close();
                 },
                 onApply: async ({ rules, logic }) => {
+                    if (isServiceLayer(layer) || isPmTilesLayer(layer)) {
+                        layer._activeFilter = { rules, logic };
+                        bus.emit('layer:updated', layer);
+                        bus.emit('layers:changed', getLayers());
+                        await mapService.syncWorkspaceAttributeFilter(layer);
+                        refreshUI();
+                        close();
+                        showToast('Filter applied', 'success');
+                        return;
+                    }
                     if (isWorkspaceLayer(layer)) {
                         close();
                         try {
