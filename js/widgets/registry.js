@@ -17,6 +17,7 @@ import { openQuery } from './query/controller.js';
 import { openWirelessSitePlanning } from './wireless-site-planning/controller.js';
 import { openPresentationLinkBuilder } from './presentation-link-builder/controller.js';
 import { openLayerSummary } from './layer-summary/controller.js';
+import { openTerrainProfile } from './terrain-profile/controller.js';
 import logger from '../core/logger.js';
 import {
     hasRequiredCapabilities,
@@ -114,7 +115,8 @@ export const GIS_WIDGETS = [
         icon: '🗺️',
         tip: 'Align an image or PDF page to the map using matched control points.',
         open: openGeoreferenceRaster
-    }
+    },
+    { type: 'terrain-profile', action: 'openTerrainProfile', label: 'Terrain Profile', icon: '⛰️', tip: 'Draw a line for an elevation profile, or check line of sight between two points.', requiredCapabilities: [], open: openTerrainProfile }
 ];
 
 /**

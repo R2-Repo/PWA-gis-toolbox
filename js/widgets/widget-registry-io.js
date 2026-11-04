@@ -80,5 +80,6 @@ export const WIDGET_REGISTRY_IO = {
     },
     'plan-production-export': {
         inputs: [{ name: 'in', type: 'layer' }]
-    }
+    },
+    'terrain-profile': { outputs: [{ name: 'profile', type: 'layer', geometry: ['LineString', 'Point'] }] }
 };

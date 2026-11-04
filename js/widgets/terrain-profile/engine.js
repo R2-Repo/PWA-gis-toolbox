@@ -1,0 +1,400 @@
+/**
+ * Terrain profile and line-of-sight math.
+ * Elevation values come from an injected sampler. This module never reads the map.
+ */
+
+export const DEFAULT_SAMPLE_SPACING_M = 30;
+export const MIN_SAMPLE_SPACING_M = 1;
+export const MAX_PROFILE_SAMPLES = 2000;
+
+/** Mean earth radius used for distance and curvature. */
+export const EARTH_RADIUS_M = 6_371_000;
+
+/** Standard atmospheric refraction coefficient. */
+export const REFRACTION_K = 0.13;
+
+/** Terrain must exceed the sight line by this much to count as a block. */
+const LOS_CLEARANCE_M = 0.001;
+
+const TIMEOUT_MESSAGE = 'sampleElevations timed out waiting for the map window';
+const CLOSED_MESSAGE = 'sampleElevations failed: the map window is closed';
+
+function toRadians(deg) {
+    return (deg * Math.PI) / 180;
+}
+
+/**
+ * @param {number} lng1
+ * @param {number} lat1
+ * @param {number} lng2
+ * @param {number} lat2
+ * @returns {number} meters
+ */
+export function haversineMeters(lng1, lat1, lng2, lat2) {
+    const dLat = toRadians(lat2 - lat1);
+    const dLng = toRadians(lng2 - lng1);
+    const lat1Rad = toRadians(lat1);
+    const lat2Rad = toRadians(lat2);
+    const a = Math.sin(dLat / 2) ** 2
+        + Math.cos(lat1Rad) * Math.cos(lat2Rad) * Math.sin(dLng / 2) ** 2;
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(Math.max(0, 1 - a)));
+    return EARTH_RADIUS_M * c;
+}
+
+/**
+ * Earth bulge between two endpoints, including standard refraction.
+ * Height in meters added to terrain before it is compared with a straight sight line.
+ * Zero at either endpoint. Zero when curvature is off.
+ * @param {number} distanceFromObserverM
+ * @param {number} distanceFromTargetM
+ * @returns {number}
+ */
+export function earthBulgeMeters(distanceFromObserverM, distanceFromTargetM) {
+    const d1 = distanceFromObserverM;
+    const d2 = distanceFromTargetM;
+    if (!Number.isFinite(d1) || !Number.isFinite(d2) || d1 <= 0 || d2 <= 0) return 0;
+    return (d1 * d2 * (1 - REFRACTION_K)) / (2 * EARTH_RADIUS_M);
+}
+
+function finiteOrNull(value) {
+    return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function assertSpacing(spacingM) {
+    const spacing = Number(spacingM);
+    if (!Number.isFinite(spacing) || spacing < MIN_SAMPLE_SPACING_M) {
+        throw new Error(`Sample spacing must be at least ${MIN_SAMPLE_SPACING_M} m.`);
+    }
+    return spacing;
+}
+
+function readPosition(coord, index) {
+    if (!Array.isArray(coord) || coord.length < 2) {
+        throw new Error(`Point ${index} must be [lng, lat].`);
+    }
+    const lng = Number(coord[0]);
+    const lat = Number(coord[1]);
+    if (!Number.isFinite(lng) || !Number.isFinite(lat)) {
+        throw new Error(`Point ${index} must have finite lng and lat.`);
+    }
+    if (lng < -180 || lng > 180 || lat < -90 || lat > 90) {
+        throw new Error(`Point ${index} is outside longitude/latitude range.`);
+    }
+    return [lng, lat];
+}
+
+function assertHeight(value, label) {
+    const height = Number(value);
+    if (!Number.isFinite(height) || height < 0) {
+        throw new Error(`${label} height must be zero or greater.`);
+    }
+    return height;
+}
+
+/**
+ * Insert points so each step is at most `spacingM`, keeping every original vertex.
+ * @param {Array<[number, number]>} coordinates
+ * @param {number} [spacingM]
+ * @returns {{ lng: number, lat: number, distanceM: number }[]}
+ */
+export function densifyCoordinates(coordinates, spacingM = DEFAULT_SAMPLE_SPACING_M) {
+    if (!Array.isArray(coordinates)) {
+        throw new Error('A line needs at least two points.');
+    }
+    const spacing = assertSpacing(spacingM);
+    const positions = coordinates.map((coord, index) => readPosition(coord, index));
+    if (positions.length < 2) {
+        throw new Error('A line needs at least two points.');
+    }
+
+    /** @type {{ lng1: number, lat1: number, lng2: number, lat2: number, segLen: number, steps: number, startM: number }[]} */
+    const segments = [];
+    let count = 1;
+    let startM = 0;
+    for (let i = 1; i < positions.length; i += 1) {
+        const [lng1, lat1] = positions[i - 1];
+        const [lng2, lat2] = positions[i];
+        const segLen = haversineMeters(lng1, lat1, lng2, lat2);
+        if (segLen === 0) continue;
+        const steps = Math.ceil(segLen / spacing);
+        count += steps;
+        if (count > MAX_PROFILE_SAMPLES) {
+            throw new Error(
+                `This line needs more than ${MAX_PROFILE_SAMPLES} samples. Increase the sample spacing.`
+            );
+        }
+        segments.push({ lng1, lat1, lng2, lat2, segLen, steps, startM });
+        startM += segLen;
+    }
+    if (!segments.length) {
+        throw new Error('Line has no length.');
+    }
+
+    const first = segments[0];
+    /** @type {{ lng: number, lat: number, distanceM: number }[]} */
+    const out = [{ lng: first.lng1, lat: first.lat1, distanceM: 0 }];
+    for (const seg of segments) {
+        for (let s = 1; s <= seg.steps; s += 1) {
+            const t = s / seg.steps;
+            const lng = s === seg.steps ? seg.lng2 : seg.lng1 + (seg.lng2 - seg.lng1) * t;
+            const lat = s === seg.steps ? seg.lat2 : seg.lat1 + (seg.lat2 - seg.lat1) * t;
+            out.push({
+                lng,
+                lat,
+                distanceM: seg.startM + seg.segLen * t
+            });
+        }
+    }
+    return out;
+}
+
+/**
+ * Min, max, gain, and loss. Null elevations are gaps: gain and loss do not cross them.
+ * @param {{ elevationM: number | null }[]} samples
+ */
+export function summarizeElevations(samples) {
+    let min = null;
+    let max = null;
+    let gain = 0;
+    let loss = 0;
+    let gapCount = 0;
+    let validCount = 0;
+    let prev = null;
+    for (const sample of samples || []) {
+        const elevation = finiteOrNull(sample?.elevationM);
+        if (elevation == null) {
+            gapCount += 1;
+            prev = null;
+            continue;
+        }
+        validCount += 1;
+        if (min == null || elevation < min) min = elevation;
+        if (max == null || elevation > max) max = elevation;
+        if (prev != null) {
+            const delta = elevation - prev;
+            if (delta > 0) gain += delta;
+            else if (delta < 0) loss -= delta;
+        }
+        prev = elevation;
+    }
+    const last = samples?.length ? samples[samples.length - 1] : null;
+    return {
+        min,
+        max,
+        gain,
+        loss,
+        gapCount,
+        validCount,
+        totalDistanceM: Number.isFinite(last?.distanceM) ? last.distanceM : 0
+    };
+}
+
+/**
+ * Contiguous runs of finite elevations. A null sample ends the current run.
+ * @param {object[]} samples
+ * @param {string} [valueKey]
+ * @returns {{ distanceM: number, elevationM: number }[][]}
+ */
+export function profileChartSegments(samples, valueKey = 'elevationM') {
+    /** @type {{ distanceM: number, elevationM: number }[][]} */
+    const segments = [];
+    /** @type {{ distanceM: number, elevationM: number }[]} */
+    let current = [];
+    for (const sample of samples || []) {
+        const elevation = finiteOrNull(sample?.[valueKey]);
+        if (elevation == null) {
+            if (current.length) segments.push(current);
+            current = [];
+            continue;
+        }
+        current.push({ distanceM: sample.distanceM, elevationM: elevation });
+    }
+    if (current.length) segments.push(current);
+    return segments;
+}
+
+/**
+ * Keep documented closed-map and timeout messages. Wrap anything else that is not an Error.
+ * @param {unknown} err
+ * @returns {Error}
+ */
+export function elevationSampleError(err) {
+    if (err instanceof Error && err.message) {
+        if (err.message === TIMEOUT_MESSAGE || err.message === CLOSED_MESSAGE) return err;
+        if (/sampleElevations/i.test(err.message)) return err;
+        return err;
+    }
+    return new Error('Elevation sampling failed.');
+}
+
+/**
+ * @param {{ lng: number, lat: number }[]} samples
+ * @param {(points: Array<[number, number]>) => Promise<Array<number | null>>} sampleElevations
+ */
+export async function sampleProfileElevations(samples, sampleElevations) {
+    if (typeof sampleElevations !== 'function') {
+        throw new Error('Elevation sampling is not available on this map.');
+    }
+    const points = samples.map((sample) => [sample.lng, sample.lat]);
+    let values;
+    try {
+        values = await sampleElevations(points);
+    } catch (err) {
+        throw elevationSampleError(err);
+    }
+    if (!Array.isArray(values) || values.length !== samples.length) {
+        throw new Error('sampleElevations returned an unexpected result');
+    }
+    return samples.map((sample, index) => ({
+        ...sample,
+        elevationM: finiteOrNull(values[index])
+    }));
+}
+
+/**
+ * @param {{ coordinates: Array<[number, number]>, spacingM?: number, sampleElevations: Function }} input
+ */
+export async function buildElevationProfile(input) {
+    const samples = densifyCoordinates(input?.coordinates, input?.spacingM);
+    const withElevation = await sampleProfileElevations(samples, input?.sampleElevations);
+    const stats = summarizeElevations(withElevation);
+    return {
+        mode: 'profile',
+        samples: withElevation,
+        stats,
+        segments: profileChartSegments(withElevation)
+    };
+}
+
+/**
+ * @param {{ samples: object[], observerHeightM: number, targetHeightM: number, curvature?: boolean }} input
+ */
+export function evaluateLineOfSight(input) {
+    const samples = input?.samples;
+    if (!Array.isArray(samples) || samples.length < 2) {
+        throw new Error('Line of sight needs an observer and a target.');
+    }
+    const observerHeightM = assertHeight(input.observerHeightM, 'Observer');
+    const targetHeightM = assertHeight(input.targetHeightM, 'Target');
+    const curvature = !!input.curvature;
+    const total = samples[samples.length - 1].distanceM;
+    if (!Number.isFinite(total) || total <= 0) {
+        throw new Error('Line has no length.');
+    }
+    const observerGround = finiteOrNull(samples[0].elevationM);
+    const targetGround = finiteOrNull(samples[samples.length - 1].elevationM);
+    if (observerGround == null || targetGround == null) {
+        throw new Error('No terrain elevation at the observer or target.');
+    }
+
+    const observerAbsoluteM = observerGround + observerHeightM;
+    const targetAbsoluteM = targetGround + targetHeightM;
+    const annotated = samples.map((sample) => {
+        const bulgeM = curvature
+            ? earthBulgeMeters(sample.distanceM, total - sample.distanceM)
+            : 0;
+        const ground = finiteOrNull(sample.elevationM);
+        return {
+            ...sample,
+            bulgeM,
+            effectiveM: ground == null ? null : ground + bulgeM
+        };
+    });
+
+    let obstruction = null;
+    for (let index = 1; index < annotated.length - 1; index += 1) {
+        const sample = annotated[index];
+        if (sample.effectiveM == null) continue;
+        const losM = observerAbsoluteM + (sample.distanceM / total) * (targetAbsoluteM - observerAbsoluteM);
+        if (sample.effectiveM > losM + LOS_CLEARANCE_M) {
+            obstruction = {
+                index,
+                lng: sample.lng,
+                lat: sample.lat,
+                distanceM: sample.distanceM,
+                elevationM: sample.elevationM,
+                effectiveM: sample.effectiveM,
+                losM,
+                bulgeM: sample.bulgeM
+            };
+            break;
+        }
+    }
+
+    return {
+        visible: !obstruction,
+        curvature,
+        observerAbsoluteM,
+        targetAbsoluteM,
+        observerHeightM,
+        targetHeightM,
+        samples: annotated,
+        obstruction,
+        stats: summarizeElevations(annotated),
+        segments: profileChartSegments(annotated, 'effectiveM')
+    };
+}
+
+/**
+ * @param {{ observer: [number, number], target: [number, number], observerHeightM: number, targetHeightM: number, spacingM?: number, curvature?: boolean, sampleElevations: Function }} input
+ */
+export async function buildLineOfSight(input) {
+    if (!Array.isArray(input?.observer) || !Array.isArray(input?.target)) {
+        throw new Error('Pick an observer point and a target point.');
+    }
+    const path = densifyCoordinates([input.observer, input.target], input.spacingM);
+    const withElevation = await sampleProfileElevations(path, input.sampleElevations);
+    const sight = evaluateLineOfSight({
+        samples: withElevation,
+        observerHeightM: input.observerHeightM,
+        targetHeightM: input.targetHeightM,
+        curvature: input.curvature
+    });
+    return {
+        mode: 'los',
+        ...sight
+    };
+}
+
+/**
+ * @param {object} result
+ * @returns {{ type: 'FeatureCollection', features: object[] }}
+ */
+export function buildTerrainFeatureCollection(result) {
+    const lineCoords = (result?.samples || [])
+        .filter((sample) => Number.isFinite(sample?.lng) && Number.isFinite(sample?.lat))
+        .map((sample) => [sample.lng, sample.lat]);
+    /** @type {object[]} */
+    const features = [];
+    if (lineCoords.length >= 2) {
+        features.push({
+            type: 'Feature',
+            properties: {
+                kind: result.mode === 'los' ? 'line-of-sight' : 'profile',
+                visible: result.mode === 'los' ? !!result.visible : null,
+                minM: result.stats?.min ?? null,
+                maxM: result.stats?.max ?? null,
+                gainM: result.stats?.gain ?? null,
+                lossM: result.stats?.loss ?? null,
+                distanceM: result.stats?.totalDistanceM ?? null,
+                curvature: result.mode === 'los' ? !!result.curvature : false
+            },
+            geometry: { type: 'LineString', coordinates: lineCoords }
+        });
+    }
+    if (result?.obstruction && Number.isFinite(result.obstruction.lng) && Number.isFinite(result.obstruction.lat)) {
+        features.push({
+            type: 'Feature',
+            properties: {
+                kind: 'obstruction',
+                distanceM: result.obstruction.distanceM,
+                elevationM: result.obstruction.elevationM
+            },
+            geometry: {
+                type: 'Point',
+                coordinates: [result.obstruction.lng, result.obstruction.lat]
+            }
+        });
+    }
+    return { type: 'FeatureCollection', features };
+}
