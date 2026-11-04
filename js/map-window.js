@@ -3,6 +3,7 @@
  */
 import mapService from './map/map-service.js';
 import { DualScreenChannel } from './dual-screen/channel.js';
+import bus from './core/event-bus.js';
 import {
     MessageType,
     readDualSessionId,
@@ -18,9 +19,23 @@ import {
     broadcastViewportFromMap,
     applyRemoteSelection
 } from './dual-screen/secondary-client.js';
-import { setupMapPrintMenu } from './map/map-export.js';
 import { applyForwardedMapCall, runForwardedMapRpc, warnDualScreenDev } from './dual-screen/map-bridge.js';
 import { mountBasemapToggle, syncBasemapToggleActive } from './map/basemap-catalog.js';
+import { exportPopoutMapView } from './dual-screen/popout-export.js';
+import {
+    catalogEntryFromDataset,
+    notePopoutMapCommand,
+    removePopoutLayer,
+    reorderPopoutLayers,
+    replacePopoutLayers,
+    upsertPopoutLayer,
+    patchPopoutLayer
+} from './dual-screen/popout-layer-catalog.js';
+import {
+    bindPopoutContextMenu,
+    buildPopoutContextMenuItems,
+    requestPopoutCommand
+} from './dual-screen/popout-context-menu.js';
 
 const ROLE = 'secondary';
 
@@ -112,11 +127,14 @@ function applyLayerStyleMessage(payload) {
     if (!layerId || !style) return;
     const dataset = layerMeta ? entryToDataset(layerMeta) : null;
     applyLayerStyle(layerId, dataset, style);
+    if (layerMeta) upsertPopoutLayer({ ...layerMeta, style });
+    else patchPopoutLayer(layerId, { style });
 }
 
 function applySnapshot(payload) {
     if (!payload) return;
     const { layers, viewport, basemap, is3d, basemapTone } = payload;
+    replacePopoutLayers(layers || []);
 
     if (basemap && basemap !== mapService.getCurrentBasemap()) {
         mapService.setBasemap(basemap);
@@ -181,16 +199,25 @@ function applyLayerAdd(payload) {
         mapService.setLayerStyle(layer.id, style);
     }
     mapService.addLayer(layer, colorIndex ?? 0, { fit: !!fit });
+    const entry = catalogEntryFromDataset(raw);
+    if (entry) {
+        if (style) entry.style = style;
+        upsertPopoutLayer(entry);
+    }
 }
 
 function applyLayerRemove(payload) {
-    if (payload?.id) mapService.removeLayer(payload.id);
+    if (payload?.id) {
+        mapService.removeLayer(payload.id);
+        removePopoutLayer(payload.id);
+    }
 }
 
 function applyLayerOrder(payload) {
     const { orderedIds } = payload || {};
     if (!orderedIds?.length) return;
     mapService.syncLayerOrder(orderedIds);
+    reorderPopoutLayers(orderedIds);
 }
 
 function applyViewport(payload) {
@@ -255,6 +282,7 @@ function applyMapCmd(payload) {
     // style, filter, or remove, or the pop-out applies them to a layer that
     // is still being built.
     mapCmdChain = mapCmdChain.then(async () => {
+        notePopoutMapCommand(payload?.method, payload?.args);
         const result = applyForwardedMapCall(mapService, payload);
         if (result && typeof result.then === 'function') await result;
     }).catch((err) => {
@@ -355,13 +383,45 @@ function setupHeaderControls() {
         else mapService.disable3D();
         post(MessageType.MAP_CHROME, { is3d });
     });
+}
 
-    setupMapPrintMenu({
-        menuRoot: document.getElementById('map-print-menu'),
-        mapService,
-        showToast: showMapWindowToast,
-        blockWhenDualScreen: false
-    });
+async function onExportMapView(format, options) {
+    try {
+        const result = await exportPopoutMapView(mapService, format, {
+            ...options,
+            onInfo: (message) => showMapWindowToast(message, 'info'),
+            onWarning: (message) => showMapWindowToast(message, 'warning')
+        });
+        const label = format === 'gif' ? 'GIF' : format.toUpperCase();
+        showMapWindowToast(`${label} saved.`, 'success');
+        return result;
+    } catch (err) {
+        showMapWindowToast(err?.message || 'Map export failed.', 'error');
+        throw err;
+    }
+}
+
+async function mountPopoutChrome() {
+    const [{ mountMapPrintMenu }, { mountMapContextMenu }, { mountPopoutLegend }] = await Promise.all([
+        import('../react/header/mountMapPrintMenu.jsx'),
+        import('../react/map/mountMapContextMenu.jsx'),
+        import('../react/map/mountPopoutLegend.jsx')
+    ]);
+    const printHost = document.getElementById('map-print-host');
+    if (printHost) {
+        mountMapPrintMenu(printHost, {
+            onExportMapView,
+            onPresentationLink: () => requestPopoutCommand({ action: 'presentationLink' })
+        });
+    }
+    const menuHost = document.createElement('div');
+    menuHost.id = 'map-window-context-menu-host';
+    document.body.appendChild(menuHost);
+    mountMapContextMenu(menuHost, { buildItems: buildPopoutContextMenuItems });
+    const legendHost = document.createElement('div');
+    legendHost.id = 'map-window-legend-host';
+    document.getElementById('map-container')?.appendChild(legendHost);
+    mountPopoutLegend(legendHost);
 }
 
 function boot() {
@@ -381,8 +441,14 @@ function boot() {
         onProtocolMismatch: showProtocolMismatch
     });
     mapService.init('map-container');
+    bindPopoutContextMenu(post);
+    bus.on('map:3dChanged', (is3d) => {
+        syncDimensionToggle(!!is3d);
+        post(MessageType.MAP_CHROME, { is3d: !!is3d });
+    });
     setupHeaderControls();
     void setupModalHost();
+    void mountPopoutChrome();
     initSecondaryClient({ post, getChannel: () => channel });
 
     const map = mapService.getMap();

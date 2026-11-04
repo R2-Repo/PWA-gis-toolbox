@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>GIS Toolbox — Map (Dual Screen)</title>
     <meta name="robots" content="noindex">
+    <link rel="stylesheet" href="css/main.css">
     <link rel="stylesheet" href="css/map-window.css">
     <link rel="icon" type="image/png" href="icons/favicon.png">
 </head>
@@ -17,14 +18,7 @@
                 <button type="button" class="header-toggle-option active" data-value="2d" title="Flat map" aria-pressed="true">2D</button>
                 <button type="button" class="header-toggle-option" data-value="3d" title="Terrain and buildings" aria-pressed="false">3D</button>
             </div>
-            <div class="header-print-menu" id="map-print-menu">
-                <button type="button" class="btn btn-secondary btn-sm" id="btn-print-map" title="Download map as PNG, PDF, or orbit GIF">🖨️ Print ▾</button>
-                <div class="header-print-dropdown" id="map-print-dropdown">
-                    <button type="button" class="header-print-item" data-format="png">Download PNG</button>
-                    <button type="button" class="header-print-item" data-format="pdf">Download PDF</button>
-                    <button type="button" class="header-print-item" data-format="gif">Download Orbit GIF</button>
-                </div>
-            </div>
+            <div id="map-print-host"></div>
             <button type="button" class="btn btn-secondary btn-sm" id="btn-exit-dual-screen">Exit Dual Screen</button>
         </div>
     </header>

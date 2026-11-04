@@ -208,4 +208,15 @@ describe('header print menu PDF choices', () => {
         await view.unmount();
         loadWidgetStore({ activeWidgets: [] });
     });
+
+    it('keeps a working Orbit GIF action in the print menu', async () => {
+        const onExportMapView = vi.fn(async () => null);
+        const view = await renderMenu(onExportMapView);
+        const gif = buttonByText(view.container, 'Download Orbit GIF');
+        expect(gif).toBeTruthy();
+        expect(gif.hidden).toBe(false);
+        await clickAndFinish(view.container, 'Download Orbit GIF', onExportMapView);
+        expect(onExportMapView).toHaveBeenCalledWith('gif', undefined);
+        await view.unmount();
+    });
 });

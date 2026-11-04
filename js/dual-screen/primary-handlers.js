@@ -85,6 +85,18 @@ function handleCtxCmd(payload, deps) {
         deps.onSelectionShortcut?.(payload?.shortcut);
         return;
     }
+    if (action === 'quickDraw') {
+        deps.startQuickDraw?.();
+        return;
+    }
+    if (action === 'presentationLink') {
+        deps.openPresentationLink?.();
+        return;
+    }
+    if (action === 'gisTool') {
+        deps.invokeAppAction?.(payload?.toolAction);
+        return;
+    }
     if (!layerId) return;
 
     switch (action) {
@@ -96,6 +108,27 @@ function handleCtxCmd(payload, deps) {
             break;
         case 'setActiveLayer':
             deps.setActiveLayer(layerId);
+            break;
+        case 'moveLayerUp':
+            deps.moveLayerUp?.(layerId);
+            break;
+        case 'moveLayerDown':
+            deps.moveLayerDown?.(layerId);
+            break;
+        case 'bringToFront':
+            deps.bringToFront?.(layerId);
+            break;
+        case 'sendToBack':
+            deps.sendToBack?.(layerId);
+            break;
+        case 'deleteFeature':
+            deps.deleteFeature?.(layerId, payload.featureIndex);
+            break;
+        case 'importStationTable':
+            deps.importStationTable?.(layerId);
+            break;
+        case 'protectInPlace':
+            deps.toggleProtectInPlace?.(layerId, payload.featureIndex);
             break;
         default:
             break;

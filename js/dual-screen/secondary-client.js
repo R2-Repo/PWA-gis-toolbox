@@ -1,8 +1,8 @@
 /**
- * Dual Screen Mode — secondary window interactions (draw, fence, popups, drop, context menu)
+ * Dual Screen Mode — secondary window interactions (draw, fence, popups, drop)
  */
 import bus from '../core/event-bus.js';
-import mapService, { formatElevationLabel } from '../map/map-service.js';
+import mapService from '../map/map-service.js';
 import drawManager from '../map/draw-manager.js';
 import { MessageType, createMessage, buildViewportPayload } from './protocol.js';
 import {
@@ -29,7 +29,6 @@ export function initSecondaryClient({ post, getChannel }) {
     setupSelectionBridge(post);
     setupPopupMapBridges(post);
     setupFileDrop(post);
-    setupContextMenu(post);
     setupDrawCmdHandler();
     setupFenceHandlers(post);
     setupToastHandler();
@@ -150,138 +149,6 @@ function setupFileDrop(post) {
         }));
 
         post(MessageType.FILE_DROP, { files: serialized });
-    });
-}
-
-let _ctxDismissAC = null;
-
-function dismissContextMenu() {
-    document.querySelector('.map-context-menu')?.remove();
-    if (_ctxDismissAC) { _ctxDismissAC.abort(); _ctxDismissAC = null; }
-}
-
-function setupContextMenu(post) {
-    bus.on('map:contextmenu', (detail) => showSecondaryContextMenu(detail, post));
-}
-
-function showSecondaryContextMenu({ latlng, originalEvent, layerId, featureIndex, feature }, post) {
-    dismissContextMenu();
-    const menu = document.createElement('div');
-    menu.className = 'map-context-menu';
-
-    const items = [];
-
-    if (feature && layerId != null) {
-        items.push({ icon: '📋', label: 'View attributes', action: () => {
-            const nearby = mapService.findFeaturesNearClick(latlng, layerId, featureIndex);
-            const popupOptions = { forceFull: true };
-            if (nearby.length > 0) mapService.showMultiPopup(nearby, latlng, popupOptions);
-            else mapService.showPopup(feature, null, latlng, popupOptions);
-        }});
-        items.push({ icon: '✏️', label: 'Edit feature', action: () => {
-            post(MessageType.POPUP_ACTION, { action: 'editFeature', layerId, featureIndex });
-        }});
-    }
-
-    items.push({ icon: '📍', label: 'Copy coordinates', action: () => {
-        const text = `${latlng.lat.toFixed(6)}, ${latlng.lng.toFixed(6)}`;
-        navigator.clipboard.writeText(text).then(() => showMapToast(`Copied: ${text}`, 'success'))
-            .catch(() => showMapToast(text, 'info'));
-    }});
-
-    items.push({
-        icon: '🛤️',
-        label: 'Get route & milepost',
-        title: 'UDOT state routes and interstates only — not city streets.',
-        action: () => {
-            void import('../ugrc/lookup.js').then(({ runReverseMilepostLookup }) =>
-                runReverseMilepostLookup(latlng, {
-                    showToast: showMapToast
-                })
-            );
-        }
-    });
-
-    if (mapService.is3DEnabled()) {
-        items.push({ icon: '⛰️', label: 'Get elevation', action: () => {
-            const meters = mapService.queryElevationAt(latlng.lat, latlng.lng);
-            if (meters == null) {
-                showMapToast('Elevation unavailable — terrain tiles may still be loading', 'warning');
-                return;
-            }
-            const text = formatElevationLabel(meters);
-            const message = `Elevation: ${text}`;
-            navigator.clipboard.writeText(text)
-                .then(() => showMapToast(message, 'success'))
-                .catch(() => showMapToast(message, 'info'));
-        }});
-    }
-
-    if (mapService.isOrbiting()) {
-        items.push({ icon: '⏹️', label: 'Stop camera orbit', action: () => {
-            mapService.stopCameraOrbit();
-            showMapToast('Camera orbit stopped', 'info');
-        }});
-    } else {
-        items.push({ icon: '🎥', label: 'Orbit camera around point', action: () => {
-            mapService.startCameraOrbit({ lat: latlng.lat, lng: latlng.lng });
-            showMapToast('Camera orbiting — right-click to stop', 'info');
-        }});
-    }
-
-    items.push({ icon: '🛣️', label: 'Open in Google Street View', action: () => {
-        window.open(`https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${latlng.lat},${latlng.lng}`, '_blank', 'noopener');
-    }});
-
-    if (layerId) {
-        items.push({ sep: true });
-        items.push({ icon: '👁️', label: 'Toggle layer visibility', action: () => {
-            post(MessageType.CTX_CMD, { action: 'toggleVisibility', layerId });
-        }});
-        items.push({ icon: '🔍', label: 'Zoom to layer', action: () => {
-            post(MessageType.CTX_CMD, { action: 'zoomToLayer', layerId });
-        }});
-        items.push({ icon: '✦', label: 'Set as active layer', action: () => {
-            post(MessageType.CTX_CMD, { action: 'setActiveLayer', layerId });
-        }});
-    }
-
-    items.forEach(item => {
-        if (item.sep) {
-            menu.innerHTML += '<div class="ctx-sep"></div>';
-            return;
-        }
-        const el = document.createElement('div');
-        el.className = 'ctx-item';
-        if (item.title) el.title = item.title;
-        el.innerHTML = `<span class="ctx-icon">${item.icon}</span>${item.label}`;
-        el.addEventListener('click', (e) => {
-            e.stopPropagation();
-            dismissContextMenu();
-            item.action();
-        });
-        menu.appendChild(el);
-    });
-
-    let x = originalEvent.clientX;
-    let y = originalEvent.clientY;
-    document.body.appendChild(menu);
-    const rect = menu.getBoundingClientRect();
-    if (x + rect.width > window.innerWidth) x = window.innerWidth - rect.width - 4;
-    if (y + rect.height > window.innerHeight) y = window.innerHeight - rect.height - 4;
-    menu.style.left = x + 'px';
-    menu.style.top = y + 'px';
-
-    _ctxDismissAC = new AbortController();
-    const sig = _ctxDismissAC.signal;
-    requestAnimationFrame(() => {
-        if (sig.aborted) return;
-        document.addEventListener('pointerdown', (e) => {
-            if (!e.target.closest('.map-context-menu')) dismissContextMenu();
-        }, { signal: sig });
-        document.addEventListener('keydown', (e) => {
-            if (e.key === 'Escape') dismissContextMenu();
-        }, { signal: sig });
     });
 }
 

@@ -57,7 +57,7 @@ export function MapPrintMenu({ onExportMapView, onPresentationLink, disabled = f
                 type="button"
                 className="btn btn-ghost btn-sm"
                 id="btn-print-map"
-                title="Download map as PNG or PDF"
+                title="Download map as PNG, PDF, or orbit GIF"
                 disabled={disabled || busy}
                 onClick={(e) => {
                     e.stopPropagation();
@@ -113,6 +113,13 @@ export function MapPrintMenu({ onExportMapView, onPresentationLink, disabled = f
                     onClick={() => { void handlePdf(); }}
                 >
                     Download PDF
+                </button>
+                <button
+                    type="button"
+                    className="header-print-item"
+                    onClick={() => { void handleExport('gif'); }}
+                >
+                    Download Orbit GIF
                 </button>
                 <button
                     type="button"

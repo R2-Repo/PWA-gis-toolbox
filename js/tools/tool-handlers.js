@@ -106,6 +106,8 @@ import {
 } from '../core/project-kit.js';
 import { loadJSZip } from '../core/libs.js';
 import { headerPdfDownloadOptions, readWidgetProjectName } from '../map/header-print-pdf.js';
+import { exportOrbitGif } from '../map/orbit-gif-export.js';
+import { buildSharedMapContextMenuItems } from '../map/shared-context-menu.js';
 import { loadPaletteFavorites, savePaletteFavorites } from '../map/palette-store.js';
 import {
     getWorkspaceLayer,
@@ -128,10 +130,8 @@ import {
 import { createWidgetContext } from '../widgets/widget-context.js';
 import { getPlatformBundle } from '../platform/create-platform.js';
 import { openImportStationTable } from '../widgets/project-stationing/controller.js';
-import { isProjectStationingCenterline } from '../widgets/project-stationing/route-profile.js';
 import {
-    getCalloutSelectionItems,
-    getPlanSetCalloutMenuItems
+    getCalloutSelectionItems
 } from '../widgets/plan-set-callouts/context-menu-bridge.js';
 import {
     getProtectInPlaceContextMenuItems,
@@ -519,6 +519,16 @@ export async function exportProjectKit(options = {}) {
 
 export async function exportMapView(format, options = {}) {
     try {
+        if (format === 'gif') {
+            if (dualScreenCoordinator.isActive) {
+                const message = 'Map is in the Dual Screen window — export from that window.';
+                showToast(message, 'error');
+                throw new Error(message);
+            }
+            const result = await exportOrbitGif(mapService);
+            showToast('GIF saved.', 'success');
+            return result;
+        }
         const mod = await import('../map/header-export.js');
         if (mod.willUseHighResExport(mapService)) {
             showToast('Exporting high-resolution map…', 'info');
@@ -591,217 +601,52 @@ export async function importProjectKit(initialFile) {
 }
 
 export function buildMapContextMenuItems(payload) {
-    const { latlng, layerId, featureIndex, feature } = payload;
-    const layers = getLayers();
-    const layer = layerId ? layers.find((l) => l.id === layerId) : null;
-    const layerIdx = layer ? layers.indexOf(layer) : -1;
-    const items = [];
-
-    const calloutItems = getPlanSetCalloutMenuItems(payload);
-    const pipItems = getProtectInPlaceContextMenuItems({ layer, feature, featureIndex });
-    if (calloutItems.length) items.push(...calloutItems);
-    if (pipItems.length) items.push(...pipItems);
-    if (calloutItems.length || pipItems.length) items.push({ sep: true });
-
-    if (feature && layer) {
-        items.push({
-            icon: '👁',
-            label: 'View attributes',
-            action: () => {
-                const nearby = mapService.findFeaturesNearClick(latlng, layerId, featureIndex);
-                const popupOptions = { forceFull: true };
-                if (nearby.length > 0) mapService.showMultiPopup(nearby, latlng, popupOptions);
-                else mapService.showPopup(feature, null, latlng, popupOptions);
-            }
-        });
-        items.push({
-            icon: '✏',
-            label: 'Edit feature',
-            action: () => openFeatureEditor(layerId, featureIndex)
-        });
-        if (isProjectStationingCenterline(layer)) {
-            items.push({
-                icon: '📍',
-                label: 'Import Station Table',
-                action: () => openImportStationTable(getWidgetContext(), layer)
-            });
-        }
-
-        const gisTools = getContextMenuGisTools(layer, feature);
-        if (gisTools.length > 0) {
-            items.push({
-                icon: '🛠',
-                label: 'Tools',
-                children: gisTools.map((tool) => ({
-                    label: tool.label,
-                    action: () => invokeAppAction(tool.action)
-                }))
-            });
-        }
-
-        if (isLayerFeatureDeletable(layer)) {
-            items.push({
-                icon: '🗑',
-                label: 'Delete feature',
-                action: () => deleteFeatureAt(layerId, featureIndex)
-            });
-        }
-    }
-
-    if (!isPresentationMode()) {
-        items.push({
-            icon: '✏️',
-            label: 'Quick Draw',
-            action: () => startQuickDraw()
-        });
-        items.push({
-            icon: '📐',
-            label: 'Measure from here',
-            action: () => mapService.startMeasureFrom(latlng)
-        });
-    }
-
-    items.push({
-        icon: '📋',
-        label: 'Copy coordinates',
-        action: () => {
-            const text = `${latlng.lat.toFixed(6)}, ${latlng.lng.toFixed(6)}`;
-            navigator.clipboard.writeText(text).catch(() => showToast(text, 'info'));
-        }
-    });
-
-    items.push({
-        icon: '🛤️',
-        label: 'Get route & milepost',
-        title: 'UDOT state routes and interstates only — not city streets.',
-        action: () => {
-            void lookupRouteAndMilepostAt(latlng);
-        }
-    });
-
-    if (mapService.is3DEnabled()) {
-        items.push({
-            icon: '⛰️',
-            label: 'Get elevation',
-            action: () => {
-                const meters = mapService.queryElevationAt(latlng.lat, latlng.lng);
-                if (meters == null) {
-                    showToast('Elevation unavailable — terrain tiles may still be loading', 'warning');
-                    return;
-                }
-                const text = formatElevationLabel(meters);
-                const message = `Elevation: ${text}`;
-                navigator.clipboard.writeText(text)
-                    .then(() => showToast(message, 'success'))
-                    .catch(() => showToast(message, 'info'));
-            }
-        });
-    }
-
-    if (mapService.isOrbiting()) {
-        items.push({
-            icon: '⏹',
-            label: 'Stop camera orbit',
-            action: () => {
-                mapService.stopCameraOrbit();
-            }
-        });
-    } else {
-        items.push({
-            icon: '🔄',
-            label: 'Orbit camera around point',
-            action: () => {
-                mapService.startCameraOrbit({ lat: latlng.lat, lng: latlng.lng });
-            }
-        });
-    }
-
-    items.push({
-        icon: '🚶',
-        label: 'Open location in Google Street View',
-        action: () => {
+    return buildSharedMapContextMenuItems(payload, {
+        getLayers,
+        viewAttributes: ({ latlng, layerId, featureIndex, feature }) => {
+            const nearby = mapService.findFeaturesNearClick(latlng, layerId, featureIndex);
+            const popupOptions = { forceFull: true };
+            if (nearby.length > 0) mapService.showMultiPopup(nearby, latlng, popupOptions);
+            else mapService.showPopup(feature, null, latlng, popupOptions);
+        },
+        editFeature: (layerId, featureIndex) => openFeatureEditor(layerId, featureIndex),
+        importStationTable: (layer) => openImportStationTable(getWidgetContext(), layer),
+        invokeGisTool: (action) => invokeAppAction(action),
+        deleteFeature: (layerId, featureIndex) => { void deleteFeatureAt(layerId, featureIndex); },
+        allowMapTools: () => !isPresentationMode(),
+        startQuickDraw,
+        startMeasure: (latlng) => mapService.startMeasureFrom(latlng),
+        notify: (message, type) => showToast(message, type),
+        lookupRoute: (latlng) => { void lookupRouteAndMilepostAt(latlng); },
+        is3D: () => mapService.is3DEnabled(),
+        queryElevation: (lat, lng) => mapService.queryElevationAt(lat, lng),
+        formatElevation: (meters) => formatElevationLabel(meters),
+        isOrbiting: () => mapService.isOrbiting(),
+        stopOrbit: () => mapService.stopCameraOrbit(),
+        startOrbit: (center) => mapService.startCameraOrbit(center),
+        openStreetView: (latlng) => {
             const url = `https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${latlng.lat},${latlng.lng}`;
             window.open(url, '_blank', 'noopener');
-        }
-    });
-
-    items.push({
-        icon: '🌍',
-        label: 'Open location in Google Earth',
-        action: () => {
+        },
+        openEarth: (latlng) => {
             const url = `https://earth.google.com/web/@${latlng.lat},${latlng.lng},1200a,900d,60y,0h,35t,0r`;
             window.open(url, '_blank', 'noopener');
+        },
+        moveLayerUp,
+        moveLayerDown,
+        bringToFront: bringLayerToFront,
+        sendToBack: sendLayerToBack,
+        toggleVisibility: (layerId) => {
+            toggleLayerVisibility(layerId);
+            mapService.toggleLayer(layerId, getLayers().find((l) => l.id === layerId)?.visible);
+            refreshUI();
+        },
+        zoomToLayer,
+        setActiveLayer: (layerId) => {
+            setActiveLayer(layerId);
+            refreshUI();
         }
     });
-
-    if (layer) {
-        items.push({ sep: true });
-        if (layerIdx > 0) {
-            items.push({ icon: '⬆', label: 'Move layer up', action: () => moveLayerUp(layerId) });
-        }
-        if (layerIdx >= 0 && layerIdx < layers.length - 1) {
-            items.push({ icon: '⬇', label: 'Move layer down', action: () => moveLayerDown(layerId) });
-        }
-        if (layers.length > 1 && layerIdx !== 0) {
-            items.push({
-                icon: '⏫',
-                label: 'Bring to front',
-                action: () => {
-                    while (layers.indexOf(layers.find((l) => l.id === layerId)) > 0) {
-                        reorderLayer(layerId, 'up');
-                    }
-                    mapService.syncLayerOrder(getMapLayerOrderIds());
-                    refreshUI();
-                }
-            });
-        }
-        if (layers.length > 1 && layerIdx !== layers.length - 1) {
-            items.push({
-                icon: '⏬',
-                label: 'Send to back',
-                action: () => {
-                    while (layers.indexOf(layers.find((l) => l.id === layerId)) < layers.length - 1) {
-                        reorderLayer(layerId, 'down');
-                    }
-                    mapService.syncLayerOrder(getMapLayerOrderIds());
-                    refreshUI();
-                }
-            });
-        }
-        items.push({ sep: true });
-        items.push({
-            icon: layer.visible !== false ? '👁️‍🗨️' : '👁️',
-            label: layer.visible !== false ? 'Hide layer' : 'Show layer',
-            action: () => {
-                toggleLayerVisibility(layerId);
-                mapService.toggleLayer(layerId, layers.find((l) => l.id === layerId)?.visible);
-                refreshUI();
-            }
-        });
-        items.push({
-            icon: '🔍',
-            label: 'Zoom to layer',
-            action: () => {
-                const ll = mapService.getLayerRecord(layerId);
-                if (ll?.geojson) {
-                    try {
-                        const bb = turf.bbox(ll.geojson);
-                        mapService.getMap()?.fitBounds([[bb[0], bb[1]], [bb[2], bb[3]]], { padding: 30 });
-                    } catch (_) { /* ignore */ }
-                }
-            }
-        });
-        items.push({
-            icon: '★',
-            label: 'Set as active layer',
-            action: () => {
-                setActiveLayer(layerId);
-                refreshUI();
-            }
-        });
-    }
-
-    return { items, layerName: layer?.name || null };
 }
 
 export function getRightPanelSnapshot() {
@@ -1835,6 +1680,24 @@ function setupDualScreenMode() {
             else if (shortcut === 'deleteSelected') { void deleteSelectedFeatures(); }
         },
         setActiveLayer: (id) => { setActiveLayer(id); refreshUI(); },
+        moveLayerUp,
+        moveLayerDown,
+        bringToFront: bringLayerToFront,
+        sendToBack: sendLayerToBack,
+        deleteFeature: (layerId, featureIndex) => { void deleteFeatureAt(layerId, featureIndex); },
+        startQuickDraw,
+        invokeAppAction,
+        importStationTable: (layerId) => {
+            const layer = getLayers().find((entry) => entry.id === layerId);
+            if (layer) openImportStationTable(getWidgetContext(), layer);
+        },
+        toggleProtectInPlace: (layerId, featureIndex) => {
+            const layer = getLayers().find((entry) => entry.id === layerId);
+            const feature = layer?.geojson?.features?.[featureIndex];
+            const items = getProtectInPlaceContextMenuItems({ layer, feature, featureIndex });
+            items[0]?.action?.();
+        },
+        openPresentationLink: () => openPresentationLinkBuilderWidget(),
         onCoordSearchAddNew: _coordSearchAddNew,
         onCoordSearchAddToExisting: _coordSearchAddToExisting
     });
@@ -1917,6 +1780,24 @@ export function moveLayerUp(id) {
 
 export function moveLayerDown(id) {
     reorderLayer(id, 'down');
+    mapService.syncLayerOrder(getMapLayerOrderIds());
+    refreshUI();
+}
+
+export function bringLayerToFront(layerId) {
+    const layers = getLayers();
+    while (layers.indexOf(layers.find((l) => l.id === layerId)) > 0) {
+        reorderLayer(layerId, 'up');
+    }
+    mapService.syncLayerOrder(getMapLayerOrderIds());
+    refreshUI();
+}
+
+export function sendLayerToBack(layerId) {
+    const layers = getLayers();
+    while (layers.indexOf(layers.find((l) => l.id === layerId)) < layers.length - 1) {
+        reorderLayer(layerId, 'down');
+    }
     mapService.syncLayerOrder(getMapLayerOrderIds());
     refreshUI();
 }
