@@ -60,6 +60,9 @@ export function HeaderBar({
                         <button className="btn btn-secondary btn-sm" id="btn-dual-screen" title="Open map in a second window (Dual Screen)">
                             <span className="btn-icon-text">🖥️</span><span className="btn-label">Dual Screen</span>
                         </button>
+                        <button type="button" className="btn btn-secondary btn-sm" id="btn-dual-screen-second-monitor" title="Full screen on second monitor">
+                            <span className="btn-icon-text">⧉</span><span className="btn-label">Full screen on second monitor</span>
+                        </button>
                     </div>
                 </div>
                 <SelectionBar

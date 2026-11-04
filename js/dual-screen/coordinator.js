@@ -192,9 +192,12 @@ class DualScreenCoordinator {
     }
 
     /**
+     * @param {{ screen?: { availLeft: number, availTop: number, availWidth: number, availHeight: number } | null }} [options]
+     *   `screen` fills the pop-out on that monitor. Omit it for the normal pop-out.
      * @returns {Promise<boolean>} true if dual mode activated
      */
-    async activate() {
+    async activate(options = {}) {
+        const screen = options?.screen || null;
         if (this.isActive) {
             await this._focusMapWindow();
             return true;
@@ -222,7 +225,7 @@ class DualScreenCoordinator {
                 if (this._pendingActivation) this._failActivation('timeout');
             }, HELLO_TIMEOUT_MS);
 
-            openSecondaryMapWindow(this._sessionId).then((handle) => {
+            openSecondaryMapWindow(this._sessionId, screen ? { screen } : undefined).then((handle) => {
                 if (this.isActive) {
                     this._mapWindow = handle;
                     this._startPoll();

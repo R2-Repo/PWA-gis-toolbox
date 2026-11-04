@@ -90,12 +90,43 @@ function wrapBrowserWindow(win) {
 }
 
 /**
+ * window.open features that fill one screen (second-monitor full screen).
+ * Left and top are not clamped, so a monitor left of the primary keeps a negative origin.
+ * @param {{ availWidth?: number, availHeight?: number, availLeft?: number, availTop?: number } | null | undefined} screenLike
+ * @returns {string}
+ */
+export function buildFullscreenMapWindowFeatures(screenLike) {
+    const width = Math.max(1, Math.round(Number(screenLike?.availWidth) || 1));
+    const height = Math.max(1, Math.round(Number(screenLike?.availHeight) || 1));
+    const leftRaw = Number(screenLike?.availLeft);
+    const topRaw = Number(screenLike?.availTop);
+    const left = Math.round(Number.isFinite(leftRaw) ? leftRaw : 0);
+    const top = Math.round(Number.isFinite(topRaw) ? topRaw : 0);
+    return [
+        `width=${width}`,
+        `height=${height}`,
+        `left=${left}`,
+        `top=${top}`,
+        'menubar=no',
+        'toolbar=no',
+        'location=no',
+        'status=no',
+        'resizable=yes',
+        'scrollbars=no'
+    ].join(',');
+}
+
+/**
  * Open (or reuse) the secondary map window for the active platform.
+ * Pass `screen` only for full-screen placement on a second monitor.
+ * Omit it to keep the normal centered pop-out.
  * @param {string | null} [sessionId]
+ * @param {{ screen?: { availWidth?: number, availHeight?: number, availLeft?: number, availTop?: number } | null }} [options]
  * @returns {Promise<import('../platform/contracts.js').MapWindowHandle | null>}
  */
-export async function openSecondaryMapWindow(sessionId = null) {
-    const features = buildMapWindowFeatures();
+export async function openSecondaryMapWindow(sessionId = null, options = {}) {
+    const screen = options?.screen || null;
+    const features = screen ? buildFullscreenMapWindowFeatures(screen) : buildMapWindowFeatures();
     const url = buildMapWindowUrl(sessionId);
     try {
         const win = window.open(url, MAP_WINDOW_NAME, features);
