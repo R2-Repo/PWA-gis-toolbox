@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 /**
- * Playwright webServer entry — start preview (or dev) on 127.0.0.1:5175 if not already up.
+ * Playwright webServer entry — start preview (or dev) on 127.0.0.1:$GIS_TEST_PORT
+ * (default 5175) if not already up. Non-default ports never attach to an existing server.
  */
 import { spawn } from 'node:child_process';
 import http from 'node:http';
@@ -11,9 +12,10 @@ import { createHash } from 'node:crypto';
 import { readFileSync, readdirSync, statSync, writeFileSync, mkdirSync } from 'node:fs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
-const PORT = 5175;
+const PORT = Number(process.env.GIS_TEST_PORT || 5175);
 const HOST = '127.0.0.1';
 const URL = `http://${HOST}:${PORT}/`;
+const portIsDefault = PORT === 5175;
 
 const useDev = process.env.GIS_TEST_DEV_SERVER === '1';
 
@@ -62,7 +64,14 @@ function computeAppSourceHash() {
 }
 
 async function main() {
+    console.log(`e2e-web-server worktree=${ROOT} url=${URL} strictPort=1`);
     if (await ping()) {
+        if (!portIsDefault) {
+            console.error(
+                `Refusing to reuse ${URL}; GIS_TEST_PORT is non-default and that server may belong to another worktree.`
+            );
+            process.exit(1);
+        }
         // Keep Playwright webServer slot alive while reusing an existing preview.
         // eslint-disable-next-line no-constant-condition
         while (true) {

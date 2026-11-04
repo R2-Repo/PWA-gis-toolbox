@@ -3,7 +3,7 @@ import { glyphRequestPlan, isExternalGlyphUrl, isLocalGlyphUrl } from '../js/map
 import { PWA_RUNTIME_CACHING } from '../js/pwa/runtime-cache.js';
 import { LOCAL_GLYPHS_URL } from '../js/map/local-glyphs.js';
 
-const LOCAL_URL = 'http://127.0.0.1:5175/fonts/Open%20Sans%20Regular,Noto%20Sans%20Regular/0-255.pbf';
+const LOCAL_URL = `http://127.0.0.1:${process.env.GIS_TEST_PORT || '5175'}/fonts/Open%20Sans%20Regular,Noto%20Sans%20Regular/0-255.pbf`;
 const REMOTE_URL = 'https://tiles.basemaps.cartocdn.com/fonts/Open%20Sans%20Regular,Noto%20Sans%20Regular/0-255.pbf';
 
 describe('offline label fonts', () => {

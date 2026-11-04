@@ -2,6 +2,7 @@ import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import * as restClient from '../js/arcgis/rest-client.js';
 
 const PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+const MOCK_FEATURE_SERVER = `http://127.0.0.1:${process.env.ARCGIS_MOCK_PORT || '18765'}/mock/FeatureServer/5`;
 
 const workspaceBatches = [];
 
@@ -68,7 +69,7 @@ describe('ArcGIS REST import picture markers', () => {
     it('downloadFeatures stamps _udotGlyph from drawingInfo (mocked fetch)', async () => {
         const { ArcGISRestImporter } = await import('../js/arcgis/rest-importer.js');
         const importer = new ArcGISRestImporter();
-        await importer.fetchMetadata('http://127.0.0.1:18765/mock/FeatureServer/5');
+        await importer.fetchMetadata(MOCK_FEATURE_SERVER);
         const dataset = await importer.downloadFeatures({ allowLargeDownload: true });
         expect(dataset._arcgisPictureMarkers?.markers?.length).toBeGreaterThan(0);
         const stamped = dataset.geojson.features.filter((f) => f.properties?._udotGlyph);
@@ -79,7 +80,7 @@ describe('ArcGIS REST import picture markers', () => {
     it('workspace stream path stamps _udotGlyph on chunked batches', async () => {
         const { ArcGISRestImporter } = await import('../js/arcgis/rest-importer.js');
         const importer = new ArcGISRestImporter();
-        await importer.fetchMetadata('http://127.0.0.1:18765/mock/FeatureServer/5');
+        await importer.fetchMetadata(MOCK_FEATURE_SERVER);
         const dataset = await importer.downloadFeatures({
             allowLargeDownload: true,
             useWorkspace: true

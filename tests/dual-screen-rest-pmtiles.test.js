@@ -21,6 +21,7 @@ import { MessageType } from '../js/dual-screen/protocol.js';
 import mapManager from '../js/map/map-manager.js';
 
 const FIXTURE = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures/e2e/dual-screen-point.pmtiles');
+const MOCK_LAYER_URL = `http://127.0.0.1:${process.env.ARCGIS_MOCK_PORT || '18765'}/layer`;
 
 function pointCollection(lng) {
     return {
@@ -95,8 +96,8 @@ describe('dual-screen REST and PMTiles', () => {
             id: 'svc-1',
             name: 'Live',
             type: 'service',
-            service: { kind: 'arcgis-featureserver', url: 'http://127.0.0.1:18765/layer', style: { fillColor: '#112233' } },
-            source: { format: 'live-service', url: 'http://127.0.0.1:18765/layer' },
+            service: { kind: 'arcgis-featureserver', url: MOCK_LAYER_URL, style: { fillColor: '#112233' } },
+            source: { format: 'live-service', url: MOCK_LAYER_URL },
             schema: { geometryType: 'Point', featureCount: 3 },
             workspaceAttributeFilter: { rules: [{ field: 'NAME', operator: 'equals', value: 'A' }], logic: 'AND' },
             _workspaceFilterIndices: [1, 4],
@@ -104,7 +105,7 @@ describe('dual-screen REST and PMTiles', () => {
             pmtiles: null
         }, 0);
 
-        expect(entry.service.url).toBe('http://127.0.0.1:18765/layer');
+        expect(entry.service.url).toBe(MOCK_LAYER_URL);
         expect(entry.service.style.fillColor).toBe('#112233');
         expect(entry.schema.geometryType).toBe('Point');
         expect(entry.workspaceAttributeFilter.rules[0].field).toBe('NAME');
@@ -128,7 +129,7 @@ describe('dual-screen REST and PMTiles', () => {
             name: 'Live',
             type: 'service',
             visible: true,
-            service: { url: 'http://127.0.0.1:18765/layer', kind: 'arcgis-featureserver' },
+            service: { url: MOCK_LAYER_URL, kind: 'arcgis-featureserver' },
             geojson: pointCollection(1)
         };
         const added = planLayerDelta(new Map(), [], [service]);

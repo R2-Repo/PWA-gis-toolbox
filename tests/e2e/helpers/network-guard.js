@@ -37,7 +37,11 @@ export function isBasemapRequest(url) {
  * @param {string} url
  * @param {string} [baseURL]
  */
-export function isAllowedLocalRequest(url, baseURL = 'http://127.0.0.1:5175') {
+export function guardBaseURL() {
+    return `http://127.0.0.1:${process.env.GIS_TEST_PORT || '5175'}`;
+}
+
+export function isAllowedLocalRequest(url, baseURL = guardBaseURL()) {
     try {
         const u = new URL(url, baseURL);
         if (u.protocol === 'blob:' || u.protocol === 'data:') return true;
@@ -56,7 +60,7 @@ export function isAllowedLocalRequest(url, baseURL = 'http://127.0.0.1:5175') {
  * @returns {Promise<NetworkGuardState>}
  */
 export async function attachNetworkGuard(context, options = {}) {
-    const baseURL = options.baseURL || 'http://127.0.0.1:5175';
+    const baseURL = options.baseURL || guardBaseURL();
     /** @type {NetworkGuardState} */
     const state = { basemapBlocked: [], telemetryBlocked: [], unexpectedBlocked: [] };
 

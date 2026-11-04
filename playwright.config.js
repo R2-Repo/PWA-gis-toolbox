@@ -5,6 +5,11 @@ import { defineConfig, devices } from '@playwright/test';
 const repoRoot = fileURLToPath(new URL('.', import.meta.url));
 
 const headed = process.env.GIS_TEST_HEADED === '1';
+const GIS_TEST_PORT = String(process.env.GIS_TEST_PORT || '5175');
+const ARCGIS_MOCK_PORT = String(process.env.ARCGIS_MOCK_PORT || '18765');
+const reuseExistingServer = GIS_TEST_PORT === '5175' && ARCGIS_MOCK_PORT === '18765';
+const appOrigin = `http://127.0.0.1:${GIS_TEST_PORT}`;
+const mockOrigin = `http://127.0.0.1:${ARCGIS_MOCK_PORT}`;
 
 /** @type {import('@playwright/test').PlaywrightTestConfig} */
 export default defineConfig({
@@ -20,7 +25,7 @@ export default defineConfig({
         ['html', { outputFolder: join(repoRoot, 'test-results/gis-report/playwright-html'), open: 'never' }]
     ],
     use: {
-        baseURL: 'http://127.0.0.1:5175',
+        baseURL: appOrigin,
         headless: !headed,
         trace: 'retain-on-failure',
         viewport: { width: 1280, height: 800 },
@@ -43,18 +48,22 @@ export default defineConfig({
     webServer: [
         {
             command: 'node scripts/e2e-web-server.mjs',
-            url: 'http://127.0.0.1:5175',
-            reuseExistingServer: true,
-            timeout: 360_000
+            url: appOrigin,
+            reuseExistingServer,
+            timeout: 360_000,
+            env: {
+                ...process.env,
+                GIS_TEST_PORT
+            }
         },
         {
             command: 'node tests/mocks/arcgis-mock-server.mjs',
-            url: 'http://127.0.0.1:18765/health',
-            reuseExistingServer: true,
+            url: `${mockOrigin}/health`,
+            reuseExistingServer,
             timeout: 60_000,
             env: {
                 ...process.env,
-                ARCGIS_MOCK_PORT: '18765',
+                ARCGIS_MOCK_PORT,
                 ARCGIS_MOCK_HOST: '127.0.0.1'
             }
         }

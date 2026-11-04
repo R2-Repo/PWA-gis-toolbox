@@ -1,7 +1,5 @@
-const DEFAULT_PORT = 18765;
-
 export function arcgisMockOrigin() {
-    const port = process.env.ARCGIS_MOCK_PORT || DEFAULT_PORT;
+    const port = process.env.ARCGIS_MOCK_PORT || '18765';
     return `http://127.0.0.1:${port}`;
 }
 

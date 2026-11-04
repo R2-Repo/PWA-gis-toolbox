@@ -1,5 +1,9 @@
+export function appOrigin() {
+    return `http://127.0.0.1:${process.env.GIS_TEST_PORT || '5175'}`;
+}
+
 /** @param {import('@playwright/test').Page} page @param {string} [origin] */
-export async function resetAppStorage(page, origin = 'http://127.0.0.1:5175') {
+export async function resetAppStorage(page, origin = appOrigin()) {
     await page.goto(origin, { waitUntil: 'domcontentloaded' });
     await page.evaluate(async () => {
         localStorage.clear();
@@ -30,7 +34,7 @@ function resolveAppOrigin(baseURL) {
     if (baseURL && baseURL.startsWith('http')) {
         return baseURL.replace(/\/?$/, '');
     }
-    return 'http://127.0.0.1:5175';
+    return appOrigin();
 }
 
 /**
