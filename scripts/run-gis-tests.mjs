@@ -248,14 +248,14 @@ async function main() {
         console.log('Running Playwright import + REST e2e…');
         const pwJson = path.join(REPORT_DIR, 'playwright.json');
         const grepPattern = flags.full ? '@full|@tune' : '@tune';
-        const pwTargets = 'tests/e2e/import tests/e2e/rest';
+        const pwTargets = 'tests/e2e/import tests/e2e/rest tests/e2e/dual-screen';
         let pwRun;
         if (process.platform === 'win32') {
             const workers = flags.full ? ' --workers=1' : '';
             const cmd = `npx playwright test ${pwTargets} --grep "${grepPattern}"${workers}`;
             pwRun = await run(cmd, [], { inherit: true, shell: true });
         } else {
-            const pwArgs = ['playwright', 'test', 'tests/e2e/import', 'tests/e2e/rest', '--grep', grepPattern];
+            const pwArgs = ['playwright', 'test', 'tests/e2e/import', 'tests/e2e/rest', 'tests/e2e/dual-screen', '--grep', grepPattern];
             if (flags.full) pwArgs.push('--workers=1');
             pwRun = await run('npx', pwArgs, { inherit: true, shell: false });
         }

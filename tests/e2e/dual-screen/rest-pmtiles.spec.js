@@ -67,7 +67,7 @@ async function renderedCount(page, layerIds) {
     }, layerIds);
 }
 
-test('REST and PMTiles match in the pop-out map', async ({ page }) => {
+test('@full REST and PMTiles match in the pop-out map', async ({ page }) => {
     test.setTimeout(180_000);
     await bootApp(page, '/');
     const serviceUrl = mockLayerUrl('mock/FeatureServer/5');
