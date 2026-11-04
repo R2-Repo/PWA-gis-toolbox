@@ -717,15 +717,6 @@ class DualScreenCoordinator {
     }
 
     /**
-     * Plan-set callout session for the pop-out context menu.
-     * @param {{ live?: boolean, bundle?: object, insetViews?: object[] }} payload
-     */
-    broadcastCalloutSession(payload) {
-        if (!this._channel || !this.isActive) return;
-        this._post(MessageType.CALLOUT_SESSION, payload || { live: false });
-    }
-
-    /**
      * Continuous pick: the callback stays here. Each click comes back as a point event.
      * @param {string} prompt
      * @param {(coord: number[]) => void | Promise<void>} onPoint

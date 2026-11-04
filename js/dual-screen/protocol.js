@@ -32,7 +32,6 @@ export const MessageType = {
     MAP_RPC: 'MAP_RPC',
     MAP_RPC_RESULT: 'MAP_RPC_RESULT',
     MAP_CMD: 'MAP_CMD',
-    CALLOUT_SESSION: 'CALLOUT_SESSION',
     BYE: 'BYE',
     PING: 'PING',
     PONG: 'PONG'

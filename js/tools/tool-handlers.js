@@ -1606,9 +1606,6 @@ export function setupAppWiring() {
             return null;
         }
     });
-    void import('../dual-screen/callout-menu-sync.js').then(({ bindCalloutMenuSync }) => {
-        bindCalloutMenuSync();
-    });
     bus.on('layers:changed', () => sessionStore.scheduleSave(getLayers(), mapService.getLayerStylesRecord(), getLayerGroups()));
     bus.on('map:styleChanged', () => sessionStore.scheduleSave(getLayers(), mapService.getLayerStylesRecord(), getLayerGroups()));
     bus.on('layer-groups:changed', () => sessionStore.scheduleSave(getLayers(), mapService.getLayerStylesRecord(), getLayerGroups()));
@@ -1733,11 +1730,6 @@ function setupDualScreenMode() {
             items[0]?.action?.();
         },
         openPresentationLink: () => openPresentationLinkBuilderWidget(),
-        onCalloutCommand: (payload) => {
-            void import('../dual-screen/callout-menu-sync.js').then(({ applyPopoutCalloutCommand }) =>
-                applyPopoutCalloutCommand(payload)
-            );
-        },
         onCoordSearchAddNew: _coordSearchAddNew,
         onCoordSearchAddToExisting: _coordSearchAddToExisting
     });

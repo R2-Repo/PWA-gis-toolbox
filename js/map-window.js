@@ -36,7 +36,6 @@ import {
     buildPopoutContextMenuItems,
     requestPopoutCommand
 } from './dual-screen/popout-context-menu.js';
-import { applyPopoutCalloutSession } from './dual-screen/popout-callout-menu.js';
 
 const ROLE = 'secondary';
 
@@ -334,9 +333,6 @@ function dispatchMessage(msg) {
             break;
         case MessageType.MAP_CMD:
             applyMapCmd(msg.payload);
-            break;
-        case MessageType.CALLOUT_SESSION:
-            applyPopoutCalloutSession(msg.payload);
             break;
         case MessageType.BYE:
             closeSelfWindow();
