@@ -3,6 +3,7 @@ import { openBulkUpdate } from './bulk-update/controller.js';
 import { openProximityJoin } from './proximity-join/controller.js';
 import { openSpatialJoin } from './spatial-join/controller.js';
 import { openRouteMilepostSegment } from './route-milepost-segment/controller.js';
+import { openRouteMilepost } from './route-milepost/controller.js';
 import { openProjectStationing } from './project-stationing/controller.js';
 import { openLayerMatchAssistant } from './layer-match-assistant/controller.js';
 import { openFiberProcurementDesign } from './fiber-procurement-design/controller.js';
@@ -80,6 +81,7 @@ export const GIS_WIDGETS = [
         tip: 'Build a road centerline between two UDOT mileposts.',
         open: openRouteMilepostSegment
     },
+    { type: 'route-milepost', action: 'openRouteMilepost', label: 'Route Milepost', icon: '📍', tip: 'Preview a UDOT milepost point or range from LR mile, tenth-mile, or physical milepost layers and add it as a map layer.', open: openRouteMilepost },
     {
         type: 'project-stationing',
         action: 'openProjectStationing',

@@ -28,6 +28,7 @@ export const WIDGET_REGISTRY_IO = {
     'route-milepost-segment': {
         outputs: [{ name: 'centerline', type: 'layer', geometry: ['LineString', 'MultiLineString'] }]
     },
+    'route-milepost': { outputs: [{ name: 'mileposts', type: 'layer', geometry: ['Point', 'MultiPoint'] }] },
     'project-stationing': {
         inputs: [{ name: 'centerline', type: 'layer', geometry: ['LineString', 'MultiLineString'], required: true }],
         outputs: [{ name: 'stations', type: 'layer', geometry: ['LineString', 'MultiLineString'] }]
