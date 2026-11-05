@@ -1,4 +1,5 @@
 import mapManager from './map-manager.js';
+import { camerasNearlyEqual, suppressViewportEcho } from '../dual-screen/viewport-echo.js';
 
 const METERS_TO_FEET = 3.28084;
 
@@ -57,12 +58,28 @@ export function createMapService({ mapAdapter = mapManager } = {}) {
             if (!map || typeof map.jumpTo !== 'function' || !Array.isArray(view?.center)) return false;
             const zoom = Number(view.zoom);
             if (!Number.isFinite(zoom)) return false;
-            map.jumpTo({
+            const next = {
                 center: view.center,
                 zoom,
                 bearing: Number(view.bearing) || 0,
                 pitch: Number(view.pitch) || 0
-            });
+            };
+            const center = map.getCenter?.();
+            const currentZoom = Number(map.getZoom?.());
+            const current = center && Number.isFinite(currentZoom) ? {
+                center: [center.lng, center.lat],
+                zoom: currentZoom,
+                bearing: Number(map.getBearing?.()) || 0,
+                pitch: Number(map.getPitch?.()) || 0
+            } : null;
+            if (camerasNearlyEqual(current, next)) return true;
+            const release = suppressViewportEcho(map);
+            try {
+                map.jumpTo(next);
+            } catch (err) {
+                release();
+                throw err;
+            }
             return true;
         },
         /**

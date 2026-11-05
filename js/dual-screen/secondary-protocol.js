@@ -4,6 +4,7 @@
  * then flushes that queue in order. Goodbye goes out immediately (pagehide).
  */
 import { MessageType, createMessage } from './protocol.js';
+import { isViewportEchoSuppressed } from './viewport-echo.js';
 
 /**
  * @param {object} opts
@@ -49,6 +50,7 @@ export function createSecondaryProtocol({ sessionId, post, onApply }) {
      */
     function enqueueOutbound(type, payload = {}) {
         if (type === MessageType.HELLO) return;
+        if (type === MessageType.VIEWPORT && isViewportEchoSuppressed()) return;
         if (type === MessageType.BYE) {
             sendGoodbye();
             return;

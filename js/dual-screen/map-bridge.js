@@ -580,7 +580,13 @@ function runLocal(name, args, originals, coordinator) {
     if (name === 'getImportFenceEsriEnvelope' && coordinator?._fenceBbox) {
         return buildFenceEnvelope(coordinator._fenceBbox);
     }
-    return originals[name]?.(...args);
+    try {
+        return originals[name]?.(...args);
+    } catch (err) {
+        if (!coordinator?.isActive) throw err;
+        warnDualScreenDev(`[DualScreen] local ${name} failed: ${err?.message || err}`);
+        return undefined;
+    }
 }
 
 /**

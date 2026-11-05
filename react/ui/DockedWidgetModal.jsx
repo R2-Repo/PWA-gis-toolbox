@@ -49,6 +49,11 @@ function measureModal(modalEl) {
     };
 }
 
+function samePlacement(prev, next) {
+    if (!prev || !next) return false;
+    return Math.abs(prev.left - next.left) < 0.5 && Math.abs(prev.top - next.top) < 0.5;
+}
+
 function resolveFloatingPlacement(dualScreenActive, modalEl) {
     const { width, height } = measureModal(modalEl);
     const anchorRect = getWidgetModalAnchorRect(dualScreenActive);
@@ -104,7 +109,9 @@ export function DockedWidgetModal({ modal }) {
 
     const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
     const width = isMobile ? '96vw' : (modal.options?.width || '600px');
-    const usePanelDock = !undocked && !dualScreenActive && panelDockAvailable && !!dockEl;
+    // The main map is hidden while Dual Screen is on. Keep widgets in the right-panel dock
+    // so they stay visible. Floating them waits on a one-shot placement frame that can miss.
+    const usePanelDock = !undocked && panelDockAvailable && !!dockEl;
     const portalTarget = usePanelDock ? dockEl : modalHostEl;
 
     const close = useCallback((result = null) => dismissModal(modal.id, result), [modal.id]);
@@ -112,7 +119,8 @@ export function DockedWidgetModal({ modal }) {
     const applyFloatingPlacement = useCallback((active) => {
         const modalEl = modalRef.current;
         if (!modalEl) return;
-        setPosition(resolveFloatingPlacement(active, modalEl));
+        const next = resolveFloatingPlacement(active, modalEl);
+        setPosition((prev) => (samePlacement(prev, next) ? prev : next));
     }, []);
 
     const updateDockHeights = useCallback(() => {
@@ -130,17 +138,30 @@ export function DockedWidgetModal({ modal }) {
 
     useEffect(() => {
         if (usePanelDock) return undefined;
-        requestAnimationFrame(() => applyFloatingPlacement(dualScreenActive));
-        return undefined;
+        let cancelled = false;
+        let frame = 0;
+        let tries = 0;
+        const tick = () => {
+            if (cancelled) return;
+            tries += 1;
+            if (!modalRef.current && tries < 8) {
+                frame = requestAnimationFrame(tick);
+                return;
+            }
+            applyFloatingPlacement(dualScreenActive);
+        };
+        frame = requestAnimationFrame(tick);
+        return () => {
+            cancelled = true;
+            cancelAnimationFrame(frame);
+        };
     }, [usePanelDock, dualScreenActive, applyFloatingPlacement, modal.id]);
 
     useEffect(() => {
         const onDualScreenChange = (active) => {
             setDualScreenActive(active);
-            if (!userMovedRef.current) {
-                setUndocked(active);
-            }
-            if (active || userMovedRef.current || !isRightPanelDockAvailable()) {
+            if (!active && !userMovedRef.current) setUndocked(false);
+            if (userMovedRef.current || !isRightPanelDockAvailable()) {
                 requestAnimationFrame(() => applyFloatingPlacement(active));
             }
         };

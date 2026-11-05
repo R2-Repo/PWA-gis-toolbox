@@ -5,6 +5,7 @@ import bus from '../core/event-bus.js';
 import mapService from '../map/map-service.js';
 import drawManager from '../map/draw-manager.js';
 import { MessageType, createMessage, buildViewportPayload } from './protocol.js';
+import { camerasNearlyEqual, suppressViewportEcho } from './viewport-echo.js';
 import {
     buildSelectionPayload,
     applySelectionPayload,
@@ -235,8 +236,37 @@ export function handleDrawCmdMessage(payload, post) {
     handleDrawCmd(payload);
 }
 
-function enhanceViewportBroadcast(post) {
-    // map-window.js calls broadcastViewport — patch via exported helper
+function enhanceViewportBroadcast() {
+    guardRemoteMapJumps(mapService.getMap?.());
+}
+
+/**
+ * A remote jumpTo must not bounce moveend back as another viewport message.
+ * MapLibre fires that event after jumpTo returns.
+ * @param {object | null | undefined} map
+ */
+export function guardRemoteMapJumps(map) {
+    if (!map || map.__gisViewportEchoGuard || typeof map.jumpTo !== 'function') return;
+    map.__gisViewportEchoGuard = true;
+    const jumpTo = map.jumpTo.bind(map);
+    map.jumpTo = (camera, eventData) => {
+        const center = map.getCenter?.();
+        const zoom = Number(map.getZoom?.());
+        const current = center && Number.isFinite(zoom) ? {
+            center: [center.lng, center.lat],
+            zoom,
+            bearing: Number(map.getBearing?.()) || 0,
+            pitch: Number(map.getPitch?.()) || 0
+        } : null;
+        if (camerasNearlyEqual(current, camera)) return undefined;
+        const release = suppressViewportEcho(map);
+        try {
+            return jumpTo(camera, eventData);
+        } catch (err) {
+            release();
+            throw err;
+        }
+    };
 }
 
 export function broadcastViewportFromMap(map) {
