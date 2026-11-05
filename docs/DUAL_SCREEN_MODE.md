@@ -15,7 +15,7 @@ Counts below are taken from `FORWARDED_MAP_METHODS` and `LOCAL_ONLY_MAP_METHODS`
 | Protocol | `js/dual-screen/protocol.js` | Message envelope (`v`, `role`, `sessionId`, `msgId`, `type`, `payload`). `PROTOCOL_VERSION` is 1. |
 | Popup handshake | `js/dual-screen/secondary-protocol.js` | Hello once, queue until ready, goodbye immediately. |
 | Map bridge | `js/dual-screen/map-bridge.js` | Forwards or keeps each public map-service method. |
-| Window open | `js/dual-screen/window-open.js` | `window.open` features for the normal pop-out, or a full screen on one monitor. |
+| Window open | `js/dual-screen/window-open.js` | `window.open` features for the centered pop-out. |
 | Screen owner flag | `js/dual-screen/screen-mode.js` | `isPopoutMap()` while the pop-out owns the map. |
 
 Flow:
@@ -26,7 +26,7 @@ Flow:
 4. The coordinator destroys the main map, marks dual screen active, and sends one snapshot.
 5. Later map calls go through the bridge. Closing either side sends `BYE` and the main window builds its map again.
 
-The normal pop-out is a centered window (at most 1600×960) on the current screen. That path is unchanged when no second-monitor screen is passed.
+The pop-out is a centered window (at most 1600×960) on the current screen.
 
 ## Map bridge
 
@@ -127,18 +127,3 @@ The pop-out listens for `pagehide` and `beforeunload` and calls `handlePageHide(
 ### Version mismatch
 
 Every message carries `v: PROTOCOL_VERSION` (1). A message with a different numeric version and a `type` is `version`, not applied. The channel calls `onProtocolMismatch`. The coordinator shows `PROTOCOL_MISMATCH_NOTICE` once and, if activation is still pending, rolls back the same way as a timeout (map stays in the main window).
-
-## Full screen on a second monitor
-
-The header button **Full screen on second monitor** (`#btn-dual-screen-second-monitor`, next to **Dual Screen**) is optional. **Dual Screen** still opens the normal centered pop-out.
-
-The second-monitor button calls `resolveSecondMonitorPlacement()` in `js/dual-screen/second-monitor.js`, which feature-detects `window.getScreenDetails` (Window Management API) and never throws.
-
-| Result | What happens |
-|--------|----------------|
-| Supported, and a screen has `isPrimary === false` | `window.open` uses that screen's `availLeft`, `availTop`, `availWidth`, and `availHeight`, so the pop-out fills the non-primary monitor. Negative origins are kept for a monitor left of the primary. |
-| API missing | Info toast, then the normal pop-out. |
-| `getScreenDetails()` rejects (permission denied or any other failure) | Info toast, then the normal pop-out. |
-| Fewer than two screens, or no identifiable non-primary screen | Info toast, then the normal pop-out. |
-
-Toasts are non-blocking. The single-screen app and the normal **Dual Screen** button do not call `getScreenDetails`. If dual screen is already on, the second-monitor button only focuses the existing pop-out.

@@ -61,10 +61,6 @@ import {
     RELOAD_REMINDER_MESSAGE,
     consumeDualScreenReloadReminder
 } from '../dual-screen/storage-hint.js';
-import {
-    SECOND_MONITOR_NOTICES,
-    resolveSecondMonitorPlacement
-} from '../dual-screen/second-monitor.js';
 
 import { showToast, showErrorToast } from '../ui/toast.js';
 import { showModal, confirm, confirmArcgisLargeImport, showProgressModal } from '../ui/modals.js';
@@ -1752,47 +1748,19 @@ function setupDualScreenMode() {
         if (dualScreenCoordinator.isActive) dualScreenCoordinator.syncLayersChanged();
     });
 
-    const finishActivate = async (options) => {
-        const ok = await dualScreenCoordinator.activate(options);
-        if (!ok && !dualScreenCoordinator.consumeActivationNotice()) {
-            showToast(POPUP_BLOCKED_MESSAGE, 'error', { duration: 8000 });
-        }
-    };
-
     const toggleDualScreen = async () => {
         if (getState().ui.isMobile) return;
         if (dualScreenCoordinator.isActive) {
             dualScreenCoordinator.deactivate();
             return;
         }
-        await finishActivate();
-    };
-
-    const openFullScreenOnSecondMonitor = async () => {
-        if (getState().ui.isMobile) return;
-        if (dualScreenCoordinator.isActive) {
-            dualScreenCoordinator.focusMapWindow();
-            return;
+        const ok = await dualScreenCoordinator.activate();
+        if (!ok && !dualScreenCoordinator.consumeActivationNotice()) {
+            showToast(POPUP_BLOCKED_MESSAGE, 'error', { duration: 8000 });
         }
-        let placement = {
-            ok: false,
-            reason: 'unsupported',
-            notice: SECOND_MONITOR_NOTICES.unsupported
-        };
-        try {
-            placement = await resolveSecondMonitorPlacement(window);
-        } catch {
-            /* resolver must not throw; still open the normal pop-out */
-        }
-        if (!placement.ok) {
-            showToast(placement.notice, 'info');
-        }
-        await finishActivate(placement.ok ? { screen: placement.screen } : undefined);
     };
 
     btn.addEventListener('click', toggleDualScreen);
-    document.getElementById('btn-dual-screen-second-monitor')
-        ?.addEventListener('click', () => { void openFullScreenOnSecondMonitor(); });
     window._toggleDualScreen = toggleDualScreen;
 
     window.addEventListener('message', (e) => {

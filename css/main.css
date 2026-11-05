@@ -802,10 +802,6 @@ html, body {
     background: var(--primary);
     color: #fff;
 }
-#btn-dual-screen-second-monitor {
-    margin-left: 6px;
-    white-space: nowrap;
-}
 #map-container .maplibregl-popup-content { max-width: 300px; font-size: 12px; }
 #map-container .map-popup-attributes { max-height: 200px; overflow-y: auto; overflow-anchor: none; }
 #map-container .maplibregl-popup-content table { width: 100%; border-collapse: collapse; }

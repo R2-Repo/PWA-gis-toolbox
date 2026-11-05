@@ -309,19 +309,4 @@ describe('dual-screen handshake', () => {
         expect(dualScreenCoordinator.consumeActivationNotice()).toBe('version');
         peer.close();
     });
-
-    it('opens the pop-out full screen on a supplied second screen', async () => {
-        const screen = { availLeft: 1920, availTop: 12, availWidth: 1280, availHeight: 800 };
-        const pending = dualScreenCoordinator.activate({ screen });
-        await vi.advanceTimersByTimeAsync(0);
-        const features = window.open.mock.calls.at(-1)[2];
-        expect(features).toContain('left=1920');
-        expect(features).toContain('top=12');
-        expect(features).toContain('width=1280');
-        expect(features).toContain('height=800');
-        expect(dualScreenCoordinator.isActive).toBe(false);
-        fakeWin.closed = true;
-        await vi.advanceTimersByTimeAsync(500);
-        await expect(pending).resolves.toBe(false);
-    });
 });
