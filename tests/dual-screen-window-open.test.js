@@ -3,14 +3,29 @@ import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import {
     buildMapWindowBounds,
     buildMapWindowFeatures,
+    buildMapWindowUrl,
     isSecondaryMapWindowOpen,
     openSecondaryMapWindow,
     MAP_WINDOW_PATH,
     MAP_WINDOW_NAME
 } from '../js/dual-screen/window-open.js';
+import { readDualSessionId } from '../js/dual-screen/protocol.js';
 import { createWebWindowService } from '../js/platform/web/web-window-service.js';
 
 describe('dual-screen window-open', () => {
+    it('keeps the session in the hash so the pop-out request is map-window.html', () => {
+        const url = buildMapWindowUrl('ds-abc');
+        const parsed = new URL(url, 'http://127.0.0.1/');
+        expect(parsed.pathname).toBe('/map-window.html');
+        expect(parsed.search).toBe('');
+        expect(parsed.hash).toBe('#session=ds-abc');
+        expect(readDualSessionId(url)).toBe('ds-abc');
+        expect(readDualSessionId({ hash: parsed.hash, search: parsed.search })).toBe('ds-abc');
+        expect(readDualSessionId('?session=ds-old')).toBe('ds-old');
+        expect(buildMapWindowUrl(null)).toBe(MAP_WINDOW_PATH);
+        expect(buildMapWindowUrl('')).toBe(MAP_WINDOW_PATH);
+    });
+
     it('builds centered bounds within screen avail size', () => {
         const bounds = buildMapWindowBounds({
             availWidth: 1920,

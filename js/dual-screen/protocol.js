@@ -53,20 +53,46 @@ export function createDualSessionId() {
 }
 
 /**
- * @param {string} [search]
+ * @param {string} text
  * @returns {string | null}
  */
-export function readDualSessionId(search = '') {
-    const raw = String(search || '');
-    const q = raw.includes('?') ? raw.slice(raw.indexOf('?') + 1) : raw.replace(/^\?/, '');
-    if (!q) return null;
+function sessionParam(text) {
+    const raw = String(text || '').replace(/^[?#]/, '');
+    if (!raw) return null;
     try {
-        const id = new URLSearchParams(q).get('session');
+        const id = new URLSearchParams(raw).get('session');
         const trimmed = id?.trim();
         return trimmed || null;
     } catch {
         return null;
     }
+}
+
+/**
+ * Session id for this pop-out.
+ * Prefer the hash (`map-window.html#session=…`). That request is still
+ * `map-window.html`, so the service-worker precache matches and the
+ * navigation fallback does not serve index.html.
+ * `?session=` is still accepted for a pop-out opened before this change.
+ * @param {string | { search?: string, hash?: string }} [source]
+ * @returns {string | null}
+ */
+export function readDualSessionId(source = '') {
+    if (source && typeof source === 'object') {
+        return sessionParam(source.hash) || sessionParam(source.search);
+    }
+    const raw = String(source || '');
+    const hashAt = raw.indexOf('#');
+    const queryAt = raw.indexOf('?');
+    const hashPart = hashAt >= 0 ? raw.slice(hashAt + 1) : '';
+    let queryPart = '';
+    if (queryAt >= 0) {
+        const end = hashAt > queryAt ? hashAt : raw.length;
+        queryPart = raw.slice(queryAt + 1, end);
+    } else if (hashAt < 0) {
+        queryPart = raw.replace(/^\?/, '');
+    }
+    return sessionParam(hashPart) || sessionParam(queryPart);
 }
 
 /**

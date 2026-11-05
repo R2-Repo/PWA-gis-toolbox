@@ -430,7 +430,7 @@ function boot() {
         return;
     }
 
-    const sessionId = readDualSessionId(window.location.search);
+    const sessionId = readDualSessionId(window.location);
     protocol = createSecondaryProtocol({
         sessionId,
         post: (message) => channel?.post(message),

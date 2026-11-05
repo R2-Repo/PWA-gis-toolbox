@@ -6,12 +6,15 @@ export const MAP_WINDOW_NAME = 'gis-toolbox-map';
 export const MAP_WINDOW_PATH = 'map-window.html';
 
 /**
+ * Pop-out URL. Session id is in the hash so the navigation request stays
+ * `map-window.html` (precache hit). A `?session=` query misses that entry
+ * and the service worker navigation fallback serves index.html.
  * @param {string | null | undefined} sessionId
  * @returns {string}
  */
 export function buildMapWindowUrl(sessionId) {
     if (!sessionId) return MAP_WINDOW_PATH;
-    return `${MAP_WINDOW_PATH}?session=${encodeURIComponent(sessionId)}`;
+    return `${MAP_WINDOW_PATH}#session=${encodeURIComponent(sessionId)}`;
 }
 
 /**

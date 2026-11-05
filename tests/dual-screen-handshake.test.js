@@ -150,7 +150,10 @@ describe('dual-screen handshake', () => {
     async function startPrimary() {
         const pending = dualScreenCoordinator.activate();
         await vi.advanceTimersByTimeAsync(0);
-        const sessionId = new URL(openedUrl, 'http://127.0.0.1').searchParams.get('session');
+        const parsed = new URL(openedUrl, 'http://127.0.0.1');
+        expect(parsed.pathname).toBe('/map-window.html');
+        expect(parsed.search).toBe('');
+        const sessionId = readDualSessionId(openedUrl);
         expect(sessionId).toBeTruthy();
         return { pending, sessionId };
     }

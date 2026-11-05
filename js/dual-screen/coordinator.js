@@ -840,7 +840,7 @@ class DualScreenCoordinator {
 
     async _focusMapWindow() {
         if (!isSecondaryMapWindowOpen(this._mapWindow)) {
-            this._mapWindow = await openSecondaryMapWindow();
+            this._mapWindow = await openSecondaryMapWindow(this._sessionId);
         }
         if (isSecondaryMapWindowOpen(this._mapWindow)) {
             try { await this._mapWindow.focus(); } catch (_) { /* ignore */ }
