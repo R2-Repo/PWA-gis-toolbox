@@ -21,7 +21,7 @@ Counts below are taken from `FORWARDED_MAP_METHODS` and `LOCAL_ONLY_MAP_METHODS`
 Flow:
 
 1. **Dual Screen** calls `dualScreenCoordinator.activate()`. The main map stays up.
-2. The coordinator creates a session id, opens `map-window.html?session=…`, and listens.
+2. The coordinator creates a session id, opens `map-window.html#session=…`, and listens.
 3. The pop-out loads its own map, then sends `HELLO` for that session.
 4. The coordinator destroys the main map, marks dual screen active, and sends one snapshot.
 5. Later map calls go through the bridge. Closing either side sends `BYE` and the main window builds its map again.
@@ -103,7 +103,7 @@ The main map is not removed until the pop-out says hello for this attempt. A fai
 
 ### Session id
 
-Each `activate()` calls `createDualSessionId()` (`ds-` plus a UUID, or a time-based id if `randomUUID` is missing). The id is the `session` query on the pop-out URL and the `sessionId` on every protocol message. `classifyIncoming` marks a message `stale` when the id does not match the channel's expected session, and the channel ignores it. An older pop-out cannot attach to a new attempt.
+Each `activate()` calls `createDualSessionId()` (`ds-` plus a UUID, or a time-based id if `randomUUID` is missing). The id is in the `session` hash on the pop-out URL (`map-window.html#session=…`) and the `sessionId` on every protocol message. A `?session=` query is still accepted for older links. The hash keeps the navigation request as plain `map-window.html`, so the service worker's navigation fallback to `index.html` is avoided. `classifyIncoming` marks a message `stale` when the id does not match the channel's expected session, and the channel ignores it. An older pop-out cannot attach to a new attempt.
 
 ### Hello timeout and rollback
 
