@@ -86,6 +86,10 @@ export const FORWARDED_MAP_METHODS = new Set([
     'startPresentationFeaturePick',
     'getMapView',
     'sampleElevations',
+    'captureTerrainViewState',
+    'restoreTerrainViewState',
+    'showLineOfSiteBeam',
+    'removeLineOfSiteBeam',
     'applyMapView',
     'playPresentationPreview',
     'cancelInteraction',
@@ -120,13 +124,15 @@ export const RPC_MAP_METHODS = new Set([
     'startPresentationFeaturePick',
     'getMapView',
     'sampleElevations',
+    'captureTerrainViewState',
     'playPresentationPreview'
 ]);
 
 /** Quiet reads must not pull the pop-out window forward. */
 const QUIET_RPC_METHODS = new Set([
     'getMapView',
-    'sampleElevations'
+    'sampleElevations',
+    'captureTerrainViewState'
 ]);
 
 /** Pop-out elevation samples wait this long, then reject. */
@@ -548,6 +554,9 @@ function mirrorLocal(name, args, originals) {
             return undefined;
         case 'disable3D':
             originals.set3DEnabled?.(false);
+            return undefined;
+        case 'restoreTerrainViewState':
+            originals.set3DEnabled?.(!!args[0]?.is3d);
             return undefined;
         case 'setLayerStylesRecord':
             return originals.setLayerStylesRecord?.(...args);

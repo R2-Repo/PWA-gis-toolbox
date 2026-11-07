@@ -12,14 +12,17 @@ import {
     REFRACTION_K,
     buildElevationProfile,
     buildLineOfSight,
+    buildSightBeam,
     buildTerrainFeatureCollection,
     densifyCoordinates,
     earthBulgeMeters,
     evaluateLineOfSight,
     haversineMeters,
     profileChartSegments,
-    summarizeElevations
+    summarizeElevations,
+    terrainViewsMatch
 } from '../js/widgets/terrain-profile/engine.js';
+import { beamRibbonPositions } from '../js/widgets/terrain-profile/beam-layer.js';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -295,6 +298,92 @@ describe('line of sight', () => {
         })).rejects.toThrow(/observer or target/);
     });
 
+    it('splits the beam at the first obstruction and keeps heights above ground', () => {
+        const blocked = evaluateLineOfSight({
+            samples: hill,
+            observerHeightM: 10,
+            targetHeightM: 0,
+            curvature: false
+        });
+        const beam = buildSightBeam(blocked);
+        expect(beam.visible).toHaveLength(2);
+        expect(beam.blocked.length).toBeGreaterThan(1);
+        expect(beam.visible[0].altitudeM).toBe(1010);
+        expect(beam.visible.at(-1)).toMatchObject({
+            lng: hill[1].lng,
+            lat: hill[1].lat,
+            distanceM: 500
+        });
+        expect(beam.visible.at(-1).altitudeM).toBeCloseTo(blocked.obstruction.losM, 5);
+        expect(beam.blocked[0]).toEqual(beam.visible.at(-1));
+        expect(beam.blocked.at(-1).altitudeM).toBe(1000);
+        expect(beam.blocked.at(-1).altitudeM).toBe(hill.at(-1).elevationM + 0);
+
+        const clear = evaluateLineOfSight({
+            samples: hill,
+            observerHeightM: 300,
+            targetHeightM: 0,
+            curvature: false
+        });
+        const openBeam = buildSightBeam(clear);
+        expect(openBeam.blocked).toEqual([]);
+        expect(openBeam.visible[0].altitudeM).toBe(1300);
+        expect(openBeam.visible.at(-1).altitudeM).toBe(1000);
+        const mid = openBeam.visible[1];
+        const t = mid.distanceM / hill.at(-1).distanceM;
+        expect(mid.altitudeM).toBeCloseTo(1300 + t * (1000 - 1300), 5);
+    });
+
+    it('keeps a straight beam when curvature blocks the path', () => {
+        const path = densifyCoordinates([[0, 0], [0, 1]], 60_000);
+        const samples = path.map((sample) => ({ ...sample, elevationM: 100 }));
+        const curved = evaluateLineOfSight({
+            samples,
+            observerHeightM: 2,
+            targetHeightM: 2,
+            curvature: true
+        });
+        const beam = buildSightBeam(curved);
+        expect(curved.visible).toBe(false);
+        expect(beam.visible.length).toBeGreaterThan(1);
+        expect(beam.blocked.length).toBeGreaterThan(1);
+        expect(beam.visible[0].altitudeM).toBe(102);
+        expect(beam.blocked.at(-1).altitudeM).toBe(102);
+        for (const point of [...beam.visible, ...beam.blocked]) {
+            expect(point.altitudeM).toBeCloseTo(102, 5);
+        }
+        expect(beam.visible.at(-1).distanceM).toBe(curved.obstruction.distanceM);
+    });
+
+    it('feeds absolute altitude to the mercator beam ribbon', () => {
+        const calls = [];
+        const fromLngLat = (lngLat, altitude) => {
+            calls.push({ lngLat: [...lngLat], altitude });
+            return { x: lngLat[0], y: lngLat[1], z: altitude, meterInMercatorCoordinateUnits: () => 0 };
+        };
+        const data = beamRibbonPositions([
+            { lng: 1, lat: 2, altitudeM: 10 },
+            { lng: 3, lat: 4, altitudeM: 30 }
+        ], fromLngLat, 4);
+        expect(calls).toEqual([
+            { lngLat: [1, 2], altitude: 10 },
+            { lngLat: [3, 4], altitude: 30 }
+        ]);
+        expect(data.length).toBe(12);
+        expect(data[2]).toBe(10);
+        expect(data[8]).toBe(30);
+    });
+
+    it('restores a terrain view only when pitch, bearing, and 3D flags still match', () => {
+        const owned = { is3d: true, terrain: true, pitch: 30, bearing: 12 };
+        expect(terrainViewsMatch(owned, { ...owned, pitch: 30.4 })).toBe(true);
+        expect(terrainViewsMatch(owned, { ...owned, pitch: 48 })).toBe(false);
+        expect(terrainViewsMatch(owned, { ...owned, bearing: 20 })).toBe(false);
+        expect(terrainViewsMatch(owned, { ...owned, is3d: false })).toBe(false);
+        expect(terrainViewsMatch(owned, { ...owned, terrain: false })).toBe(false);
+        expect(terrainViewsMatch(null, { is3d: false, terrain: false, pitch: 0, bearing: 0 })).toBe(true);
+    });
+
     it('can sample a flat visible path from the injected sampler', async () => {
         const result = await buildLineOfSight({
             observer: [0, 0],
@@ -306,6 +395,9 @@ describe('line of sight', () => {
             sampleElevations: flatSampler(250)
         });
         expect(result.visible).toBe(true);
+        expect(result.beam.blocked).toEqual([]);
+        expect(result.beam.visible[0].altitudeM).toBe(251.7);
+        expect(result.beam.visible.at(-1).altitudeM).toBe(251);
         expect(result.stats.min).toBe(250);
         expect(result.stats.max).toBe(250);
         expect(result.stats.gain).toBe(0);
@@ -318,6 +410,7 @@ describe('terrain profile elevation access', () => {
         const source = [
             'js/widgets/terrain-profile/engine.js',
             'js/widgets/terrain-profile/controller.js',
+            'js/widgets/terrain-profile/beam-layer.js',
             'react/widgets/TerrainProfileDialog.jsx',
             'react/widgets/mountTerrainProfileDialog.jsx'
         ].map((file) => readFileSync(join(root, file), 'utf8')).join('\n');

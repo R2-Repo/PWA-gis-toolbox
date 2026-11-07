@@ -1,9 +1,10 @@
 import { openReactIsland } from '../../ui/open-react-island.js';
 import { withActivity } from '../../ui/app-activity.js';
 import {
-    buildElevationProfile,
     buildLineOfSight,
-    buildTerrainFeatureCollection
+    buildTerrainFeatureCollection,
+    normalizeTerrainView,
+    terrainViewsMatch
 } from './engine.js';
 import {
     buildProducedResult,
@@ -20,14 +21,21 @@ function sampleElevationsFromMap(ctx, points) {
     return sampleElevations.call(ctx.mapService, points);
 }
 
+async function readTerrainView(ctx) {
+    const capture = ctx.mapService?.captureTerrainViewState;
+    if (typeof capture !== 'function') return null;
+    try {
+        return normalizeTerrainView(await capture.call(ctx.mapService));
+    } catch {
+        return null;
+    }
+}
+
 function resultToast(result) {
     if (!result?.stats?.validCount) {
         return 'No terrain elevation was returned along this line.';
     }
-    if (result.mode === 'los') {
-        return result.visible ? 'Line of sight is visible.' : 'Line of sight is blocked.';
-    }
-    return 'Elevation profile ready.';
+    return result.visible ? 'Line of Site is visible.' : 'Line of Site is blocked.';
 }
 
 /**
@@ -38,6 +46,15 @@ export async function openTerrainProfile(ctx, options = {}) {
     const restoreState = options.restoreState || null;
     /** @type {{ srcId?: string } | null} */
     let previewEntry = null;
+    const previous = await readTerrainView(ctx);
+    if (!previous || !previous.is3d || !previous.terrain) {
+        await ctx.mapService.enable3D?.({
+            animate: false,
+            pitch: previous?.is3d ? previous.pitch : 30,
+            bearing: previous?.bearing ?? 0
+        });
+    }
+    const owned = await readTerrainView(ctx);
 
     const replacePreview = (geojson) => {
         if (previewEntry?.srcId) ctx.mapService.removeTempFeature?.(previewEntry);
@@ -45,15 +62,24 @@ export async function openTerrainProfile(ctx, options = {}) {
         previewEntry = entry?.srcId ? entry : null;
     };
 
-    const closeWidget = (close) => {
+    const closeWidget = async (close) => {
         ctx.mapService.cancelInteraction?.();
+        ctx.mapService.removeLineOfSiteBeam?.();
         if (previewEntry?.srcId) ctx.mapService.removeTempFeature?.(previewEntry);
         previewEntry = null;
+        const now = await readTerrainView(ctx);
+        if (previous && owned && now && terrainViewsMatch(owned, now)) {
+            try {
+                await ctx.mapService.restoreTerrainViewState?.(previous);
+            } catch {
+                /* leave the view the user changed to */
+            }
+        }
         close();
     };
 
     await openReactIsland({
-        title: 'Terrain Profile',
+        title: 'Line of Site',
         width: '480px',
         mountPath: '../../../react/widgets/mountTerrainProfileDialog.jsx',
         mountExport: 'mountTerrainProfileDialog',
@@ -61,21 +87,6 @@ export async function openTerrainProfile(ctx, options = {}) {
             initialState: restoreState,
             onCancel: () => closeWidget(close),
             onSendToTarget: (targetId, result) => sendResultToTarget(ctx, targetId, result),
-            onDrawLine: async () => {
-                ctx.mapService.cancelInteraction?.();
-                const geometry = await ctx.mapService.startSketchPolyline?.({
-                    bannerText: 'Click to add points. Double-click or Enter to finish the profile line.',
-                    onInsufficientVertices: () => ctx.showToast?.('Need at least 2 points for a profile line', 'warning')
-                });
-                if (!geometry?.coordinates || geometry.coordinates.length < 2) return null;
-                const coordinates = geometry.coordinates.map((coord) => [coord[0], coord[1]]);
-                replacePreview({
-                    type: 'Feature',
-                    properties: { kind: 'profile-line' },
-                    geometry: { type: 'LineString', coordinates }
-                });
-                return coordinates;
-            },
             onPickPoint: async (role) => {
                 ctx.mapService.cancelInteraction?.();
                 const prompt = role === 'target'
@@ -106,15 +117,18 @@ export async function openTerrainProfile(ctx, options = {}) {
             },
             onRun: (input) => withActivity('Sampling elevation…', async () => {
                 const sampleElevations = (points) => sampleElevationsFromMap(ctx, points);
-                const result = input?.mode === 'los'
-                    ? await buildLineOfSight({ ...input, sampleElevations })
-                    : await buildElevationProfile({ ...input, sampleElevations });
-                const geojson = buildTerrainFeatureCollection(result);
-                if (geojson.features.length) replacePreview(geojson);
-                const empty = !result.stats?.validCount;
-                const blocked = result.mode === 'los' && !result.visible;
-                ctx.showToast?.(resultToast(result), empty || blocked ? 'warning' : 'success');
-                return result;
+                try {
+                    const result = await buildLineOfSight({ ...input, sampleElevations });
+                    const geojson = buildTerrainFeatureCollection(result);
+                    if (geojson.features.length) replacePreview(geojson);
+                    ctx.mapService.showLineOfSiteBeam?.(result.beam);
+                    const empty = !result.stats?.validCount;
+                    ctx.showToast?.(resultToast(result), empty || !result.visible ? 'warning' : 'success');
+                    return result;
+                } catch (err) {
+                    ctx.mapService.removeLineOfSiteBeam?.();
+                    throw err;
+                }
             }),
             onAddLayer: (result) => {
                 const geojson = buildTerrainFeatureCollection(result);
@@ -122,7 +136,7 @@ export async function openTerrainProfile(ctx, options = {}) {
                     ctx.showToast?.('Nothing to add', 'warning');
                     return null;
                 }
-                const layerName = result?.mode === 'los' ? 'Line of sight' : 'Terrain profile';
+                const layerName = 'Line of Site';
                 const dataset = ctx.createSpatialDataset(layerName, geojson, { format: 'derived' });
                 ctx.addLayer(dataset);
                 ctx.mapService.addLayer(dataset, ctx.getLayers().indexOf(dataset), { fit: false });
@@ -141,7 +155,7 @@ export async function openTerrainProfile(ctx, options = {}) {
                         maxM: result.stats?.max ?? null,
                         gainM: result.stats?.gain ?? null,
                         lossM: result.stats?.loss ?? null,
-                        visible: result.mode === 'los' ? !!result.visible : null
+                        visible: !!result.visible
                     }
                 });
                 emitProducedResult(producedResult);

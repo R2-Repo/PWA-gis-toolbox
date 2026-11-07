@@ -1,6 +1,8 @@
 /**
  * Terrain profile and line-of-sight math.
  * Elevation values come from an injected sampler. This module never reads the map.
+ * The sight beam is a straight absolute-elevation line. Curvature raises terrain
+ * in the clearance test and does not bend the beam.
  */
 
 export const DEFAULT_SAMPLE_SPACING_M = 30;
@@ -336,6 +338,71 @@ export function evaluateLineOfSight(input) {
 }
 
 /**
+ * @param {object | null | undefined} state
+ * @returns {{ is3d: boolean, terrain: boolean, pitch: number, bearing: number }}
+ */
+export function normalizeTerrainView(state) {
+    const pitch = Number(state?.pitch);
+    const bearing = Number(state?.bearing);
+    return {
+        is3d: !!state?.is3d,
+        terrain: !!state?.terrain,
+        pitch: Number.isFinite(pitch) ? pitch : 0,
+        bearing: Number.isFinite(bearing) ? bearing : 0
+    };
+}
+
+/**
+ * Pitch and bearing match within `epsilon` degrees, and the 3D/terrain flags match.
+ * @param {object | null | undefined} a
+ * @param {object | null | undefined} b
+ * @param {number} [epsilon]
+ */
+export function terrainViewsMatch(a, b, epsilon = 0.75) {
+    const left = normalizeTerrainView(a);
+    const right = normalizeTerrainView(b);
+    return left.is3d === right.is3d
+        && left.terrain === right.terrain
+        && Math.abs(left.pitch - right.pitch) <= epsilon
+        && Math.abs(left.bearing - right.bearing) <= epsilon;
+}
+
+/**
+ * Straight beam from observer height above ground to target height above ground.
+ * The obstruction sample is the last visible point and the first blocked point.
+ * @param {object | null | undefined} sight
+ * @returns {{ visible: object[], blocked: object[] }}
+ */
+export function buildSightBeam(sight) {
+    const samples = sight?.samples;
+    if (!Array.isArray(samples) || samples.length < 2) return { visible: [], blocked: [] };
+    const total = Number(samples[samples.length - 1].distanceM);
+    const start = Number(sight.observerAbsoluteM);
+    const end = Number(sight.targetAbsoluteM);
+    if (!Number.isFinite(total) || total < 0 || !Number.isFinite(start) || !Number.isFinite(end)) {
+        return { visible: [], blocked: [] };
+    }
+    const points = samples.map((sample) => {
+        const distanceM = Number(sample.distanceM) || 0;
+        const t = total > 0 ? distanceM / total : 0;
+        return {
+            lng: sample.lng,
+            lat: sample.lat,
+            distanceM,
+            altitudeM: start + (t * (end - start))
+        };
+    });
+    const cut = sight.obstruction?.index;
+    if (!Number.isInteger(cut) || cut <= 0 || cut >= points.length - 1) {
+        return { visible: points, blocked: [] };
+    }
+    return {
+        visible: points.slice(0, cut + 1),
+        blocked: points.slice(cut)
+    };
+}
+
+/**
  * @param {{ observer: [number, number], target: [number, number], observerHeightM: number, targetHeightM: number, spacingM?: number, curvature?: boolean, sampleElevations: Function }} input
  */
 export async function buildLineOfSight(input) {
@@ -352,7 +419,8 @@ export async function buildLineOfSight(input) {
     });
     return {
         mode: 'los',
-        ...sight
+        ...sight,
+        beam: buildSightBeam(sight)
     };
 }
 

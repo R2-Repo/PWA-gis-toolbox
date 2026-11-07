@@ -27,6 +27,11 @@ import {
     getGeoreferenceRaster,
     isGeoreferencedImageLayer
 } from '../widgets/georeference-raster/georef-layer.js';
+import { normalizeTerrainView, terrainViewsMatch } from '../widgets/terrain-profile/engine.js';
+import {
+    removeLineOfSiteBeam as removeSightBeamLayer,
+    syncLineOfSiteBeam
+} from '../widgets/terrain-profile/beam-layer.js';
 import { MAP_CHUNK_BATCH_SIZE, RENDER_LIMITS } from './render-limits.js';
 import { buildViewportGeoJSON } from '../workspace/viewport-loader.js';
 import { getWorkspaceFeatureAttributes, getWorkspaceLayerBounds, getWorkspaceFeaturesByIndices, scanWorkspaceFilterIndices } from '../workspace/workspace-store.js';
@@ -4269,6 +4274,37 @@ class MapManager {
 
         const exaggeration = terrain.exaggeration ?? this.map.getTerrain()?.exaggeration ?? 1;
         return exaggerated / exaggeration;
+    }
+
+    /** 3D flag, terrain, pitch, and bearing for Line of Site open/close. */
+    captureTerrainViewState() {
+        return {
+            is3d: !!this._3dEnabled,
+            terrain: this._isMapTerrainActive(),
+            pitch: Number(this.map?.getPitch?.()) || 0,
+            bearing: Number(this.map?.getBearing?.()) || 0
+        };
+    }
+
+    /**
+     * Put the map back to a captured Line of Site view.
+     * @param {{ is3d?: boolean, terrain?: boolean, pitch?: number, bearing?: number }} state
+     */
+    restoreTerrainViewState(state) {
+        if (!this.map || !state || typeof state !== 'object') return;
+        if (terrainViewsMatch(this.captureTerrainViewState(), state)) return;
+        const next = normalizeTerrainView(state);
+        if (next.is3d) this.enable3D({ pitch: next.pitch, bearing: next.bearing, animate: false });
+        else this.disable3D({ animate: false });
+    }
+
+    /** @param {{ visible?: object[], blocked?: object[] }} beam */
+    showLineOfSiteBeam(beam) {
+        syncLineOfSiteBeam(this.map, beam);
+    }
+
+    removeLineOfSiteBeam() {
+        removeSightBeamLayer(this.map);
     }
 
     // ==========================================

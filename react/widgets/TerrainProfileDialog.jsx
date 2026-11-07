@@ -48,15 +48,26 @@ function ElevationChart({ samples, segments, sight, obstruction, label }) {
     const xOf = (distance) => PAD.l + (distance / maxX) * (CHART_W - PAD.l - PAD.r);
     const yOf = (elevation) => PAD.t + (1 - (elevation - minY) / (maxY - minY)) * (CHART_H - PAD.t - PAD.b);
     const pointsOf = (pts) => pts.map((pt) => `${xOf(pt.distanceM)},${yOf(pt.elevationM)}`).join(' ');
-    const sightPoints = sight
-        ? samples.map((sample) => {
-            const span = samples[samples.length - 1].distanceM;
-            const elevation = span > 0
-                ? sight.observerAbsoluteM + (sample.distanceM / span) * (sight.targetAbsoluteM - sight.observerAbsoluteM)
-                : sight.observerAbsoluteM;
-            return { distanceM: sample.distanceM, elevationM: elevation };
-        })
-        : [];
+    const sightLine = (() => {
+        if (sight?.beam?.visible?.length) {
+            const mapPoint = (point) => ({ distanceM: point.distanceM, elevationM: point.altitudeM });
+            return {
+                visible: sight.beam.visible.map(mapPoint),
+                blocked: (sight.beam.blocked || []).map(mapPoint)
+            };
+        }
+        if (!sight) return { visible: [], blocked: [] };
+        const span = samples.length ? samples[samples.length - 1].distanceM : 0;
+        return {
+            visible: samples.map((sample) => ({
+                distanceM: sample.distanceM,
+                elevationM: span > 0
+                    ? sight.observerAbsoluteM + (sample.distanceM / span) * (sight.targetAbsoluteM - sight.observerAbsoluteM)
+                    : sight.observerAbsoluteM
+            })),
+            blocked: []
+        };
+    })();
 
     return (
         <svg
@@ -71,13 +82,22 @@ function ElevationChart({ samples, segments, sight, obstruction, label }) {
             <text x={PAD.l - 4} y={yOf(minY) + 3} textAnchor="end" fontSize="10" fill="currentColor">{formatMeters(minY)}</text>
             <text x={PAD.l} y={CHART_H - 6} fontSize="10" fill="currentColor">0</text>
             <text x={CHART_W - PAD.r} y={CHART_H - 6} textAnchor="end" fontSize="10" fill="currentColor">{formatDistance(samples.length ? samples[samples.length - 1].distanceM : 0)}</text>
-            {sightPoints.length > 1 ? (
+            {sightLine.visible.length > 1 ? (
                 <polyline
                     fill="none"
                     stroke="#15803d"
                     strokeWidth="1.5"
                     strokeDasharray="4 3"
-                    points={pointsOf(sightPoints)}
+                    points={pointsOf(sightLine.visible)}
+                />
+            ) : null}
+            {sightLine.blocked.length > 1 ? (
+                <polyline
+                    fill="none"
+                    stroke="#b91c1c"
+                    strokeWidth="1.5"
+                    strokeDasharray="4 3"
+                    points={pointsOf(sightLine.blocked)}
                 />
             ) : null}
             {segments.map((segment, index) => (
@@ -116,16 +136,13 @@ function ElevationChart({ samples, segments, sight, obstruction, label }) {
 export function TerrainProfileDialog({
     initialState = null,
     onCancel,
-    onDrawLine,
     onPickPoint,
     onPreviewPoints,
     onRun,
     onAddLayer,
     onSendToTarget
 }) {
-    const [mode, setMode] = useState(initialState?.mode === 'los' ? 'los' : 'profile');
     const [spacing, setSpacing] = useState(String(initialState?.spacingM ?? 30));
-    const [coordinates, setCoordinates] = useState(initialState?.coordinates || null);
     const [observer, setObserver] = useState(initialState?.observer || null);
     const [target, setTarget] = useState(initialState?.target || null);
     const [observerHeight, setObserverHeight] = useState(String(initialState?.observerHeightM ?? 1.7));
@@ -137,31 +154,6 @@ export function TerrainProfileDialog({
     const [error, setError] = useState('');
     const [message, setMessage] = useState('');
     const [producedResult, setProducedResult] = useState(null);
-
-    const changeMode = (next) => {
-        setMode(next);
-        setResult(null);
-        setProducedResult(null);
-        setError('');
-        setMessage('');
-    };
-
-    const drawLine = async () => {
-        setError('');
-        setPicking(true);
-        try {
-            const next = await onDrawLine?.();
-            if (!next) return;
-            setCoordinates(next);
-            setResult(null);
-            setProducedResult(null);
-            setMessage(`Profile line set (${next.length} points).`);
-        } catch (err) {
-            setError(err?.message || 'Unable to draw a line.');
-        } finally {
-            setPicking(false);
-        }
-    };
 
     const pickPoint = async (role) => {
         setError('');
@@ -189,19 +181,14 @@ export function TerrainProfileDialog({
         setMessage('');
         setRunning(true);
         try {
-            const spacingM = Number(spacing);
-            const output = await onRun?.(mode === 'los' ? {
+            const output = await onRun?.({
                 mode: 'los',
                 observer,
                 target,
                 observerHeightM: Number(observerHeight),
                 targetHeightM: Number(targetHeight),
-                spacingM,
+                spacingM: Number(spacing),
                 curvature
-            } : {
-                mode: 'profile',
-                coordinates,
-                spacingM
             });
             setResult(output || null);
             setProducedResult(null);
@@ -226,14 +213,10 @@ export function TerrainProfileDialog({
         }
     };
 
-    const ready = mode === 'los'
-        ? !!(observer && target)
-        : !!(coordinates && coordinates.length >= 2);
+    const ready = !!(observer && target);
     const statusText = error || message;
     const stats = result?.stats;
-    const chartLabel = result?.mode === 'los'
-        ? (result.visible ? 'Line of sight is visible' : 'Line of sight is blocked')
-        : 'Elevation profile';
+    const chartLabel = result?.visible ? 'Line of Site is visible' : 'Line of Site is blocked';
 
     return (
         <WidgetPanelShell
@@ -248,45 +231,16 @@ export function TerrainProfileDialog({
             onSendToTarget={onSendToTarget}
         >
             <div className="form-group">
-                <label>Mode</label>
+                <label>Observer and target</label>
                 <div className="gis-widget__btn-row">
-                    <button
-                        type="button"
-                        className={`btn btn-sm ${mode === 'profile' ? 'btn-primary' : 'btn-secondary'}`}
-                        onClick={() => changeMode('profile')}
-                    >
-                        Elevation profile
+                    <button type="button" className="btn btn-secondary btn-sm" onClick={() => pickPoint('observer')} disabled={picking || running}>
+                        {observer ? `Observer ${formatCoord(observer)}` : 'Pick observer'}
                     </button>
-                    <button
-                        type="button"
-                        className={`btn btn-sm ${mode === 'los' ? 'btn-primary' : 'btn-secondary'}`}
-                        onClick={() => changeMode('los')}
-                    >
-                        Line of sight
+                    <button type="button" className="btn btn-secondary btn-sm" onClick={() => pickPoint('target')} disabled={picking || running}>
+                        {target ? `Target ${formatCoord(target)}` : 'Pick target'}
                     </button>
                 </div>
             </div>
-
-            {mode === 'profile' ? (
-                <div className="form-group">
-                    <label>Profile line</label>
-                    <button type="button" className="btn btn-secondary btn-sm" onClick={drawLine} disabled={picking || running}>
-                        {coordinates ? `Line ready (${coordinates.length} points)` : 'Draw line'}
-                    </button>
-                </div>
-            ) : (
-                <div className="form-group">
-                    <label>Observer and target</label>
-                    <div className="gis-widget__btn-row">
-                        <button type="button" className="btn btn-secondary btn-sm" onClick={() => pickPoint('observer')} disabled={picking || running}>
-                            {observer ? `Observer ${formatCoord(observer)}` : 'Pick observer'}
-                        </button>
-                        <button type="button" className="btn btn-secondary btn-sm" onClick={() => pickPoint('target')} disabled={picking || running}>
-                            {target ? `Target ${formatCoord(target)}` : 'Pick target'}
-                        </button>
-                    </div>
-                </div>
-            )}
 
             <div className="form-group">
                 <label htmlFor="terrain-spacing">Sample spacing (m)</label>
@@ -300,48 +254,44 @@ export function TerrainProfileDialog({
                 />
             </div>
 
-            {mode === 'los' ? (
-                <>
-                    <div className="form-group">
-                        <label htmlFor="terrain-observer-height">Observer height above ground (m)</label>
-                        <input
-                            id="terrain-observer-height"
-                            type="number"
-                            min="0"
-                            step="0.1"
-                            value={observerHeight}
-                            onChange={(event) => setObserverHeight(event.target.value)}
-                        />
-                    </div>
-                    <div className="form-group">
-                        <label htmlFor="terrain-target-height">Target height above ground (m)</label>
-                        <input
-                            id="terrain-target-height"
-                            type="number"
-                            min="0"
-                            step="0.1"
-                            value={targetHeight}
-                            onChange={(event) => setTargetHeight(event.target.value)}
-                        />
-                    </div>
-                    <div className="form-group">
-                        <label className="toggle">
-                            <input
-                                type="checkbox"
-                                checked={curvature}
-                                onChange={(event) => setCurvature(event.target.checked)}
-                            />
-                            <span className="toggle-track" />
-                            <span>Earth curvature and refraction</span>
-                        </label>
-                    </div>
-                </>
-            ) : null}
+            <div className="form-group">
+                <label htmlFor="terrain-observer-height">Observer height above ground (m)</label>
+                <input
+                    id="terrain-observer-height"
+                    type="number"
+                    min="0"
+                    step="0.1"
+                    value={observerHeight}
+                    onChange={(event) => setObserverHeight(event.target.value)}
+                />
+            </div>
+            <div className="form-group">
+                <label htmlFor="terrain-target-height">Target height above ground (m)</label>
+                <input
+                    id="terrain-target-height"
+                    type="number"
+                    min="0"
+                    step="0.1"
+                    value={targetHeight}
+                    onChange={(event) => setTargetHeight(event.target.value)}
+                />
+            </div>
+            <div className="form-group">
+                <label className="toggle">
+                    <input
+                        type="checkbox"
+                        checked={curvature}
+                        onChange={(event) => setCurvature(event.target.checked)}
+                    />
+                    <span className="toggle-track" />
+                    <span>Earth curvature and refraction</span>
+                </label>
+            </div>
 
             {result && stats ? (
                 <div className="form-group">
-                    <label>{result.mode === 'los' ? (result.visible ? 'Visible' : 'Blocked') : 'Profile'}</label>
-                    {result.mode === 'los' && result.obstruction ? (
+                    <label>{result.visible ? 'Visible' : 'Blocked'}</label>
+                    {result.obstruction ? (
                         <div className="text-xs">
                             Obstruction at {formatDistance(result.obstruction.distanceM)}
                             {result.curvature ? ' (terrain plus earth curvature)' : ''}
@@ -363,14 +313,12 @@ export function TerrainProfileDialog({
                             <ElevationChart
                                 samples={result.samples}
                                 segments={result.segments || []}
-                                sight={result.mode === 'los' ? result : null}
+                                sight={result}
                                 obstruction={result.obstruction || null}
                                 label={chartLabel}
                             />
                             <div className="text-xs">
-                                {result.mode === 'los'
-                                    ? 'Solid line: ground. Dashed line: sight line. Red dot: obstruction.'
-                                    : 'Solid line: ground elevation. Breaks are samples with no terrain value.'}
+                                Gold: terrain profile. Green: visible sight line. Red: blocked sight line and first obstruction.
                             </div>
                         </>
                     ) : null}

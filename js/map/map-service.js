@@ -521,6 +521,33 @@ export function createMapService({ mapAdapter = mapManager } = {}) {
             const { sampleElevationsFromAdapter } = await import('../dual-screen/map-bridge.js');
             return sampleElevationsFromAdapter(mapAdapter, points);
         },
+        /**
+         * 3D, terrain, pitch, and bearing of the map in this window.
+         * Dual-screen runs this on the pop-out.
+         * @returns {{ is3d: boolean, terrain: boolean, pitch: number, bearing: number }}
+         */
+        captureTerrainViewState() {
+            if (typeof mapAdapter.captureTerrainViewState === 'function') {
+                return mapAdapter.captureTerrainViewState();
+            }
+            return {
+                is3d: !!mapAdapter._3dEnabled,
+                terrain: false,
+                pitch: 0,
+                bearing: 0
+            };
+        },
+        /** @param {{ is3d?: boolean, terrain?: boolean, pitch?: number, bearing?: number }} state */
+        restoreTerrainViewState(state) {
+            return mapAdapter.restoreTerrainViewState?.(state);
+        },
+        /** @param {{ visible?: object[], blocked?: object[] }} beam */
+        showLineOfSiteBeam(beam) {
+            return mapAdapter.showLineOfSiteBeam?.(beam);
+        },
+        removeLineOfSiteBeam() {
+            return mapAdapter.removeLineOfSiteBeam?.();
+        },
         startMeasureFrom(latlng) {
             return mapAdapter.startMeasureFromLatLng?.(latlng);
         },

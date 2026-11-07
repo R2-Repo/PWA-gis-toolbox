@@ -327,6 +327,74 @@ describe('dual-screen map bridge', () => {
         expect(warn.mock.calls.some((args) => String(args[0]).includes('getMap'))).toBe(false);
     });
 
+    it('forwards the line of site beam and terrain snapshot without getMap', async () => {
+        const focus = vi.spyOn(dualScreenCoordinator, 'focusMapWindow').mockImplementation(() => {});
+        const getMap = vi.fn(() => { throw new Error('getMap'); });
+        const showLineOfSiteBeam = vi.fn();
+        const removeLineOfSiteBeam = vi.fn();
+        const restoreTerrainViewState = vi.fn();
+        const captureTerrainViewState = vi.fn(() => ({ is3d: true, terrain: true, pitch: 30, bearing: 4 }));
+        const set3DEnabled = vi.fn();
+        const api = {
+            getMap,
+            showLineOfSiteBeam,
+            removeLineOfSiteBeam,
+            restoreTerrainViewState,
+            captureTerrainViewState,
+            set3DEnabled,
+            sampleElevations: vi.fn(async () => [1])
+        };
+        installDualScreenMapServiceDecorator(api, dualScreenCoordinator);
+        dualScreenCoordinator.isActive = true;
+
+        const beam = {
+            visible: [{ lng: 1, lat: 2, altitudeM: 10, distanceM: 0 }, { lng: 3, lat: 4, altitudeM: 12, distanceM: 8 }],
+            blocked: []
+        };
+        api.showLineOfSiteBeam(beam);
+        api.removeLineOfSiteBeam();
+        const pending = api.captureTerrainViewState();
+        pending.catch(() => {});
+        api.restoreTerrainViewState({ is3d: false, terrain: false, pitch: 0, bearing: 0 });
+        const sample = api.sampleElevations([[1, 2]]);
+        sample.catch(() => {});
+
+        expect(getMap).not.toHaveBeenCalled();
+        expect(showLineOfSiteBeam).not.toHaveBeenCalled();
+        expect(removeLineOfSiteBeam).not.toHaveBeenCalled();
+        expect(restoreTerrainViewState).not.toHaveBeenCalled();
+        expect(captureTerrainViewState).not.toHaveBeenCalled();
+        expect(focus).not.toHaveBeenCalled();
+        expect(set3DEnabled).toHaveBeenCalledWith(false);
+        expect(classifyMapMethod('showLineOfSiteBeam')).toBe('forward');
+        expect(classifyMapMethod('captureTerrainViewState')).toBe('forward');
+
+        const cmds = MockBroadcastChannel.traffic.filter((msg) => msg.type === MessageType.MAP_CMD);
+        const rpc = MockBroadcastChannel.traffic.filter((msg) => msg.type === MessageType.MAP_RPC);
+        expect(cmds.map((msg) => msg.payload.method)).toEqual([
+            'showLineOfSiteBeam',
+            'removeLineOfSiteBeam',
+            'restoreTerrainViewState'
+        ]);
+        expect(cmds[0].payload.args[0]).toEqual(beam);
+        expect(rpc.map((msg) => msg.payload.method)).toEqual(['captureTerrainViewState', 'sampleElevations']);
+
+        const popup = {
+            showLineOfSiteBeam: vi.fn(),
+            captureTerrainViewState: vi.fn(() => ({ is3d: true, terrain: true, pitch: 30, bearing: 4 }))
+        };
+        applyForwardedMapCall(popup, { method: 'showLineOfSiteBeam', args: [beam] });
+        expect(popup.showLineOfSiteBeam).toHaveBeenCalledWith(beam);
+        const posted = [];
+        await runForwardedMapRpc(popup, {
+            requestId: 'los-1',
+            method: 'captureTerrainViewState',
+            args: []
+        }, (_type, body) => posted.push(body));
+        expect(posted[0].result).toEqual({ is3d: true, terrain: true, pitch: 30, bearing: 4 });
+        expect(popup.captureTerrainViewState).toHaveBeenCalledOnce();
+    });
+
     it('warns when the popup cannot apply a call', () => {
         const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
         const api = { fitToAll: vi.fn() };
