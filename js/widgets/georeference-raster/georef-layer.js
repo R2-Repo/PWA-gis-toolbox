@@ -10,6 +10,7 @@ import {
     cornersToBbox,
     transformImageCorners
 } from './engine.js';
+import { clampGeorefOpacity } from './preview-view.js';
 
 export { GEOREF_FORMAT, GEOREF_TYPE };
 
@@ -64,9 +65,10 @@ export function buildGeorefRasterPayload({
     width,
     height,
     coordinates,
-    file = 'georef.png'
+    file = 'georef.png',
+    opacity
 }) {
-    return {
+    const payload = {
         url: url || '',
         mime,
         width,
@@ -75,6 +77,10 @@ export function buildGeorefRasterPayload({
         bbox: cornersToBbox(coordinates),
         file
     };
+    if (opacity != null && Number.isFinite(Number(opacity))) {
+        payload.opacity = clampGeorefOpacity(opacity);
+    }
+    return payload;
 }
 
 export function stripGeoreferenceRasterUrl(raster) {

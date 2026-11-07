@@ -8,6 +8,7 @@ import {
     solveAlignment,
     transformImageCorners
 } from './engine.js';
+import { clampGeorefOpacity, releasePreviewCanvas } from './preview-view.js';
 import {
     buildGeorefBoundsGeojson,
     buildGeorefRasterPayload,
@@ -16,8 +17,8 @@ import {
     isGeoreferencedImageLayer,
     listGeoreferencedImageLayers
 } from './georef-layer.js';
-import { detectGeorefFileKind, disposeSource, loadImageSource } from './source-loader.js';
-import { openPdfSource, rasterizePdfPage } from './pdf-source.js';
+import { detectGeorefFileKind, disposeSource, loadImageSource, paintImagePreviewRegion } from './source-loader.js';
+import { openPdfSource, paintPdfPreviewRegion, rasterizePdfPage } from './pdf-source.js';
 
 function snapshotSource(source) {
     if (!source) return null;
@@ -56,7 +57,10 @@ export async function openGeoreferenceRaster(ctx) {
         pdfSource: null,
         pageSource: null,
         pickGen: 0,
-        blinkTimer: null
+        blinkTimer: null,
+        sharpGen: 0,
+        sharpTask: null,
+        sharpCanvas: null
     };
 
     const existingLayers = () => listGeoreferencedImageLayers(ctx.getLayers() || []).map((layer) => ({
@@ -84,9 +88,25 @@ export async function openGeoreferenceRaster(ctx) {
         }
     };
 
+    const cancelSharpPaint = () => {
+        runtime.sharpGen += 1;
+        const task = runtime.sharpTask;
+        runtime.sharpTask = null;
+        try {
+            task?.cancel?.();
+        } catch {
+            /* already finished */
+        }
+        if (runtime.sharpCanvas) {
+            releasePreviewCanvas(runtime.sharpCanvas);
+            runtime.sharpCanvas = null;
+        }
+    };
+
     const cleanup = () => {
         runtime.pickGen += 1;
         stopBlink();
+        cancelSharpPaint();
         ctx.mapService.cancelInteraction?.();
         ctx.mapService.clearGeoreferencePreview?.();
         disposeRuntimeSources();
@@ -186,8 +206,63 @@ export async function openGeoreferenceRaster(ctx) {
                     layerId: layer.id,
                     name: layer.name,
                     source,
-                    gcps: record?.gcps || []
+                    gcps: record?.gcps || [],
+                    opacity: Number.isFinite(raster?.opacity) ? raster.opacity : undefined
                 };
+            },
+            onPaintSharpPreview: async ({ plan, canvas, cancel = false } = {}) => {
+                if (cancel || !plan) {
+                    runtime.sharpGen += 1;
+                    const task = runtime.sharpTask;
+                    runtime.sharpTask = null;
+                    try {
+                        task?.cancel?.();
+                    } catch {
+                        /* already finished */
+                    }
+                    if (canvas) releasePreviewCanvas(canvas);
+                    return { painted: false, cancelled: true };
+                }
+                const source = activeSource();
+                if (!source || !canvas) return { painted: false };
+                runtime.sharpGen += 1;
+                const gen = runtime.sharpGen;
+                const previous = runtime.sharpTask;
+                runtime.sharpTask = null;
+                try {
+                    previous?.cancel?.();
+                } catch {
+                    /* already finished */
+                }
+                runtime.sharpCanvas = canvas;
+                const session = {
+                    isCurrent: () => gen === runtime.sharpGen,
+                    setTask: (task) => {
+                        runtime.sharpTask = task;
+                    },
+                    clearTask: (task) => {
+                        if (runtime.sharpTask === task) runtime.sharpTask = null;
+                    }
+                };
+                try {
+                    if (source.kind === 'pdf-page' && runtime.pdfSource) {
+                        return await paintPdfPreviewRegion(
+                            runtime.pdfSource,
+                            source.pageIndex ?? 0,
+                            { width: source.width, height: source.height },
+                            plan,
+                            canvas,
+                            session
+                        );
+                    }
+                    if (source.file) {
+                        return await paintImagePreviewRegion(source.file, plan, canvas, session);
+                    }
+                } catch (err) {
+                    if (err?.name === 'RenderingCancelledException') return { painted: false, cancelled: true };
+                    return { painted: false };
+                }
+                return { painted: false };
             },
             onPickMapPoint: async (prompt) => {
                 runtime.pickGen += 1;
@@ -230,7 +305,7 @@ export async function openGeoreferenceRaster(ctx) {
                     }
                 }, 280);
             },
-            onCommit: async ({ name, gcps, reviewed, layerId }) => {
+            onCommit: async ({ name, gcps, reviewed, layerId, opacity }) => {
                 const source = activeSource();
                 if (!source?.workingUrl) {
                     throw new Error('Load an image or PDF page first.');
@@ -264,7 +339,8 @@ export async function openGeoreferenceRaster(ctx) {
                     width: source.width,
                     height: source.height,
                     coordinates,
-                    file: rasterFileName(source)
+                    file: rasterFileName(source),
+                    opacity: clampGeorefOpacity(opacity)
                 });
                 const layerName = name || source.name.replace(/\.[^.]+$/, '') || 'Georeferenced_Image';
                 const bounds = buildGeorefBoundsGeojson(coordinates, { name: layerName });

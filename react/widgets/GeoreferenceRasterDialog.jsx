@@ -13,6 +13,16 @@ import {
     toNormalizedSource,
     transformImageCorners
 } from '../../js/widgets/georeference-raster/engine.js';
+import {
+    MARKER_LABEL_OFFSET,
+    MARKER_SIZE_PX,
+    markerAnchorStyle,
+    planZoomPreview,
+    pointerToSourcePx,
+    previewCanvasHelps,
+    releasePreviewCanvas,
+    sourcePxToViewport
+} from '../../js/widgets/georeference-raster/preview-view.js';
 
 const STEPS = ['Source', 'Control points', 'Review'];
 const ACCEPT = '.png,.jpg,.jpeg,.webp,.pdf,image/png,image/jpeg,image/webp,application/pdf';
@@ -22,24 +32,55 @@ function gcpNumber(gcps, id) {
     return index >= 0 ? index + 1 : gcps.length;
 }
 
+function markerInk(pending, review, disabled) {
+    if (disabled) return '#64748b';
+    if (review) return '#d97706';
+    if (pending) return '#475569';
+    return '#1d4ed8';
+}
+
 function SourcePreview({
     url,
     displayWidth,
     displayHeight,
     sourceWidth,
     sourceHeight,
+    limitToSourcePixels,
     gcps,
     pendingId,
     reviewId,
     placing,
-    onSourceClick
+    onSourceClick,
+    onPaintSharpPreview
 }) {
     const viewportRef = useRef(null);
+    const canvasRef = useRef(null);
+    const paintRef = useRef(onPaintSharpPreview);
+    paintRef.current = onPaintSharpPreview;
     const [view, setView] = useState({ scale: 1, x: 0, y: 0 });
+    const [viewportBox, setViewportBox] = useState({ width: 0, height: 0 });
+    const [sharpRect, setSharpRect] = useState(null);
     const dragRef = useRef(null);
 
     useEffect(() => {
         setView({ scale: 1, x: 0, y: 0 });
+        setSharpRect(null);
+    }, [url]);
+
+    useEffect(() => {
+        const viewport = viewportRef.current;
+        if (!viewport) return undefined;
+        const measure = () => {
+            const width = viewport.clientWidth;
+            const height = viewport.clientHeight;
+            setViewportBox((current) => (
+                current.width === width && current.height === height ? current : { width, height }
+            ));
+        };
+        measure();
+        const observer = new ResizeObserver(measure);
+        observer.observe(viewport);
+        return () => observer.disconnect();
     }, [url]);
 
     useEffect(() => {
@@ -48,11 +89,11 @@ function SourcePreview({
         const onWheel = (event) => {
             event.preventDefault();
             const rect = viewport.getBoundingClientRect();
-            const cursorX = event.clientX - rect.left;
-            const cursorY = event.clientY - rect.top;
+            const cursorX = event.clientX - rect.left - viewport.clientLeft;
+            const cursorY = event.clientY - rect.top - viewport.clientTop;
             const factor = event.deltaY < 0 ? 1.12 : 0.9;
             setView((current) => {
-                const nextScale = Math.min(8, Math.max(0.2, current.scale * factor));
+                const nextScale = Math.min(16, Math.max(0.2, current.scale * factor));
                 const ratio = nextScale / current.scale;
                 return {
                     scale: nextScale,
@@ -65,15 +106,92 @@ function SourcePreview({
         return () => viewport.removeEventListener('wheel', onWheel);
     }, []);
 
-    const toImagePoint = (clientX, clientY) => {
+    useEffect(() => {
+        const canvas = canvasRef.current;
+        if (!url || !canvas || !viewportBox.width || !viewportBox.height) {
+            if (canvas) {
+                paintRef.current?.({ cancel: true, canvas });
+                releasePreviewCanvas(canvas);
+            }
+            setSharpRect(null);
+            return undefined;
+        }
+        const plan = planZoomPreview({
+            viewX: view.x,
+            viewY: view.y,
+            viewScale: view.scale,
+            viewportWidth: viewportBox.width,
+            viewportHeight: viewportBox.height,
+            displayWidth,
+            displayHeight,
+            sourceWidth,
+            sourceHeight,
+            devicePixelRatio: typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1,
+            limitToSourcePixels
+        });
+        if (!previewCanvasHelps(plan)) {
+            paintRef.current?.({ cancel: true, canvas });
+            releasePreviewCanvas(canvas);
+            setSharpRect(null);
+            return undefined;
+        }
+        let cancelled = false;
+        const timer = window.setTimeout(async () => {
+            if (cancelled) return;
+            const paint = paintRef.current;
+            if (!paint) return;
+            const result = await paint({ plan, canvas });
+            if (cancelled) return;
+            if (result?.painted) setSharpRect(plan.displayRect);
+            else {
+                releasePreviewCanvas(canvas);
+                setSharpRect(null);
+            }
+        }, 70);
+        return () => {
+            cancelled = true;
+            window.clearTimeout(timer);
+            paintRef.current?.({ cancel: true, canvas });
+        };
+    }, [
+        url,
+        view,
+        viewportBox,
+        displayWidth,
+        displayHeight,
+        sourceWidth,
+        sourceHeight,
+        limitToSourcePixels
+    ]);
+
+    useEffect(() => () => {
+        const canvas = canvasRef.current;
+        paintRef.current?.({ cancel: true, canvas });
+        releasePreviewCanvas(canvas);
+    }, []);
+
+    const toSourcePoint = (clientX, clientY) => {
         const viewport = viewportRef.current;
         if (!viewport) return null;
         const rect = viewport.getBoundingClientRect();
-        const x = (clientX - rect.left - view.x) / view.scale;
-        const y = (clientY - rect.top - view.y) / view.scale;
-        if (x < 0 || y < 0 || x > displayWidth || y > displayHeight) return null;
-        return { x, y };
+        return pointerToSourcePx({
+            clientX,
+            clientY,
+            rectLeft: rect.left,
+            rectTop: rect.top,
+            clientLeft: viewport.clientLeft,
+            clientTop: viewport.clientTop,
+            viewX: view.x,
+            viewY: view.y,
+            viewScale: view.scale,
+            displayWidth,
+            displayHeight,
+            sourceWidth,
+            sourceHeight
+        });
     };
+
+    const magnified = view.scale > 1.01;
 
     return (
         <div
@@ -108,7 +226,7 @@ function SourcePreview({
                 const drag = dragRef.current;
                 dragRef.current = null;
                 if (!drag || drag.moved) return;
-                const point = toImagePoint(event.clientX, event.clientY);
+                const point = toSourcePoint(event.clientX, event.clientY);
                 if (point) onSourceClick?.(point);
             }}
         >
@@ -121,29 +239,99 @@ function SourcePreview({
                         transform: `translate(${view.x}px, ${view.y}px) scale(${view.scale})`
                     }}
                 >
-                    <img src={url} alt="Source to georeference" draggable={false} />
-                    {gcps.map((gcp) => {
-                        const pt = gcp.sourcePx;
-                        if (!pt) return null;
-                        const number = gcpNumber(gcps, gcp.id);
-                        const pending = gcp.id === pendingId;
-                        const review = gcp.id === reviewId;
-                        const scaleX = (sourceWidth || displayWidth) ? displayWidth / (sourceWidth || displayWidth) : 1;
-                        const scaleY = (sourceHeight || displayHeight) ? displayHeight / (sourceHeight || displayHeight) : 1;
-                        return (
-                            <span
-                                key={gcp.id}
-                                className={`georef-widget__marker${pending ? ' is-pending' : ''}${review ? ' is-review' : ''}${gcp.enabled === false ? ' is-disabled' : ''}`}
-                                style={{ left: pt.x * scaleX, top: pt.y * scaleY }}
-                            >
-                                {number}
-                            </span>
-                        );
-                    })}
+                    <img
+                        src={url}
+                        alt="Source to georeference"
+                        draggable={false}
+                        style={{ imageRendering: magnified && !sharpRect ? 'pixelated' : 'auto' }}
+                    />
+                    <canvas
+                        ref={canvasRef}
+                        style={{
+                            position: 'absolute',
+                            left: sharpRect?.x || 0,
+                            top: sharpRect?.y || 0,
+                            width: sharpRect?.width || 0,
+                            height: sharpRect?.height || 0,
+                            display: sharpRect ? 'block' : 'none',
+                            pointerEvents: 'none'
+                        }}
+                    />
                 </div>
             ) : (
                 <div className="georef-widget__preview-empty">Load a source to begin</div>
             )}
+            {url ? gcps.map((gcp) => {
+                const pt = gcp.sourcePx;
+                if (!pt) return null;
+                const number = gcpNumber(gcps, gcp.id);
+                const pending = gcp.id === pendingId;
+                const review = gcp.id === reviewId;
+                const disabled = gcp.enabled === false;
+                const anchor = sourcePxToViewport({
+                    sourceX: pt.x,
+                    sourceY: pt.y,
+                    sourceWidth,
+                    sourceHeight,
+                    displayWidth,
+                    displayHeight,
+                    viewX: view.x,
+                    viewY: view.y,
+                    viewScale: view.scale
+                });
+                const box = markerAnchorStyle(anchor);
+                const ink = markerInk(pending, review, disabled);
+                return (
+                    <span
+                        key={gcp.id}
+                        className="georef-widget__crosshair"
+                        style={{
+                            position: 'absolute',
+                            left: box.left,
+                            top: box.top,
+                            width: box.width,
+                            height: box.height,
+                            margin: 0,
+                            transform: 'translate(-50%, -50%)',
+                            pointerEvents: 'none',
+                            overflow: 'visible',
+                            opacity: disabled ? 0.45 : 1
+                        }}
+                    >
+                        <svg
+                            width={MARKER_SIZE_PX}
+                            height={MARKER_SIZE_PX}
+                            viewBox="0 0 13 13"
+                            aria-hidden="true"
+                            style={{ display: 'block' }}
+                        >
+                            <line x1="6.5" y1="0.5" x2="6.5" y2="12.5" stroke="#ffffff" strokeWidth="2.4" />
+                            <line x1="0.5" y1="6.5" x2="12.5" y2="6.5" stroke="#ffffff" strokeWidth="2.4" />
+                            <circle cx="6.5" cy="6.5" r="1.6" fill="#ffffff" />
+                            <line x1="6.5" y1="1" x2="6.5" y2="12" stroke={ink} strokeWidth="1" />
+                            <line x1="1" y1="6.5" x2="12" y2="6.5" stroke={ink} strokeWidth="1" />
+                            <circle cx="6.5" cy="6.5" r="1.15" fill={ink} />
+                        </svg>
+                        <span
+                            style={{
+                                position: 'absolute',
+                                left: MARKER_LABEL_OFFSET.x,
+                                top: MARKER_LABEL_OFFSET.y,
+                                fontSize: 10,
+                                fontWeight: 700,
+                                lineHeight: 1,
+                                color: '#ffffff',
+                                textShadow: '0 0 2px #000, 1px 0 0 #000, -1px 0 0 #000, 0 1px 0 #000, 0 -1px 0 #000',
+                                WebkitTextStroke: '3px rgba(0,0,0,0.85)',
+                                paintOrder: 'stroke fill',
+                                whiteSpace: 'nowrap'
+                            }}
+                        >
+                            {number}
+                        </span>
+                    </span>
+                );
+            }) : null}
         </div>
     );
 }
@@ -160,7 +348,8 @@ export function GeoreferenceRasterDialog({
     onClearPreview,
     onZoomToMapPoint,
     onBlinkOverlay,
-    onCommit
+    onCommit,
+    onPaintSharpPreview
 }) {
     const fileRef = useRef(null);
     const [step, setStep] = useState(1);
@@ -291,6 +480,7 @@ export function GeoreferenceRasterDialog({
             setGcps(loaded.gcps || []);
             setEditingLayerId(loaded.layerId);
             setLayerName(loaded.name || '');
+            if (Number.isFinite(loaded.opacity)) setOpacity(loaded.opacity);
             setPendingId(null);
         } catch (err) {
             setError(err?.message || 'Could not reopen that layer.');
@@ -318,11 +508,9 @@ export function GeoreferenceRasterDialog({
         completeMapSide(gcpId, point);
     };
 
-    const handleSourceClick = async (displayPoint) => {
-        if (!source) return;
-        const scaleX = source.width / displayWidth;
-        const scaleY = source.height / displayHeight;
-        const sourcePx = { x: displayPoint.x * scaleX, y: displayPoint.y * scaleY };
+    const handleSourceClick = async (sourcePoint) => {
+        if (!source || !sourcePoint) return;
+        const sourcePx = { x: sourcePoint.x, y: sourcePoint.y };
         const sourceNorm = toNormalizedSource(sourcePx, source.width, source.height);
 
         if (reposition?.side === 'source') {
@@ -400,7 +588,8 @@ export function GeoreferenceRasterDialog({
                             name: layerName,
                             gcps,
                             reviewed: true,
-                            layerId: editingLayerId || undefined
+                            layerId: editingLayerId || undefined,
+                            opacity
                         });
                     } catch (err) {
                         setError(err?.message || 'Could not add the image to the map.');
@@ -506,12 +695,25 @@ export function GeoreferenceRasterDialog({
                         displayHeight={displayHeight}
                         sourceWidth={source.width}
                         sourceHeight={source.height}
+                        limitToSourcePixels={source.kind !== 'pdf-page'}
                         gcps={gcps}
                         pendingId={pendingId}
                         reviewId={status.worstPointId}
                         placing={!pendingId || reposition?.side === 'source'}
                         onSourceClick={handleSourceClick}
+                        onPaintSharpPreview={onPaintSharpPreview}
                     />
+                    <label className="georef-widget__opacity">
+                        Overlay opacity
+                        <input
+                            type="range"
+                            min="0.15"
+                            max="1"
+                            step="0.05"
+                            value={opacity}
+                            onChange={(event) => setOpacity(Number(event.target.value))}
+                        />
+                    </label>
                     <div className="georef-widget__points">
                         {gcps.length === 0 ? (
                             <div className="text-xs" style={{ color: 'var(--text-muted)' }}>No control points yet.</div>
@@ -595,17 +797,6 @@ export function GeoreferenceRasterDialog({
                             <span>RMS {formatMeters(alignment.rmsResidualMeters)}</span>
                         ) : null}
                     </div>
-                    <label className="georef-widget__opacity">
-                        Overlay opacity
-                        <input
-                            type="range"
-                            min="0.15"
-                            max="1"
-                            step="0.05"
-                            value={opacity}
-                            onChange={(event) => setOpacity(Number(event.target.value))}
-                        />
-                    </label>
                     <div className="gis-widget__btn-row">
                         <button type="button" className="btn btn-sm" onClick={() => setOverlayVisible((value) => !value)}>
                             {overlayVisible ? 'Hide overlay' : 'Show overlay'}

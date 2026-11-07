@@ -3,6 +3,7 @@
  */
 
 import { WORKING_MAX_EDGE, buildSourceFingerprint } from './engine.js';
+import { assignPreviewCanvas, imageSampleRect, releasePreviewCanvas } from './preview-view.js';
 
 const IMAGE_TYPES = new Set([
     'image/png',
@@ -134,10 +135,49 @@ export function disposeSource(source) {
     source?.dispose?.();
 }
 
+/**
+ * Draw a bounded crop of the original file into `canvas`.
+ * The bitmap is closed immediately. A stale session must not resize `canvas`.
+ *
+ * @param {Blob} file
+ * @param {object} plan planZoomPreview result (includes sourceWidth/Height)
+ * @param {HTMLCanvasElement} canvas
+ * @param {{ isCurrent?: () => boolean }} [session]
+ */
+export async function paintImagePreviewRegion(file, plan, canvas, session = {}) {
+    if (!file || !plan || !canvas) return { painted: false };
+    const isCurrent = session.isCurrent || (() => true);
+    const sample = imageSampleRect(plan.sourceRect, plan.sourceWidth, plan.sourceHeight);
+    let bitmap;
+    try {
+        bitmap = await createImageBitmap(file, sample.x, sample.y, sample.width, sample.height, {
+            resizeWidth: plan.outputWidth,
+            resizeHeight: plan.outputHeight,
+            resizeQuality: 'high'
+        });
+    } catch {
+        bitmap = await createImageBitmap(file, sample.x, sample.y, sample.width, sample.height);
+    }
+    try {
+        if (!isCurrent()) return { painted: false, released: true };
+        const sized = assignPreviewCanvas(canvas, plan.outputWidth, plan.outputHeight);
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+            releasePreviewCanvas(canvas);
+            return { painted: false, released: true };
+        }
+        ctx.drawImage(bitmap, 0, 0, plan.outputWidth, plan.outputHeight);
+        return { painted: true, releasedPixels: sized.releasedPixels, pixels: sized.pixels };
+    } finally {
+        bitmap.close?.();
+    }
+}
+
 export default {
     isImageGeorefFile,
     isPdfGeorefFile,
     detectGeorefFileKind,
     loadImageSource,
-    disposeSource
+    disposeSource,
+    paintImagePreviewRegion
 };

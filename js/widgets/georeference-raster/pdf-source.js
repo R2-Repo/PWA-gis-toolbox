@@ -4,8 +4,14 @@
 
 import { WORKING_MAX_EDGE, buildSourceFingerprint } from './engine.js';
 import { disposeSource } from './source-loader.js';
+import { assignPreviewCanvas, pdfPreviewPlacement, releasePreviewCanvas } from './preview-view.js';
 
 const THUMB_MAX_EDGE = 180;
+/**
+ * Full-page raster kept for the warp. The control-point view re-renders the
+ * visible region on top of this (see paintPdfPreviewRegion) so zoom stays sharp
+ * without holding a second full-page canvas.
+ */
 const PAGE_MAX_EDGE = Math.min(WORKING_MAX_EDGE, 2048);
 
 let pdfjsPromise = null;
@@ -156,8 +162,74 @@ export function disposePdfSource(source) {
     disposeSource(source);
 }
 
+/**
+ * Re-render the visible PDF crop into `canvas` at the planned pixel size.
+ * Cancels an in-flight render. The previous canvas buffer is released when
+ * the size changes (assignPreviewCanvas). Stale callers must not touch `canvas`.
+ *
+ * @param {object} pdfSource
+ * @param {number} pageIndex
+ * @param {{ width: number, height: number }} sourceDims alignment pixel space
+ * @param {object} plan planZoomPreview result
+ * @param {HTMLCanvasElement} canvas
+ * @param {{ isCurrent: () => boolean, setTask: (task: object|null) => void }} session
+ */
+export async function paintPdfPreviewRegion(pdfSource, pageIndex, sourceDims, plan, canvas, session) {
+    if (!pdfSource?.pdf || !plan || !canvas) return { painted: false };
+    const isCurrent = session?.isCurrent || (() => true);
+    const page = await pdfSource.pdf.getPage(pageIndex + 1);
+    if (!isCurrent()) return { painted: false, released: true };
+
+    const base = page.getViewport({ scale: 1 });
+    const placement = pdfPreviewPlacement({
+        baseWidth: base.width,
+        baseHeight: base.height,
+        sourceWidth: sourceDims.width,
+        sourceHeight: sourceDims.height,
+        sourceRect: plan.sourceRect,
+        outputWidth: plan.outputWidth,
+        outputHeight: plan.outputHeight
+    });
+    if (!isCurrent()) return { painted: false, released: true };
+
+    const sized = assignPreviewCanvas(canvas, plan.outputWidth, plan.outputHeight);
+    const ctx = canvas.getContext('2d', { alpha: false });
+    if (!ctx) {
+        releasePreviewCanvas(canvas);
+        return { painted: false, released: true };
+    }
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    const viewport = page.getViewport({ scale: placement.scale });
+    const task = page.render({
+        canvasContext: ctx,
+        viewport,
+        transform: placement.transform,
+        background: '#ffffff'
+    });
+    session?.setTask?.(task);
+    try {
+        await task.promise;
+    } catch (err) {
+        if (err?.name === 'RenderingCancelledException') {
+            return { painted: false, released: true, cancelled: true };
+        }
+        throw err;
+    } finally {
+        session?.clearTask?.(task);
+    }
+    if (!isCurrent()) return { painted: false, released: true };
+    return {
+        painted: true,
+        releasedPixels: sized.releasedPixels,
+        pixels: sized.pixels,
+        scale: placement.scale
+    };
+}
+
 export default {
     openPdfSource,
     rasterizePdfPage,
-    disposePdfSource
+    disposePdfSource,
+    paintPdfPreviewRegion
 };
