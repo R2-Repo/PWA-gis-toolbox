@@ -368,10 +368,42 @@ export function terrainViewsMatch(a, b, epsilon = 0.75) {
 }
 
 /**
+ * Endpoint grounds and heights for the straight AMSL line.
+ * Ground stays un-exaggerated meters. The map layer exaggerates ground once.
+ * @param {object} sight
+ * @param {number} total
+ * @returns {object | null}
+ */
+function sightAltitudeFrame(sight, total) {
+    const samples = sight?.samples;
+    const observerGroundM = finiteOrNull(samples?.[0]?.elevationM);
+    const targetGroundM = finiteOrNull(samples?.[samples.length - 1]?.elevationM);
+    if (observerGroundM == null || targetGroundM == null) return null;
+    let observerHeightM = Number(sight.observerHeightM);
+    let targetHeightM = Number(sight.targetHeightM);
+    if (!Number.isFinite(observerHeightM) && Number.isFinite(Number(sight.observerAbsoluteM))) {
+        observerHeightM = Number(sight.observerAbsoluteM) - observerGroundM;
+    }
+    if (!Number.isFinite(targetHeightM) && Number.isFinite(Number(sight.targetAbsoluteM))) {
+        targetHeightM = Number(sight.targetAbsoluteM) - targetGroundM;
+    }
+    if (!Number.isFinite(observerHeightM) || !Number.isFinite(targetHeightM)) return null;
+    return {
+        observerGroundM,
+        targetGroundM,
+        observerHeightM,
+        targetHeightM,
+        totalDistanceM: total
+    };
+}
+
+/**
  * Straight beam from observer height above ground to target height above ground.
  * The obstruction sample is the last visible point and the first blocked point.
+ * `altitudeM` is absolute elevation (ground + height). `altitudeFrame` splits
+ * that line so the map can exaggerate ground without exaggerating the height.
  * @param {object | null | undefined} sight
- * @returns {{ visible: object[], blocked: object[] }}
+ * @returns {{ visible: object[], blocked: object[], altitudeFrame?: object }}
  */
 export function buildSightBeam(sight) {
     const samples = sight?.samples;
@@ -392,13 +424,17 @@ export function buildSightBeam(sight) {
             altitudeM: start + (t * (end - start))
         };
     });
+    const altitudeFrame = sightAltitudeFrame(sight, total);
     const cut = sight.obstruction?.index;
     if (!Number.isInteger(cut) || cut <= 0 || cut >= points.length - 1) {
-        return { visible: points, blocked: [] };
+        return altitudeFrame
+            ? { visible: points, blocked: [], altitudeFrame }
+            : { visible: points, blocked: [] };
     }
     return {
         visible: points.slice(0, cut + 1),
-        blocked: points.slice(cut)
+        blocked: points.slice(cut),
+        ...(altitudeFrame ? { altitudeFrame } : {})
     };
 }
 

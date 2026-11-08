@@ -349,7 +349,14 @@ describe('dual-screen map bridge', () => {
 
         const beam = {
             visible: [{ lng: 1, lat: 2, altitudeM: 10, distanceM: 0 }, { lng: 3, lat: 4, altitudeM: 12, distanceM: 8 }],
-            blocked: []
+            blocked: [],
+            altitudeFrame: {
+                observerGroundM: 5,
+                targetGroundM: 7,
+                observerHeightM: 5,
+                targetHeightM: 5,
+                totalDistanceM: 8
+            }
         };
         api.showLineOfSiteBeam(beam);
         api.removeLineOfSiteBeam();

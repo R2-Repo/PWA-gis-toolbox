@@ -22,7 +22,17 @@ import {
     summarizeElevations,
     terrainViewsMatch
 } from '../js/widgets/terrain-profile/engine.js';
-import { beamRibbonPositions } from '../js/widgets/terrain-profile/beam-layer.js';
+import {
+    BEAM_BLOCKED_COLOR,
+    BEAM_FRAGMENT_SOURCE,
+    BEAM_HALF_WIDTH_PX,
+    BEAM_RIBBON_STRIDE,
+    BEAM_VERTEX_SOURCE,
+    BEAM_VISIBLE_COLOR,
+    beamRenderAltitudeM,
+    beamRibbonPositions,
+    beamVertexAltitudeM
+} from '../js/widgets/terrain-profile/beam-layer.js';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -318,6 +328,19 @@ describe('line of sight', () => {
         expect(beam.blocked[0]).toEqual(beam.visible.at(-1));
         expect(beam.blocked.at(-1).altitudeM).toBe(1000);
         expect(beam.blocked.at(-1).altitudeM).toBe(hill.at(-1).elevationM + 0);
+        expect(beam.altitudeFrame).toEqual({
+            observerGroundM: 1000,
+            targetGroundM: 1000,
+            observerHeightM: 10,
+            targetHeightM: 0,
+            totalDistanceM: 3000
+        });
+        for (const point of [...beam.visible, ...beam.blocked]) {
+            const t = point.distanceM / beam.altitudeFrame.totalDistanceM;
+            const ground = 1000;
+            const height = 10 + (t * (0 - 10));
+            expect(ground + height).toBeCloseTo(point.altitudeM, 5);
+        }
 
         const clear = evaluateLineOfSight({
             samples: hill,
@@ -355,23 +378,105 @@ describe('line of sight', () => {
         expect(beam.visible.at(-1).distanceM).toBe(curved.obstruction.distanceM);
     });
 
-    it('feeds absolute altitude to the mercator beam ribbon', () => {
+    it('passes fromLngLat altitude through once and extrudes a screen-space ribbon', () => {
         const calls = [];
+        const unit = 1e-5;
         const fromLngLat = (lngLat, altitude) => {
             calls.push({ lngLat: [...lngLat], altitude });
-            return { x: lngLat[0], y: lngLat[1], z: altitude, meterInMercatorCoordinateUnits: () => 0 };
+            return {
+                x: lngLat[0],
+                y: lngLat[1],
+                z: altitude * unit,
+                meterInMercatorCoordinateUnits: () => unit
+            };
         };
-        const data = beamRibbonPositions([
+        const points = [
             { lng: 1, lat: 2, altitudeM: 10 },
             { lng: 3, lat: 4, altitudeM: 30 }
-        ], fromLngLat, 4);
+        ];
+        const data = beamRibbonPositions(points, fromLngLat);
         expect(calls).toEqual([
             { lngLat: [1, 2], altitude: 10 },
             { lngLat: [3, 4], altitude: 30 }
         ]);
-        expect(data.length).toBe(12);
-        expect(data[2]).toBe(10);
-        expect(data[8]).toBe(30);
+        expect(data.length).toBe(points.length * 2 * BEAM_RIBBON_STRIDE);
+        expect(data[2]).toBeCloseTo(Math.fround(10 * unit), 8);
+        expect(data[2]).not.toBe(Math.fround(10 * unit * unit));
+        expect(data[9]).toBe(-1);
+        expect(data[19]).toBe(1);
+        expect(data[22]).toBe(Math.fround(30 * unit));
+        expect(BEAM_VERTEX_SOURCE).toMatch(/u_halfWidthPx/);
+        expect(BEAM_VERTEX_SOURCE).not.toMatch(/lineWidth/);
+        expect(BEAM_FRAGMENT_SOURCE).not.toMatch(/dash/);
+        expect(BEAM_HALF_WIDTH_PX).toBeGreaterThan(4);
+        expect(BEAM_VISIBLE_COLOR[1]).toBeGreaterThan(0.7);
+        expect(BEAM_BLOCKED_COLOR[0]).toBe(1);
+    });
+
+    it('matches rendered terrain at exaggeration 1, 1.5, and 2 without a second elevation add', () => {
+        const groundM = 2100.7;
+        const heightM = 5;
+        const frame = {
+            observerGroundM: groundM,
+            targetGroundM: groundM,
+            observerHeightM: heightM,
+            targetHeightM: heightM,
+            totalDistanceM: 100
+        };
+        const point = { distanceM: 0, altitudeM: groundM + heightM };
+        const clearance = (exaggeration, cameraElevationM) => {
+            const beam = beamVertexAltitudeM(point, frame, exaggeration, cameraElevationM);
+            const surface = beamVertexAltitudeM(
+                { distanceM: 0, altitudeM: groundM },
+                { ...frame, observerHeightM: 0, targetHeightM: 0 },
+                exaggeration,
+                cameraElevationM
+            );
+            return beam - surface;
+        };
+        expect(clearance(1, 0)).toBeCloseTo(heightM, 5);
+        expect(clearance(1, groundM)).toBeCloseTo(heightM, 5);
+        expect(clearance(1.5, 0)).toBeCloseTo(heightM, 5);
+        expect(clearance(1.5, groundM * 1.5)).toBeCloseTo(heightM, 5);
+        expect(clearance(2, groundM * 2)).toBeCloseTo(heightM, 5);
+
+        const exaggeratedSample = 3151.05;
+        const amsl = exaggeratedSample / 1.5;
+        expect(amsl).toBeCloseTo(groundM, 5);
+        const onRidge = beamVertexAltitudeM(
+            { distanceM: 0, altitudeM: amsl + heightM },
+            { ...frame, observerGroundM: amsl, targetGroundM: amsl },
+            1.5,
+            exaggeratedSample
+        );
+        expect(onRidge).toBeCloseTo(heightM, 5);
+        expect(onRidge).not.toBeCloseTo(heightM - exaggeratedSample, 1);
+        expect(onRidge).not.toBeCloseTo((amsl + heightM) * 1.5 - exaggeratedSample, 1);
+        expect(onRidge).not.toBeCloseTo(amsl + 32768, 0);
+        expect(onRidge).not.toBeCloseTo((amsl + 10000) * 0.1, 0);
+
+        const midFrame = {
+            observerGroundM: 1000,
+            targetGroundM: 2000,
+            observerHeightM: 5,
+            targetHeightM: 15,
+            totalDistanceM: 1000
+        };
+        const mid = beamVertexAltitudeM({ distanceM: 500, altitudeM: 1510 }, midFrame, 2, 0);
+        expect(mid).toBe(3010);
+        expect(mid).not.toBe(3020);
+
+        const map = {
+            terrain: { exaggeration: 1.5 },
+            getTerrain: () => ({ exaggeration: 9 }),
+            transform: { elevation: exaggeratedSample, width: 800, height: 600 }
+        };
+        expect(beamRenderAltitudeM(
+            { distanceM: 0, altitudeM: amsl + heightM },
+            { ...frame, observerGroundM: amsl, targetGroundM: amsl },
+            map
+        )).toBeCloseTo(heightM, 5);
+        expect(beamRenderAltitudeM(point, frame, { transform: { elevation: 0 } })).toBeCloseTo(groundM + heightM, 5);
     });
 
     it('restores a terrain view only when pitch, bearing, and 3D flags still match', () => {
@@ -398,6 +503,15 @@ describe('line of sight', () => {
         expect(result.beam.blocked).toEqual([]);
         expect(result.beam.visible[0].altitudeM).toBe(251.7);
         expect(result.beam.visible.at(-1).altitudeM).toBe(251);
+        expect(result.beam.altitudeFrame.observerGroundM).toBe(250);
+        expect(result.beam.altitudeFrame.observerHeightM).toBe(1.7);
+        expect(result.beam.altitudeFrame.targetHeightM).toBe(1);
+        expect(beamVertexAltitudeM(
+            result.beam.visible[0],
+            result.beam.altitudeFrame,
+            1.5,
+            250 * 1.5
+        )).toBeCloseTo(1.7, 5);
         expect(result.stats.min).toBe(250);
         expect(result.stats.max).toBe(250);
         expect(result.stats.gain).toBe(0);

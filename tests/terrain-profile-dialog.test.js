@@ -79,7 +79,8 @@ describe('Line of Site widget', () => {
         const chart = container.querySelector('svg[role="img"]');
         expect(chart).toBeTruthy();
         expect(chart.querySelector('polyline[stroke="#b7791f"]')).toBeTruthy();
-        expect(chart.querySelector('polyline[stroke="#15803d"]')).toBeTruthy();
+        expect(chart.querySelector('polyline[stroke="#00e040"]')).toBeTruthy();
+        expect(chart.querySelector('polyline[stroke-dasharray]')).toBeNull();
         expect(chart.getAttribute('aria-label')).toContain('Line of Site');
 
         root.unmount();
@@ -119,8 +120,9 @@ describe('Line of Site widget', () => {
         expect(container.textContent).toContain('Obstruction at');
         const dot = container.querySelector('circle[fill="#b91c1c"]');
         expect(dot).toBeTruthy();
-        expect(container.querySelector('polyline[stroke="#b91c1c"]')).toBeTruthy();
-        expect(container.querySelector('polyline[stroke="#15803d"]')).toBeTruthy();
+        expect(container.querySelector('polyline[stroke="#ff2d1a"]')).toBeTruthy();
+        expect(container.querySelector('polyline[stroke="#00e040"]')).toBeTruthy();
+        expect(container.querySelector('polyline[stroke-dasharray]')).toBeNull();
 
         root.unmount();
         container.remove();

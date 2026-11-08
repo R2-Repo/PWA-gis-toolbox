@@ -82,24 +82,6 @@ function ElevationChart({ samples, segments, sight, obstruction, label }) {
             <text x={PAD.l - 4} y={yOf(minY) + 3} textAnchor="end" fontSize="10" fill="currentColor">{formatMeters(minY)}</text>
             <text x={PAD.l} y={CHART_H - 6} fontSize="10" fill="currentColor">0</text>
             <text x={CHART_W - PAD.r} y={CHART_H - 6} textAnchor="end" fontSize="10" fill="currentColor">{formatDistance(samples.length ? samples[samples.length - 1].distanceM : 0)}</text>
-            {sightLine.visible.length > 1 ? (
-                <polyline
-                    fill="none"
-                    stroke="#15803d"
-                    strokeWidth="1.5"
-                    strokeDasharray="4 3"
-                    points={pointsOf(sightLine.visible)}
-                />
-            ) : null}
-            {sightLine.blocked.length > 1 ? (
-                <polyline
-                    fill="none"
-                    stroke="#b91c1c"
-                    strokeWidth="1.5"
-                    strokeDasharray="4 3"
-                    points={pointsOf(sightLine.blocked)}
-                />
-            ) : null}
             {segments.map((segment, index) => (
                 segment.length > 1 ? (
                     <polyline
@@ -119,6 +101,46 @@ function ElevationChart({ samples, segments, sight, obstruction, label }) {
                     />
                 )
             ))}
+            {sightLine.visible.length > 1 ? (
+                <polyline
+                    fill="none"
+                    stroke="#111111"
+                    strokeWidth="6"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    points={pointsOf(sightLine.visible)}
+                />
+            ) : null}
+            {sightLine.visible.length > 1 ? (
+                <polyline
+                    fill="none"
+                    stroke="#00e040"
+                    strokeWidth="3.5"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    points={pointsOf(sightLine.visible)}
+                />
+            ) : null}
+            {sightLine.blocked.length > 1 ? (
+                <polyline
+                    fill="none"
+                    stroke="#111111"
+                    strokeWidth="6"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    points={pointsOf(sightLine.blocked)}
+                />
+            ) : null}
+            {sightLine.blocked.length > 1 ? (
+                <polyline
+                    fill="none"
+                    stroke="#ff2d1a"
+                    strokeWidth="3.5"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    points={pointsOf(sightLine.blocked)}
+                />
+            ) : null}
             {obstruction ? (
                 <circle
                     cx={xOf(obstruction.distanceM)}
