@@ -15,6 +15,7 @@ import {
     buildMilepostPreviewFeatures,
     buildMilepostQueryWhere,
     fieldConfigForSource,
+    isPositiveMilepostRoute,
     milepostQueryUrls,
     outFieldsForSource,
     selectMilepostFeatures,
@@ -38,10 +39,9 @@ export async function searchMilepostRoutes(term, services = defaultServices()) {
     if (!where || where === '1=2') return [];
 
     const rows = await services.searchRoutes(where, UDOT_ROUTE_SEGMENT_CONFIG);
-    return groupRouteSearchResults(
-        mapRouteSearchRows(rows, UDOT_ROUTE_SEGMENT_CONFIG),
-        UDOT_ROUTE_SEGMENT_CONFIG
-    );
+    const positiveRows = mapRouteSearchRows(rows, UDOT_ROUTE_SEGMENT_CONFIG)
+        .filter((row) => isPositiveMilepostRoute(row));
+    return groupRouteSearchResults(positiveRows, UDOT_ROUTE_SEGMENT_CONFIG);
 }
 
 /**

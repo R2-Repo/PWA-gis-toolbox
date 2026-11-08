@@ -54,6 +54,47 @@ export function milepostQueryUrls() {
 }
 
 /**
+ * Milepost layers follow the positive centerline. N-direction routes stay out of
+ * search and selection. Direction comes from the route row already in hand.
+ * @param {object} route
+ */
+export function isPositiveMilepostRoute(route) {
+    if (!route) return false;
+    const positive = String(BASE_CONFIG.positiveDirectionValue).toUpperCase();
+    const explicit = String(
+        route.routeDirection ?? route[BASE_CONFIG.routeDirectionField] ?? ''
+    ).trim().toUpperCase();
+    if (explicit) return explicit === positive;
+    const routeId = String(route.routeId ?? route[BASE_CONFIG.routeIdField] ?? '').trim().toUpperCase();
+    const fromId = routeId.match(/([PN])[A-Z]?$/);
+    return fromId?.[1] === positive;
+}
+
+/**
+ * Drop N-direction variants. A divided alias with only P left is no longer a direction choice.
+ * @param {object[]} groups
+ */
+export function filterPositiveRouteGroups(groups) {
+    const kept = [];
+    for (const group of groups || []) {
+        const variants = (group?.variants || []).filter((variant) => isPositiveMilepostRoute(variant));
+        if (!variants.length) continue;
+        const isDivided = variants.length > 1;
+        kept.push({
+            ...group,
+            isDivided,
+            variants: variants.map((variant) => ({
+                ...variant,
+                routeLabel: isDivided
+                    ? variant.routeLabel
+                    : (group.routeAlias || variant.routeAlias || variant.routeLabel)
+            }))
+        });
+    }
+    return kept;
+}
+
+/**
  * @param {object} input
  */
 export function validateMilepostRequest(input = {}) {

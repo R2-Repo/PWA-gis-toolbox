@@ -6,14 +6,16 @@ import { RouteSearchField } from './shared/RouteSearchField.jsx';
 import { RouteSearchResults } from './shared/RouteSearchResults.jsx';
 import {
     MILEPOST_SOURCES,
+    filterPositiveRouteGroups,
     getMilepostSource,
+    isPositiveMilepostRoute,
     validateMilepostRequest
 } from '../../js/widgets/route-milepost/engine.js';
 import '../../js/widgets/route-milepost/widget.css';
 
 function seedRoute(initialState, initialInput) {
     const seed = initialState?.routeId ? initialState : (initialInput?.routeId ? initialInput : null);
-    if (!seed?.routeId) return null;
+    if (!seed?.routeId || !isPositiveMilepostRoute(seed)) return null;
     return {
         routeId: seed.routeId,
         routeAlias: seed.routeAlias || seed.routeId,
@@ -42,8 +44,6 @@ export function RouteMilepostDialog({
     const [sourceId, setSourceId] = useState(() => (
         getMilepostSource(initialState?.sourceId) ? initialState.sourceId : 'lr-mile'
     ));
-    const [mode, setMode] = useState(initialState?.mode === 'range' ? 'range' : 'point');
-    const [milepost, setMilepost] = useState(initialState?.milepost || '');
     const [startMilepost, setStartMilepost] = useState(initialState?.startMilepost || '');
     const [endMilepost, setEndMilepost] = useState(initialState?.endMilepost || '');
     const [preview, setPreview] = useState(null);
@@ -60,8 +60,7 @@ export function RouteMilepostDialog({
         routeAlias: selectedRoute?.routeAlias || selectedRoute?.routeLabel,
         routeDirection: selectedRoute?.routeDirection || '',
         sourceId,
-        mode,
-        milepost,
+        mode: 'range',
         startMilepost,
         endMilepost
     });
@@ -69,8 +68,6 @@ export function RouteMilepostDialog({
     const inputKey = [
         selectedRoute?.routeId || '',
         sourceId,
-        mode,
-        milepost,
         startMilepost,
         endMilepost
     ].join('|');
@@ -92,8 +89,8 @@ export function RouteMilepostDialog({
         setError('');
         setSearched(true);
         try {
-            const results = await onSearchRoutes?.(term);
-            setSearchResults(results || []);
+            const results = filterPositiveRouteGroups(await onSearchRoutes?.(term));
+            setSearchResults(results);
             setDividedGroup(null);
         } catch (err) {
             setSearchResults([]);
@@ -104,7 +101,7 @@ export function RouteMilepostDialog({
     };
 
     const selectRoute = (routeOption) => {
-        if (!routeOption?.routeId) return;
+        if (!isPositiveMilepostRoute(routeOption)) return;
         invalidate();
         setSelectedRoute(routeOption);
         setRoutePickerOpen(false);
@@ -112,19 +109,20 @@ export function RouteMilepostDialog({
         setSearchResults([]);
         setDividedGroup(null);
         setSearched(false);
-        setMilepost('');
         setStartMilepost('');
         setEndMilepost('');
         setError('');
     };
 
     const pickSearchGroup = (group) => {
-        if (group?.isDivided) {
-            setDividedGroup(group);
+        const [positive] = filterPositiveRouteGroups([group]);
+        if (!positive) return;
+        if (positive.isDivided) {
+            setDividedGroup(positive);
             setError('');
             return;
         }
-        selectRoute(group?.variants?.[0]);
+        selectRoute(positive.variants[0]);
     };
 
     const changeRoute = () => {
@@ -135,7 +133,6 @@ export function RouteMilepostDialog({
         setSearchResults([]);
         setDividedGroup(null);
         setSearched(false);
-        setMilepost('');
         setStartMilepost('');
         setEndMilepost('');
         setError('');
@@ -180,9 +177,7 @@ export function RouteMilepostDialog({
         }
     };
 
-    const milepostStarted = mode === 'point'
-        ? Boolean(milepost.trim())
-        : Boolean(startMilepost.trim() || endMilepost.trim());
+    const milepostStarted = Boolean(startMilepost.trim() || endMilepost.trim());
     const canPreview = Boolean(selectedRoute?.routeId) && validation.valid && !previewing && !running;
     const canAdd = Boolean(preview?.features?.length)
         && previewKey === inputKey
@@ -207,6 +202,7 @@ export function RouteMilepostDialog({
                 <RunPreviewFooter
                     onCancel={onCancel}
                     showPreview
+                    previewLabel="Preview on map"
                     onPreview={previewOnMap}
                     previewDisabled={!canPreview}
                     previewBusy={previewing}
@@ -282,88 +278,40 @@ export function RouteMilepostDialog({
                 ))}
             </select>
 
-            <div className="route-milepost-widget__modes">
-                <label>
+            <div className="route-mp-widget__mp-grid mb-8">
+                <div>
+                    <label className="text-xs text-muted" htmlFor="route-milepost-from">From MP</label>
                     <input
-                        type="radio"
-                        name="route-milepost-mode"
-                        value="point"
-                        checked={mode === 'point'}
-                        onChange={() => {
-                            setMode('point');
-                            invalidate();
-                        }}
-                    />
-                    Milepost point
-                </label>
-                <label>
-                    <input
-                        type="radio"
-                        name="route-milepost-mode"
-                        value="range"
-                        checked={mode === 'range'}
-                        onChange={() => {
-                            setMode('range');
-                            invalidate();
-                        }}
-                    />
-                    From / to range
-                </label>
-            </div>
-
-            {mode === 'point' ? (
-                <div className="mb-8">
-                    <label className="text-xs text-muted" htmlFor="route-milepost-mp">Milepost</label>
-                    <input
-                        id="route-milepost-mp"
+                        id="route-milepost-from"
                         type="text"
                         inputMode="decimal"
-                        placeholder="e.g. 10.65"
-                        value={milepost}
+                        placeholder="e.g. 10"
+                        value={startMilepost}
                         disabled={!selectedRoute}
                         onChange={(event) => {
-                            setMilepost(event.target.value);
+                            setStartMilepost(event.target.value);
                             invalidate();
                         }}
                         className="route-mp-widget__input"
                     />
                 </div>
-            ) : (
-                <div className="route-mp-widget__mp-grid mb-8">
-                    <div>
-                        <label className="text-xs text-muted" htmlFor="route-milepost-from">From MP</label>
-                        <input
-                            id="route-milepost-from"
-                            type="text"
-                            inputMode="decimal"
-                            placeholder="e.g. 10"
-                            value={startMilepost}
-                            disabled={!selectedRoute}
-                            onChange={(event) => {
-                                setStartMilepost(event.target.value);
-                                invalidate();
-                            }}
-                            className="route-mp-widget__input"
-                        />
-                    </div>
-                    <div>
-                        <label className="text-xs text-muted" htmlFor="route-milepost-to">To MP</label>
-                        <input
-                            id="route-milepost-to"
-                            type="text"
-                            inputMode="decimal"
-                            placeholder="e.g. 12.5"
-                            value={endMilepost}
-                            disabled={!selectedRoute}
-                            onChange={(event) => {
-                                setEndMilepost(event.target.value);
-                                invalidate();
-                            }}
-                            className="route-mp-widget__input"
-                        />
-                    </div>
+                <div>
+                    <label className="text-xs text-muted" htmlFor="route-milepost-to">To MP</label>
+                    <input
+                        id="route-milepost-to"
+                        type="text"
+                        inputMode="decimal"
+                        placeholder="e.g. 12.5"
+                        value={endMilepost}
+                        disabled={!selectedRoute}
+                        onChange={(event) => {
+                            setEndMilepost(event.target.value);
+                            invalidate();
+                        }}
+                        className="route-mp-widget__input"
+                    />
                 </div>
-            )}
+            </div>
 
             {!validation.valid && milepostStarted ? (
                 <div className="text-xs mb-8" style={{ color: 'var(--danger)' }}>
