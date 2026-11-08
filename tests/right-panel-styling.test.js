@@ -72,6 +72,7 @@ describe('right panel styling order', () => {
         });
 
         expect(headerTitles(container)).toEqual([
+            'Legend',
             'Symbology',
             'Labels',
             'Visibility',

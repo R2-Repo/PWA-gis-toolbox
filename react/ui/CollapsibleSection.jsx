@@ -7,21 +7,29 @@ export function CollapsibleSection({
     expandWhen = false,
     className = '',
     bodyClassName = '',
-    bodyId = null
+    bodyId = null,
+    onCollapsedChange = null
 }) {
     const [collapsed, setCollapsed] = useState(!defaultOpen);
+    const collapsedRef = useRef(collapsed);
     const prevExpandWhen = useRef(expandWhen);
+    collapsedRef.current = collapsed;
 
     useEffect(() => {
         if (expandWhen && !prevExpandWhen.current) {
+            collapsedRef.current = false;
             setCollapsed(false);
+            onCollapsedChange?.(false);
         }
         prevExpandWhen.current = expandWhen;
-    }, [expandWhen]);
+    }, [expandWhen, onCollapsedChange]);
 
     const toggle = useCallback(() => {
-        setCollapsed((prev) => !prev);
-    }, []);
+        const next = !collapsedRef.current;
+        collapsedRef.current = next;
+        setCollapsed(next);
+        onCollapsedChange?.(next);
+    }, [onCollapsedChange]);
 
     const onKeyDown = useCallback((event) => {
         if (event.key !== 'Enter' && event.key !== ' ') return;

@@ -1,5 +1,6 @@
 /**
- * Legend entries for the dual-screen pop-out, from the local layer catalog.
+ * Legend entries from the dual-screen layer catalog.
+ * Snapshots and forwarded map commands fill the catalog.
  */
 
 import { buildMapLegend, legendLayerRecords } from '../map/map-legend.js';

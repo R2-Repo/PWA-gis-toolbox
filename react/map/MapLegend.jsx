@@ -57,11 +57,11 @@ function LegendBody({ entry }) {
     );
 }
 
-export function MapLegend({ entries }) {
+export function MapLegend({ entries, showTitle = true }) {
     if (!entries?.length) return null;
     return (
         <aside className="map-legend" aria-label="Legend" data-map-legend="true">
-            <div className="map-legend-title">Legend</div>
+            {showTitle ? <div className="map-legend-title">Legend</div> : null}
             {entries.map((entry) => (
                 <section
                     key={entry.id}

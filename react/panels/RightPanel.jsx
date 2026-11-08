@@ -7,6 +7,8 @@ import { LabelsSection } from './LabelsSection.jsx';
 import { VisibilityRangeSection } from './VisibilityRangeSection.jsx';
 import { DataPreviewSection } from './DataPreviewSection.jsx';
 import { CollapsibleSection } from '../ui/CollapsibleSection.jsx';
+import { MapLegend } from '../map/MapLegend.jsx';
+import { readLegendCollapsed, writeLegendCollapsed } from '../../js/map/legend-panel.js';
 
 const TOOLBOX_EXPORT_TITLE = 'Save entire workspace as a .gis-toolbox file — all layers, map settings, pipeline, and preferences';
 
@@ -55,6 +57,25 @@ function ExportSection({
     );
 }
 
+function LegendSection({ entries }) {
+    const onCollapsedChange = useCallback((collapsed) => {
+        writeLegendCollapsed(collapsed);
+    }, []);
+
+    return (
+        <div className="legend-panel-host">
+            <CollapsibleSection
+                title="Legend"
+                className="legend-panel"
+                defaultOpen={!readLegendCollapsed()}
+                onCollapsedChange={onCollapsedChange}
+            >
+                <MapLegend entries={entries} showTitle={false} />
+            </CollapsibleSection>
+        </div>
+    );
+}
+
 function renderAgolIssue(issue) {
     const suffix = issue.message || issue.fixed ? ` -> ${issue.message || issue.fixed}` : '';
     return `${issue.type}: ${issue.field || ''} ${suffix}`.trim();
@@ -68,7 +89,8 @@ export function RightPanel({
     onFixAgol,
     onShowDataTable,
     onStyleChange,
-    onScaleRangeChange
+    onScaleRangeChange,
+    legendEntries = []
 }) {
     const layer = snapshot?.layer || null;
     const selectedFields = snapshot?.selectedFields || [];
@@ -111,7 +133,10 @@ export function RightPanel({
 
     if (!layer) {
         return (
-            <div className="empty-state"><p>No layer selected</p></div>
+            <>
+                <LegendSection entries={legendEntries} />
+                <div className="empty-state"><p>No layer selected</p></div>
+            </>
         );
     }
 
@@ -121,6 +146,7 @@ export function RightPanel({
 
     return (
         <>
+            <LegendSection entries={legendEntries} />
             {isSpatialLayer(layer) ? (
                 <>
                     <SmartStylePanel

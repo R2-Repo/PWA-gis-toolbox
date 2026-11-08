@@ -1,6 +1,6 @@
 /* Dual Screen — secondary map window shell.
-   Context menu, print menu, legend, popups, and draw tools use css/main.css
-   so this window matches the main app. */
+   Context menu, print menu, popups, and draw tools use css/main.css
+   so this window matches the main app. The legend stays in the main window. */
 
 .map-window-body {
     display: flex;

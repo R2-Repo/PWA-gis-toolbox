@@ -402,10 +402,9 @@ async function onExportMapView(format, options) {
 }
 
 async function mountPopoutChrome() {
-    const [{ mountMapPrintMenu }, { mountMapContextMenu }, { mountPopoutLegend }] = await Promise.all([
+    const [{ mountMapPrintMenu }, { mountMapContextMenu }] = await Promise.all([
         import('../react/header/mountMapPrintMenu.jsx'),
-        import('../react/map/mountMapContextMenu.jsx'),
-        import('../react/map/mountPopoutLegend.jsx')
+        import('../react/map/mountMapContextMenu.jsx')
     ]);
     const printHost = document.getElementById('map-print-host');
     if (printHost) {
@@ -418,10 +417,6 @@ async function mountPopoutChrome() {
     menuHost.id = 'map-window-context-menu-host';
     document.body.appendChild(menuHost);
     mountMapContextMenu(menuHost, { buildItems: buildPopoutContextMenuItems });
-    const legendHost = document.createElement('div');
-    legendHost.id = 'map-window-legend-host';
-    document.getElementById('map-container')?.appendChild(legendHost);
-    mountPopoutLegend(legendHost);
 }
 
 function boot() {

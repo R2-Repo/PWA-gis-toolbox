@@ -257,7 +257,7 @@ describe('dual-screen pop-out parity', () => {
         expect(exportHeaderMapView).not.toHaveBeenCalled();
     });
 
-    it('shares main window CSS and mounts the React print menu, context menu, and legend', () => {
+    it('shares main window CSS and mounts the React print menu and context menu without a legend overlay', () => {
         const html = readFileSync('map-window.html', 'utf8');
         const css = readFileSync('css/map-window.css', 'utf8');
         const source = readFileSync('js/map-window.js', 'utf8');
@@ -273,7 +273,8 @@ describe('dual-screen pop-out parity', () => {
         expect(source).not.toContain('setupMapPrintMenu');
         expect(source).toContain('exportPopoutMapView');
         expect(source).toContain('mountMapContextMenu');
-        expect(source).toContain('mountPopoutLegend');
+        expect(source).not.toContain('mountPopoutLegend');
+        expect(source).not.toContain('map-window-legend-host');
         expect(source).toContain('mountMapPrintMenu');
     });
 });
