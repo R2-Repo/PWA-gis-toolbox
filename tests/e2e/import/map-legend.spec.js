@@ -44,7 +44,18 @@ test('@tune map legend follows visible layers and class labels', async ({ page }
     await importLocalFile(page, fixturePath);
     await dismissOpenModals(page);
 
+    const legendSection = page.locator('#output-panel-content .legend-panel');
+    const legendHeader = legendSection.locator('.panel-section-header');
+    await expect(legendHeader).toBeVisible();
+    await expect(legendHeader).toHaveClass(/collapsed/);
+    await expect(legendSection.locator('.panel-section-body')).toHaveClass(/hidden/);
+
     const legend = page.locator('[data-map-legend="true"]');
+    await expect(legend).toBeAttached();
+    await expect(legend).toBeHidden();
+
+    await legendHeader.click();
+    await expect(legendHeader).not.toHaveClass(/collapsed/);
     await expect(legend).toBeVisible();
 
     const layerIds = await page.locator('.layer-item[data-id]').evaluateAll((els) => (
