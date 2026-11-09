@@ -201,7 +201,7 @@ describe('tool registry v1', () => {
         expect({ total: listTools().length, byKind, byStatus }).toEqual({
             total: 80,
             byKind: { tool: 32, widget: 20, node: 44 },
-            byStatus: { ga: 39, beta: 1, hidden: 40 }
+            byStatus: { ga: 38, beta: 2, hidden: 40 }
         });
     });
 

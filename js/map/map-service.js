@@ -548,6 +548,13 @@ export function createMapService({ mapAdapter = mapManager } = {}) {
         removeLineOfSiteBeam() {
             return mapAdapter.removeLineOfSiteBeam?.();
         },
+        /** @param {{ type?: string, features?: object[] } | null | undefined} geojson */
+        showLineOfSiteOverlay(geojson) {
+            return mapAdapter.showLineOfSiteOverlay?.(geojson);
+        },
+        removeLineOfSiteOverlay() {
+            return mapAdapter.removeLineOfSiteOverlay?.();
+        },
         startMeasureFrom(latlng) {
             return mapAdapter.startMeasureFromLatLng?.(latlng);
         },

@@ -13,6 +13,7 @@ import {
     buildElevationProfile,
     buildLineOfSight,
     buildSightBeam,
+    buildLineOfSiteOverlayFeatures,
     buildTerrainFeatureCollection,
     densifyCoordinates,
     earthBulgeMeters,
@@ -22,6 +23,19 @@ import {
     summarizeElevations,
     terrainViewsMatch
 } from '../js/widgets/terrain-profile/engine.js';
+import { LOCAL_GLYPH_FONT_STACK } from '../js/map/local-glyphs.js';
+import {
+    LINE_OF_SITE_OVERLAY_LAYER_IDS,
+    LINE_OF_SITE_OVERLAY_SOURCE_ID,
+    LOS_DOT_FILL,
+    LOS_DOT_FILL_RADIUS,
+    LOS_DOT_OUTLINE,
+    LOS_DOT_OUTLINE_RADIUS,
+    LOS_DOT_RING,
+    LOS_DOT_RING_RADIUS,
+    removeLineOfSiteOverlay,
+    syncLineOfSiteOverlay
+} from '../js/widgets/terrain-profile/preview-layer.js';
 import {
     BEAM_BLOCKED_COLOR,
     BEAM_FRAGMENT_SOURCE,
@@ -236,6 +250,31 @@ describe('line of sight', () => {
             curvature: false
         });
         expect(open.visible).toBe(true);
+    });
+
+    it('applies earth curvature and refraction by default', async () => {
+        const path = densifyCoordinates([[0, 0], [0, 1]], 60_000);
+        const samples = path.map((sample) => ({ ...sample, elevationM: 100 }));
+        const byDefault = evaluateLineOfSight({
+            samples,
+            observerHeightM: 2,
+            targetHeightM: 2
+        });
+        expect(byDefault.curvature).toBe(true);
+        expect(byDefault.visible).toBe(false);
+        expect(byDefault.obstruction.bulgeM).toBeGreaterThan(1);
+
+        const result = await buildLineOfSight({
+            observer: [0, 0],
+            target: [0, 1],
+            observerHeightM: 2,
+            targetHeightM: 2,
+            spacingM: 60_000,
+            sampleElevations: async (points) => points.map(() => 100)
+        });
+        expect(result.curvature).toBe(true);
+        expect(result.visible).toBe(false);
+        expect(result.obstruction.bulgeM).toBeGreaterThan(1);
     });
 
     it('applies earth curvature and refraction only when asked', () => {
@@ -525,12 +564,68 @@ describe('terrain profile elevation access', () => {
             'js/widgets/terrain-profile/engine.js',
             'js/widgets/terrain-profile/controller.js',
             'js/widgets/terrain-profile/beam-layer.js',
+            'js/widgets/terrain-profile/preview-layer.js',
             'react/widgets/TerrainProfileDialog.jsx',
             'react/widgets/mountTerrainProfileDialog.jsx'
         ].map((file) => readFileSync(join(root, file), 'utf8')).join('\n');
         expect(source).not.toMatch(/queryElevationAt/);
         expect(source).not.toMatch(/queryTerrainElevation/);
         expect(source).not.toMatch(/\.getMap\s*\(/);
+        expect(source).not.toMatch(/https?:\/\//);
+        expect(source).not.toMatch(/\.pbf/);
         expect(source).toMatch(/sampleElevations/);
+        const overlay = buildLineOfSiteOverlayFeatures([-111.5, 40.5], [-111.2, 40.55], null);
+        expect(overlay.features.map((feature) => feature.properties.label)).toEqual(['Observer', 'Target']);
+    });
+});
+
+describe('line of site session graphics', () => {
+    function createTrackedMap() {
+        const sources = new Map();
+        const layers = new Map();
+        return {
+            addSource(id, spec) {
+                sources.set(id, {
+                    type: spec.type,
+                    data: spec.data,
+                    setData(data) { this.data = data; }
+                });
+            },
+            getSource(id) { return sources.get(id) || null; },
+            removeSource(id) { sources.delete(id); },
+            addLayer(layer) { layers.set(layer.id, { ...layer }); },
+            getLayer(id) { return layers.get(id) || null; },
+            removeLayer(id) { layers.delete(id); }
+        };
+    }
+
+    it('draws magenta dots with a white ring, dark outline, and local labels', () => {
+        const map = createTrackedMap();
+        map.addSource('kept-user-layer', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+        map.addLayer({ id: 'kept-user-layer-line', type: 'line', source: 'kept-user-layer' });
+        syncLineOfSiteOverlay(map, buildLineOfSiteOverlayFeatures([-111, 40], [-110, 41], null));
+
+        const outline = map.getLayer('gis-line-of-site-overlay-outline');
+        const ring = map.getLayer('gis-line-of-site-overlay-ring');
+        const dot = map.getLayer('gis-line-of-site-overlay-dot');
+        const label = map.getLayer('gis-line-of-site-overlay-label');
+        expect(dot.paint['circle-color']).toBe(LOS_DOT_FILL);
+        expect(ring.paint['circle-color']).toBe(LOS_DOT_RING);
+        expect(outline.paint['circle-color']).toBe(LOS_DOT_OUTLINE);
+        expect(ring.paint['circle-radius']).toBe(LOS_DOT_RING_RADIUS);
+        expect(outline.paint['circle-radius']).toBe(LOS_DOT_OUTLINE_RADIUS);
+        expect(outline.paint['circle-radius']).toBeGreaterThan(ring.paint['circle-radius']);
+        expect(ring.paint['circle-radius']).toBeGreaterThan(LOS_DOT_FILL_RADIUS);
+        expect(label.layout['text-field']).toEqual(['get', 'label']);
+        expect(label.layout['text-font']).toEqual([...LOCAL_GLYPH_FONT_STACK]);
+        expect(JSON.stringify(label)).not.toMatch(/https?:\/\//);
+        const labels = map.getSource(LINE_OF_SITE_OVERLAY_SOURCE_ID).data.features.map((feature) => feature.properties.label);
+        expect(labels).toEqual(['Observer', 'Target']);
+
+        removeLineOfSiteOverlay(map);
+        expect(map.getSource(LINE_OF_SITE_OVERLAY_SOURCE_ID)).toBeNull();
+        for (const id of LINE_OF_SITE_OVERLAY_LAYER_IDS) expect(map.getLayer(id)).toBeNull();
+        expect(map.getSource('kept-user-layer')).toBeTruthy();
+        expect(map.getLayer('kept-user-layer-line')).toBeTruthy();
     });
 });

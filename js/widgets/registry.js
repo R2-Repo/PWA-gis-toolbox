@@ -116,7 +116,7 @@ export const GIS_WIDGETS = [
         tip: 'Align an image or PDF page to the map using matched control points.',
         open: openGeoreferenceRaster
     },
-    { type: 'terrain-profile', action: 'openTerrainProfile', label: 'Line of Site', icon: '⛰️', tip: 'Check line of sight between two points. Shows the terrain profile and a 3D sight beam.', requiredCapabilities: [], open: openTerrainProfile }
+    { type: 'terrain-profile', action: 'openTerrainProfile', label: 'Line of Site', icon: '⛰️', tip: 'Check line of sight between two points. Shows the terrain profile and a 3D sight beam.', badge: 'Beta', requiredCapabilities: [], open: openTerrainProfile }
 ];
 
 /**

@@ -90,6 +90,8 @@ export const FORWARDED_MAP_METHODS = new Set([
     'restoreTerrainViewState',
     'showLineOfSiteBeam',
     'removeLineOfSiteBeam',
+    'showLineOfSiteOverlay',
+    'removeLineOfSiteOverlay',
     'applyMapView',
     'playPresentationPreview',
     'cancelInteraction',

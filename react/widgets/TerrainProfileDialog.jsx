@@ -169,7 +169,6 @@ export function TerrainProfileDialog({
     const [target, setTarget] = useState(initialState?.target || null);
     const [observerHeight, setObserverHeight] = useState(String(initialState?.observerHeightM ?? 1.7));
     const [targetHeight, setTargetHeight] = useState(String(initialState?.targetHeightM ?? 0));
-    const [curvature, setCurvature] = useState(!!initialState?.curvature);
     const [picking, setPicking] = useState(false);
     const [running, setRunning] = useState(false);
     const [result, setResult] = useState(null);
@@ -210,7 +209,7 @@ export function TerrainProfileDialog({
                 observerHeightM: Number(observerHeight),
                 targetHeightM: Number(targetHeight),
                 spacingM: Number(spacing),
-                curvature
+                curvature: true
             });
             setResult(output || null);
             setProducedResult(null);
@@ -298,18 +297,6 @@ export function TerrainProfileDialog({
                     onChange={(event) => setTargetHeight(event.target.value)}
                 />
             </div>
-            <div className="form-group">
-                <label className="toggle">
-                    <input
-                        type="checkbox"
-                        checked={curvature}
-                        onChange={(event) => setCurvature(event.target.checked)}
-                    />
-                    <span className="toggle-track" />
-                    <span>Earth curvature and refraction</span>
-                </label>
-            </div>
-
             {result && stats ? (
                 <div className="form-group">
                     <label>{result.visible ? 'Visible' : 'Blocked'}</label>

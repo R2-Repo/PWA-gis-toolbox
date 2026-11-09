@@ -32,6 +32,10 @@ import {
     removeLineOfSiteBeam as removeSightBeamLayer,
     syncLineOfSiteBeam
 } from '../widgets/terrain-profile/beam-layer.js';
+import {
+    removeLineOfSiteOverlay as removeSightOverlay,
+    syncLineOfSiteOverlay
+} from '../widgets/terrain-profile/preview-layer.js';
 import { MAP_CHUNK_BATCH_SIZE, RENDER_LIMITS } from './render-limits.js';
 import { buildViewportGeoJSON } from '../workspace/viewport-loader.js';
 import { getWorkspaceFeatureAttributes, getWorkspaceLayerBounds, getWorkspaceFeaturesByIndices, scanWorkspaceFilterIndices } from '../workspace/workspace-store.js';
@@ -4305,6 +4309,15 @@ class MapManager {
 
     removeLineOfSiteBeam() {
         removeSightBeamLayer(this.map);
+    }
+
+    /** @param {{ type?: string, features?: object[] } | null | undefined} geojson */
+    showLineOfSiteOverlay(geojson) {
+        syncLineOfSiteOverlay(this.map, geojson);
+    }
+
+    removeLineOfSiteOverlay() {
+        removeSightOverlay(this.map);
     }
 
     // ==========================================

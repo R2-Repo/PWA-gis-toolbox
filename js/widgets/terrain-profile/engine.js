@@ -269,6 +269,7 @@ export async function buildElevationProfile(input) {
 }
 
 /**
+ * Curvature and standard refraction are on unless `curvature` is explicitly false.
  * @param {{ samples: object[], observerHeightM: number, targetHeightM: number, curvature?: boolean }} input
  */
 export function evaluateLineOfSight(input) {
@@ -278,7 +279,7 @@ export function evaluateLineOfSight(input) {
     }
     const observerHeightM = assertHeight(input.observerHeightM, 'Observer');
     const targetHeightM = assertHeight(input.targetHeightM, 'Target');
-    const curvature = !!input.curvature;
+    const curvature = input.curvature !== false;
     const total = samples[samples.length - 1].distanceM;
     if (!Number.isFinite(total) || total <= 0) {
         throw new Error('Line has no length.');
@@ -439,6 +440,7 @@ export function buildSightBeam(sight) {
 }
 
 /**
+ * Curvature defaults on. Pass `curvature: false` to skip earth bulge and refraction.
  * @param {{ observer: [number, number], target: [number, number], observerHeightM: number, targetHeightM: number, spacingM?: number, curvature?: boolean, sampleElevations: Function }} input
  */
 export async function buildLineOfSight(input) {
@@ -500,5 +502,32 @@ export function buildTerrainFeatureCollection(result) {
             }
         });
     }
+    return { type: 'FeatureCollection', features };
+}
+
+/**
+ * Session graphics: observer and target dots, plus the profile line when a result exists.
+ * @param {number[] | null | undefined} observer
+ * @param {number[] | null | undefined} target
+ * @param {object | null | undefined} result
+ * @returns {{ type: 'FeatureCollection', features: object[] }}
+ */
+export function buildLineOfSiteOverlayFeatures(observer, target, result) {
+    /** @type {object[]} */
+    const features = [];
+    const pushPoint = (coord, kind, label) => {
+        if (!Array.isArray(coord) || coord.length < 2) return;
+        const lng = Number(coord[0]);
+        const lat = Number(coord[1]);
+        if (!Number.isFinite(lng) || !Number.isFinite(lat)) return;
+        features.push({
+            type: 'Feature',
+            properties: { kind, label },
+            geometry: { type: 'Point', coordinates: [lng, lat] }
+        });
+    };
+    pushPoint(observer, 'observer', 'Observer');
+    pushPoint(target, 'target', 'Target');
+    if (result) features.push(...buildTerrainFeatureCollection(result).features);
     return { type: 'FeatureCollection', features };
 }

@@ -2,6 +2,7 @@ import { openReactIsland } from '../../ui/open-react-island.js';
 import { withActivity } from '../../ui/app-activity.js';
 import {
     buildLineOfSight,
+    buildLineOfSiteOverlayFeatures,
     buildTerrainFeatureCollection,
     normalizeTerrainView,
     terrainViewsMatch
@@ -44,8 +45,6 @@ function resultToast(result) {
  */
 export async function openTerrainProfile(ctx, options = {}) {
     const restoreState = options.restoreState || null;
-    /** @type {{ srcId?: string } | null} */
-    let previewEntry = null;
     const previous = await readTerrainView(ctx);
     if (!previous || !previous.is3d || !previous.terrain) {
         await ctx.mapService.enable3D?.({
@@ -56,26 +55,35 @@ export async function openTerrainProfile(ctx, options = {}) {
     }
     const owned = await readTerrainView(ctx);
 
-    const replacePreview = (geojson) => {
-        if (previewEntry?.srcId) ctx.mapService.removeTempFeature?.(previewEntry);
-        const entry = ctx.mapService.showTempFeature?.(geojson, 180000);
-        previewEntry = entry?.srcId ? entry : null;
+    const showOverlay = (observer, target, result) => {
+        const geojson = buildLineOfSiteOverlayFeatures(observer, target, result);
+        if (!geojson.features.length) {
+            ctx.mapService.removeLineOfSiteOverlay?.();
+            return;
+        }
+        ctx.mapService.showLineOfSiteOverlay?.(geojson);
     };
 
-    const closeWidget = async (close) => {
-        ctx.mapService.cancelInteraction?.();
-        ctx.mapService.removeLineOfSiteBeam?.();
-        if (previewEntry?.srcId) ctx.mapService.removeTempFeature?.(previewEntry);
-        previewEntry = null;
-        const now = await readTerrainView(ctx);
-        if (previous && owned && now && terrainViewsMatch(owned, now)) {
-            try {
-                await ctx.mapService.restoreTerrainViewState?.(previous);
-            } catch {
-                /* leave the view the user changed to */
+    let closed = false;
+    /** @type {Promise<void> | null} */
+    let closing = null;
+    const cleanup = () => {
+        if (closed) return closing;
+        closed = true;
+        closing = (async () => {
+            ctx.mapService.cancelInteraction?.();
+            ctx.mapService.removeLineOfSiteBeam?.();
+            ctx.mapService.removeLineOfSiteOverlay?.();
+            const now = await readTerrainView(ctx);
+            if (previous && owned && now && terrainViewsMatch(owned, now)) {
+                try {
+                    await ctx.mapService.restoreTerrainViewState?.(previous);
+                } catch {
+                    /* leave the view the user changed to */
+                }
             }
-        }
-        close();
+        })();
+        return closing;
     };
 
     await openReactIsland({
@@ -83,9 +91,13 @@ export async function openTerrainProfile(ctx, options = {}) {
         width: '480px',
         mountPath: '../../../react/widgets/mountTerrainProfileDialog.jsx',
         mountExport: 'mountTerrainProfileDialog',
+        onOverlayDestroy: () => cleanup(),
         getProps: (close) => ({
             initialState: restoreState,
-            onCancel: () => closeWidget(close),
+            onCancel: async () => {
+                await cleanup();
+                close();
+            },
             onSendToTarget: (targetId, result) => sendResultToTarget(ctx, targetId, result),
             onPickPoint: async (role) => {
                 ctx.mapService.cancelInteraction?.();
@@ -97,30 +109,13 @@ export async function openTerrainProfile(ctx, options = {}) {
                 return [coord[0], coord[1]];
             },
             onPreviewPoints: (observer, target) => {
-                const features = [];
-                if (Array.isArray(observer)) {
-                    features.push({
-                        type: 'Feature',
-                        properties: { kind: 'observer' },
-                        geometry: { type: 'Point', coordinates: observer }
-                    });
-                }
-                if (Array.isArray(target)) {
-                    features.push({
-                        type: 'Feature',
-                        properties: { kind: 'target' },
-                        geometry: { type: 'Point', coordinates: target }
-                    });
-                }
-                if (!features.length) return;
-                replacePreview({ type: 'FeatureCollection', features });
+                showOverlay(observer, target, null);
             },
             onRun: (input) => withActivity('Sampling elevation…', async () => {
                 const sampleElevations = (points) => sampleElevationsFromMap(ctx, points);
                 try {
-                    const result = await buildLineOfSight({ ...input, sampleElevations });
-                    const geojson = buildTerrainFeatureCollection(result);
-                    if (geojson.features.length) replacePreview(geojson);
+                    const result = await buildLineOfSight({ ...input, curvature: true, sampleElevations });
+                    showOverlay(input?.observer, input?.target, result);
                     ctx.mapService.showLineOfSiteBeam?.(result.beam);
                     const empty = !result.stats?.validCount;
                     ctx.showToast?.(resultToast(result), empty || !result.visible ? 'warning' : 'success');
