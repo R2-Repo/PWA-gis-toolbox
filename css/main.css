@@ -1809,6 +1809,16 @@ textarea { resize: vertical; min-height: 60px; }
     max-height: calc(100vh - var(--header-h) - 32px);
     z-index: 1001;
 }
+/* Dual Screen: dialogs sit in the primary map column, not over the side panels */
+.modal-overlay--docked.modal-overlay--map-stage {
+    align-items: center;
+    justify-content: center;
+}
+.modal-overlay--map-stage .modal {
+    min-width: 0;
+    max-width: calc(100% - 16px);
+    max-height: calc(100% - 16px);
+}
 .modal-overlay--panel-dock {
     position: static;
     display: block;

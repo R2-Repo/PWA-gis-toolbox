@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef } from 'react';
 import { dismissModal, triggerProgressCancel } from '../../js/ui/modals.js';
 import { formatBytes } from '../../js/import/import-preflight.js';
 import { DockedWidgetModal } from './DockedWidgetModal.jsx';
+import { mapStageStyle, useDualScreenMapStage } from './useDualScreenMapStage.js';
 
 function BasicModal({ modal }) {
     const overlayRef = useRef(null);
@@ -15,6 +16,8 @@ function BasicModal({ modal }) {
         : modal.options?.layer === 'deferred'
             ? 'modal-overlay--deferred'
             : '';
+    const { box: mapStageBox } = useDualScreenMapStage(modal.options?.layer !== 'splash');
+    const stageClass = mapStageBox ? ' modal-overlay--map-stage' : '';
 
     const close = (result = null) => dismissModal(modal.id, result);
 
@@ -42,7 +45,8 @@ function BasicModal({ modal }) {
     return (
         <div
             ref={overlayRef}
-            className={`modal-overlay${layerClass ? ` ${layerClass}` : ''}`}
+            className={`modal-overlay${layerClass ? ` ${layerClass}` : ''}${stageClass}`}
+            style={mapStageStyle(mapStageBox)}
             onMouseDown={(e) => { mouseDownTargetRef.current = e.target; }}
             onClick={(e) => {
                 if (e.target === overlayRef.current && mouseDownTargetRef.current === overlayRef.current) {
@@ -89,9 +93,13 @@ function ProgressModal({ progress }) {
     const batchLabel = progress.fileCount > 1 && progress.fileIndex != null
         ? `${batchUnit} ${progress.fileIndex + 1} of ${progress.fileCount}`
         : null;
+    const { box: mapStageBox } = useDualScreenMapStage();
 
     return (
-        <div className="modal-overlay">
+        <div
+            className={`modal-overlay${mapStageBox ? ' modal-overlay--map-stage' : ''}`}
+            style={mapStageStyle(mapStageBox)}
+        >
             <div className="modal" style={{ width: '400px' }}>
                 <div className="modal-header">
                     <span>{progress.title}</span>

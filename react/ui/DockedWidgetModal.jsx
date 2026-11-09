@@ -1,7 +1,7 @@
 import { memo, useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import dualScreenCoordinator from '../../js/dual-screen/coordinator.js';
 import { dismissModal } from '../../js/ui/modals.js';
+import { mapStageStyle, useDualScreenMapStage } from './useDualScreenMapStage.js';
 import {
     clampWidgetModalPosition,
     computeWidgetDockHeights,
@@ -93,9 +93,7 @@ export function DockedWidgetModal({ modal }) {
     const dragRef = useRef(null);
     const [{ dockEl, modalHostEl }, setPortalTargets] = useState(queryPortalTargets);
     const [undocked, setUndocked] = useState(false);
-    const [dualScreenActive, setDualScreenActive] = useState(
-        () => dualScreenCoordinator.isActive
-    );
+    const { active: dualScreenActive, box: mapStageBox } = useDualScreenMapStage();
     const [panelDockAvailable, setPanelDockAvailable] = useState(
         () => isRightPanelDockAvailable()
     );
@@ -109,9 +107,9 @@ export function DockedWidgetModal({ modal }) {
 
     const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
     const width = isMobile ? '96vw' : (modal.options?.width || '600px');
-    // The main map is hidden while Dual Screen is on. Keep widgets in the right-panel dock
-    // so they stay visible. Floating them waits on a one-shot placement frame that can miss.
-    const usePanelDock = !undocked && panelDockAvailable && !!dockEl;
+    // Dual Screen hides the main map. Open panel dialogs in that column instead of over the side panels.
+    const usePanelDock = !dualScreenActive && !undocked && panelDockAvailable && !!dockEl;
+    const centerStage = dualScreenActive && !usePanelDock;
     const portalTarget = usePanelDock ? dockEl : modalHostEl;
 
     const close = useCallback((result = null) => dismissModal(modal.id, result), [modal.id]);
@@ -125,7 +123,10 @@ export function DockedWidgetModal({ modal }) {
 
     const updateDockHeights = useCallback(() => {
         const panelHeight = getRightPanelBodyHeight();
-        setDockHeights(computeWidgetDockHeights(panelHeight, { fillPanel }));
+        const next = computeWidgetDockHeights(panelHeight, { fillPanel });
+        setDockHeights((prev) => (
+            prev.expandedMax === next.expandedMax && prev.halfMax === next.halfMax ? prev : next
+        ));
     }, [fillPanel]);
 
     const scheduleReserveRefresh = useCallback(() => {
@@ -133,11 +134,15 @@ export function DockedWidgetModal({ modal }) {
     }, []);
 
     useEffect(() => {
-        setPortalTargets(queryPortalTargets());
+        setPortalTargets((prev) => {
+            const next = queryPortalTargets();
+            if (prev.dockEl === next.dockEl && prev.modalHostEl === next.modalHostEl) return prev;
+            return next;
+        });
     }, []);
 
     useEffect(() => {
-        if (usePanelDock) return undefined;
+        if (usePanelDock || centerStage) return undefined;
         let cancelled = false;
         let frame = 0;
         let tries = 0;
@@ -155,23 +160,33 @@ export function DockedWidgetModal({ modal }) {
             cancelled = true;
             cancelAnimationFrame(frame);
         };
-    }, [usePanelDock, dualScreenActive, applyFloatingPlacement, modal.id]);
+    }, [usePanelDock, centerStage, dualScreenActive, applyFloatingPlacement, modal.id]);
 
+    const wasDualScreenRef = useRef(dualScreenActive);
     useEffect(() => {
-        const onDualScreenChange = (active) => {
-            setDualScreenActive(active);
-            if (!active && !userMovedRef.current) setUndocked(false);
-            if (userMovedRef.current || !isRightPanelDockAvailable()) {
-                requestAnimationFrame(() => applyFloatingPlacement(active));
-            }
-        };
-        return dualScreenCoordinator.onStateChange(onDualScreenChange);
-    }, [applyFloatingPlacement]);
+        if (wasDualScreenRef.current === dualScreenActive) return;
+        wasDualScreenRef.current = dualScreenActive;
+        if (dualScreenActive) {
+            userMovedRef.current = false;
+            setPosition(null);
+            setUndocked(false);
+            return;
+        }
+        if (!userMovedRef.current) {
+            setUndocked(false);
+            setPosition(null);
+        }
+    }, [dualScreenActive]);
 
     useEffect(() => {
         const refreshPanelDock = () => {
-            setPanelDockAvailable(isRightPanelDockAvailable());
-            setPortalTargets(queryPortalTargets());
+            const available = isRightPanelDockAvailable();
+            setPanelDockAvailable((prev) => (prev === available ? prev : available));
+            setPortalTargets((prev) => {
+                const next = queryPortalTargets();
+                if (prev.dockEl === next.dockEl && prev.modalHostEl === next.modalHostEl) return prev;
+                return next;
+            });
             updateDockHeights();
         };
 
@@ -193,10 +208,13 @@ export function DockedWidgetModal({ modal }) {
     }, [updateDockHeights]);
 
     useEffect(() => {
-        if (!usePanelDock) {
-            refreshWidgetPanelDockReserve();
-            return undefined;
-        }
+        if (usePanelDock) return undefined;
+        refreshWidgetPanelDockReserve();
+        return undefined;
+    }, [usePanelDock]);
+
+    useEffect(() => {
+        if (!usePanelDock) return undefined;
 
         const modalEl = modalRef.current;
         if (!modalEl) return undefined;
@@ -219,6 +237,7 @@ export function DockedWidgetModal({ modal }) {
         if (!modalEl || typeof ResizeObserver === 'undefined' || usePanelDock) return undefined;
 
         const observer = new ResizeObserver(() => {
+            if (dualScreenActive && !userMovedRef.current) return;
             if (!userMovedRef.current) {
                 applyFloatingPlacement(dualScreenActive);
                 return;
@@ -243,7 +262,7 @@ export function DockedWidgetModal({ modal }) {
 
     useEffect(() => {
         const onResize = () => {
-            if (usePanelDock) return;
+            if (usePanelDock || (dualScreenActive && !userMovedRef.current)) return;
             const modalEl = modalRef.current;
             if (!modalEl) return;
             setPosition((prev) => {
@@ -332,6 +351,10 @@ export function DockedWidgetModal({ modal }) {
                 });
                 drag.originLeft = startRect.left;
                 drag.originTop = startRect.top;
+            } else if (!drag.markedMoved) {
+                drag.markedMoved = true;
+                userMovedRef.current = true;
+                setUndocked(true);
             }
 
             const { width: modalWidth, height: modalHeight } = measureModal(modalEl);
@@ -366,10 +389,24 @@ export function DockedWidgetModal({ modal }) {
         }
         : undefined;
 
+    const centerLimits = centerStage
+        ? {
+            maxWidth: 'calc(100% - 16px)',
+            maxHeight: mapStageBox
+                ? `${Math.max(160, Math.round(mapStageBox.height) - 16)}px`
+                : 'calc(100% - 16px)',
+            minWidth: 0,
+            ...(fillPanel && !position && mapStageBox
+                ? { height: `${Math.max(160, Math.round(mapStageBox.height) - 16)}px` }
+                : {})
+        }
+        : null;
+
     const floatingStyle = usePanelDock
         ? panelDockStyle
         : {
             width,
+            ...centerLimits,
             ...(position
                 ? {
                     position: 'fixed',
@@ -377,13 +414,16 @@ export function DockedWidgetModal({ modal }) {
                     top: `${position.top}px`,
                     margin: 0
                 }
-                : { visibility: 'hidden' })
+                : centerStage
+                    ? {}
+                    : { visibility: 'hidden' })
         };
 
     const content = (
         <div
             ref={overlayRef}
-            className={`modal-overlay ${usePanelDock ? 'modal-overlay--panel-dock' : 'modal-overlay--docked'}`}
+            className={`modal-overlay ${usePanelDock ? 'modal-overlay--panel-dock' : 'modal-overlay--docked'}${centerStage ? ' modal-overlay--map-stage' : ''}`}
+            style={centerStage ? mapStageStyle(mapStageBox) : undefined}
         >
             <div
                 ref={modalRef}
