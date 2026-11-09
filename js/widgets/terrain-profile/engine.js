@@ -531,3 +531,227 @@ export function buildLineOfSiteOverlayFeatures(observer, target, result) {
     if (result) features.push(...buildTerrainFeatureCollection(result).features);
     return { type: 'FeatureCollection', features };
 }
+
+/** Names of the project layers created by Add to map. */
+export const LOS_ADDED_LAYER_NAMES = {
+    visible: 'Line of Site visible',
+    blocked: 'Line of Site blocked',
+    endpoints: 'Line of Site observer and target',
+    obstruction: 'Line of Site obstruction',
+    profile: 'Line of Site terrain profile'
+};
+
+function lineStringFromPoints(points, altitudeKey) {
+    const coordinates = [];
+    for (const point of points || []) {
+        const lng = Number(point?.lng);
+        const lat = Number(point?.lat);
+        if (!Number.isFinite(lng) || !Number.isFinite(lat)) continue;
+        const z = finiteOrNull(point?.[altitudeKey]);
+        coordinates.push(z == null ? [lng, lat] : [lng, lat, z]);
+    }
+    return coordinates.length >= 2 ? { type: 'LineString', coordinates } : null;
+}
+
+/**
+ * Clearance is sight-line altitude minus effective terrain (ground plus bulge).
+ * Positive clears. Negative is how far the terrain blocks the sight line.
+ * @param {object | null | undefined} result
+ * @returns {Array<number | null>}
+ */
+function clearanceSeries(result) {
+    const samples = result?.samples || [];
+    if (samples.length < 2) return [];
+    const total = Number(samples[samples.length - 1].distanceM);
+    const start = Number(result?.observerAbsoluteM);
+    const end = Number(result?.targetAbsoluteM);
+    if (!Number.isFinite(total) || total <= 0 || !Number.isFinite(start) || !Number.isFinite(end)) {
+        return samples.map(() => null);
+    }
+    return samples.map((sample) => {
+        const effective = finiteOrNull(sample?.effectiveM);
+        if (effective == null) return null;
+        const distance = Number(sample.distanceM) || 0;
+        return start + ((distance / total) * (end - start)) - effective;
+    });
+}
+
+function minFinite(values) {
+    let min = null;
+    for (const value of values || []) {
+        if (typeof value !== 'number' || !Number.isFinite(value)) continue;
+        if (min == null || value < min) min = value;
+    }
+    return min;
+}
+
+function resultAttributes(result, overrides = {}) {
+    const stats = result?.stats || {};
+    const distance = Number.isFinite(stats.totalDistanceM) ? stats.totalDistanceM : null;
+    return {
+        distanceM: distance,
+        totalDistanceM: distance,
+        observerHeightM: finiteOrNull(result?.observerHeightM),
+        targetHeightM: finiteOrNull(result?.targetHeightM),
+        observerAbsoluteM: finiteOrNull(result?.observerAbsoluteM),
+        targetAbsoluteM: finiteOrNull(result?.targetAbsoluteM),
+        visible: result?.visible ? 'yes' : 'no',
+        clearanceM: null,
+        curvature: !!result?.curvature,
+        minM: stats.min ?? null,
+        maxM: stats.max ?? null,
+        gainM: stats.gain ?? null,
+        lossM: stats.loss ?? null,
+        gapCount: stats.gapCount ?? null,
+        validCount: stats.validCount ?? null,
+        ...overrides
+    };
+}
+
+function featureCollection(features) {
+    return { type: 'FeatureCollection', features };
+}
+
+/**
+ * Project layers for every map graphic the widget draws.
+ * The dialog chart uses the same beam, terrain profile, and obstruction.
+ * @param {object | null | undefined} result
+ * @returns {{ role: string, name: string, geojson: { type: 'FeatureCollection', features: object[] } }[]}
+ */
+export function buildLineOfSiteMapLayers(result) {
+    if (!result || result.mode !== 'los') return [];
+    const samples = Array.isArray(result.samples) ? result.samples : [];
+    if (samples.length < 2) return [];
+    const beam = (result.beam?.visible?.length || result.beam?.blocked?.length)
+        ? result.beam
+        : buildSightBeam(result);
+    const series = clearanceSeries(result);
+    const cut = result.obstruction?.index;
+    const hasCut = Number.isInteger(cut) && cut > 0 && cut < samples.length - 1;
+    const overallClearance = hasCut && result.obstruction
+        && Number.isFinite(result.obstruction.losM)
+        && Number.isFinite(result.obstruction.effectiveM)
+        ? result.obstruction.losM - result.obstruction.effectiveM
+        : minFinite(series);
+    /** @type {{ role: string, name: string, geojson: { type: 'FeatureCollection', features: object[] } }[]} */
+    const layers = [];
+
+    const profile = lineStringFromPoints(samples, 'elevationM');
+    if (profile) {
+        layers.push({
+            role: 'profile',
+            name: LOS_ADDED_LAYER_NAMES.profile,
+            geojson: featureCollection([{
+                type: 'Feature',
+                properties: resultAttributes(result, {
+                    kind: 'profile',
+                    clearanceM: overallClearance
+                }),
+                geometry: profile
+            }])
+        });
+    }
+
+    const visibleLine = lineStringFromPoints(beam?.visible, 'altitudeM');
+    if (visibleLine) {
+        const visiblePoints = beam.visible;
+        layers.push({
+            role: 'beam-visible',
+            name: LOS_ADDED_LAYER_NAMES.visible,
+            geojson: featureCollection([{
+                type: 'Feature',
+                properties: resultAttributes(result, {
+                    kind: 'beam-visible',
+                    visible: 'yes',
+                    clearanceM: minFinite(hasCut ? series.slice(0, cut) : series),
+                    startAltitudeM: finiteOrNull(visiblePoints[0]?.altitudeM),
+                    endAltitudeM: finiteOrNull(visiblePoints[visiblePoints.length - 1]?.altitudeM)
+                }),
+                geometry: visibleLine
+            }])
+        });
+    }
+
+    const blockedLine = lineStringFromPoints(beam?.blocked, 'altitudeM');
+    if (blockedLine) {
+        const blockedPoints = beam.blocked;
+        layers.push({
+            role: 'beam-blocked',
+            name: LOS_ADDED_LAYER_NAMES.blocked,
+            geojson: featureCollection([{
+                type: 'Feature',
+                properties: resultAttributes(result, {
+                    kind: 'beam-blocked',
+                    visible: 'no',
+                    clearanceM: minFinite(hasCut ? series.slice(cut) : series),
+                    startAltitudeM: finiteOrNull(blockedPoints[0]?.altitudeM),
+                    endAltitudeM: finiteOrNull(blockedPoints[blockedPoints.length - 1]?.altitudeM)
+                }),
+                geometry: blockedLine
+            }])
+        });
+    }
+
+    const endpoints = [];
+    const pushEndpoint = (sample, label, kind, distanceM, clearanceM) => {
+        const lng = Number(sample?.lng);
+        const lat = Number(sample?.lat);
+        if (!Number.isFinite(lng) || !Number.isFinite(lat)) return;
+        endpoints.push({
+            type: 'Feature',
+            properties: resultAttributes(result, {
+                kind,
+                label,
+                distanceM,
+                clearanceM,
+                elevationM: finiteOrNull(sample.elevationM)
+            }),
+            geometry: { type: 'Point', coordinates: [lng, lat] }
+        });
+    };
+    const total = Number(samples[samples.length - 1].distanceM);
+    pushEndpoint(samples[0], 'Observer', 'observer', 0, series[0] ?? null);
+    pushEndpoint(
+        samples[samples.length - 1],
+        'Target',
+        'target',
+        Number.isFinite(total) ? total : null,
+        series[series.length - 1] ?? null
+    );
+    if (endpoints.length) {
+        layers.push({
+            role: 'endpoints',
+            name: LOS_ADDED_LAYER_NAMES.endpoints,
+            geojson: featureCollection(endpoints)
+        });
+    }
+
+    const obstruction = result.obstruction;
+    if (obstruction && Number.isFinite(obstruction.lng) && Number.isFinite(obstruction.lat)) {
+        layers.push({
+            role: 'obstruction',
+            name: LOS_ADDED_LAYER_NAMES.obstruction,
+            geojson: featureCollection([{
+                type: 'Feature',
+                properties: resultAttributes(result, {
+                    kind: 'obstruction',
+                    visible: 'no',
+                    distanceM: Number.isFinite(obstruction.distanceM) ? obstruction.distanceM : null,
+                    clearanceM: Number.isFinite(obstruction.losM) && Number.isFinite(obstruction.effectiveM)
+                        ? obstruction.losM - obstruction.effectiveM
+                        : null,
+                    elevationM: finiteOrNull(obstruction.elevationM),
+                    effectiveM: finiteOrNull(obstruction.effectiveM),
+                    losM: finiteOrNull(obstruction.losM),
+                    bulgeM: finiteOrNull(obstruction.bulgeM)
+                }),
+                geometry: {
+                    type: 'Point',
+                    coordinates: [obstruction.lng, obstruction.lat]
+                }
+            }])
+        });
+    }
+
+    return layers;
+}

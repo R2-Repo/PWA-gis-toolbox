@@ -13,7 +13,7 @@ import { createMessage, MessageType } from '../js/dual-screen/protocol.js';
 import { GIS_WIDGETS } from '../js/widgets/registry.js';
 import { TerrainProfileDialog } from '../react/widgets/TerrainProfileDialog.jsx';
 import { WidgetPanel } from '../react/panels/WidgetPanel.jsx';
-import { buildLineOfSight } from '../js/widgets/terrain-profile/engine.js';
+import { buildLineOfSight, LOS_ADDED_LAYER_NAMES } from '../js/widgets/terrain-profile/engine.js';
 import { LOCAL_GLYPH_FONT_STACK } from '../js/map/local-glyphs.js';
 import {
     LINE_OF_SITE_OVERLAY_SOURCE_ID,
@@ -82,6 +82,8 @@ describe('Line of Site widget', () => {
 
         expect(button(container, 'Elevation profile')).toBeUndefined();
         expect(button(container, 'Draw line')).toBeUndefined();
+        expect(container.textContent).not.toContain('Send to');
+        expect(button(container, 'Add to map').disabled).toBe(true);
         await clickButton(container, 'Pick observer');
         await clickButton(container, 'Pick target');
         await clickButton(container, 'Run');
@@ -99,6 +101,49 @@ describe('Line of Site widget', () => {
         expect(chart.querySelector('polyline[stroke="#00e040"]')).toBeTruthy();
         expect(chart.querySelector('polyline[stroke-dasharray]')).toBeNull();
         expect(chart.getAttribute('aria-label')).toContain('Line of Site');
+        expect(container.textContent).not.toContain('Send to');
+        expect(button(container, 'Add to map').disabled).toBe(false);
+
+        root.unmount();
+        container.remove();
+    });
+
+    it('enables Add to map only after Run and ignores a second click', async () => {
+        const container = document.createElement('div');
+        document.body.appendChild(container);
+        const root = createRoot(container);
+        let role = 'observer';
+        const onAddLayer = vi.fn(async () => ({ layers: [{ id: 'added' }] }));
+        await act(async () => {
+            root.render(h(TerrainProfileDialog, {
+                onCancel: () => {},
+                onPickPoint: async () => {
+                    const coord = role === 'observer' ? [0, 0] : [0.002, 0];
+                    role = 'target';
+                    return coord;
+                },
+                onPreviewPoints: () => {},
+                onRun: async (input) => buildLineOfSight({
+                    ...input,
+                    sampleElevations: async (points) => points.map(() => 100)
+                }),
+                onAddLayer
+            }));
+        });
+
+        expect(container.textContent).not.toContain('Send to');
+        expect(button(container, 'Add to map').disabled).toBe(true);
+        await clickButton(container, 'Add to map');
+        expect(onAddLayer).not.toHaveBeenCalled();
+        await clickButton(container, 'Pick observer');
+        await clickButton(container, 'Pick target');
+        expect(button(container, 'Add to map').disabled).toBe(true);
+        await clickButton(container, 'Run');
+        expect(button(container, 'Add to map').disabled).toBe(false);
+        await clickButton(container, 'Add to map');
+        await clickButton(container, 'Add to map');
+        expect(onAddLayer).toHaveBeenCalledTimes(1);
+        expect(button(container, 'Add to map').disabled).toBe(true);
 
         root.unmount();
         container.remove();
@@ -167,11 +212,12 @@ describe('Line of Site widget', () => {
                 removeLineOfSiteBeam: vi.fn()
             },
             showToast: vi.fn(),
-            createSpatialDataset: vi.fn((name, geojson) => ({ id: 'los-1', name, geojson })),
+            createSpatialDataset: vi.fn((name, geojson) => ({ id: `los-${layers.length + 1}`, name, geojson })),
             addLayer: vi.fn((dataset) => layers.push(dataset)),
             getLayers: () => layers,
             refreshUI: vi.fn()
         };
+        ctx.mapService.setLayerStyle = vi.fn();
 
         await openTerrainProfile(ctx);
         const props = island.getProps(() => {});
@@ -205,9 +251,35 @@ describe('Line of Site widget', () => {
         expect(ctx.mapService.getMap).toBeUndefined();
 
         const produced = props.onAddLayer(result);
-        expect(produced.sourceId).toBe('terrain-profile');
-        expect(produced.outputs[0].name).toBe('profile');
-        expect(layers[0].geojson.features.some((feature) => feature.geometry.type === 'Point')).toBe(true);
+        const byName = Object.fromEntries(produced.layers.map((dataset) => [dataset.name, dataset]));
+        expect(byName[LOS_ADDED_LAYER_NAMES.visible].geojson.features[0].geometry.type).toBe('LineString');
+        expect(byName[LOS_ADDED_LAYER_NAMES.visible].geojson.features[0].properties.visible).toBe('yes');
+        expect(byName[LOS_ADDED_LAYER_NAMES.blocked].geojson.features[0].properties.visible).toBe('no');
+        expect(byName[LOS_ADDED_LAYER_NAMES.blocked].geojson.features[0].properties.clearanceM).toBeLessThan(0);
+        expect(byName[LOS_ADDED_LAYER_NAMES.endpoints].geojson.features.map((feature) => feature.properties.label))
+            .toEqual(['Observer', 'Target']);
+        expect(byName[LOS_ADDED_LAYER_NAMES.obstruction].geojson.features[0].geometry.type).toBe('Point');
+        expect(byName[LOS_ADDED_LAYER_NAMES.profile].geojson.features[0].properties.kind).toBe('profile');
+        for (const dataset of produced.layers) {
+            const propsOnFeature = dataset.geojson.features[0].properties;
+            expect(propsOnFeature.observerHeightM).toBe(1.7);
+            expect(propsOnFeature.targetHeightM).toBe(0);
+            expect(propsOnFeature).toHaveProperty('distanceM');
+            expect(propsOnFeature).toHaveProperty('clearanceM');
+            expect(['yes', 'no']).toContain(propsOnFeature.visible);
+        }
+        const styles = Object.fromEntries(ctx.mapService.setLayerStyle.mock.calls.map((call) => {
+            const dataset = produced.layers.find((entry) => entry.id === call[0]);
+            return [dataset.name, call[1]];
+        }));
+        expect(styles[LOS_ADDED_LAYER_NAMES.visible].strokeColor).toBe('#00e040');
+        expect(styles[LOS_ADDED_LAYER_NAMES.blocked].strokeColor).toBe('#ff2d1a');
+        expect(styles[LOS_ADDED_LAYER_NAMES.profile].strokeColor).toBe('#d4a24e');
+        expect(styles[LOS_ADDED_LAYER_NAMES.endpoints].fillColor).toBe(LOS_DOT_FILL);
+        expect(styles[LOS_ADDED_LAYER_NAMES.endpoints].labels.field).toBe('label');
+        expect(styles[LOS_ADDED_LAYER_NAMES.obstruction].fillColor).toBe('#ff2d1a');
+        expect(ctx.mapService.addLayer).toHaveBeenCalledTimes(produced.layers.length);
+        expect(produced.layers).toHaveLength(5);
     });
 
     it('enables terrain on open and restores the previous view when it is unchanged', async () => {
@@ -325,15 +397,18 @@ function seedUserLayer(map, id = 'kept-user-layer') {
     map.addLayer({ id: `${id}-line`, type: 'line', source: id });
 }
 
-function assertSessionCleared(map, service, getMapCalls) {
+function assertSessionCleared(map, service, getMapCalls, layers) {
     expect(map.getSource(LINE_OF_SITE_OVERLAY_SOURCE_ID)).toBeNull();
     expect(map.getLayer('gis-line-of-site-overlay-dot')).toBeNull();
     expect(map.getLayer('gis-line-of-site-overlay-label')).toBeNull();
     expect(map.getLayer('gis-line-of-site-beam')).toBeNull();
     expect(map.getSource('kept-user-layer')).toBeTruthy();
     expect(map.getLayer('kept-user-layer-line')).toBeTruthy();
-    expect(map.getSource('los-added')).toBeTruthy();
-    expect(map.getLayer('los-added-line')).toBeTruthy();
+    expect(layers.length).toBeGreaterThan(1);
+    for (const dataset of layers) {
+        expect(map.getSource(dataset.id)?.data).toEqual(dataset.geojson);
+        expect(map.getLayer(`${dataset.id}-line`)).toBeTruthy();
+    }
     expect(service.removeLayer).not.toHaveBeenCalled();
     expect(getMapCalls).toBe(0);
 }
@@ -359,6 +434,7 @@ function losService(map) {
             map.addSource(dataset.id, { type: 'geojson', data: dataset.geojson });
             map.addLayer({ id: `${dataset.id}-line`, type: 'line', source: dataset.id });
         }),
+        setLayerStyle: vi.fn(),
         removeLayer: vi.fn(),
         getMap() { getMapCalls += 1; return null; },
         sampleElevations: vi.fn(async (points) => points.map((_, index) => (
@@ -375,7 +451,8 @@ async function openPaintedLos(map, service) {
     const ctx = {
         mapService: service,
         showToast: vi.fn(),
-        createSpatialDataset: vi.fn((name, geojson) => ({ id: 'los-added', name, geojson })),
+        addedLayers: layers,
+        createSpatialDataset: vi.fn((name, geojson) => ({ id: `los-added-${layers.length + 1}`, name, geojson })),
         addLayer: vi.fn((dataset) => layers.push(dataset)),
         getLayers: () => layers,
         refreshUI: vi.fn()
@@ -400,7 +477,7 @@ describe('Line of Site close paths', () => {
         const map = createTrackedMap();
         seedUserLayer(map);
         const built = losService(map);
-        const { island } = await openPaintedLos(map, built.service);
+        const { island, ctx } = await openPaintedLos(map, built.service);
         expect(map.getSource(LINE_OF_SITE_OVERLAY_SOURCE_ID)).toBeTruthy();
         expect(map.getLayer('gis-line-of-site-overlay-dot').paint['circle-color']).toBe(LOS_DOT_FILL);
         expect(map.getLayer('gis-line-of-site-overlay-ring').paint['circle-color']).toBe(LOS_DOT_RING);
@@ -409,7 +486,7 @@ describe('Line of Site close paths', () => {
         let closed = false;
         await island.getProps(() => { closed = true; }).onCancel();
         expect(closed).toBe(true);
-        assertSessionCleared(map, built.service, built.getMapCalls());
+        assertSessionCleared(map, built.service, built.getMapCalls(), ctx.addedLayers);
         expect(built.service.restoreTerrainViewState).toHaveBeenCalledWith(losView);
     });
 
@@ -417,9 +494,9 @@ describe('Line of Site close paths', () => {
         const map = createTrackedMap();
         seedUserLayer(map);
         const built = losService(map);
-        const { island } = await openPaintedLos(map, built.service);
+        const { island, ctx } = await openPaintedLos(map, built.service);
         await island.onOverlayDestroy();
-        assertSessionCleared(map, built.service, built.getMapCalls());
+        assertSessionCleared(map, built.service, built.getMapCalls(), ctx.addedLayers);
         expect(built.service.restoreTerrainViewState).toHaveBeenCalledWith(losView);
     });
 });
@@ -486,6 +563,7 @@ describe('Line of Site close through the dual-screen bridge', () => {
         seedUserLayer(popupMap);
         const states = [losView, losView, losView];
         let n = 0;
+        const popupStyles = new Map();
         const popup = {
             captureTerrainViewState: () => states[Math.min(n++, states.length - 1)],
             sampleElevations: (points) => points.map(() => 80),
@@ -495,6 +573,7 @@ describe('Line of Site close through the dual-screen bridge', () => {
             removeLineOfSiteBeam: () => {
                 if (popupMap.getLayer('gis-line-of-site-beam')) popupMap.removeLayer('gis-line-of-site-beam');
             },
+            setLayerStyle: (id, style) => { popupStyles.set(id, style); },
             addLayer: (dataset) => {
                 popupMap.addSource(dataset.id, { type: 'geojson', data: dataset.geojson });
                 popupMap.addLayer({ id: `${dataset.id}-line`, type: 'line', source: dataset.id });
@@ -533,12 +612,32 @@ describe('Line of Site close through the dual-screen bridge', () => {
 
         expect(classifyMapMethod('showLineOfSiteOverlay')).toBe('forward');
         expect(classifyMapMethod('removeLineOfSiteOverlay')).toBe('forward');
+        expect(classifyMapMethod('setLayerStyle')).toBe('forward');
+        expect(classifyMapMethod('addLayer')).toBe('forward');
 
         const { island, ctx } = await openPaintedLos(localMap, built.service);
         expect(localMap.getSource(LINE_OF_SITE_OVERLAY_SOURCE_ID)).toBeNull();
         expect(popupMap.getSource(LINE_OF_SITE_OVERLAY_SOURCE_ID)).toBeTruthy();
         expect(popupMap.getLayer('gis-line-of-site-overlay-label').layout['text-font']).toEqual([...LOCAL_GLYPH_FONT_STACK]);
-        expect(popupMap.getSource('los-added')).toBeTruthy();
+        const names = ctx.addedLayers.map((dataset) => dataset.name);
+        expect(names).toEqual(expect.arrayContaining([
+            LOS_ADDED_LAYER_NAMES.visible,
+            LOS_ADDED_LAYER_NAMES.endpoints,
+            LOS_ADDED_LAYER_NAMES.profile
+        ]));
+        expect(names).not.toContain(LOS_ADDED_LAYER_NAMES.blocked);
+        for (const dataset of ctx.addedLayers) {
+            expect(popupMap.getSource(dataset.id)?.data).toEqual(dataset.geojson);
+            expect(popupMap.getLayer(`${dataset.id}-line`)).toBeTruthy();
+            expect(localMap.getSource(dataset.id)).toBeNull();
+            expect(popupStyles.has(dataset.id)).toBe(true);
+        }
+        const visible = ctx.addedLayers.find((dataset) => dataset.name === LOS_ADDED_LAYER_NAMES.visible);
+        const endpoints = ctx.addedLayers.find((dataset) => dataset.name === LOS_ADDED_LAYER_NAMES.endpoints);
+        expect(visible.geojson.features[0].properties.visible).toBe('yes');
+        expect(popupStyles.get(visible.id).strokeColor).toBe('#00e040');
+        expect(popupStyles.get(endpoints.id).fillColor).toBe(LOS_DOT_FILL);
+        expect(popupStyles.get(endpoints.id).labels.field).toBe('label');
 
         await island.getProps(() => {}).onCancel();
 
@@ -547,10 +646,12 @@ describe('Line of Site close through the dual-screen bridge', () => {
         expect(popupMap.getLayer('gis-line-of-site-overlay-dot')).toBeNull();
         expect(popupMap.getLayer('gis-line-of-site-overlay-label')).toBeNull();
         expect(popupMap.getSource('kept-user-layer')).toBeTruthy();
-        expect(popupMap.getSource('los-added')).toBeTruthy();
-        expect(popupMap.getLayer('los-added-line')).toBeTruthy();
+        for (const dataset of ctx.addedLayers) {
+            expect(popupMap.getSource(dataset.id)).toBeTruthy();
+            expect(popupMap.getLayer(`${dataset.id}-line`)).toBeTruthy();
+            expect(localMap.getSource(dataset.id)).toBeNull();
+        }
         expect(popup.removeLayer).not.toHaveBeenCalled();
-        expect(localMap.getSource('los-added')).toBeNull();
         expect(getMapCalls).toBe(0);
         expect(ctx.mapService.getMap).toBeTypeOf('function');
     });

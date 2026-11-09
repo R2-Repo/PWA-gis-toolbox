@@ -13,8 +13,10 @@ import {
     buildElevationProfile,
     buildLineOfSight,
     buildSightBeam,
+    buildLineOfSiteMapLayers,
     buildLineOfSiteOverlayFeatures,
     buildTerrainFeatureCollection,
+    LOS_ADDED_LAYER_NAMES,
     densifyCoordinates,
     earthBulgeMeters,
     evaluateLineOfSight,
@@ -334,6 +336,31 @@ describe('line of sight', () => {
         expect(point.properties.kind).toBe('obstruction');
         expect(point.geometry.coordinates).toEqual([result.obstruction.lng, result.obstruction.lat]);
         expect(geojson.features.some((feature) => feature.geometry.type === 'LineString')).toBe(true);
+
+        const layers = buildLineOfSiteMapLayers(result);
+        const byName = Object.fromEntries(layers.map((layer) => [layer.name, layer]));
+        const visible = byName[LOS_ADDED_LAYER_NAMES.visible].geojson.features[0];
+        const blocked = byName[LOS_ADDED_LAYER_NAMES.blocked].geojson.features[0];
+        const endpoints = byName[LOS_ADDED_LAYER_NAMES.endpoints].geojson.features;
+        const obstruction = byName[LOS_ADDED_LAYER_NAMES.obstruction].geojson.features[0];
+        const profile = byName[LOS_ADDED_LAYER_NAMES.profile].geojson.features[0];
+        expect(visible.geometry.type).toBe('LineString');
+        expect(visible.properties.visible).toBe('yes');
+        expect(visible.geometry.coordinates[0][2]).toBeCloseTo(result.beam.visible[0].altitudeM, 5);
+        expect(blocked.properties.visible).toBe('no');
+        expect(blocked.properties.clearanceM).toBeLessThan(0);
+        expect(blocked.properties.observerHeightM).toBe(2);
+        expect(blocked.properties.targetHeightM).toBe(2);
+        expect(blocked.properties.distanceM).toBeGreaterThan(0);
+        expect(endpoints.map((feature) => feature.properties.label)).toEqual(['Observer', 'Target']);
+        expect(obstruction.geometry.coordinates).toEqual([result.obstruction.lng, result.obstruction.lat]);
+        expect(obstruction.properties.clearanceM).toBeCloseTo(
+            result.obstruction.losM - result.obstruction.effectiveM,
+            5
+        );
+        expect(profile.properties.kind).toBe('profile');
+        expect(profile.geometry.coordinates.length).toBeGreaterThan(1);
+        expect(layers.some((layer) => layer.role === 'beam-blocked')).toBe(true);
     });
 
     it('rejects line of sight when an endpoint has no elevation', async () => {

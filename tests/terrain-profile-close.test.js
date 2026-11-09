@@ -118,6 +118,7 @@ describe('Line of Site dialog close paths', () => {
                     map.addSource(dataset.id, { type: 'geojson', data: dataset.geojson });
                     map.addLayer({ id: `${dataset.id}-line`, type: 'line', source: dataset.id });
                 }),
+                setLayerStyle: vi.fn(),
                 removeLayer,
                 getMap() {
                     getMapCalls += 1;
@@ -125,9 +126,13 @@ describe('Line of Site dialog close paths', () => {
                 }
             },
             showToast: vi.fn(),
-            createSpatialDataset: vi.fn((name, geojson) => ({ id: 'los-added', name, geojson })),
-            addLayer: vi.fn(),
-            getLayers() { return [{ id: 'los-added' }]; },
+            addedLayers: [],
+            createSpatialDataset: vi.fn((name, geojson) => {
+                const dataset = { id: `los-added-${ctx.addedLayers.length + 1}`, name, geojson };
+                return dataset;
+            }),
+            addLayer: vi.fn((dataset) => { ctx.addedLayers.push(dataset); }),
+            getLayers() { return ctx.addedLayers; },
             refreshUI: vi.fn(),
             getMapCalls: () => getMapCalls
         };
@@ -143,11 +148,15 @@ describe('Line of Site dialog close paths', () => {
         await act(async () => { target.click(); });
         const run = await waitFor(() => buttonNamed('Run'));
         await act(async () => { run.click(); });
-        const added = await waitFor(() => map.getLayer('gis-line-of-site-beam') && buttonNamed('Add as layer'));
+        const added = await waitFor(() => map.getLayer('gis-line-of-site-beam') && buttonNamed('Add to map') && !buttonNamed('Add to map').disabled);
         expect(added).toBeTruthy();
         expect(map.getSource(LINE_OF_SITE_OVERLAY_SOURCE_ID)).toBeTruthy();
-        await act(async () => { buttonNamed('Add as layer').click(); });
-        expect(map.getSource('los-added')).toBeTruthy();
+        expect(buttonNamed('Send to')).toBeUndefined();
+        await act(async () => { buttonNamed('Add to map').click(); });
+        expect(ctx.addedLayers.length).toBeGreaterThan(1);
+        for (const dataset of ctx.addedLayers) {
+            expect(map.getSource(dataset.id)).toBeTruthy();
+        }
         return { panel, map, ctx, removeLayer };
     }
 
@@ -158,8 +167,11 @@ describe('Line of Site dialog close paths', () => {
         expect(map.getLayer('gis-line-of-site-beam')).toBeNull();
         expect(map.getSource('kept-user-layer')).toBeTruthy();
         expect(map.getLayer('kept-user-layer-line')).toBeTruthy();
-        expect(map.getSource('los-added')).toBeTruthy();
-        expect(map.getLayer('los-added-line')).toBeTruthy();
+        expect(ctx.addedLayers.length).toBeGreaterThan(1);
+        for (const dataset of ctx.addedLayers) {
+            expect(map.getSource(dataset.id)).toBeTruthy();
+            expect(map.getLayer(`${dataset.id}-line`)).toBeTruthy();
+        }
         expect(removeLayer).not.toHaveBeenCalled();
         expect(ctx.getMapCalls()).toBe(0);
         expect(ctx.mapService.restoreTerrainViewState).toHaveBeenCalled();

@@ -2,17 +2,17 @@ import { openReactIsland } from '../../ui/open-react-island.js';
 import { withActivity } from '../../ui/app-activity.js';
 import {
     buildLineOfSight,
+    buildLineOfSiteMapLayers,
     buildLineOfSiteOverlayFeatures,
-    buildTerrainFeatureCollection,
     normalizeTerrainView,
     terrainViewsMatch
 } from './engine.js';
 import {
-    buildProducedResult,
-    emitProducedResult,
-    inferLayerGeometryTypes,
-    sendResultToTarget
-} from '../../tools/tool-result-interop.js';
+    LOS_DOT_FILL,
+    LOS_DOT_FILL_RADIUS,
+    LOS_DOT_OUTLINE,
+    LOS_DOT_RING
+} from './preview-layer.js';
 
 function sampleElevationsFromMap(ctx, points) {
     const sampleElevations = ctx.mapService?.sampleElevations;
@@ -37,6 +37,78 @@ function resultToast(result) {
         return 'No terrain elevation was returned along this line.';
     }
     return result.visible ? 'Line of Site is visible.' : 'Line of Site is blocked.';
+}
+
+const LOS_LINE_STYLE = {
+    mode: 'simple',
+    strokeOpacity: 1,
+    fillOpacity: 1,
+    pointSymbol: 'circle'
+};
+
+/**
+ * Styles match the session graphics: green visible beam, red blocked beam,
+ * gold terrain profile, magenta observer and target, red obstruction.
+ * @param {string} role
+ * @returns {object | null}
+ */
+function lineOfSiteLayerStyle(role) {
+    if (role === 'beam-visible') {
+        return { ...LOS_LINE_STYLE, strokeColor: '#00e040', fillColor: '#00e040', strokeWidth: 4 };
+    }
+    if (role === 'beam-blocked') {
+        return { ...LOS_LINE_STYLE, strokeColor: '#ff2d1a', fillColor: '#ff2d1a', strokeWidth: 4 };
+    }
+    if (role === 'profile') {
+        return { ...LOS_LINE_STYLE, strokeColor: '#d4a24e', fillColor: '#d4a24e', strokeWidth: 3 };
+    }
+    if (role === 'obstruction') {
+        return {
+            ...LOS_LINE_STYLE,
+            strokeColor: LOS_DOT_RING,
+            fillColor: '#ff2d1a',
+            strokeWidth: 2,
+            pointSize: 6
+        };
+    }
+    if (role === 'endpoints') {
+        return {
+            ...LOS_LINE_STYLE,
+            strokeColor: LOS_DOT_RING,
+            fillColor: LOS_DOT_FILL,
+            strokeWidth: 2,
+            pointSize: LOS_DOT_FILL_RADIUS,
+            labels: {
+                enabled: true,
+                field: 'label',
+                placement: 'point',
+                minZoom: 0,
+                size: 13,
+                offset: [0, -0.85],
+                anchor: 'bottom',
+                color: '#ffffff',
+                haloColor: LOS_DOT_OUTLINE,
+                haloWidth: 2,
+                allowOverlap: true,
+                ignorePlacement: true
+            }
+        };
+    }
+    return null;
+}
+
+function addLosLayer(ctx, spec) {
+    const dataset = ctx.createSpatialDataset(spec.name, spec.geojson, {
+        format: 'derived',
+        widget: 'terrain-profile',
+        role: spec.role
+    });
+    const style = lineOfSiteLayerStyle(spec.role);
+    if (style) ctx.mapService.setLayerStyle(dataset.id, style);
+    ctx.addLayer(dataset);
+    const index = ctx.getLayers().indexOf(dataset);
+    ctx.mapService.addLayer(dataset, index < 0 ? 0 : index, { fit: false });
+    return dataset;
 }
 
 /**
@@ -98,7 +170,6 @@ export async function openTerrainProfile(ctx, options = {}) {
                 await cleanup();
                 close();
             },
-            onSendToTarget: (targetId, result) => sendResultToTarget(ctx, targetId, result),
             onPickPoint: async (role) => {
                 ctx.mapService.cancelInteraction?.();
                 const prompt = role === 'target'
@@ -126,36 +197,15 @@ export async function openTerrainProfile(ctx, options = {}) {
                 }
             }),
             onAddLayer: (result) => {
-                const geojson = buildTerrainFeatureCollection(result);
-                if (!geojson.features.length) {
+                const specs = buildLineOfSiteMapLayers(result);
+                if (!specs.length) {
                     ctx.showToast?.('Nothing to add', 'warning');
                     return null;
                 }
-                const layerName = 'Line of Site';
-                const dataset = ctx.createSpatialDataset(layerName, geojson, { format: 'derived' });
-                ctx.addLayer(dataset);
-                ctx.mapService.addLayer(dataset, ctx.getLayers().indexOf(dataset), { fit: false });
+                const datasets = specs.map((spec) => addLosLayer(ctx, spec));
                 ctx.refreshUI();
-                const geometry = inferLayerGeometryTypes(dataset);
-                const producedResult = buildProducedResult('terrain-profile', {
-                    layerIds: [dataset.id],
-                    outputs: [{
-                        name: 'profile',
-                        type: 'layer',
-                        ...(geometry ? { geometry } : {})
-                    }],
-                    stats: {
-                        outCount: geojson.features.length,
-                        minM: result.stats?.min ?? null,
-                        maxM: result.stats?.max ?? null,
-                        gainM: result.stats?.gain ?? null,
-                        lossM: result.stats?.loss ?? null,
-                        visible: !!result.visible
-                    }
-                });
-                emitProducedResult(producedResult);
-                ctx.showToast?.(`Added ${layerName} as a layer`, 'success');
-                return producedResult;
+                ctx.showToast?.(`Added ${datasets.length} Line of Site layers`, 'success');
+                return { layers: datasets };
             }
         })
     });

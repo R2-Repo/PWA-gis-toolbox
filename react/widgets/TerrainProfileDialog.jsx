@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { WidgetPanelShell } from './shared/WidgetPanelShell.jsx';
 
 const CHART_W = 440;
@@ -161,8 +161,7 @@ export function TerrainProfileDialog({
     onPickPoint,
     onPreviewPoints,
     onRun,
-    onAddLayer,
-    onSendToTarget
+    onAddLayer
 }) {
     const [spacing, setSpacing] = useState(String(initialState?.spacingM ?? 30));
     const [observer, setObserver] = useState(initialState?.observer || null);
@@ -174,7 +173,8 @@ export function TerrainProfileDialog({
     const [result, setResult] = useState(null);
     const [error, setError] = useState('');
     const [message, setMessage] = useState('');
-    const [producedResult, setProducedResult] = useState(null);
+    const [added, setAdded] = useState(false);
+    const addedRef = useRef(false);
 
     const pickPoint = async (role) => {
         setError('');
@@ -188,7 +188,8 @@ export function TerrainProfileDialog({
             else setTarget(coord);
             onPreviewPoints?.(nextObserver, nextTarget);
             setResult(null);
-            setProducedResult(null);
+            addedRef.current = false;
+            setAdded(false);
             setMessage(role === 'observer' ? 'Observer set.' : 'Target set.');
         } catch (err) {
             setError(err?.message || 'Unable to pick a point.');
@@ -201,6 +202,8 @@ export function TerrainProfileDialog({
         setError('');
         setMessage('');
         setRunning(true);
+        addedRef.current = false;
+        setAdded(false);
         try {
             const output = await onRun?.({
                 mode: 'los',
@@ -212,7 +215,6 @@ export function TerrainProfileDialog({
                 curvature: true
             });
             setResult(output || null);
-            setProducedResult(null);
             if (output && !output.stats?.validCount) {
                 setError('No terrain elevation was returned along this line.');
             }
@@ -225,11 +227,18 @@ export function TerrainProfileDialog({
     };
 
     const addLayer = async () => {
-        if (!result) return;
+        if (!result || addedRef.current) return;
+        addedRef.current = true;
+        setAdded(true);
         try {
             const produced = await onAddLayer?.(result);
-            if (produced) setProducedResult(produced);
+            if (!produced) {
+                addedRef.current = false;
+                setAdded(false);
+            }
         } catch (err) {
+            addedRef.current = false;
+            setAdded(false);
             setError(err?.message || 'Unable to add the layer.');
         }
     };
@@ -248,8 +257,16 @@ export function TerrainProfileDialog({
             runLabel="Run"
             running={running}
             disabled={running || picking || !ready}
-            producedResult={producedResult}
-            onSendToTarget={onSendToTarget}
+            footerMiddleActions={(
+                <button
+                    type="button"
+                    className="gis-widget__link-btn"
+                    onClick={addLayer}
+                    disabled={!result || added || running || picking}
+                >
+                    Add to map
+                </button>
+            )}
         >
             <div className="form-group">
                 <label>Observer and target</label>
@@ -331,11 +348,6 @@ export function TerrainProfileDialog({
                             </div>
                         </>
                     ) : null}
-                    <div className="gis-widget__btn-row">
-                        <button type="button" className="gis-widget__link-btn" onClick={addLayer}>
-                            Add as layer
-                        </button>
-                    </div>
                 </div>
             ) : null}
         </WidgetPanelShell>
